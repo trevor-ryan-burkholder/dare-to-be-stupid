@@ -13,7 +13,7 @@ Building in the slice order of `DESIGN.md` §12.
 | 2 | `extractTestIds` + real reporter fixtures | done |
 | 3 | ratchet | done |
 | 4 | `plugins.mjs` + `init.mjs` (preflight, security scan, config) | done |
-| 5 | `driver.mjs` | not started |
+| 5 | `driver.mjs` | done |
 | 6 | `templates/` | not started |
 | 7 | output style | not started |
 | 8 | plugin + marketplace manifests | not started |
@@ -148,6 +148,36 @@ line. An unknown plugin name is an error rather than a guessed `npx <name>`.
 impeccable's `gate:design-slop` is armed only when the repo actually renders a user
 interface; on an API or CLI project it is skipped with a warning, which is the single gate
 skip `DESIGN.md` §5.1 carves out.
+
+## The loop
+
+`scripts/driver.mjs` runs build → gates → ratchet → review → ship, and the order is the
+point. Gates before review because they are free and deterministic, and there is no reason
+to spend a panel of cold reads on something that does not compile. Ratchet before review
+because a regression ends the iteration whatever a reviewer would have said about the rest.
+
+| Terminal state | Reached when |
+|---|---|
+| `SHIPPED` | gates green, nothing regressed, panel unanimous with `file:line` evidence |
+| `STALLED` | `stallLimit` iterations with no gate improvement and no new passing test |
+| `BUDGET` | `maxIterations` or `tokenCeiling` exhausted |
+| `ABORTED` | builder process failed, test report unreadable, or the reality check found the PRD unbuildable |
+
+### The reviewer parser is the product
+
+`DESIGN.md` §1.1 exists because a builder satisfices. The parser is the only thing between
+a satisficed build and a `SHIPPED` tag, so it is deliberately hostile:
+
+- output that will not parse is a **fail** — not a retry, not a shrug
+- `pass` with no evidence, or evidence that is not a real `path/file.ext:LINE`, is
+  **flipped to fail** before anything is counted
+- a required id with no entry **invalidates the audit** rather than being "not applicable"
+- the reviewer's own top-level `verdict` is advisory; the verdict is computed from the
+  entries, so a reviewer that stamps `pass` over a failing entry does not get to
+
+Budget accounting reads `total_cost_usd` and every `usage` bucket — including cache tokens —
+from the real `claude -p --output-format json` envelope, rather than estimating. An
+estimate that drifts low never trips the ceiling.
 
 ## Working on this repo
 
