@@ -739,7 +739,18 @@ export function childEnvironment(env) {
 /**
  * Build the argv for a `claude -p` child.
  *
- * @param {{ prompt: string, model: string, systemPrompt?: string, phase: string }} options
+ * The prompt is deliberately **not** here. It travels on stdin, and the reason is a bug
+ * that shipped: `--allowedTools` is variadic, so a prompt appended after it was parsed as
+ * one more tool name and the child died with "Input must be provided either through stdin
+ * or as a prompt argument". That killed every phase except `builder` — the only one whose
+ * permission flag takes no operand — so no PRD was ever authored and no reviewer ever
+ * answered. Reordering argv would fix today's flag and re-arm the same trap for the next
+ * one. A prompt on stdin is not an operand of anything.
+ *
+ * It also retires two quieter hazards: `ARG_MAX` for a prompt carrying a whole template
+ * plus the PRD, and a prompt that happens to begin with `--`.
+ *
+ * @param {{ model: string, systemPrompt?: string, phase: string }} options
  * @returns {string[]}
  */
 export function claudeArgs(options) {
@@ -750,7 +761,6 @@ export function claudeArgs(options) {
   }
   if (policy.dangerous) args.push('--dangerously-skip-permissions');
   else if (policy.allowedTools.length > 0) args.push('--allowedTools', ...policy.allowedTools);
-  args.push(options.prompt);
   return args;
 }
 
@@ -1695,7 +1705,7 @@ export function requiredIdsFor(prd) {
 /**
  * @param {string} command
  * @param {string[]} args
- * @param {{ cwd: string, env?: Record<string, string | undefined> }} options
+ * @param {{ cwd: string, env?: Record<string, string | undefined>, input?: string }} options
  * @returns {{ ok: boolean, status: number, stdout: string, stderr: string }}
  */
 function shell(command, args, options) {
@@ -1704,6 +1714,9 @@ function shell(command, args, options) {
       cwd: options.cwd,
       // Defaults to this process's environment, so gates and git calls are unaffected.
       env: options.env ?? process.env,
+      // Only the Claude children send anything; gates and git calls pass no input and are
+      // left on the inherited stdin they have always had.
+      ...(options.input === undefined ? {} : { input: options.input }),
       stdio: 'pipe',
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
@@ -1730,7 +1743,7 @@ function shell(command, args, options) {
  * @param {{ prompt: string, model: string, systemPrompt?: string, phase: string, cwd: string,
  *   env: Record<string, string | undefined>,
  *   run?: (command: string, args: string[],
- *     options: { cwd: string, env?: Record<string, string | undefined> }) =>
+ *     options: { cwd: string, env?: Record<string, string | undefined>, input?: string }) =>
  *     { ok: boolean, status: number, stdout: string, stderr: string } }} options
  * @returns {ClaudeResult}
  */
@@ -1739,7 +1752,12 @@ export function spawnClaude(options) {
   const run = options.run ?? shell;
   // Every Claude child carries the re-entrancy marker. This is the half of the no-nesting
   // rule the guard hook cannot enforce: the hook sees tool calls, not our own children.
-  const result = run('claude', args, { cwd: options.cwd, env: childEnvironment(options.env) });
+  // The prompt goes on stdin rather than in argv; see `claudeArgs` for the bug that cost.
+  const result = run('claude', args, {
+    cwd: options.cwd,
+    env: childEnvironment(options.env),
+    input: options.prompt,
+  });
   if (!result.ok && result.stdout.trim() === '') {
     return { ok: false, text: '', costUsd: 0, tokens: 0, raw: result.stderr };
   }

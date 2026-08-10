@@ -539,18 +539,32 @@ describe('parseClaudeEnvelope', () => {
 });
 
 describe('claudeArgs and the permission policy', () => {
-  it('asks for json, pins the model, and puts the prompt last', () => {
-    const args = claudeArgs({ prompt: 'do it', model: 'claude-sonnet-5', phase: 'builder' });
+  it('asks for json and pins the model', () => {
+    const args = claudeArgs({ model: 'claude-sonnet-5', phase: 'builder' });
     assert.equal(args.slice(0, 5).join(' '), '-p --output-format json --settings {"outputStyle":"default"}');
     assert.equal(args.includes('claude-sonnet-5'), true);
-    assert.equal(args[args.length - 1], 'do it');
+  });
+
+  it('keeps the prompt out of argv entirely, for every phase', () => {
+    // The bug this defends against shipped: the prompt was appended straight after
+    // `--allowedTools`, which is variadic, so the CLI read it as one more tool name and the
+    // child exited with "Input must be provided either through stdin or as a prompt
+    // argument". Only `builder` survived, its permission flag taking no operand - so no PRD
+    // was authored and no reviewer ever answered, which is every phase that can fail a run.
+    //
+    // Asserting the prompt is *absent* rather than *last* is the whole point: a position is
+    // only safe until the next flag is added after it.
+    for (const phase of Object.keys(PHASE_PERMISSIONS)) {
+      const args = claudeArgs({ model: 'm', phase });
+      assert.equal(args.includes('do it'), false, `${phase} carries the prompt in argv`);
+    }
   });
 
   it('gives dangerous mode to the builder and to nothing else', () => {
     // The builder's job is arbitrary - install packages, run tools, restructure a tree.
     // Every other phase has a narrow job and gets exactly the tools for it.
     for (const phase of Object.keys(PHASE_PERMISSIONS)) {
-      const dangerous = claudeArgs({ prompt: 'x', model: 'm', phase }).includes('--dangerously-skip-permissions');
+      const dangerous = claudeArgs({ model: 'm', phase }).includes('--dangerously-skip-permissions');
       assert.equal(dangerous, phase === 'builder', `${phase} has the wrong permission level`);
     }
   });
@@ -560,7 +574,7 @@ describe('claudeArgs and the permission policy', () => {
       const tools = PHASE_PERMISSIONS[phase].allowedTools;
       assert.equal(tools.includes('Write'), false, `${phase} can write`);
       assert.equal(tools.includes('Edit'), false, `${phase} can edit`);
-      assert.equal(claudeArgs({ prompt: 'x', model: 'm', phase }).includes('--allowedTools'), true);
+      assert.equal(claudeArgs({ model: 'm', phase }).includes('--allowedTools'), true);
     }
   });
 
@@ -572,7 +586,7 @@ describe('claudeArgs and the permission policy', () => {
 
   it('refuses a phase with no declared policy rather than inheriting one', () => {
     // A new phase written next to the builder must not quietly acquire its powers.
-    assert.throws(() => claudeArgs({ prompt: 'x', model: 'm', phase: 'summariser' }), DriverError);
+    assert.throws(() => claudeArgs({ model: 'm', phase: 'summariser' }), DriverError);
     assert.throws(() => permissionsFor('anything-new'), DriverError);
   });
 
@@ -586,7 +600,7 @@ describe('claudeArgs and the permission policy', () => {
 
   it('forces the default output style on every phase', () => {
     for (const phase of Object.keys(PHASE_PERMISSIONS)) {
-      const args = claudeArgs({ prompt: 'x', model: 'm', phase });
+      const args = claudeArgs({ model: 'm', phase });
       const at = args.indexOf('--settings');
       assert.notEqual(at, -1, `${phase} was given no settings override`);
       assert.deepStrictEqual(JSON.parse(args[at + 1]), { outputStyle: 'default' });
@@ -594,7 +608,7 @@ describe('claudeArgs and the permission policy', () => {
   });
 
   it('appends a system prompt when one is given', () => {
-    const args = claudeArgs({ prompt: 'x', model: 'm', phase: 'builder', systemPrompt: 'be hostile' });
+    const args = claudeArgs({ model: 'm', phase: 'builder', systemPrompt: 'be hostile' });
     assert.equal(args.includes('be hostile'), true);
   });
 });
@@ -628,10 +642,12 @@ describe('childEnvironment', () => {
 describe('the re-entrancy marker reaches the child', () => {
   /**
    * @param {string} phase
-   * @returns {{ calls: { command: string, args: string[], env: Record<string, string | undefined> }[] }}
+   * @returns {{ calls: { command: string, args: string[], env: Record<string, string | undefined>,
+   *   input: string | undefined }[] }}
    */
   function spawnWithRecorder(phase) {
-    /** @type {{ command: string, args: string[], env: Record<string, string | undefined> }[]} */
+    /** @type {{ command: string, args: string[], env: Record<string, string | undefined>,
+     *   input: string | undefined }[]} */
     const calls = [];
     spawnClaude({
       prompt: 'do it',
@@ -640,12 +656,22 @@ describe('the re-entrancy marker reaches the child', () => {
       cwd: '/somewhere',
       env: { PATH: '/usr/bin' },
       run: (command, args, options) => {
-        calls.push({ command, args, env: options.env ?? {} });
+        calls.push({ command, args, env: options.env ?? {}, input: options.input });
         return { ok: true, status: 0, stdout: JSON.stringify({ is_error: false, result: 'ok' }), stderr: '' };
       },
     });
     return { calls };
   }
+
+  it('delivers the prompt on stdin for every phase, and never in argv', () => {
+    // Both halves matter. A prompt missing from argv but also missing from stdin is a child
+    // that exits with "Input must be provided", which is the failure this replaced.
+    for (const phase of Object.keys(PHASE_PERMISSIONS)) {
+      const { calls } = spawnWithRecorder(phase);
+      assert.equal(calls[0].input, 'do it', `${phase} did not receive the prompt on stdin`);
+      assert.equal(calls[0].args.includes('do it'), false, `${phase} also put the prompt in argv`);
+    }
+  });
 
   it('passes the marker in the environment of every phase, not merely computes it', () => {
     // The bug this defends against shipped once: the marker was built and then discarded,

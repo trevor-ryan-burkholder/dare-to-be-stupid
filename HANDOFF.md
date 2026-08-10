@@ -35,6 +35,18 @@ failing and one skipped test yielded exactly the one passing ID.
 cache is keyed by version, and stale copies masquerade as failed fixes. See "Releasing" in
 `CLAUDE.md` before debugging any plugin change.
 
+**`--allowedTools Read Glob Grep Write Edit` does permit writing.** A live child given
+exactly that flag set created a file with the Write tool. The permission model was never in
+doubt; see below for what actually was.
+
+**PreToolUse hooks inherit the environment of the `claude` process.** A child spawned with
+`DARE_RUNNING=1` fired a hook that read `DARE_RUNNING: "1"` from `process.env`. This is what
+lets the guard tell a run from an operator, so it was measured rather than assumed.
+
+**The guard denies live, unscripted commands.** Not fixtures: during this session it refused
+a recursive `rm` whose target was an unresolved shell variable, and refused a command
+touching `.dare/config.json` from inside a run.
+
 ## Outstanding
 
 **A deliberately incomplete build must draw a `fail` from a cold reviewer.** Plant a missing
@@ -63,14 +75,35 @@ application that ignores `PORT`.
 
 ---
 
+## Fixed here, and worth knowing about
+
+**Every phase except `builder` was dead, and no test could see it.** `--allowedTools` is
+variadic. The prompt was appended to argv immediately after it, so the CLI parsed the prompt
+as one more tool name and the child exited with *"Input must be provided either through
+stdin or as a prompt argument"*. `builder` alone survived, because
+`--dangerously-skip-permissions` takes no operand. No PRD was ever authored, no design
+written, and — since nothing defaults to pass — no reviewer could ever return a pass, so no
+run could ever ship.
+
+The suspicion recorded here previously blamed the *permissions*. The permissions were fine.
+The argument order was not, which is why "start a small run and see whether `PRD.md`
+appears" would have found it and reading the permission table would not.
+
+The prompt now travels on stdin. That is deliberately not a reordering: a safe position
+lasts only until someone adds a flag after it, whereas a prompt on stdin is not an operand
+of anything. It also retires `ARG_MAX` for prompts carrying a whole template plus the PRD,
+and prompts that happen to begin with `--`.
+
+The lesson generalises past this bug: **`claudeArgs` is unit-tested, and unit tests assert
+the array we meant to build.** The defect lived in another program's parsing of that array.
+Anything whose contract is owned by a different binary needs one live check, not more
+assertions.
+
 ## Unverified risk
 
-The `prd` and `design` phases moved from a blanket permission bypass to
-`--allowedTools Read Glob Grep Write Edit`. That has **not** been confirmed against a live
-child. If the flag does not in fact permit writing, both phases fail at the first real run.
-Cheap to check: start a small run and see whether `PRD.md` appears. The `lesson-extractor`
-phase uses the same mechanism minus the write tools, so the same doubt applies to it —
-though it is advisory, and a lesson that fails to extract cannot fail a build.
+The `reality-check` and `lesson-extractor` phases have still never run against a live child.
+They use the same spawn path as the phases that have, so the argv fault above is fixed for
+them too, but their prompts and their parsers are unexercised.
 
 The lesson store's *usefulness* is unproven in a way the tests cannot reach. Storage,
 retrieval, protection and the fail-safe paths are covered; whether the extractor produces
