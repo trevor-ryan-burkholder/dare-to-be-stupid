@@ -50,7 +50,7 @@ Track against `DESIGN.md` §12.
       split into `config.mjs`, `security-scan.mjs`, `preflight.mjs`, `init.mjs`
 - [x] 5 — `scripts/driver.mjs` loop wiring, terminal states, model routing (§10)
 - [x] 6 — `templates/`: prd-author, architect, builder-system, reviewer-system
-- [ ] 7 — `output-styles/junkion.md` + launch banner and terminal-state stamps (§9.1)
+- [x] 7 — `output-styles/junkion.md` + launch banner and terminal-state stamps (§9.1)
 - [ ] 8 — `.claude-plugin/plugin.json` + `marketplace.json`, install smoke test
 
 ---

@@ -15,7 +15,7 @@ Building in the slice order of `DESIGN.md` §12.
 | 4 | `plugins.mjs` + `init.mjs` (preflight, security scan, config) | done |
 | 5 | `driver.mjs` | done |
 | 6 | `templates/` | done |
-| 7 | output style | not started |
+| 7 | output style | done |
 | 8 | plugin + marketplace manifests | not started |
 
 ## The guard hook
