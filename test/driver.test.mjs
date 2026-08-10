@@ -1623,15 +1623,27 @@ describe('staticGates', () => {
 
   const PROSE = 'x'.repeat(400);
 
-  it('fails all three on an empty repository', () => {
+  it('fails the evidence gates on an empty repository', () => {
+    // gate-integrity is the exception, and deliberately: an empty repository has no
+    // package.json, so nothing has been weakened yet. It is not standing there alone -
+    // the `lint` and `types` command gates already fail on a repository with no scripts,
+    // and reporting the same absence twice under two names would be noise, not rigour.
     assert.deepStrictEqual(
       staticGates(repoWith({})).map((gate) => [gate.name, gate.ok]),
       [
         ['ci', false],
         ['docs', false],
         ['observability', false],
+        ['gate-integrity', true],
       ],
     );
+  });
+
+  it('fails gate-integrity when the repository stubs out a gate it is judged by', () => {
+    const dir = repoWith({ 'package.json': JSON.stringify({ scripts: { lint: 'true' } }) });
+    const integrity = staticGates(dir).find((gate) => gate.name === 'gate-integrity');
+    assert.equal(integrity?.ok, false);
+    assert.equal(integrity?.detail, 'npm script "lint" runs nothing: "true"');
   });
 
   /** A workflow that really runs the validation set DoD line 3 asks for. */

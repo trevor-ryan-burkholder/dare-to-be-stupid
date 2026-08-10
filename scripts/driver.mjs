@@ -30,6 +30,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compileBrief, writeBrief } from './brief.mjs';
 import { loadConfig } from './config.mjs';
 import { hasMeaningfulHistory, historyContext } from './history.mjs';
+import { integrityGate } from './integrity.mjs';
 import {
   addLesson,
   findResolvedStruggles,
@@ -1545,6 +1546,9 @@ export function staticGates(cwd, options = {}) {
               .join(', ')}`,
     },
     observabilityGate(cwd, options),
+    // The gates judge the builder; this one judges the gates. `npm run lint` is only worth
+    // running while `lint` still means something, and the builder writes what it means.
+    integrityGate(cwd),
   ];
 }
 

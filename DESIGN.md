@@ -99,7 +99,8 @@ loop is phases 2–6.
    PHASE 2b BUILD       claude -p, --dangerously-skip-permissions, brief as the task
                         (or, when stalled and armed, a worktree race — §13.6)
    PHASE 3  GATES       exit codes only. build · lint · types · unit · e2e ·
-                        red-evidence · security-audit · ci · docs · observability.  no LLM.
+                        red-evidence · security-audit · ci · docs · observability ·
+                        gate-integrity.  no LLM.
    PHASE 4  RATCHET     regression? hard reset, feed back, restart iteration
    PHASE 5  REVIEW      specialized cold claude -p panel, each member on the ids it owns,
                         unanimous-or-continue, vs PRD + design + DoD  (strongest model)
@@ -210,6 +211,25 @@ judgment ones are Phase-5 reviewer lines.
 | 3 | **CI / build config** | Gate | a workflow under `.github/workflows` whose `run:` steps **actually invoke** build, lint, types, unit and e2e — presence of a file is not the check |
 | 4 | **Docs + observability** | Gate + Reviewer | `README` + `docs/api-contract.md` present and non-stub; structured logging present; a `/health` (or equivalent) endpoint that **answers a real request** when the app declares a start script |
 | 5 | **Design quality** | Gate + Reviewer | `npx impeccable detect src/` exit-0 (§5.1; skipped on non-UI projects); design docs exist and match the code; architecture is coherent, not accidental |
+
+**Who guards the gates.** Every line above is enforced by running something. The builder
+writes what that something *is*: `commandGates` invokes `npm run lint`, and `lint` means
+whatever `package.json` says it means. `"lint": "true"` clears that gate forever, and no
+other check in this document notices — the ratchet guards *test identity*, so it sees a
+deleted test but not a hollowed-out linter.
+
+`gate-integrity` (`scripts/integrity.mjs`) closes that. It fails on a `build`, `lint`,
+`typecheck`, `test` or `e2e` script whose body runs nothing (`true`, `:`, `exit 0`, or an
+`echo` explaining why the gate was unnecessary), on `compilerOptions.strict: false` in any
+`tsconfig*.json`, and on `@ts-nocheck` in any source file. A line-level `@ts-expect-error`
+stays allowed: it is a narrow claim that fails loudly when it stops being true, which is the
+opposite of a whole-file suppression.
+
+It **denies the known cheat rather than allowlisting the known tool**, and that asymmetry is
+deliberate. An allowlist of linters reads as stricter and behaves worse: the first time a
+builder reaches for a real tool that is not on it, the gate fails a correct repository and
+costs a full iteration. A no-op has no honest counterexample — nobody writes `"lint": "true"`
+meaning it — so it can be named precisely without ever punishing a legitimate choice.
 
 **Where a gate checks behaviour, and where it deliberately does not.** A presence check is
 satisfied by the smallest artifact that quiets it, and a builder under pressure to clear a
