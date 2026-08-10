@@ -87,19 +87,18 @@ export function defaultGit(cwd) {
  * bump commit. If it cannot be found the check fails rather than passing — an unknown
  * baseline is not evidence that nothing changed.
  *
+ * A version that appears nowhere in committed history is a bump that has not been
+ * committed yet — which is the correct state to be in, not an error. Returning `null`
+ * says so. Refusing here would mean the check fails precisely when someone has just done
+ * the right thing, which is how a gate teaches people to bypass it.
+ *
  * @param {{ git: Git, version: string }} options
- * @returns {{ baseline: string, changedFiles: string[] }}
- * @throws {Error} when the bump commit cannot be located
+ * @returns {{ baseline: string | null, changedFiles: string[] }}
  */
 export function changesSinceVersion(options) {
   const needle = `"version": "${options.version}"`;
   const found = options.git(['log', '-1', '--format=%H', '-S', needle, '--', '.claude-plugin/plugin.json']).trim();
-  if (found === '') {
-    throw new Error(
-      `could not find the commit that introduced version ${options.version} in .claude-plugin/plugin.json. ` +
-        'Without a baseline this check cannot tell what has changed, so it fails rather than guessing.',
-    );
-  }
+  if (found === '') return { baseline: null, changedFiles: [] };
   // Against the working tree, not `..HEAD`. Comparing commits would call an uncommitted
   // shipped edit "ok", and this check is most useful run *before* committing. Untracked
   // files count too: a brand-new script is the most shipped thing there is.
@@ -121,18 +120,15 @@ export function main(io = {}) {
   const pluginVersion = JSON.parse(readFileSync(path.join(cwd, '.claude-plugin/plugin.json'), 'utf8')).version;
   const packageVersion = JSON.parse(readFileSync(path.join(cwd, 'package.json'), 'utf8')).version;
 
-  /** @type {{ baseline: string, changedFiles: string[] }} */
-  let changes;
-  try {
-    changes = changesSinceVersion({ git, version: pluginVersion });
-  } catch (error) {
-    log(/** @type {Error} */ (error).message);
-    return 1;
-  }
-
+  const changes = changesSinceVersion({ git, version: pluginVersion });
   const verdict = evaluateRelease({ changedFiles: changes.changedFiles, pluginVersion, packageVersion });
+
   if (verdict.ok) {
-    log(`ok: version ${pluginVersion}, no shipped file changed since ${changes.baseline.slice(0, 7)}`);
+    log(
+      changes.baseline === null
+        ? `ok: version ${pluginVersion} is a bump that has not been committed yet`
+        : `ok: version ${pluginVersion}, no shipped file changed since ${changes.baseline.slice(0, 7)}`,
+    );
     return 0;
   }
 

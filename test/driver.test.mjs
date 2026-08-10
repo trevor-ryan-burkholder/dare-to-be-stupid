@@ -1159,11 +1159,26 @@ describe('red-evidence', () => {
 // ---------------------------------------------------------------------------
 
 describe('dareIgnoreUpdate', () => {
-  it('adds .dare/ to a .gitignore that does not cover it', () => {
+  it('ignores the ratchet state in a .gitignore that does not cover it', () => {
     const updated = dareIgnoreUpdate('node_modules/\n');
     assert.notEqual(updated, null);
-    assert.equal(String(updated).includes('\n.dare/\n'), true);
+    assert.equal(String(updated).includes('\n.dare/state.json\n'), true);
     assert.equal(String(updated).startsWith('node_modules/\n'), true);
+  });
+
+  it('leaves the settings file committable, because settings are not machine state', () => {
+    // Observed on the first real run: the operator had committed their config, which is a
+    // reasonable thing to want in version control. A blanket ignore fights them.
+    const ignored = String(dareIgnoreUpdate('')).split('\n').map((line) => line.trim());
+    assert.equal(ignored.includes('.dare/config.json'), false, 'settings must stay committable');
+    assert.equal(ignored.includes('.dare/state.json'), true, 'machine state must not be');
+  });
+
+  it('ignores every machine-state file the driver writes', () => {
+    const ignored = String(dareIgnoreUpdate('')).split('\n').map((line) => line.trim());
+    for (const file of ['.dare/state.json', '.dare/red-evidence.json', '.dare/bloopers.log']) {
+      assert.equal(ignored.includes(file), true, `not ignored: ${file}`);
+    }
   });
 
   it('adds a newline first when the file does not end in one', () => {
@@ -1171,10 +1186,17 @@ describe('dareIgnoreUpdate', () => {
   });
 
   it('handles an absent .gitignore', () => {
-    assert.equal(String(dareIgnoreUpdate('')).includes('.dare/'), true);
+    assert.equal(String(dareIgnoreUpdate('')).includes('.dare/state.json'), true);
   });
 
-  const alreadyCovered = ['.dare/\n', '.dare\n', '/.dare/\n', 'node_modules/\n.dare/\nbuild/\n', '  .dare/  \n'];
+  const alreadyCovered = [
+    '.dare/state.json\n',
+    '.dare/\n',
+    '.dare\n',
+    '/.dare/\n',
+    'node_modules/\n.dare/\nbuild/\n',
+    '  .dare/state.json  \n',
+  ];
   for (const existing of alreadyCovered) {
     it(`leaves ${JSON.stringify(existing)} alone`, () => {
       assert.equal(dareIgnoreUpdate(existing), null);
@@ -1217,8 +1239,11 @@ describe('ensureDareIgnored', () => {
     ensureDareIgnored(dir);
     mkdirSync(path.join(dir, '.dare'), { recursive: true });
     writeFileSync(path.join(dir, '.dare', 'state.json'), '{}', 'utf8');
+    writeFileSync(path.join(dir, '.dare', 'config.json'), '{}', 'utf8');
     git(['add', '-A']);
-    assert.equal(git(['diff', '--cached', '--name-only']).includes('.dare/'), false);
+    const staged = git(['diff', '--cached', '--name-only']);
+    assert.equal(staged.includes('.dare/state.json'), false, 'the ratchet must never be staged');
+    assert.equal(staged.includes('.dare/config.json'), true, 'settings should still be committable');
   });
 });
 

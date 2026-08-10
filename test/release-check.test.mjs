@@ -160,27 +160,47 @@ describe('changesSinceVersion', () => {
     assert.deepStrictEqual(changesSinceVersion({ git, version: '0.1.2' }).changedFiles, []);
   });
 
-  it('throws when the bump commit cannot be found, rather than assuming nothing changed', () => {
-    // An unknown baseline is not evidence that nothing changed.
+  it('reports a version absent from history as a bump not yet committed', () => {
+    // This is the correct state, not an error: someone has just bumped and not committed.
+    // Refusing here would fail exactly when the right thing was done.
     const git = fakeGit({ [LOG]: '\n' });
-    assert.throws(() => changesSinceVersion({ git, version: '0.1.2' }), /could not find the commit/);
+    assert.deepStrictEqual(changesSinceVersion({ git, version: '0.1.2' }), {
+      baseline: null,
+      changedFiles: [],
+    });
   });
 });
 
 describe('the command', () => {
-  it('exits non-zero and explains when git cannot establish a baseline', () => {
+  it('passes and says so when the bump is not committed yet', () => {
     /** @type {string[]} */
     const lines = [];
-    const code = main({ log: (line) => lines.push(line), git: () => '' });
-    assert.equal(code, 1);
-    assert.equal(lines.join('\n').includes('could not find the commit'), true);
+    assert.equal(main({ log: (line) => lines.push(line), git: () => '' }), 0);
+    assert.equal(lines[0].includes('has not been committed yet'), true);
   });
 
-  it('passes on this repository as it stands', () => {
-    // Doubles as a live assertion that the repo is releasable right now.
+  it('still refuses a shipped change at an already-released version', () => {
     /** @type {string[]} */
     const lines = [];
-    assert.equal(main({ log: (line) => lines.push(line) }), 0, lines.join('\n'));
-    assert.equal(lines[0].startsWith('ok: version '), true);
+    const git = (/** @type {string[]} */ args) => {
+      if (args[0] === 'log') return 'abc1234\n';
+      if (args[0] === 'ls-files') return '\n';
+      return 'hooks/guard.mjs\n';
+    };
+    assert.equal(main({ log: (line) => lines.push(line), git }), 1);
+    assert.equal(lines.join('\n').includes('hooks/guard.mjs'), true);
   });
+
+  it('reports the version and baseline when a run is releasable', () => {
+    /** @type {string[]} */
+    const lines = [];
+    const git = (/** @type {string[]} */ args) => (args[0] === 'log' ? 'abc1234\n' : '\n');
+    assert.equal(main({ log: (line) => lines.push(line), git }), 0);
+    assert.equal(lines[0], 'ok: version 0.1.3, no shipped file changed since abc1234');
+  });
+
+  // Deliberately not asserted here: whether *this* repository is releasable right now.
+  // That would turn `npm test` red during ordinary work on a shipped file — not a defect,
+  // just a bump not yet made — and a suite that is red while you are mid-change is one
+  // people learn to ignore. `npm run release-check` is the gate for that, on purpose.
 });

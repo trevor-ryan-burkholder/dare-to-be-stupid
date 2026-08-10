@@ -705,9 +705,18 @@ export function driveRun(options) {
 /** The ignore stanza a target repository needs. */
 const DARE_IGNORE = [
   '',
-  '# dare run state. Never commit this: a hard reset would revert the ratchet',
-  '# to an older state.json and silently drop test ids it had already earned.',
-  '.dare/',
+  '# dare machine state. Never commit these: a hard reset would revert the ratchet to an',
+  '# older state.json and silently drop test ids it had already earned.',
+  '.dare/state.json',
+  '.dare/red-evidence.json',
+  '.dare/bloopers.log',
+  '.dare/test-report.json',
+  '.dare/e2e-report.json',
+  '.dare/playwright-installed',
+  '.dare/reality-check.md',
+  '',
+  '# .dare/config.json is deliberately NOT ignored. It is the run settings, not machine',
+  '# state, and keeping it in version control makes a run reproducible from the repo.',
   '',
   '# The driver commits with `git add -A` every iteration.',
   'node_modules/',
@@ -726,10 +735,21 @@ const DARE_IGNORE = [
  * @returns {string | null}
  */
 export function dareIgnoreUpdate(existing) {
+  // The ratchet file is the one that must never be tracked, so it is the one to test for.
+  // A blanket `.dare/` counts too — someone who ignored the whole directory has already
+  // covered the case, even though this stanza no longer writes it that way.
   const covered = existing
     .split('\n')
     .map((line) => line.trim())
-    .some((line) => line === '.dare/' || line === '.dare' || line === '/.dare' || line === '/.dare/');
+    .some(
+      (line) =>
+        line === '.dare/state.json' ||
+        line === '/.dare/state.json' ||
+        line === '.dare/' ||
+        line === '.dare' ||
+        line === '/.dare' ||
+        line === '/.dare/',
+    );
   if (covered) return null;
   const separator = existing.length === 0 || existing.endsWith('\n') ? '' : '\n';
   return `${existing}${separator}${DARE_IGNORE}`;
@@ -1108,6 +1128,23 @@ export function main(argv, io = {}) {
 
   write(banner({ mode }));
 
+  // Before anything is written, so the very first commit cannot stage machine state.
+  if (ensureDareIgnored(cwd)) write(verbatim('added dare machine state to .gitignore'));
+
+  /**
+   * Commit what a phase produced.
+   *
+   * An interrupt between phases would otherwise strand the work: the PRD lands untracked,
+   * preflight refuses the dirty tree, and the operator cannot simply resume. Observed on
+   * the first real run, which was stopped after phase 0 and left `?? PRD.md` behind.
+   *
+   * @param {string} message
+   */
+  const commitPhase = (message) => {
+    shell('git', ['add', '-A'], { cwd });
+    shell('git', ['commit', '--no-verify', '-m', message], { cwd });
+  };
+
   // ---- Phase 0: ideate --------------------------------------------------
   const prdPath = path.join(cwd, 'PRD.md');
   if (input !== '' && existsSync(path.resolve(cwd, input))) {
@@ -1137,10 +1174,12 @@ export function main(argv, io = {}) {
       return 1;
     }
     if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
-    if (confirmPrd) {
-      write(verbatim(`PRD.md written. Review it, then re-run without --confirm-prd.`));
-      return 0;
-    }
+  }
+
+  commitPhase('dare: author PRD.md');
+  if (confirmPrd) {
+    write(verbatim('PRD.md is written and committed. Review it, then re-run without --confirm-prd.'));
+    return 0;
   }
 
   const prd = readFileSync(prdPath, 'utf8');
@@ -1163,7 +1202,7 @@ export function main(argv, io = {}) {
   const provisioning = installQualityPlugins({ cwd, plugins: config.qualityPlugins, runner: shell });
   for (const warning of provisioning.warnings) write(verbatim(warning));
 
-  if (ensureDareIgnored(cwd)) write(verbatim('added .dare/ to .gitignore'));
+  commitPhase('dare: design documents');
 
   // ---- Phases 2-6: the loop ---------------------------------------------
   const unitReport = path.join(dareDir, UNIT_REPORT);
