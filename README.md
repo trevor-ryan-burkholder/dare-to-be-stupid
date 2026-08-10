@@ -259,7 +259,7 @@ unattended run hours of behaviour nobody asked for, with no way to tell.
 | -------------------- | ------------------------------------- | ---------------------------------------------------------- |
 | `maxIterations`      | `25`                                  | hard iteration cap                                         |
 | `stallLimit`         | `4`                                   | iterations with no measurable improvement before `STALLED` |
-| `tokenCeiling`       | `4000000`                             | total tokens across every child                            |
+| `tokenCeiling`       | `4000000`                             | tokens across every child; the run ends at the first child to cross it, so budget for this plus one child |
 | `reviewers`          | `["security","correctness","design"]` | the cold panel                                             |
 | `ownership`          | one id set per reviewer               | which ids each member owns; must cover every required id   |
 | `requireUnanimous`   | `true`                                | one dissent blocks the ship                                |

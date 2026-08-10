@@ -947,8 +947,10 @@ export function driveRun(options) {
       ].join('\n');
 
       const result = effects.extractLesson(evidence);
-      progress = { ...progress, spentTokens: progress.spentTokens + result.tokens };
-      costUsd += result.costUsd;
+      // Charged but not acted on: this runs while an iteration is closing and returns void,
+      // so it has no way to end the run. The spend still counts, and `shouldContinue` sees
+      // it at the top of the next iteration — one step later than the other five sites.
+      charge(result);
       if (!result.ok) return;
 
       const candidate = parseLessonExtraction(result.text);
@@ -984,6 +986,31 @@ export function driveRun(options) {
     maybeExtractLesson();
     progress = recordProgress(progress, { gateScore: score, passingCount });
   };
+
+  /**
+   * Charge one child's spend to the run, and say whether the ceiling is now breached.
+   *
+   * The ceiling used to be read only by `shouldContinue`, between iterations. A child's cost
+   * is not knowable until it returns, so one iteration could spend arbitrarily far past the
+   * limit before anything looked: an observed run ended `2100900 of 1000000`. Charging here
+   * and testing immediately bounds the overshoot to a single child rather than a whole
+   * iteration.
+   *
+   * This is deliberately not called a cap, and `tokenCeiling` is not one. Nothing can price
+   * a child before running it, so the guarantee available is "stops at the first opportunity
+   * after the ceiling is crossed", not "never exceeds it".
+   *
+   * @param {{ tokens: number, costUsd: number }} result
+   * @returns {boolean} true when the ceiling is now breached
+   */
+  const charge = (result) => {
+    progress = { ...progress, spentTokens: progress.spentTokens + result.tokens };
+    costUsd += result.costUsd;
+    return progress.spentTokens >= config.tokenCeiling;
+  };
+
+  /** Worded exactly as `shouldContinue` words it, so the two exits read the same. */
+  const ceilingReason = () => `token ceiling reached: ${progress.spentTokens} of ${config.tokenCeiling}`;
 
   for (;;) {
     const permission = shouldContinue(progress, config);
@@ -1033,19 +1060,21 @@ export function driveRun(options) {
     let raced = false;
     if (raceDecision.race && effects.race !== undefined) {
       const outcome = effects.race(objective, iterationNumber);
-      progress = { ...progress, spentTokens: progress.spentTokens + outcome.tokens };
-      costUsd += outcome.costUsd;
+      const exhausted = charge(outcome);
       effects.log(`race: ${outcome.detail}`);
       raced = outcome.applied;
+      if (exhausted) return finish('BUDGET', ceilingReason());
     }
 
     if (!raced) {
       const built = effects.build(brief);
       builderTokens += built.tokens;
       builderRuns += 1;
-      progress = { ...progress, spentTokens: progress.spentTokens + built.tokens };
-      costUsd += built.costUsd;
+      const exhausted = charge(built);
+      // A child that failed is reported as a failure, not as a budget death: the run needs
+      // to know which of the two it was, and the failure is the more specific answer.
       if (!built.ok) return landCleanly(built, iterationNumber, 'builder');
+      if (exhausted) return finish('BUDGET', ceilingReason());
     }
 
     // ---- Phase 3: gates -------------------------------------------------
@@ -1138,12 +1167,14 @@ export function driveRun(options) {
     const reports = [];
     for (const { reviewer, ids } of panelPlan.assignments) {
       const result = effects.review(reviewer, ids);
-      progress = { ...progress, spentTokens: progress.spentTokens + result.tokens };
-      costUsd += result.costUsd;
+      const exhausted = charge(result);
       // A reviewer that died is not a reviewer that found problems. Scoring it as a
       // failing audit would hand the builder "output could not be parsed" as though it
       // were a finding, and burn the remaining iterations against a wall.
       if (!result.ok) return landCleanly(result, iterationNumber, `${reviewer} audit`);
+      // Ending here abandons the reviewers that have not run. That is correct: a panel is
+      // only unanimous if every member answered, so a partial panel cannot ship anyway.
+      if (exhausted) return finish('BUDGET', ceilingReason());
       reports.push(
         parseReviewerReport(result.text, { requiredIds: ids, minConfidence: config.advisory.minConfidence }),
       );
@@ -1194,13 +1225,13 @@ export function driveRun(options) {
     // ---- §13.3 reality-check circuit-breaker ----------------------------
     if (progress.stalledIterations === config.realityCheck.after) {
       const verdict = effects.realityCheck();
-      progress = { ...progress, spentTokens: progress.spentTokens + verdict.tokens };
-      costUsd += verdict.costUsd;
+      const exhausted = charge(verdict);
       if (verdict.ok && /unbuildable/i.test(verdict.text)) {
         mkdirSync(dareDir, { recursive: true });
         writeFileSync(path.join(dareDir, 'reality-check.md'), verdict.text, 'utf8');
         return finish('ABORTED', 'the reality check found this PRD is not buildable with the code present');
       }
+      if (exhausted) return finish('BUDGET', ceilingReason());
     }
   }
 }

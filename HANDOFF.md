@@ -47,6 +47,14 @@ lets the guard tell a run from an operator, so it was measured rather than assum
 a recursive `rm` whose target was an unresolved shell variable, and refused a command
 touching `.dare/config.json` from inside a run.
 
+**The token ceiling stops at the first child past the line.** It was previously read only by
+`shouldContinue`, between iterations, so a single iteration could run arbitrarily far past
+the limit before anything looked — an observed run ended `2100900 of 1000000`. Every child's
+spend is now charged and tested the moment it returns, at all six sites, which bounds the
+overshoot to one child. It is still not a cap and `tokenCeiling` should not be read as one:
+nothing can price a child before running it. Budget for the ceiling plus one expensive
+child, not for the ceiling.
+
 **The loop has met reality.** On 10 August 2026, twice, against two throwaway repositories
 with different PRDs. Preflight passed ten checks and scaffolded config; the run added its
 machine state to `.gitignore`, authored or accepted a PRD, wrote design documents under
@@ -81,13 +89,6 @@ regression behaviour is the reason the whole design exists and it has still only
 exercised against temporary repositories built by the test suite. With the runner mismatch
 fixed, this is the next thing a run should be able to demonstrate — give it enough budget to
 reach a second iteration.
-
-**The token ceiling is a stopping condition, not a cap.** A run configured with
-`tokenCeiling: 1000000` ended `BUDGET: token ceiling reached: 2100900 of 1000000` — a 2.1×
-overshoot inside a single iteration, because the remaining airtime is evaluated between
-units of work rather than enforced during one. Harmless at the $1.32 this cost; not harmless
-for an operator who reads `tokenCeiling` as a bound. Read `airtimeRemaining` before deciding
-whether the fix is a tighter check, a smaller unit of work, or honest documentation.
 
 **A phase gives no heartbeat.** `designing` was the last line of output for nine and a half
 minutes while a single Opus child ran, with nothing distinguishing it from a hung process.

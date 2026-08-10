@@ -1261,6 +1261,31 @@ describe('driveRun', () => {
     assert.equal(briefs[1].includes('### Failing gates'), true);
   });
 
+  it('stops at the first child past the ceiling, rather than finishing the iteration', () => {
+    // Observed: a run configured for 1000000 ended `2100900 of 1000000`, because the ceiling
+    // was only read between iterations and a child's cost is unknown until it returns.
+    // One builder child at 900 against a ceiling of 500 must end the run then and there —
+    // the reviewers that would have followed it in the same iteration never run.
+    let reviews = 0;
+    const { outcome } = run(
+      {
+        // A passing report matters here: without one the run takes the no-tests path and
+        // never reaches the panel anyway, so the test would pass with or without the guard.
+        readTestReports: () => [ONE_PASSING],
+        build: () => ({ ok: true, text: '', costUsd: 0.01, tokens: 900, raw: '' }),
+        review: () => {
+          reviews += 1;
+          return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
+        },
+      },
+      { tokenCeiling: 500, maxIterations: 5 },
+    );
+    assert.equal(outcome.state, 'BUDGET');
+    assert.equal(outcome.reason, 'token ceiling reached: 900 of 500');
+    assert.equal(reviews, 0);
+    assert.equal(outcome.spentTokens, 900);
+  });
+
   it('names the runner in the no-tests brief, because a green npm test hides the real cause', () => {
     // Observed against a real run: the builder wrote a correct `node:test` suite, `npm test`
     // passed, and `npx vitest run` collected zero tests from it. Told only that no test
