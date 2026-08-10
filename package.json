@@ -11,7 +11,8 @@
   "scripts": {
     "lint": "eslint .",
     "typecheck": "tsc -p jsconfig.json",
-    "test": "node --test \"test/**/*.test.mjs\""
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "release-check": "node tools/release-check.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

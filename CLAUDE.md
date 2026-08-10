@@ -133,6 +133,17 @@ Two related traps, both silent:
 Symptom in every case: a fix that appears not to work, indistinguishable from a wrong fix.
 Check `installed_plugins.json` for the pinned `gitCommitSha` before debugging anything else.
 
+Do not rely on remembering this. Run:
+
+```
+npm run release-check
+```
+
+It finds the commit that introduced the current version and refuses if any shipped file
+has changed since — comparing against the **working tree**, so it catches an uncommitted
+edit too. It fails when it cannot establish a baseline, because an unknown baseline is not
+evidence that nothing changed.
+
 ## Style of work here
 
 - The User directs, you execute. If something is ambiguous, pick the defensible option and

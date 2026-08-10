@@ -13,6 +13,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["hooks/**/*.mjs", "scripts/**/*.mjs", "test/**/*.mjs"],
+  "include": ["hooks/**/*.mjs", "scripts/**/*.mjs", "test/**/*.mjs", "tools/**/*.mjs"],
   "exclude": ["node_modules"]
 }
