@@ -124,6 +124,25 @@ export function checkGitRepository(probe) {
 }
 
 /**
+ * The ratchet resets to commits. A repository with no commits has nothing to reset *to*,
+ * and the failure would otherwise surface mid-run as a refused reset after the builder had
+ * already broken something — the worst possible moment to discover it.
+ *
+ * @param {Probe} probe
+ * @returns {CheckResult}
+ */
+export function checkHasCommits(probe) {
+  const result = probe('git', ['rev-parse', 'HEAD']);
+  const ok = result.ok && /^[0-9a-f]{7,}$/.test(result.stdout.trim());
+  return check(
+    'has-commits',
+    ok,
+    ok ? `HEAD is ${result.stdout.trim().slice(0, 7)}` : 'the repository has no commits',
+    'Make an initial commit first. The ratchet resets to a commit, and an empty history gives it nothing to hold.',
+  );
+}
+
+/**
  * @param {Probe} probe
  * @returns {CheckResult}
  */
@@ -272,6 +291,7 @@ export function runPreflight(options) {
     checkNodeVersion(options.nodeVersion ?? process.versions.node),
     checkClaudeCli(probe),
     checkGitRepository(probe),
+    checkHasCommits(probe),
     checkCleanWorkingTree(probe),
     checkRemoteIsNotProduction(probe),
     checkNetwork(probe),

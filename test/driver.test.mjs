@@ -25,7 +25,11 @@ import {
   DriverError,
   airtimeRemaining,
   commandGates,
+  dareIgnoreUpdate,
+  ensureDareIgnored,
+  ensurePlaywrightBrowsers,
   loadRedEvidence,
+  playwrightConfigPresent,
   parseDriverArgs,
   recordRedEvidence,
   redEvidenceGate,
@@ -1051,5 +1055,132 @@ describe('red-evidence', () => {
     const dir = makeTempDir();
     writeFileSync(path.join(dir, 'red-evidence.json'), '{ not json', 'utf8');
     assert.deepStrictEqual([...loadRedEvidence(dir)], []);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Run state must never enter the target repository's history
+// ---------------------------------------------------------------------------
+
+describe('dareIgnoreUpdate', () => {
+  it('adds .dare/ to a .gitignore that does not cover it', () => {
+    const updated = dareIgnoreUpdate('node_modules/\n');
+    assert.notEqual(updated, null);
+    assert.equal(String(updated).includes('\n.dare/\n'), true);
+    assert.equal(String(updated).startsWith('node_modules/\n'), true);
+  });
+
+  it('adds a newline first when the file does not end in one', () => {
+    assert.equal(String(dareIgnoreUpdate('node_modules/')).startsWith('node_modules/\n'), true);
+  });
+
+  it('handles an absent .gitignore', () => {
+    assert.equal(String(dareIgnoreUpdate('')).includes('.dare/'), true);
+  });
+
+  const alreadyCovered = ['.dare/\n', '.dare\n', '/.dare/\n', 'node_modules/\n.dare/\nbuild/\n', '  .dare/  \n'];
+  for (const existing of alreadyCovered) {
+    it(`leaves ${JSON.stringify(existing)} alone`, () => {
+      assert.equal(dareIgnoreUpdate(existing), null);
+    });
+  }
+
+  it('is not fooled by a similarly named entry', () => {
+    assert.notEqual(dareIgnoreUpdate('.daredevil/\nmydare/\n'), null);
+  });
+});
+
+describe('ensureDareIgnored', () => {
+  it('writes the stanza once and is then a no-op', () => {
+    const dir = makeTempDir();
+    assert.equal(ensureDareIgnored(dir), true);
+    const first = readFileSync(path.join(dir, '.gitignore'), 'utf8');
+    assert.equal(ensureDareIgnored(dir), false);
+    assert.equal(readFileSync(path.join(dir, '.gitignore'), 'utf8'), first);
+  });
+
+  it('keeps whatever was already there', () => {
+    const dir = makeTempDir();
+    writeFileSync(path.join(dir, '.gitignore'), 'node_modules/\ndist/\n', 'utf8');
+    ensureDareIgnored(dir);
+    const contents = readFileSync(path.join(dir, '.gitignore'), 'utf8');
+    assert.equal(contents.includes('node_modules/'), true);
+    assert.equal(contents.includes('dist/'), true);
+    assert.equal(contents.includes('.dare/'), true);
+  });
+
+  it('really keeps git from staging the ratchet', () => {
+    // The point of the whole exercise: a tracked state.json would be reverted by the
+    // ratchet's own hard reset, silently dropping ids it had already earned.
+    const dir = makeTempDir();
+    const git = (/** @type {string[]} */ args) =>
+      execFileSync('git', args, { cwd: dir, stdio: 'pipe' }).toString();
+    git(['init', '--quiet']);
+    git(['config', 'user.email', 'd@example.invalid']);
+    git(['config', 'user.name', 'D']);
+    ensureDareIgnored(dir);
+    mkdirSync(path.join(dir, '.dare'), { recursive: true });
+    writeFileSync(path.join(dir, '.dare', 'state.json'), '{}', 'utf8');
+    git(['add', '-A']);
+    assert.equal(git(['diff', '--cached', '--name-only']).includes('.dare/'), false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Playwright provisioning
+// ---------------------------------------------------------------------------
+
+describe('ensurePlaywrightBrowsers', () => {
+  /** @param {string[]} calls */
+  function runnerRecording(calls, ok = true) {
+    /** @type {import('../scripts/plugins.mjs').Runner} */
+    return (command, args) => {
+      calls.push([command, ...args].join(' '));
+      return { ok, status: ok ? 0 : 1, stdout: '', stderr: ok ? '' : 'no browser' };
+    };
+  }
+
+  it('does nothing until the repo has a playwright config', () => {
+    const cwd = makeTempDir();
+    /** @type {string[]} */
+    const calls = [];
+    const result = ensurePlaywrightBrowsers({ cwd, dareDir: path.join(cwd, '.dare'), run: runnerRecording(calls) });
+    assert.equal(result.installed, false);
+    assert.deepStrictEqual(calls, []);
+  });
+
+  it('installs chromium once a config appears, then never again', () => {
+    const cwd = makeTempDir();
+    writeFileSync(path.join(cwd, 'playwright.config.js'), 'module.exports = {};\n', 'utf8');
+    /** @type {string[]} */
+    const calls = [];
+    const dareDir = path.join(cwd, '.dare');
+    assert.equal(ensurePlaywrightBrowsers({ cwd, dareDir, run: runnerRecording(calls) }).installed, true);
+    assert.deepStrictEqual(calls, ['npx playwright install chromium']);
+    assert.equal(ensurePlaywrightBrowsers({ cwd, dareDir, run: runnerRecording(calls) }).installed, false);
+    assert.deepStrictEqual(calls, ['npx playwright install chromium'], 'must not reinstall');
+  });
+
+  it('does not record success when the install failed', () => {
+    const cwd = makeTempDir();
+    writeFileSync(path.join(cwd, 'playwright.config.ts'), 'export default {};\n', 'utf8');
+    /** @type {string[]} */
+    const calls = [];
+    const dareDir = path.join(cwd, '.dare');
+    const result = ensurePlaywrightBrowsers({ cwd, dareDir, run: runnerRecording(calls, false) });
+    assert.equal(result.installed, false);
+    assert.equal(result.detail.includes('no browser'), true);
+    // A failed install must be retried next iteration, not remembered as done.
+    ensurePlaywrightBrowsers({ cwd, dareDir, run: runnerRecording(calls, false) });
+    assert.equal(calls.length, 2);
+  });
+
+  it('recognises every playwright config filename', () => {
+    for (const name of ['playwright.config.js', 'playwright.config.ts', 'playwright.config.mjs', 'playwright.config.cjs']) {
+      const cwd = makeTempDir();
+      writeFileSync(path.join(cwd, name), '', 'utf8');
+      assert.equal(playwrightConfigPresent(cwd), true, name);
+    }
+    assert.equal(playwrightConfigPresent(makeTempDir()), false);
   });
 });

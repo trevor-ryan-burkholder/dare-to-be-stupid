@@ -18,6 +18,7 @@ import {
   MINIMUM_NODE,
   checkCleanWorkingTree,
   checkDangerAcknowledged,
+  checkHasCommits,
   checkNodeVersion,
   checkRemoteIsNotProduction,
   compareVersions,
@@ -46,6 +47,7 @@ after(() => {
 const HEALTHY = {
   'claude --version': { ok: true, stdout: '2.1.226 (Claude Code)\n' },
   'git rev-parse --is-inside-work-tree': { ok: true, stdout: 'true\n' },
+  'git rev-parse HEAD': { ok: true, stdout: 'a1b2c3d4e5f67890abcdef1234567890abcdef12\n' },
   'git status --porcelain': { ok: true, stdout: '' },
   'git remote -v': { ok: true, stdout: 'origin\tgit@github.com:trevor/throwaway.git (fetch)\n' },
   'npm ping --silent': { ok: true, stdout: '' },
@@ -104,6 +106,7 @@ describe('a healthy machine passes', () => {
         'node-version',
         'claude-cli',
         'git-repository',
+        'has-commits',
         'clean-working-tree',
         'safe-remote',
         'network',
@@ -127,6 +130,8 @@ describe('each check fails on its own', () => {
     [{ nodeVersion: '20.11.0' }, 'node-version'],
     [{ probe: probeWith({ 'claude --version': { ok: false, stderr: 'not found' } }) }, 'claude-cli'],
     [{ probe: probeWith({ 'git rev-parse --is-inside-work-tree': { ok: false } }) }, 'git-repository'],
+    [{ probe: probeWith({ 'git rev-parse HEAD': { ok: false, stderr: 'unknown revision' } }) }, 'has-commits'],
+    [{ probe: probeWith({ 'git rev-parse HEAD': { ok: true, stdout: '\n' } }) }, 'has-commits'],
     [{ probe: probeWith({ 'git status --porcelain': { ok: true, stdout: ' M src/app.ts\n' } }) }, 'clean-working-tree'],
     [
       {
@@ -208,6 +213,19 @@ describe('individual checks', () => {
     );
     assert.equal(result.ok, false);
     assert.equal(result.detail, '3 uncommitted change(s)');
+  });
+
+  it('refuses a repository with no commits, because a reset needs somewhere to go', () => {
+    // Otherwise this surfaces mid-run as a refused hard reset, after the builder has
+    // already broken something - the worst possible moment to find out.
+    const result = checkHasCommits(probeWith({ 'git rev-parse HEAD': { ok: false, stderr: 'unknown revision' } }));
+    assert.equal(result.ok, false);
+    assert.equal(result.detail, 'the repository has no commits');
+    assert.equal(result.fix.includes('initial commit'), true);
+  });
+
+  it('accepts a repository that has one', () => {
+    assert.equal(checkHasCommits(probeWith()).ok, true);
   });
 
   it('explains that an unattended run cannot be asked to confirm', () => {

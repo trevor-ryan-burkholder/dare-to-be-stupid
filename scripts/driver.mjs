@@ -480,6 +480,7 @@ export function appendBlooper(dareDir, event) {
  *   ship: (iteration: number) => void,
  *   now: () => string,
  *   log: (line: string) => void,
+ *   event?: (event: import('./style.mjs').StyleEvent) => void,
  * }} Effects
  */
 
@@ -534,7 +535,8 @@ export function driveRun(options) {
     if (!permission.continue) return finish(permission.state, permission.reason);
 
     const iterationNumber = progress.iteration + 1;
-    effects.log(`iteration ${iterationNumber}`);
+    effects.event?.({ kind: 'iteration', number: iterationNumber, total: config.maxIterations });
+    effects.event?.({ kind: 'airtime', fractionLeft: airtimeRemaining(progress, config).fractionLeft });
 
     // ---- Phase 2: build -------------------------------------------------
     const built = effects.build(task);
@@ -578,6 +580,7 @@ export function driveRun(options) {
         at: effects.now(),
       });
       if (decision.target !== null) hardReset({ cwd: rootDir, commit: decision.target });
+      effects.event?.({ kind: 'reset', regressions: decision.regressions.length });
       effects.log(`regression: ${decision.regressions.join(', ')}`);
       task = decision.task;
       progress = recordProgress(progress, { gateScore: score, passingCount: state.passing.length });
@@ -623,6 +626,7 @@ export function driveRun(options) {
     if (advanced.action === 'advance') saveState(dareDir, advanced.state);
 
     if (panel.verdict === 'pass') {
+      effects.event?.({ kind: 'ship', iteration: iterationNumber });
       effects.ship(iterationNumber);
       return finish('SHIPPED', `panel unanimous on ${requiredIds.length} requirement(s)`);
     }
@@ -645,6 +649,56 @@ export function driveRun(options) {
       }
     }
   }
+}
+
+// ===========================================================================
+// Keeping run state out of the target repository's history
+// ===========================================================================
+
+/** The ignore stanza a target repository needs. */
+const DARE_IGNORE = [
+  '',
+  '# dare run state. Never commit this: a hard reset would revert the ratchet',
+  '# to an older state.json and silently drop test ids it had already earned.',
+  '.dare/',
+  '',
+  '# The driver commits with `git add -A` every iteration.',
+  'node_modules/',
+  '',
+].join('\n');
+
+/**
+ * What `.gitignore` should become, or null when it already covers `.dare/`.
+ *
+ * This is the fix for a genuine hole rather than tidiness. The driver commits with
+ * `git add -A`. If `.dare/state.json` were tracked, a hard reset to `lastGoodCommit` would
+ * restore an *older* ratchet file, and the run would carry on having quietly forgotten
+ * test ids it had already earned — a monotonicity violation with no visible symptom.
+ *
+ * @param {string} existing current contents, or '' when there is no .gitignore
+ * @returns {string | null}
+ */
+export function dareIgnoreUpdate(existing) {
+  const covered = existing
+    .split('\n')
+    .map((line) => line.trim())
+    .some((line) => line === '.dare/' || line === '.dare' || line === '/.dare' || line === '/.dare/');
+  if (covered) return null;
+  const separator = existing.length === 0 || existing.endsWith('\n') ? '' : '\n';
+  return `${existing}${separator}${DARE_IGNORE}`;
+}
+
+/**
+ * @param {string} cwd
+ * @returns {boolean} true when the file was changed
+ */
+export function ensureDareIgnored(cwd) {
+  const file = path.join(cwd, '.gitignore');
+  const existing = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  const updated = dareIgnoreUpdate(existing);
+  if (updated === null) return false;
+  writeFileSync(file, updated, 'utf8');
+  return true;
 }
 
 // ===========================================================================
@@ -775,6 +829,48 @@ export function staticGates(cwd) {
               .join(', ')}`,
     },
   ];
+}
+
+/** Playwright config file names, any of which means the repo intends to run e2e. */
+const PLAYWRIGHT_CONFIGS = [
+  'playwright.config.js',
+  'playwright.config.ts',
+  'playwright.config.mjs',
+  'playwright.config.cjs',
+];
+
+/**
+ * @param {string} cwd
+ * @returns {boolean}
+ */
+export function playwrightConfigPresent(cwd) {
+  return PLAYWRIGHT_CONFIGS.some((name) => existsSync(path.join(cwd, name)));
+}
+
+/**
+ * Install the browser the e2e gate needs, once.
+ *
+ * Provisioning is DESIGN.md §3.5's job — "the run installs vitest, Playwright browsers and
+ * the quality plugins itself" — but it cannot happen before the loop, because on a
+ * greenfield repository the Playwright config does not exist until the builder writes it.
+ * So this runs before the gates each iteration and is a no-op until there is something to
+ * provision for, then a no-op forever after.
+ *
+ * @param {{ cwd: string, dareDir: string, run: import('./plugins.mjs').Runner }} options
+ * @returns {{ installed: boolean, detail: string }}
+ */
+export function ensurePlaywrightBrowsers(options) {
+  const { cwd, dareDir, run } = options;
+  if (!playwrightConfigPresent(cwd)) return { installed: false, detail: 'no playwright config yet' };
+  const marker = path.join(dareDir, 'playwright-installed');
+  if (existsSync(marker)) return { installed: false, detail: 'browsers already provisioned' };
+  const result = run('npx', ['playwright', 'install', 'chromium'], { cwd });
+  if (!result.ok) {
+    return { installed: false, detail: `playwright install failed: ${(result.stderr || result.stdout).trim()}` };
+  }
+  mkdirSync(dareDir, { recursive: true });
+  writeFileSync(marker, 'chromium\n', 'utf8');
+  return { installed: true, detail: 'installed chromium for the e2e gate' };
 }
 
 // ---------------------------------------------------------------------------
@@ -1020,6 +1116,8 @@ export function main(argv, io = {}) {
   const provisioning = installQualityPlugins({ cwd, plugins: config.qualityPlugins, runner: shell });
   for (const warning of provisioning.warnings) write(verbatim(warning));
 
+  if (ensureDareIgnored(cwd)) write(verbatim('added .dare/ to .gitignore'));
+
   // ---- Phases 2-6: the loop ---------------------------------------------
   const unitReport = path.join(dareDir, UNIT_REPORT);
   const e2eReport = path.join(dareDir, E2E_REPORT);
@@ -1028,12 +1126,26 @@ export function main(argv, io = {}) {
     ...provisioning.gates.map((gate) => ({ name: 'design-slop', command: gate.command, required: true })),
   ];
 
-  const outcome = driveRun({
+  /** @type {RunOutcome} */
+  let outcome;
+  try {
+    outcome = driveRun({
     config,
     dareDir,
     rootDir: cwd,
     requiredIds,
-    task: `Build what PRD.md specifies. Scope budget: chaos ${config.chaos}.`,
+    task: [
+      `Build what PRD.md specifies. Scope budget: chaos ${config.chaos}.`,
+      '',
+      'Every iteration runs these gates and all of them must pass. They exist from the first',
+      'iteration, so a missing script is a failing gate, not an excuse:',
+      '',
+      ...gates.map((gate) => `- ${gate.name}: ${gate.command.join(' ')}`),
+      '- ci: a workflow under .github/workflows',
+      '- docs: README.md and docs/api-contract.md, neither a stub',
+      '- observability: structured logging and a health endpoint in source',
+      '- red-evidence: every newly passing test must have been seen failing first',
+    ].join('\n'),
     effects: {
       build: (task) =>
         spawnClaude({
@@ -1060,6 +1172,8 @@ export function main(argv, io = {}) {
           cwd,
         }),
       gates: () => {
+        const browsers = ensurePlaywrightBrowsers({ cwd, dareDir, run: shell });
+        if (browsers.installed) write(verbatim(browsers.detail));
         const commandResults = runGates(gates, { cwd, run: shell });
         const previousPassing = loadState(dareDir).passing;
         /** @type {Set<string>} */
@@ -1087,6 +1201,10 @@ export function main(argv, io = {}) {
       readTestReports: () =>
         [unitReport, e2eReport].filter((file) => existsSync(file)).map((file) => readFileSync(file, 'utf8')),
       commit: (message) => {
+        // Re-asserted here rather than once before the loop: a hard reset can land on a
+        // commit that predates the stanza, which would quietly un-ignore the ratchet and
+        // start committing it again.
+        ensureDareIgnored(cwd);
         shell('git', ['add', '-A'], { cwd });
         shell('git', ['commit', '--no-verify', '-m', message], { cwd });
         return shell('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim();
@@ -1104,8 +1222,17 @@ export function main(argv, io = {}) {
       },
       now: () => new Date().toISOString(),
       log: (line) => write(verbatim(line)),
-    },
-  });
+      event: (styleEvent) => write(render(styleEvent, { mode })),
+      },
+    });
+  } catch (error) {
+    // A ratchet that cannot be read, a reset git refuses, a report that will not parse —
+    // all of them end the run, and none of them should reach the operator as a stack trace.
+    write(verbatim(`${/** @type {Error} */ (error).name}: ${/** @type {Error} */ (error).message}`));
+    write(render({ kind: 'terminal', state: 'ABORTED' }, { mode }));
+    write(stamp('ABORTED', { mode }));
+    return 1;
+  }
 
   write(render({ kind: 'terminal', state: outcome.state }, { mode }));
   write(stamp(outcome.state, { mode }));
