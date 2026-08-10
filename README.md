@@ -5,7 +5,30 @@ Act now! Claude Code does EVERYTHING autonomously - batteries not included, warr
 
 ## Status
 
-Building in the slice order of `DESIGN.md` §12.
+All eight slices of `DESIGN.md` §12 are built and gated. What remains is live verification
+that cannot be done from unit tests — see "Not yet proven" below.
+
+## Install
+
+```
+/plugin marketplace add trevor-ryan-burkholder/dare-to-be-stupid
+/plugin install dare-to-be-stupid@dare-to-be-stupid
+```
+
+Then `/dare <path|"idea"|nothing>` from inside a throwaway repository.
+
+## Not yet proven
+
+These need a live run and cannot be settled by the suite:
+
+- the guard hook denying a real PreToolUse event, with the plugin installed
+- `extractTestIds` against live reporter output rather than the committed fixtures
+- a deliberately incomplete build actually drawing a `fail` verdict from a cold reviewer
+- a first end-to-end `/dare` against a throwaway repo with `deploy.enabled: false`
+
+`claude -p` child spawning and JSON envelope parsing **is** verified against claude 2.1.226.
+
+## Slice status
 
 | # | Slice | State |
 |---|---|---|
@@ -16,7 +39,7 @@ Building in the slice order of `DESIGN.md` §12.
 | 5 | `driver.mjs` | done |
 | 6 | `templates/` | done |
 | 7 | output style | done |
-| 8 | plugin + marketplace manifests | not started |
+| 8 | plugin + marketplace manifests, `/dare` command | done |
 
 ## The guard hook
 

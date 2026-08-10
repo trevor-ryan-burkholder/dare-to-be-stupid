@@ -1,0 +1,13 @@
+{
+  "name": "dare-to-be-stupid",
+  "owner": {
+    "name": "Trevor Ryan Burkholder"
+  },
+  "plugins": [
+    {
+      "name": "dare-to-be-stupid",
+      "source": "./",
+      "description": "An autonomous build loop with an external auditor and a monotonic test ratchet. Pre-production only; never point it at anything with users."
+    }
+  ]
+}

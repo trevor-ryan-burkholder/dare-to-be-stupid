@@ -51,7 +51,8 @@ Track against `DESIGN.md` §12.
 - [x] 5 — `scripts/driver.mjs` loop wiring, terminal states, model routing (§10)
 - [x] 6 — `templates/`: prd-author, architect, builder-system, reviewer-system
 - [x] 7 — `output-styles/junkion.md` + launch banner and terminal-state stamps (§9.1)
-- [ ] 8 — `.claude-plugin/plugin.json` + `marketplace.json`, install smoke test
+- [x] 8 — `.claude-plugin/plugin.json` + `marketplace.json`, install smoke test
+      (plus `commands/dare.md`)
 
 ---
 
@@ -62,8 +63,11 @@ without the `claude` CLI. Do them before trusting a long run.
 
 1. **Guard hook actually fires.** Install the plugin locally and confirm `guard.mjs` denies
    a write to `.dare/state.json` under a real PreToolUse event — not just in unit tests.
-2. **`claude -p` child processes spawn and return parseable output.** The driver's whole
-   architecture depends on this working non-interactively with inherited auth.
+2. ~~**`claude -p` child processes spawn and return parseable output.**~~ — **done.**
+   Verified against claude 2.1.226: `claude -p --output-format json` returns an envelope
+   carrying `result`, `is_error`, `total_cost_usd` and a `usage` breakdown. `parseClaudeEnvelope`
+   reads those field names, and budget accounting uses the reported cost rather than an
+   estimate. Note a trivial prompt cost $0.26 because of cache creation.
 3. **`extractTestIds` against live reporter output**, not just the committed fixtures —
    confirm the ID set is non-empty and stable across two identical runs.
 4. **Reviewer JSON parses**, and a deliberately incomplete build actually gets a `fail`

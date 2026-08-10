@@ -1,0 +1,61 @@
+---
+description: Hand a PRD, an idea, or nothing at all to an autonomous build loop. Pre-production only.
+argument-hint: [path-to-PRD.md | "an idea in quotes" | (nothing)]
+allowed-tools: Bash(node:*), Bash(git status:*), Bash(git rev-parse:*)
+---
+
+# /dare
+
+Start an autonomous run in the current repository.
+
+`$ARGUMENTS` is one of:
+
+- a path to an existing PRD — the loop starts at the design phase
+- an idea in quotes — a PRD is authored first
+- nothing — "dare me" mode invents its own idea, if `dareMe.enabled` is set
+
+## Do this, in order
+
+**1. Preflight. Do not skip it and do not summarise it.**
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/scripts/init.mjs" --yes
+```
+
+Print the output verbatim. If the exit code is non-zero, **stop**. Report the failing
+checks and their fixes exactly as printed, and do not offer to work around any of them.
+Every one of them exists because the next step runs unattended with permissions disabled:
+
+- a dirty working tree will be destroyed by the ratchet's `git reset --hard`
+- a remote that looks like production is never a valid target
+- a repository whose own hooks, instructions or MCP config are hostile will capture the
+  builder before any runtime guard fires
+
+**2. Start the run.**
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/scripts/driver.mjs" $ARGUMENTS
+```
+
+The driver owns the loop from here. It spawns its own `claude -p` children, runs the gates,
+holds the ratchet, and ends in one of four states: `SHIPPED`, `STALLED`, `BUDGET`,
+`ABORTED`.
+
+## What you must not do
+
+- **Do not build anything yourself.** You are the launcher. The builder is a separate
+  process with a different prompt, and the auditor is a third process that must never see
+  your reasoning about the code.
+- **Do not re-run a failed preflight with a workaround.** If the working tree is dirty, say
+  so and stop; committing on the user's behalf is not your call.
+- **Do not edit `.dare/state.json` or `.dare/config.json`.** A hook will deny it. That is
+  the ratchet, and it is not editable by the processes it constrains.
+- **Do not start a run inside a run.** Nested runs are refused at the driver and at the
+  guard hook.
+
+## Before the first run
+
+This is pre-production tooling. It runs with `--dangerously-skip-permissions` on its build
+children by design, and the guard hook is the only limit that survives that. Point it at a
+throwaway repository. If the user seems to be aiming it at something real, say so plainly
+before running preflight.
