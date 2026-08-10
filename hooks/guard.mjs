@@ -451,10 +451,22 @@ function checkRecursiveRemove(segments, cwd) {
 const NESTED_REASON =
   'dare does not spawn dare. Nested runs are blocked at the driver and at the hook (CLAUDE.md invariant, DESIGN.md §13.6).';
 
+/** Programs that take a whole command, or a whole prompt, as an argument. */
+const SHELL_INVOKERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
+
 /**
- * Tokens carry the whole surface here: quoted arguments keep their spaces, and every
- * chain link, pipeline stage and substitution body arrives as its own segment. A second
- * pass over the raw command string would be an untested duplicate of this one.
+ * A run is nested when something *invokes* the slash command — not when a string happens
+ * to contain it.
+ *
+ * The first version denied any token equal to the slash command anywhere in the line, and
+ * it caught a heredoc that merely mentioned the command in a code comment. Prose is not an
+ * invocation. So the rule is command position: the first word of a segment, or an argument
+ * to `claude`, where the argument really is the prompt.
+ *
+ * The remaining trade-off is deliberate. A document whose *line* begins with the slash
+ * command, written through a heredoc, is still refused. Writing files that way is rare —
+ * the Write tool is the normal path — and erring toward refusing a nested run is the
+ * correct direction to err in.
  *
  * @param {Token[][]} segments
  * @returns {Decision}
@@ -462,14 +474,43 @@ const NESTED_REASON =
 function checkNestedDare(segments) {
   for (const raw of segments) {
     const segment = stripPrefixes(raw);
-    if (commandName(segment) === 'dare') return deny('nested-dare', NESTED_REASON);
-    for (const token of segment) {
+    if (segment.length === 0) continue;
+
+    const name = commandName(segment);
+    const first = segment[0].value;
+    if (name === 'dare' || first === '/dare' || SLASH_DARE_RE.test(first)) {
+      return deny('nested-dare', NESTED_REASON);
+    }
+
+    if (name !== 'claude') continue;
+    for (const token of segment.slice(1)) {
       if (token.value === '/dare' || SLASH_DARE_RE.test(token.value)) {
         return deny('nested-dare', NESTED_REASON);
       }
     }
   }
   return ALLOW;
+}
+
+/**
+ * `bash -c "..."` hides a whole command inside an argument, where no rule that keys off
+ * the command word can see it. Every rule was blind to this, not only the nesting one:
+ * `bash -c "rm -rf /etc"` reads as an invocation of `bash`.
+ *
+ * @param {Token[][]} segments
+ * @returns {string[]} command strings carried as arguments
+ */
+function wrappedCommands(segments) {
+  /** @type {string[]} */
+  const inner = [];
+  for (const raw of segments) {
+    const segment = stripPrefixes(raw);
+    if (segment.length < 2 || !SHELL_INVOKERS.has(commandName(segment))) continue;
+    const flag = segment.findIndex((token) => token.value === '-c');
+    if (flag === -1 || flag + 1 >= segment.length) continue;
+    inner.push(segment[flag + 1].value);
+  }
+  return inner;
 }
 
 /**
@@ -489,7 +530,7 @@ export function checkBashCommand(command, cwd) {
   for (const result of checks) {
     if (result.decision === 'deny') return result;
   }
-  for (const inner of substitutions) {
+  for (const inner of [...substitutions, ...wrappedCommands(segments)]) {
     const result = checkBashCommand(inner, cwd);
     if (result.decision === 'deny') return result;
   }

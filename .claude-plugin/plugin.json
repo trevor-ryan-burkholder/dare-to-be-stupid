@@ -6,9 +6,7 @@
     "name": "Trevor Ryan Burkholder"
   },
   "homepage": "https://github.com/trevor-ryan-burkholder/dare-to-be-stupid",
+  "repository": "https://github.com/trevor-ryan-burkholder/dare-to-be-stupid",
   "license": "MIT",
-  "keywords": ["autonomous", "agent", "loop", "ratchet", "review"],
-  "commands": ["./commands/dare.md"],
-  "hooks": "./hooks/hooks.json",
-  "outputStyles": ["./output-styles/junkion.md"]
+  "keywords": ["autonomous", "agent", "loop", "ratchet", "review"]
 }

@@ -281,8 +281,36 @@ describe('blocked: nested-dare', () => {
   }
 });
 
+describe('blocked: commands hidden inside a shell wrapper', () => {
+  // Every rule keys off the command word, and `bash -c "..."` makes that word `bash`.
+  // The wrapped command was invisible to all four rules, not only the nesting one.
+  const denied = [
+    ['bash -c "rm -rf /etc"', 'rm-recursive'],
+    ["sh -c 'git push --force'", 'git-history'],
+    ['bash -c "cat .dare/config.json"', 'protected-state'],
+    ["sh -c '/dare'", 'nested-dare'],
+    ['zsh -c "rm -rf node_modules"', 'rm-recursive'],
+  ];
+  for (const [command, rule] of denied) {
+    it(`denies ${command}`, () => {
+      assertDenied(bashEvent(command), rule);
+    });
+  }
+
+  it('leaves a harmless wrapped command alone', () => {
+    assertAllowed(bashEvent('bash -c "npm test"'));
+  });
+});
+
 describe('allowed: nested-dare neighbours', () => {
   const allowed = [
+    // Prose is not an invocation. The first version denied the slash command anywhere in
+    // the line, and it caught a heredoc that mentioned the command in a code comment —
+    // while this plugin was installed, on its own author, editing this file.
+    ['echo "run /dare to start a build"', 'the slash command quoted inside prose'],
+    ['git commit -m "document the /dare command"', 'the slash command in a commit message'],
+    ['grep -rn "/dare" docs/', 'searching the docs for the slash command'],
+    ['printf "%s\\n" "usage: /dare <path>"', 'the slash command inside usage text'],
     ['echo "I dare you"', 'the word dare in prose'],
     ['npm test -- test/dare.test.mjs', 'a test file named after the plugin'],
     ['ls /daredevil', 'a path that merely starts with /dare'],

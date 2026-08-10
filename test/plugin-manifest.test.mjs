@@ -47,18 +47,20 @@ describe('plugin.json', () => {
     assert.equal(PLUGIN.version, PACKAGE.version);
   });
 
-  it('points every declared path at a file that exists', () => {
-    /** @type {string[]} */
-    const declared = [...PLUGIN.commands, PLUGIN.hooks, ...PLUGIN.outputStyles];
-    for (const relative of declared) {
-      assert.equal(existsSync(path.join(ROOT, relative)), true, `plugin.json declares a missing file: ${relative}`);
+  it('declares metadata only, and no components', () => {
+    // Declaring commands/hooks/outputStyles alongside a marketplace entry made the plugin
+    // fail to load. Every plugin on a working install declares metadata only and lets the
+    // loader discover components from the conventional directories - which it does: the
+    // slash command and the guard hook both registered even while the manifest errored.
+    for (const key of ['commands', 'hooks', 'outputStyles', 'agents', 'skills', 'mcpServers']) {
+      assert.equal(key in PLUGIN, false, `plugin.json declares ${key}; let discovery find it`);
     }
   });
 
-  it('declares the command, the hooks and the output style', () => {
-    assert.deepStrictEqual(PLUGIN.commands, ['./commands/dare.md']);
-    assert.equal(PLUGIN.hooks, './hooks/hooks.json');
-    assert.deepStrictEqual(PLUGIN.outputStyles, ['./output-styles/junkion.md']);
+  it('keeps every component where the loader looks for it by convention', () => {
+    for (const relative of ['commands/dare.md', 'hooks/hooks.json', 'output-styles/junkion.md']) {
+      assert.equal(existsSync(path.join(ROOT, relative)), true, `component missing: ${relative}`);
+    }
   });
 });
 
