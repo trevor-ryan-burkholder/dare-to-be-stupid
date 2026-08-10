@@ -1,6 +1,26 @@
 # dare-to-be-stupid
 Act now! Claude Code does EVERYTHING autonomously - batteries not included, warranty void, prod not invited. Dare to be stupid!
 
+```
+            \    |    /
+             \   |   /
+        +-------------------+
+        |   ___       ___   |         "WE ARE ISSUING A VOLUNTARY
+        |  | o |     | x |  |          RECALL ON AUTH-MIDDLEWARE.
+        |   ---       ---   |          AFFECTED UNITS: FOURTEEN."
+        |     ___________   |
+        |    | ~ ~ ~ ~ ~ |  |
+        |     -----------   |
+        +-------------------+
+         |___|         |___|
+        [_____]       [_____]
+```
+
+> *"Dare to be stupid."*
+>
+> — "Weird Al" Yankovic, 1985. The song plays over the Junkions in
+> *Transformers: The Movie*, which is where this thing gets its voice.
+
 One command hands a specification to a loop that designs, builds, gates, audits and ships
 it — unattended — until it passes an enterprise definition of done, or the budget dies.
 
@@ -250,9 +270,14 @@ style. Nothing else is overridable, so an unattended run stays reproducible from
 
 ## The output style
 
-Runs narrate in the voice of an '80s Junkion — reassembled advertising copy, game show
-patter, emergency broadcast. Failing tests are a voluntary recall; shipping is a
-limited-time offer; the budget running out is the end of the broadcast day.
+Runs narrate in the voice of an '80s Junkion — the scrap-built robots from *Transformers:
+The Movie* who learned language entirely from intercepted broadcast television, and who
+appear in the same sequence the title song plays over. Everything they say is reassembled
+advertising copy, game show patter and emergency announcement. They are not being funny.
+They are being sincere in a borrowed register.
+
+Failing tests are a voluntary recall; shipping is a limited-time offer; the budget running
+out is the end of the broadcast day.
 
 The mapping is tight on purpose. Every line still carries the real module, count or state:
 
