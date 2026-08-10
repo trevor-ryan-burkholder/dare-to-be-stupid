@@ -378,7 +378,21 @@ export function airtimeRemaining(progress, config) {
 // claude -p children (DESIGN.md §3)
 // ---------------------------------------------------------------------------
 
-/** @typedef {{ ok: boolean, text: string, costUsd: number, tokens: number, raw: string }} ClaudeResult */
+/**
+ * @typedef {{
+ *   ok: boolean, text: string, costUsd: number, tokens: number, raw: string, exhausted?: boolean
+ * }} ClaudeResult
+ */
+
+/**
+ * Signals that a child did not fail on the merits but ran out of allowance.
+ *
+ * On a subscription the binding constraint is not money, it is the rate-limit window. A
+ * run does not get expensive, it stalls partway through — so this has to be distinguished
+ * from a child that ran and disagreed, or the loop mistakes a wall for a verdict.
+ */
+const EXHAUSTION_PATTERN =
+  /\b(?:rate[ _-]?limit|usage[ _-]?limit|quota|too many requests|429|limit reached|resets? at)\b/i;
 
 /**
  * Read what a `claude -p --output-format json` envelope actually carries.
@@ -392,7 +406,9 @@ export function airtimeRemaining(progress, config) {
  */
 export function parseClaudeEnvelope(stdout) {
   const parsed = extractJsonObject(stdout);
-  if (parsed === null) return { ok: false, text: '', costUsd: 0, tokens: 0, raw: stdout };
+  if (parsed === null) {
+    return { ok: false, text: '', costUsd: 0, tokens: 0, raw: stdout, exhausted: EXHAUSTION_PATTERN.test(stdout) };
+  }
 
   const record = /** @type {Record<string, any>} */ (parsed);
   const usage = record.usage ?? {};
@@ -402,12 +418,14 @@ export function parseClaudeEnvelope(stdout) {
     (Number(usage.cache_creation_input_tokens) || 0) +
     (Number(usage.cache_read_input_tokens) || 0);
 
+  const ok = record.is_error === false && typeof record.result === 'string';
   return {
-    ok: record.is_error === false && typeof record.result === 'string',
+    ok,
     text: typeof record.result === 'string' ? record.result : '',
     costUsd: Number(record.total_cost_usd) || 0,
     tokens,
     raw: stdout,
+    exhausted: !ok && EXHAUSTION_PATTERN.test(stdout),
   };
 }
 
@@ -521,6 +539,32 @@ export function driveRun(options) {
    * @param {string} reason
    * @returns {RunOutcome}
    */
+  /**
+   * Terminate on an infrastructure failure rather than a verdict.
+   *
+   * The work in the tree is committed first. Leaving it uncommitted would strand the run:
+   * the next preflight refuses a dirty tree, so the operator would have to clean up by
+   * hand before resuming. The ratchet is deliberately not advanced — this commit is a
+   * resting place, not a verified good state, so `lastGoodCommit` still points at the last
+   * commit that actually passed.
+   *
+   * @param {ClaudeResult} result
+   * @param {number} iteration
+   * @param {string} what
+   * @returns {RunOutcome}
+   */
+  const landCleanly = (result, iteration, what) => {
+    effects.commit(`dare: stopped during ${what} at iteration ${iteration} (work in progress)`);
+    return result.exhausted
+      ? finish('BUDGET', `the ${what} ran out of allowance mid-iteration; the tree is committed and the run can resume`)
+      : finish('ABORTED', `the ${what} failed and returned no usable output: ${result.raw.slice(0, 400)}`);
+  };
+
+  /**
+   * @param {TerminalState} state
+   * @param {string} reason
+   * @returns {RunOutcome}
+   */
   const finish = (state, reason) => ({
     state,
     reason,
@@ -542,9 +586,7 @@ export function driveRun(options) {
     const built = effects.build(task);
     progress = { ...progress, spentTokens: progress.spentTokens + built.tokens };
     costUsd += built.costUsd;
-    if (!built.ok) {
-      return finish('ABORTED', `the builder process failed and returned no usable output: ${built.raw.slice(0, 400)}`);
-    }
+    if (!built.ok) return landCleanly(built, iterationNumber, 'builder');
 
     // ---- Phase 3: gates -------------------------------------------------
     const gateOutcome = effects.gates();
@@ -607,13 +649,18 @@ export function driveRun(options) {
     }
 
     // ---- Phase 5: review ------------------------------------------------
-    const reports = config.reviewers.map((reviewer) => {
+    /** @type {ReviewerReport[]} */
+    const reports = [];
+    for (const reviewer of config.reviewers) {
       const result = effects.review(reviewer);
       progress = { ...progress, spentTokens: progress.spentTokens + result.tokens };
       costUsd += result.costUsd;
-      // A reviewer process that failed produces no report, and no report is a fail.
-      return parseReviewerReport(result.ok ? result.text : '', { requiredIds });
-    });
+      // A reviewer that died is not a reviewer that found problems. Scoring it as a
+      // failing audit would hand the builder "output could not be parsed" as though it
+      // were a finding, and burn the remaining iterations against a wall.
+      if (!result.ok) return landCleanly(result, iterationNumber, `${reviewer} audit`);
+      reports.push(parseReviewerReport(result.text, { requiredIds }));
+    }
     const panel = combinePanel(reports, { requireUnanimous: config.requireUnanimous });
 
     // ---- Phase 6: ship, or bank the progress and hand the findings back ---

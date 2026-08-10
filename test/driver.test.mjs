@@ -451,6 +451,29 @@ describe('airtimeRemaining', () => {
 // claude -p plumbing
 // ---------------------------------------------------------------------------
 
+describe('exhaustion is not a verdict', () => {
+  // On a subscription the binding constraint is the rate-limit window, not money. A run
+  // does not get expensive, it stalls partway - so a child that ran out of allowance has
+  // to be told apart from a child that ran and disagreed.
+  it('marks an envelope that reports a rate limit', () => {
+    const envelope = JSON.stringify({ is_error: true, result: 'rate limit reached, resets at 14:00' });
+    assert.equal(parseClaudeEnvelope(envelope).exhausted, true);
+  });
+
+  it('marks raw output that never became an envelope', () => {
+    assert.equal(parseClaudeEnvelope('Error: 429 Too Many Requests').exhausted, true);
+  });
+
+  it('does not mark an ordinary failure as exhaustion', () => {
+    assert.equal(parseClaudeEnvelope('command not found: claude').exhausted, false);
+    assert.equal(parseClaudeEnvelope(JSON.stringify({ is_error: true, result: 'boom' })).exhausted, false);
+  });
+
+  it('does not mark a successful child as exhausted', () => {
+    assert.equal(parseClaudeEnvelope(JSON.stringify({ is_error: false, result: 'fine' })).exhausted, false);
+  });
+});
+
 describe('parseClaudeEnvelope', () => {
   // Field names taken from a real `claude -p --output-format json` run, version 2.1.226.
   const envelope = JSON.stringify({
@@ -870,6 +893,79 @@ describe('driveRun', () => {
       ['test/a.test.js::works'],
     );
     assert.equal(tasks[1].startsWith('Restore these tests.'), true);
+  });
+
+  it('lands on BUDGET, not ABORTED, when the builder runs out of allowance', () => {
+    /** @type {string[]} */
+    const commits = [];
+    const { outcome } = run({
+      readTestReports: () => [ONE_PASSING],
+      build: () => ({ ok: false, text: '', costUsd: 0.2, tokens: 5, raw: 'rate limit reached', exhausted: true }),
+      commit: (message) => {
+        commits.push(message);
+        return 'wip1';
+      },
+    });
+    assert.equal(outcome.state, 'BUDGET');
+    assert.equal(outcome.reason.includes('can resume'), true);
+    assert.equal(commits.length, 1, 'the work in the tree must be committed before stopping');
+    assert.equal(commits[0].includes('work in progress'), true);
+  });
+
+  it('commits the tree even when the builder failed for an ordinary reason', () => {
+    // Leaving it dirty strands the run: the next preflight refuses a dirty tree.
+    /** @type {string[]} */
+    const commits = [];
+    const { outcome } = run({
+      build: () => ({ ok: false, text: '', costUsd: 0, tokens: 0, raw: 'no auth' }),
+      commit: (message) => {
+        commits.push(message);
+        return 'wip1';
+      },
+    });
+    assert.equal(outcome.state, 'ABORTED');
+    assert.equal(commits.length, 1);
+  });
+
+  it('stops instead of scoring a dead reviewer as a failing audit', () => {
+    // Scoring it would hand the builder "output could not be parsed" as though it were a
+    // finding, and burn every remaining iteration against a wall that will not move.
+    let reviews = 0;
+    const { outcome } = run(
+      {
+        readTestReports: () => [ONE_PASSING],
+        review: () => {
+          reviews += 1;
+          return { ok: false, costUsd: 0, tokens: 0, raw: 'rate limit reached', text: '', exhausted: true };
+        },
+      },
+      { maxIterations: 5 },
+    );
+    assert.equal(outcome.state, 'BUDGET');
+    assert.equal(reviews, 1, 'must not keep calling a reviewer that cannot run');
+    assert.equal(outcome.iterations, 0, 'must not burn iterations against the wall');
+  });
+
+  it('leaves lastGoodCommit alone when it lands early, so the ratchet stays trustworthy', () => {
+    const { dareDir } = run(
+      {
+        readTestReports: () => [ONE_PASSING],
+        review: () => ({ ok: false, costUsd: 0, tokens: 0, raw: 'rate limit', text: '', exhausted: true }),
+      },
+      { maxIterations: 5 },
+      ['test/a.test.js::works'],
+    );
+    const state = loadState(dareDir);
+    assert.notEqual(state.lastGoodCommit, 'wip1');
+    assert.deepStrictEqual(state.passing, ['test/a.test.js::works']);
+  });
+
+  it('still reports what the run spent when it lands early', () => {
+    const { outcome } = run({
+      build: () => ({ ok: false, text: '', costUsd: 0.42, tokens: 7, raw: 'rate limit', exhausted: true }),
+    });
+    assert.equal(outcome.costUsd, 0.42);
+    assert.equal(outcome.spentTokens, 7);
   });
 
   it('accumulates the real cost and tokens the children reported', () => {
