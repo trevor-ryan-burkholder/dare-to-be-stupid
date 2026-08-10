@@ -14,7 +14,7 @@ Building in the slice order of `DESIGN.md` §12.
 | 3 | ratchet | done |
 | 4 | `plugins.mjs` + `init.mjs` (preflight, security scan, config) | done |
 | 5 | `driver.mjs` | done |
-| 6 | `templates/` | not started |
+| 6 | `templates/` | done |
 | 7 | output style | not started |
 | 8 | plugin + marketplace manifests | not started |
 

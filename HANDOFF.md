@@ -49,7 +49,7 @@ Track against `DESIGN.md` §12.
 - [x] 4 — `scripts/plugins.mjs` (impeccable install) + `scripts/init.mjs` (preflight, §3.5/§3.6)
       split into `config.mjs`, `security-scan.mjs`, `preflight.mjs`, `init.mjs`
 - [x] 5 — `scripts/driver.mjs` loop wiring, terminal states, model routing (§10)
-- [ ] 6 — `templates/`: prd-author, architect, builder-system, reviewer-system
+- [x] 6 — `templates/`: prd-author, architect, builder-system, reviewer-system
 - [ ] 7 — `output-styles/junkion.md` + launch banner and terminal-state stamps (§9.1)
 - [ ] 8 — `.claude-plugin/plugin.json` + `marketplace.json`, install smoke test
 
