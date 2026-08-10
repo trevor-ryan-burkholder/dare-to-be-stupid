@@ -111,6 +111,28 @@ are the highest-leverage artifacts in the repo, and the reviewer prompt especial
 
 ---
 
+## Releasing
+
+**Any change to a shipped file requires a version bump**, in `.claude-plugin/plugin.json`
+and `package.json` together. Shipped means `hooks/`, `scripts/`, `commands/`, `templates/`,
+`output-styles/` and the manifests — everything except tests, docs and dev config.
+
+This is not bookkeeping. Claude Code installs a plugin into
+`~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` and reads it from there. That
+directory is keyed by **version**, so an update at an unchanged version resolves to the
+existing folder and reuses the old code. Pushing, reinstalling and reloading all report
+success while the loader keeps running the previous build.
+
+Two related traps, both silent:
+
+- `/plugin marketplace add` on an already-added marketplace reports success **without
+  refetching**.
+- Pulling `~/.claude/plugins/marketplaces/<name>` changes nothing — the loader reads the
+  `cache/` snapshot, not the marketplace clone.
+
+Symptom in every case: a fix that appears not to work, indistinguishable from a wrong fix.
+Check `installed_plugins.json` for the pinned `gitCommitSha` before debugging anything else.
+
 ## Style of work here
 
 - Trevor directs, you execute. If something is ambiguous, pick the defensible option and
