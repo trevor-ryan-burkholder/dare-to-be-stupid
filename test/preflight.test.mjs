@@ -49,7 +49,7 @@ const HEALTHY = {
   'git rev-parse --is-inside-work-tree': { ok: true, stdout: 'true\n' },
   'git rev-parse HEAD': { ok: true, stdout: 'a1b2c3d4e5f67890abcdef1234567890abcdef12\n' },
   'git status --porcelain': { ok: true, stdout: '' },
-  'git remote -v': { ok: true, stdout: 'origin\tgit@github.com:trevor/throwaway.git (fetch)\n' },
+  'git remote -v': { ok: true, stdout: 'origin\tgit@github.com:example/throwaway.git (fetch)\n' },
   'npm ping --silent': { ok: true, stdout: '' },
 };
 

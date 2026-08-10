@@ -227,7 +227,7 @@ describe('riskyRemoteWord', () => {
   }
 
   const safe = [
-    'git@github.com:trevor/dare-to-be-stupid.git',
+    'git@github.com:example/dare-to-be-stupid.git',
     'https://github.com/acme/procurement.git',
     'https://github.com/acme/products.git',
     'https://github.com/acme/reproduction-tests.git',
