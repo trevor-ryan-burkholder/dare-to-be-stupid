@@ -135,7 +135,7 @@ Check `installed_plugins.json` for the pinned `gitCommitSha` before debugging an
 
 ## Style of work here
 
-- Trevor directs, you execute. If something is ambiguous, pick the defensible option and
+- The User directs, you execute. If something is ambiguous, pick the defensible option and
   note the assumption inline rather than stopping to ask.
 - Comedy is in the *output*, never in the code. Identifiers, comments, commit messages, and
   errors are plain and literal. A confusing stack trace is not a joke.

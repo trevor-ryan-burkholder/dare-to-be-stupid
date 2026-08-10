@@ -17,7 +17,7 @@ security, CI, docs/observability, and design quality (with quality plugins auto-
 
 ## 0. The premise, in one paragraph
 
-Trevor builds documentation-first: spec → system docs → API contracts → `CLAUDE.md` →
+The User builds documentation-first: spec → system docs → API contracts → `CLAUDE.md` →
 code. `dare-to-be-stupid` is the deliberate inverse, packaged as comedy that also solves
 two real engineering problems. It is a *real build*, not a joke artifact. The comedy is
 the skin; the engineering is the skeleton.
@@ -175,7 +175,7 @@ otherwise unsupervised.
 
 ## 4. Definition of done — "enterprise production"
 
-The original operationalized DoD as *PRD requirements met*. Trevor's DoD is broader. A run
+The original operationalized DoD as *PRD requirements met*. The User's DoD is broader. A run
 is `SHIPPED` only when **all** of these hold. Deterministic ones are Phase-3 gates;
 judgment ones are Phase-5 reviewer lines.
 
@@ -505,18 +505,13 @@ that ships moves it. Purely a bookmark to the last commit that passed the whole 
 
 ---
 
-## 14. Open questions for Trevor
+## 14. Decisions taken
 
-1. ~~impeccable specifics~~ — **resolved** (§5.1): installed via `npx impeccable install`,
-   wired as both a Phase-3 gate (`impeccable detect`) and build-time guidance.
-2. ~~`/dare` with no args~~ — **resolved**: "dare me" mode (§13.1).
-3. **Other default quality plugins** — anything beyond impeccable in `qualityPlugins`?
-   (e.g. a backend/security equivalent — impeccable is frontend-only.)
-4. ~~Deploy target~~ — **resolved**: pluggable `deploy.command`, off by default,
-   auto-detect with a Vercel preview reference recipe (§10).
-5. ~~Reviewer passes~~ — **resolved**: replaced by the specialized cold panel
-   (security / correctness / design), §1.1.
-6. ~~Model routing~~ — **resolved**: Sonnet 5 builder, Opus 5 reviewer/design, Sonnet 5
-   PRD, Fable 5 for the Junkion/idea layer (§10).
+Every question this design opened has been answered, and each answer lives in the section
+that implements it: impeccable installation and gating (§5.1), "dare me" mode (§13.1),
+pluggable deploy (§10), the specialized cold panel (§1.1), and model routing (§10).
 
-*All open questions resolved — the design is build-ready. Build order is §12.*
+One remains genuinely undecided, and is safe to leave that way: whether to add a backend or
+security quality plugin alongside impeccable, which only inspects user interfaces. Until
+one is chosen, the design-slop gate is simply not armed on a project with no UI — the
+single gate skip §5.1 carves out.

@@ -320,14 +320,14 @@ clean.
 
 ### Not yet proven
 
-These need a live run and cannot be settled by the suite:
+Two things remain that the suite cannot settle. Both are tracked in `HANDOFF.md`:
 
-- the guard hook denying a real PreToolUse event, with the plugin installed
-- `extractTestIds` against live reporter output rather than the committed fixtures
 - a deliberately incomplete build actually drawing a `fail` verdict from a cold reviewer
-- a first end-to-end `/dare` against a throwaway repo with `deploy.enabled: false`
+- a first end-to-end run against a throwaway repo with `deploy.enabled: false`
 
-`claude -p` child spawning and JSON envelope parsing **is** verified against claude 2.1.226.
+Verified live: the guard hook denying a real PreToolUse event, `claude -p` children and
+their JSON envelope against claude 2.1.226, and `extractTestIds` against real vitest output
+rather than the committed fixtures.
 
 ## Working on this repo
 
