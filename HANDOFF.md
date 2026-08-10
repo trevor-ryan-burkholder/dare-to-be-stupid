@@ -43,7 +43,8 @@ Track against `DESIGN.md` §12.
 
 - [x] 1 — `hooks/guard.mjs` + `hooks/hooks.json`, block/allow fixture tests
       (item 1 under "Verification that can only happen in Claude Code" is still outstanding)
-- [ ] 2 — `extractTestIds` + fixtures from **real** vitest and Playwright reporter output
+- [x] 2 — `extractTestIds` + fixtures from **real** vitest and Playwright reporter output
+      (two runs of each committed; verification item 3 below still wants a live check)
 - [ ] 3 — ratchet logic, isolated and unit-tested (monotonic pass-set, hard reset path)
 - [ ] 4 — `scripts/plugins.mjs` (impeccable install) + `scripts/init.js` (preflight, §3.5/§3.6)
 - [ ] 5 — `scripts/driver.mjs` loop wiring, terminal states, model routing (§10)

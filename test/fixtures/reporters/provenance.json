@@ -1,0 +1,30 @@
+{
+  "vitest-4.1.10": {
+    "runner": "vitest",
+    "version": "4.1.10",
+    "command": "npx vitest run --reporter=json --outputFile=report.json",
+    "rootDir": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/vitest-app",
+    "sourceFiles": ["test/math.test.js", "test/strings.test.js"],
+    "contains": {
+      "passed": 6,
+      "failed": 1,
+      "skipped": 1,
+      "todo": 1,
+      "notes": "two files, nested describes, test.each parameterisation, it.skip, it.todo"
+    }
+  },
+  "playwright-1.62.1": {
+    "runner": "playwright",
+    "version": "1.62.1",
+    "command": "npx playwright test",
+    "rootDir": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app",
+    "sourceFiles": ["tests/checkout.spec.js", "tests/search.spec.js"],
+    "contains": {
+      "expected": 8,
+      "unexpected": 2,
+      "flaky": 2,
+      "skipped": 2,
+      "notes": "two projects (chromium, firefox), retries: 1, nested describes, one test that fails then passes on retry"
+    }
+  }
+}

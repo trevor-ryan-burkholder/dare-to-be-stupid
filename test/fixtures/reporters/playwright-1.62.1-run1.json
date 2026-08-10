@@ -1,0 +1,869 @@
+{
+  "config": {
+    "argv": [
+      "/home/tburkholder/.nvm/versions/node/v24.14.1/bin/node",
+      "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/node_modules/.bin/playwright",
+      "test"
+    ],
+    "configFile": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/playwright.config.js",
+    "rootDir": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 4
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/test-results",
+        "repeatEach": 1,
+        "retries": 1,
+        "metadata": {
+          "actualWorkers": 4
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/test-results",
+        "repeatEach": 1,
+        "retries": 1,
+        "metadata": {
+          "actualWorkers": 4
+        },
+        "id": "firefox",
+        "name": "firefox",
+        "testDir": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json",
+        {
+          "outputFile": "report.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 4,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "checkout.spec.js",
+      "file": "checkout.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "signs in at the top level",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 12,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-08-10T01:49:54.076Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "24e4b3ac21f7f473b7e5-bca111c06a9cb60fbe9d",
+          "file": "checkout.spec.js",
+          "line": 6,
+          "column": 1
+        },
+        {
+          "title": "signs in at the top level",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 13,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-08-10T01:49:54.048Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "24e4b3ac21f7f473b7e5-4ffad07b51faf06664c4",
+          "file": "checkout.spec.js",
+          "line": 6,
+          "column": 1
+        }
+      ],
+      "suites": [
+        {
+          "title": "cart",
+          "file": "checkout.spec.js",
+          "line": 10,
+          "column": 6,
+          "specs": [
+            {
+              "title": "adds an item",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-10T01:49:54.168Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "24e4b3ac21f7f473b7e5-5f7793be072fa915493c",
+              "file": "checkout.spec.js",
+              "line": 11,
+              "column": 3
+            },
+            {
+              "title": "is flaky on purpose",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 7,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 30,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"\u001b[7msecond\u001b[27m attempt\"\u001b[39m\nReceived: \u001b[31m\"\u001b[7mfirst\u001b[27m attempt\"\u001b[39m",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"\u001b[7msecond\u001b[27m attempt\"\u001b[39m\nReceived: \u001b[31m\"\u001b[7mfirst\u001b[27m attempt\"\u001b[39m\n    at /tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js:34:31",
+                        "location": {
+                          "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                          "column": 31,
+                          "line": 34
+                        },
+                        "snippet": "  32 |     if (!fs.existsSync(marker)) {\n  33 |       fs.writeFileSync(marker, 'seen');\n> 34 |       expect('first attempt').toBe('second attempt');\n     |                               ^\n  35 |     }\n  36 |     expect(true).toBe(true);\n  37 |   });"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                            "column": 31,
+                            "line": 34
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"\u001b[7msecond\u001b[27m attempt\"\u001b[39m\nReceived: \u001b[31m\"\u001b[7mfirst\u001b[27m attempt\"\u001b[39m\n\n  32 |     if (!fs.existsSync(marker)) {\n  33 |       fs.writeFileSync(marker, 'seen');\n> 34 |       expect('first attempt').toBe('second attempt');\n     |                               ^\n  35 |     }\n  36 |     expect(true).toBe(true);\n  37 |   });\n    at /tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js:34:31"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-10T01:49:55.866Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/test-results/checkout-cart-is-flaky-on-purpose-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                        "column": 31,
+                        "line": 34
+                      }
+                    },
+                    {
+                      "workerIndex": 8,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 14,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 1,
+                      "startTime": "2026-08-10T01:49:56.901Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "flaky"
+                }
+              ],
+              "id": "24e4b3ac21f7f473b7e5-068ef51a43587d14e361",
+              "file": "checkout.spec.js",
+              "line": 30,
+              "column": 3
+            },
+            {
+              "title": "adds an item",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 7,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-10T01:49:54.140Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "24e4b3ac21f7f473b7e5-90d76c419ea450c175ea",
+              "file": "checkout.spec.js",
+              "line": 11,
+              "column": 3
+            },
+            {
+              "title": "is flaky on purpose",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [
+                    {
+                      "workerIndex": 6,
+                      "parallelIndex": 1,
+                      "status": "failed",
+                      "duration": 29,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"\u001b[7msecond\u001b[27m attempt\"\u001b[39m\nReceived: \u001b[31m\"\u001b[7mfirst\u001b[27m attempt\"\u001b[39m",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"\u001b[7msecond\u001b[27m attempt\"\u001b[39m\nReceived: \u001b[31m\"\u001b[7mfirst\u001b[27m attempt\"\u001b[39m\n    at /tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js:34:31",
+                        "location": {
+                          "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                          "column": 31,
+                          "line": 34
+                        },
+                        "snippet": "  32 |     if (!fs.existsSync(marker)) {\n  33 |       fs.writeFileSync(marker, 'seen');\n> 34 |       expect('first attempt').toBe('second attempt');\n     |                               ^\n  35 |     }\n  36 |     expect(true).toBe(true);\n  37 |   });"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                            "column": 31,
+                            "line": 34
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"\u001b[7msecond\u001b[27m attempt\"\u001b[39m\nReceived: \u001b[31m\"\u001b[7mfirst\u001b[27m attempt\"\u001b[39m\n\n  32 |     if (!fs.existsSync(marker)) {\n  33 |       fs.writeFileSync(marker, 'seen');\n> 34 |       expect('first attempt').toBe('second attempt');\n     |                               ^\n  35 |     }\n  36 |     expect(true).toBe(true);\n  37 |   });\n    at /tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js:34:31"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-10T01:49:55.875Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/test-results/checkout-cart-is-flaky-on-purpose-firefox/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                        "column": 31,
+                        "line": 34
+                      }
+                    },
+                    {
+                      "workerIndex": 9,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 15,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 1,
+                      "startTime": "2026-08-10T01:49:56.908Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "flaky"
+                }
+              ],
+              "id": "24e4b3ac21f7f473b7e5-d8eae36e99e7ee86b622",
+              "file": "checkout.spec.js",
+              "line": 30,
+              "column": 3
+            }
+          ],
+          "suites": [
+            {
+              "title": "totals",
+              "file": "checkout.spec.js",
+              "line": 15,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "sums line items",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 30000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "chromium",
+                      "projectName": "chromium",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 3,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-08-10T01:49:54.183Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "24e4b3ac21f7f473b7e5-4397fedc9ecef73ad3b1",
+                  "file": "checkout.spec.js",
+                  "line": 16,
+                  "column": 5
+                },
+                {
+                  "title": "is deliberately broken",
+                  "ok": false,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 30000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "chromium",
+                      "projectName": "chromium",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "failed",
+                          "duration": 6,
+                          "error": {
+                            "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m6\u001b[39m\nReceived: \u001b[31m5\u001b[39m",
+                            "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m6\u001b[39m\nReceived: \u001b[31m5\u001b[39m\n    at /tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js:21:21",
+                            "location": {
+                              "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                              "column": 21,
+                              "line": 21
+                            },
+                            "snippet": "  19 |\n  20 |     test('is deliberately broken', async () => {\n> 21 |       expect(2 + 3).toBe(6);\n     |                     ^\n  22 |     });\n  23 |\n  24 |     test.skip('is skipped on purpose', async () => {"
+                          },
+                          "errors": [
+                            {
+                              "location": {
+                                "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                                "column": 21,
+                                "line": 21
+                              },
+                              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m6\u001b[39m\nReceived: \u001b[31m5\u001b[39m\n\n  19 |\n  20 |     test('is deliberately broken', async () => {\n> 21 |       expect(2 + 3).toBe(6);\n     |                     ^\n  22 |     });\n  23 |\n  24 |     test.skip('is skipped on purpose', async () => {\n    at /tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js:21:21"
+                            }
+                          ],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-08-10T01:49:54.209Z",
+                          "annotations": [],
+                          "attachments": [
+                            {
+                              "name": "error-context",
+                              "contentType": "text/markdown",
+                              "path": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/test-results/checkout-cart-totals-is-deliberately-broken-chromium/error-context.md"
+                            }
+                          ],
+                          "errorLocation": {
+                            "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                            "column": 21,
+                            "line": 21
+                          }
+                        },
+                        {
+                          "workerIndex": 5,
+                          "parallelIndex": 0,
+                          "status": "failed",
+                          "duration": 16,
+                          "error": {
+                            "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m6\u001b[39m\nReceived: \u001b[31m5\u001b[39m",
+                            "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m6\u001b[39m\nReceived: \u001b[31m5\u001b[39m\n    at /tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js:21:21",
+                            "location": {
+                              "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                              "column": 21,
+                              "line": 21
+                            },
+                            "snippet": "  19 |\n  20 |     test('is deliberately broken', async () => {\n> 21 |       expect(2 + 3).toBe(6);\n     |                     ^\n  22 |     });\n  23 |\n  24 |     test.skip('is skipped on purpose', async () => {"
+                          },
+                          "errors": [
+                            {
+                              "location": {
+                                "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                                "column": 21,
+                                "line": 21
+                              },
+                              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m6\u001b[39m\nReceived: \u001b[31m5\u001b[39m\n\n  19 |\n  20 |     test('is deliberately broken', async () => {\n> 21 |       expect(2 + 3).toBe(6);\n     |                     ^\n  22 |     });\n  23 |\n  24 |     test.skip('is skipped on purpose', async () => {\n    at /tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js:21:21"
+                            }
+                          ],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 1,
+                          "startTime": "2026-08-10T01:49:54.882Z",
+                          "annotations": [],
+                          "attachments": [
+                            {
+                              "name": "error-context",
+                              "contentType": "text/markdown",
+                              "path": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/test-results/checkout-cart-totals-is-deliberately-broken-chromium-retry1/error-context.md"
+                            }
+                          ],
+                          "errorLocation": {
+                            "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                            "column": 21,
+                            "line": 21
+                          }
+                        }
+                      ],
+                      "status": "unexpected"
+                    }
+                  ],
+                  "id": "24e4b3ac21f7f473b7e5-0222c4e6d0c0bc168742",
+                  "file": "checkout.spec.js",
+                  "line": 20,
+                  "column": 5
+                },
+                {
+                  "title": "is skipped on purpose",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 30000,
+                      "annotations": [
+                        {
+                          "type": "skip",
+                          "location": {
+                            "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                            "line": 24,
+                            "column": 10
+                          }
+                        }
+                      ],
+                      "expectedStatus": "skipped",
+                      "projectId": "chromium",
+                      "projectName": "chromium",
+                      "results": [
+                        {
+                          "workerIndex": 7,
+                          "parallelIndex": 0,
+                          "status": "skipped",
+                          "duration": 0,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-08-10T01:49:55.864Z",
+                          "annotations": [
+                            {
+                              "type": "skip",
+                              "location": {
+                                "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                                "line": 24,
+                                "column": 10
+                              }
+                            }
+                          ],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "skipped"
+                    }
+                  ],
+                  "id": "24e4b3ac21f7f473b7e5-e545bfbf4ab1a39cdd13",
+                  "file": "checkout.spec.js",
+                  "line": 24,
+                  "column": 10
+                },
+                {
+                  "title": "sums line items",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 30000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "firefox",
+                      "projectName": "firefox",
+                      "results": [
+                        {
+                          "workerIndex": 2,
+                          "parallelIndex": 2,
+                          "status": "passed",
+                          "duration": 2,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-08-10T01:49:54.166Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "24e4b3ac21f7f473b7e5-5f9c7793a0dbbfa2847a",
+                  "file": "checkout.spec.js",
+                  "line": 16,
+                  "column": 5
+                },
+                {
+                  "title": "is deliberately broken",
+                  "ok": false,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 30000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "firefox",
+                      "projectName": "firefox",
+                      "results": [
+                        {
+                          "workerIndex": 2,
+                          "parallelIndex": 2,
+                          "status": "failed",
+                          "duration": 7,
+                          "error": {
+                            "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m6\u001b[39m\nReceived: \u001b[31m5\u001b[39m",
+                            "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m6\u001b[39m\nReceived: \u001b[31m5\u001b[39m\n    at /tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js:21:21",
+                            "location": {
+                              "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                              "column": 21,
+                              "line": 21
+                            },
+                            "snippet": "  19 |\n  20 |     test('is deliberately broken', async () => {\n> 21 |       expect(2 + 3).toBe(6);\n     |                     ^\n  22 |     });\n  23 |\n  24 |     test.skip('is skipped on purpose', async () => {"
+                          },
+                          "errors": [
+                            {
+                              "location": {
+                                "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                                "column": 21,
+                                "line": 21
+                              },
+                              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m6\u001b[39m\nReceived: \u001b[31m5\u001b[39m\n\n  19 |\n  20 |     test('is deliberately broken', async () => {\n> 21 |       expect(2 + 3).toBe(6);\n     |                     ^\n  22 |     });\n  23 |\n  24 |     test.skip('is skipped on purpose', async () => {\n    at /tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js:21:21"
+                            }
+                          ],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-08-10T01:49:54.193Z",
+                          "annotations": [],
+                          "attachments": [
+                            {
+                              "name": "error-context",
+                              "contentType": "text/markdown",
+                              "path": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/test-results/checkout-cart-totals-is-deliberately-broken-firefox/error-context.md"
+                            }
+                          ],
+                          "errorLocation": {
+                            "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                            "column": 21,
+                            "line": 21
+                          }
+                        },
+                        {
+                          "workerIndex": 4,
+                          "parallelIndex": 1,
+                          "status": "failed",
+                          "duration": 13,
+                          "error": {
+                            "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m6\u001b[39m\nReceived: \u001b[31m5\u001b[39m",
+                            "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m6\u001b[39m\nReceived: \u001b[31m5\u001b[39m\n    at /tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js:21:21",
+                            "location": {
+                              "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                              "column": 21,
+                              "line": 21
+                            },
+                            "snippet": "  19 |\n  20 |     test('is deliberately broken', async () => {\n> 21 |       expect(2 + 3).toBe(6);\n     |                     ^\n  22 |     });\n  23 |\n  24 |     test.skip('is skipped on purpose', async () => {"
+                          },
+                          "errors": [
+                            {
+                              "location": {
+                                "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                                "column": 21,
+                                "line": 21
+                              },
+                              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m6\u001b[39m\nReceived: \u001b[31m5\u001b[39m\n\n  19 |\n  20 |     test('is deliberately broken', async () => {\n> 21 |       expect(2 + 3).toBe(6);\n     |                     ^\n  22 |     });\n  23 |\n  24 |     test.skip('is skipped on purpose', async () => {\n    at /tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js:21:21"
+                            }
+                          ],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 1,
+                          "startTime": "2026-08-10T01:49:54.850Z",
+                          "annotations": [],
+                          "attachments": [
+                            {
+                              "name": "error-context",
+                              "contentType": "text/markdown",
+                              "path": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/test-results/checkout-cart-totals-is-deliberately-broken-firefox-retry1/error-context.md"
+                            }
+                          ],
+                          "errorLocation": {
+                            "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                            "column": 21,
+                            "line": 21
+                          }
+                        }
+                      ],
+                      "status": "unexpected"
+                    }
+                  ],
+                  "id": "24e4b3ac21f7f473b7e5-bba12476a2db638a51e6",
+                  "file": "checkout.spec.js",
+                  "line": 20,
+                  "column": 5
+                },
+                {
+                  "title": "is skipped on purpose",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 30000,
+                      "annotations": [
+                        {
+                          "type": "skip",
+                          "location": {
+                            "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                            "line": 24,
+                            "column": 10
+                          }
+                        }
+                      ],
+                      "expectedStatus": "skipped",
+                      "projectId": "firefox",
+                      "projectName": "firefox",
+                      "results": [
+                        {
+                          "workerIndex": 6,
+                          "parallelIndex": 1,
+                          "status": "skipped",
+                          "duration": 0,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-08-10T01:49:55.871Z",
+                          "annotations": [
+                            {
+                              "type": "skip",
+                              "location": {
+                                "file": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app/tests/checkout.spec.js",
+                                "line": 24,
+                                "column": 10
+                              }
+                            }
+                          ],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "skipped"
+                    }
+                  ],
+                  "id": "24e4b3ac21f7f473b7e5-ba692368b127d3f95998",
+                  "file": "checkout.spec.js",
+                  "line": 24,
+                  "column": 10
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "search.spec.js",
+      "file": "search.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "a second file contributes ids too",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 16,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-08-10T01:49:54.038Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9e6ea2b6d72fedbaa223-8732018f6db98a43eb42",
+          "file": "search.spec.js",
+          "line": 3,
+          "column": 1
+        },
+        {
+          "title": "a second file contributes ids too",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 3,
+                  "status": "passed",
+                  "duration": 12,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-08-10T01:49:54.082Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9e6ea2b6d72fedbaa223-8d589f527040b5546f06",
+          "file": "search.spec.js",
+          "line": 3,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-08-10T01:49:52.963Z",
+    "duration": 4063.8109999999997,
+    "expected": 8,
+    "skipped": 2,
+    "unexpected": 2,
+    "flaky": 2
+  }
+}

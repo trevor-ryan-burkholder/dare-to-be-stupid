@@ -1,0 +1,373 @@
+/**
+ * Tests for reporter parsing and test-ID extraction (DESIGN.md §11).
+ *
+ * Everything that touches an external format is asserted against committed output from a
+ * real run — see `test/fixtures/reporters/README.md`. The expected ID sets below are
+ * written out in full, on purpose: a test that only counts IDs, or only checks the set is
+ * non-empty, would keep passing while the parser quietly lost half of them, which is the
+ * exact failure DESIGN.md §11 warns about.
+ */
+
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { describe, it } from 'node:test';
+
+import {
+  ReportFormatError,
+  collapseByWorstStatus,
+  detectRunner,
+  extractTestIds,
+  parseReport,
+} from '../scripts/ratchet.mjs';
+
+const FIXTURE_DIR = new URL('./fixtures/reporters/', import.meta.url);
+
+/** @param {string} name */
+function readFixture(name) {
+  return readFileSync(new URL(name, FIXTURE_DIR), 'utf8');
+}
+
+/** @type {Record<string, { runner: string, version: string, rootDir: string }>} */
+const PROVENANCE = JSON.parse(readFixture('provenance.json'));
+const VITEST_ROOT = PROVENANCE['vitest-4.1.10'].rootDir;
+const PLAYWRIGHT_ROOT = PROVENANCE['playwright-1.62.1'].rootDir;
+
+const VITEST_RUN1 = readFixture('vitest-4.1.10-run1.json');
+const VITEST_RUN2 = readFixture('vitest-4.1.10-run2.json');
+const PLAYWRIGHT_RUN1 = readFixture('playwright-1.62.1-run1.json');
+const PLAYWRIGHT_RUN2 = readFixture('playwright-1.62.1-run2.json');
+
+// ---------------------------------------------------------------------------
+// vitest
+// ---------------------------------------------------------------------------
+
+const VITEST_EXPECTED = [
+  ['test/math.test.js::adds at the top level', 'passed'],
+  ['test/math.test.js::arithmetic > adds two numbers', 'passed'],
+  ['test/math.test.js::arithmetic > edge cases > handles zero', 'passed'],
+  ['test/math.test.js::arithmetic > edge cases > is deliberately broken', 'failed'],
+  ['test/math.test.js::arithmetic > edge cases > is skipped on purpose', 'skipped'],
+  ['test/math.test.js::arithmetic > adds 1 + 1', 'passed'],
+  ['test/math.test.js::arithmetic > adds 2 + 3', 'passed'],
+  ['test/math.test.js::is not written yet', 'skipped'],
+  ['test/strings.test.js::a second file contributes ids too', 'passed'],
+];
+
+describe('vitest 4.1.10 reporter output', () => {
+  it('is recognised as vitest', () => {
+    assert.equal(detectRunner(JSON.parse(VITEST_RUN1)), 'vitest');
+  });
+
+  it('parses to exactly the tests the run contained, with their statuses', () => {
+    const { runner, tests } = parseReport(VITEST_RUN1, { rootDir: VITEST_ROOT });
+    assert.equal(runner, 'vitest');
+    assert.deepStrictEqual(
+      tests.map((t) => [t.id, t.status]),
+      VITEST_EXPECTED,
+    );
+  });
+
+  it('extracts exactly the passing ids', () => {
+    assert.deepStrictEqual(
+      extractTestIds(VITEST_RUN1, { rootDir: VITEST_ROOT }),
+      new Set([
+        'test/math.test.js::adds at the top level',
+        'test/math.test.js::arithmetic > adds two numbers',
+        'test/math.test.js::arithmetic > edge cases > handles zero',
+        'test/math.test.js::arithmetic > adds 1 + 1',
+        'test/math.test.js::arithmetic > adds 2 + 3',
+        'test/strings.test.js::a second file contributes ids too',
+      ]),
+    );
+  });
+
+  it('leaves the failing, skipped and todo tests out of the ratchet', () => {
+    const ids = extractTestIds(VITEST_RUN1, { rootDir: VITEST_ROOT });
+    assert.equal(ids.has('test/math.test.js::arithmetic > edge cases > is deliberately broken'), false);
+    assert.equal(ids.has('test/math.test.js::arithmetic > edge cases > is skipped on purpose'), false);
+    assert.equal(ids.has('test/math.test.js::is not written yet'), false);
+  });
+
+  it('carries the parameterised titles that test.each generated', () => {
+    const ids = extractTestIds(VITEST_RUN1, { rootDir: VITEST_ROOT });
+    assert.equal(ids.has('test/math.test.js::arithmetic > adds 1 + 1'), true);
+    assert.equal(ids.has('test/math.test.js::arithmetic > adds 2 + 3'), true);
+  });
+
+  it('yields an identical id set on a second identical run', () => {
+    assert.deepStrictEqual(
+      extractTestIds(VITEST_RUN2, { rootDir: VITEST_ROOT }),
+      extractTestIds(VITEST_RUN1, { rootDir: VITEST_ROOT }),
+    );
+  });
+
+  it('yields a non-empty id set, which is what the ratchet has to protect', () => {
+    assert.equal(extractTestIds(VITEST_RUN1, { rootDir: VITEST_ROOT }).size, 6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Playwright
+// ---------------------------------------------------------------------------
+
+const PLAYWRIGHT_EXPECTED = [
+  ['tests/checkout.spec.js::signs in at the top level::chromium', 'passed'],
+  ['tests/checkout.spec.js::signs in at the top level::firefox', 'passed'],
+  ['tests/checkout.spec.js::cart > adds an item::chromium', 'passed'],
+  ['tests/checkout.spec.js::cart > is flaky on purpose::chromium', 'flaky'],
+  ['tests/checkout.spec.js::cart > adds an item::firefox', 'passed'],
+  ['tests/checkout.spec.js::cart > is flaky on purpose::firefox', 'flaky'],
+  ['tests/checkout.spec.js::cart > totals > sums line items::chromium', 'passed'],
+  ['tests/checkout.spec.js::cart > totals > is deliberately broken::chromium', 'failed'],
+  ['tests/checkout.spec.js::cart > totals > is skipped on purpose::chromium', 'skipped'],
+  ['tests/checkout.spec.js::cart > totals > sums line items::firefox', 'passed'],
+  ['tests/checkout.spec.js::cart > totals > is deliberately broken::firefox', 'failed'],
+  ['tests/checkout.spec.js::cart > totals > is skipped on purpose::firefox', 'skipped'],
+  ['tests/search.spec.js::a second file contributes ids too::chromium', 'passed'],
+  ['tests/search.spec.js::a second file contributes ids too::firefox', 'passed'],
+];
+
+describe('playwright 1.62.1 reporter output', () => {
+  it('is recognised as playwright', () => {
+    assert.equal(detectRunner(JSON.parse(PLAYWRIGHT_RUN1)), 'playwright');
+  });
+
+  it('parses to exactly the tests the run contained, with their statuses', () => {
+    const { runner, tests } = parseReport(PLAYWRIGHT_RUN1, { rootDir: PLAYWRIGHT_ROOT });
+    assert.equal(runner, 'playwright');
+    assert.deepStrictEqual(
+      tests.map((t) => [t.id, t.status]),
+      PLAYWRIGHT_EXPECTED,
+    );
+  });
+
+  it('extracts exactly the passing ids', () => {
+    assert.deepStrictEqual(
+      extractTestIds(PLAYWRIGHT_RUN1, { rootDir: PLAYWRIGHT_ROOT }),
+      new Set([
+        'tests/checkout.spec.js::signs in at the top level::chromium',
+        'tests/checkout.spec.js::signs in at the top level::firefox',
+        'tests/checkout.spec.js::cart > adds an item::chromium',
+        'tests/checkout.spec.js::cart > adds an item::firefox',
+        'tests/checkout.spec.js::cart > totals > sums line items::chromium',
+        'tests/checkout.spec.js::cart > totals > sums line items::firefox',
+        'tests/search.spec.js::a second file contributes ids too::chromium',
+        'tests/search.spec.js::a second file contributes ids too::firefox',
+      ]),
+    );
+  });
+
+  it('keeps the same spec under two projects as two distinct ids', () => {
+    const ids = extractTestIds(PLAYWRIGHT_RUN1, { rootDir: PLAYWRIGHT_ROOT });
+    assert.equal(ids.has('tests/checkout.spec.js::cart > totals > sums line items::chromium'), true);
+    assert.equal(ids.has('tests/checkout.spec.js::cart > totals > sums line items::firefox'), true);
+  });
+
+  it('does not admit a flaky test to the ratchet', () => {
+    const ids = extractTestIds(PLAYWRIGHT_RUN1, { rootDir: PLAYWRIGHT_ROOT });
+    assert.equal(ids.has('tests/checkout.spec.js::cart > is flaky on purpose::chromium'), false);
+    assert.equal(ids.has('tests/checkout.spec.js::cart > is flaky on purpose::firefox'), false);
+  });
+
+  it('reports flaky separately when asked, so the driver can still see it', () => {
+    assert.deepStrictEqual(
+      extractTestIds(PLAYWRIGHT_RUN1, { rootDir: PLAYWRIGHT_ROOT, statuses: ['flaky'] }),
+      new Set([
+        'tests/checkout.spec.js::cart > is flaky on purpose::chromium',
+        'tests/checkout.spec.js::cart > is flaky on purpose::firefox',
+      ]),
+    );
+  });
+
+  it('does not let the file-level suite title leak into the title path', () => {
+    for (const id of extractTestIds(PLAYWRIGHT_RUN1, { rootDir: PLAYWRIGHT_ROOT })) {
+      assert.equal(id.includes('.spec.js > '), false, `file title leaked into ${id}`);
+    }
+  });
+
+  it('yields an identical id set on a second identical run', () => {
+    assert.deepStrictEqual(
+      extractTestIds(PLAYWRIGHT_RUN2, { rootDir: PLAYWRIGHT_ROOT }),
+      extractTestIds(PLAYWRIGHT_RUN1, { rootDir: PLAYWRIGHT_ROOT }),
+    );
+  });
+
+  it('yields a non-empty id set, which is what the ratchet has to protect', () => {
+    assert.equal(extractTestIds(PLAYWRIGHT_RUN1, { rootDir: PLAYWRIGHT_ROOT }).size, 8);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The two runners must not produce colliding or overlapping ids
+// ---------------------------------------------------------------------------
+
+describe('ids across runners', () => {
+  it('never collide', () => {
+    const vitest = extractTestIds(VITEST_RUN1, { rootDir: VITEST_ROOT });
+    const playwright = extractTestIds(PLAYWRIGHT_RUN1, { rootDir: PLAYWRIGHT_ROOT });
+    const shared = [...vitest].filter((id) => playwright.has(id));
+    assert.deepStrictEqual(shared, []);
+  });
+
+  it('name the same test the same way on both runs of the same runner', () => {
+    assert.deepStrictEqual(
+      parseReport(VITEST_RUN2, { rootDir: VITEST_ROOT }).tests.map((t) => t.id),
+      parseReport(VITEST_RUN1, { rootDir: VITEST_ROOT }).tests.map((t) => t.id),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Nothing defaults to pass
+// ---------------------------------------------------------------------------
+
+describe('reports that cannot be understood', () => {
+  it('throws on a shape belonging to neither runner', () => {
+    assert.throws(
+      () => extractTestIds({ tests: [{ name: 'a', ok: true }] }, { rootDir: '/repo' }),
+      ReportFormatError,
+    );
+  });
+
+  it('throws on text that is not JSON', () => {
+    assert.throws(() => extractTestIds('not json at all', { rootDir: '/repo' }), ReportFormatError);
+  });
+
+  it('throws rather than returning an empty set, which would disable the ratchet', () => {
+    let threw = false;
+    try {
+      extractTestIds({ unrecognised: true }, { rootDir: '/repo' });
+    } catch (error) {
+      threw = true;
+      assert.equal(/** @type {Error} */ (error).name, 'ReportFormatError');
+    }
+    assert.equal(threw, true);
+  });
+
+  it('throws on a vitest status it has never seen', () => {
+    const report = JSON.parse(VITEST_RUN1);
+    report.testResults[0].assertionResults[0].status = 'quarantined';
+    assert.throws(
+      () => extractTestIds(report, { rootDir: VITEST_ROOT }),
+      (error) => error instanceof ReportFormatError && error.message.includes('"quarantined"') === true,
+    );
+  });
+
+  it('throws on a playwright status it has never seen', () => {
+    const report = JSON.parse(PLAYWRIGHT_RUN1);
+    report.suites[0].specs[0].tests[0].status = 'interrupted';
+    assert.throws(
+      () => extractTestIds(report, { rootDir: PLAYWRIGHT_ROOT }),
+      (error) => error instanceof ReportFormatError && error.message.includes('"interrupted"') === true,
+    );
+  });
+
+  it('throws when a vitest file entry loses its name', () => {
+    const report = JSON.parse(VITEST_RUN1);
+    delete report.testResults[0].name;
+    assert.throws(() => extractTestIds(report, { rootDir: VITEST_ROOT }), ReportFormatError);
+  });
+
+  it('throws when a playwright spec loses its tests array', () => {
+    const report = JSON.parse(PLAYWRIGHT_RUN1);
+    delete report.suites[0].specs[0].tests;
+    assert.throws(() => extractTestIds(report, { rootDir: PLAYWRIGHT_ROOT }), ReportFormatError);
+  });
+
+  it('throws without a rootDir, because ids must be relative to something stable', () => {
+    assert.throws(() => extractTestIds(VITEST_RUN1, /** @type {any} */ ({})), ReportFormatError);
+  });
+
+  it('returns an empty set for a well-formed run containing no tests', () => {
+    // Distinct from an unparseable report: "no test files" is a real state. Refusing to
+    // advance on it is the ratchet's job, not the parser's (DESIGN.md §11).
+    const empty = { numTotalTests: 0, testResults: [] };
+    assert.deepStrictEqual(extractTestIds(empty, { rootDir: '/repo' }), new Set());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Duplicate ids must not let a pass hide a failure
+// ---------------------------------------------------------------------------
+
+describe('collapseByWorstStatus', () => {
+  it('keeps the failure when the same id both passed and failed', () => {
+    assert.deepStrictEqual(
+      collapseByWorstStatus([
+        { id: 'a::t', status: 'passed' },
+        { id: 'a::t', status: 'failed' },
+      ]),
+      new Map([['a::t', 'failed']]),
+    );
+  });
+
+  it('keeps the failure regardless of the order they arrived in', () => {
+    assert.deepStrictEqual(
+      collapseByWorstStatus([
+        { id: 'a::t', status: 'failed' },
+        { id: 'a::t', status: 'passed' },
+      ]),
+      new Map([['a::t', 'failed']]),
+    );
+  });
+
+  it('ranks flaky worse than skipped and skipped worse than passed', () => {
+    assert.deepStrictEqual(
+      collapseByWorstStatus([
+        { id: 'a::t', status: 'passed' },
+        { id: 'a::t', status: 'skipped' },
+        { id: 'b::t', status: 'skipped' },
+        { id: 'b::t', status: 'flaky' },
+      ]),
+      new Map([
+        ['a::t', 'skipped'],
+        ['b::t', 'flaky'],
+      ]),
+    );
+  });
+
+  it('leaves distinct ids alone', () => {
+    assert.deepStrictEqual(
+      collapseByWorstStatus([
+        { id: 'a::t', status: 'passed' },
+        { id: 'b::t', status: 'passed' },
+      ]),
+      new Map([
+        ['a::t', 'passed'],
+        ['b::t', 'passed'],
+      ]),
+    );
+  });
+
+  it('drops a duplicate id from the passing set when one of them failed', () => {
+    const report = JSON.parse(VITEST_RUN1);
+    const [first] = report.testResults[0].assertionResults;
+    report.testResults[0].assertionResults.push({ ...first, status: 'failed' });
+    const ids = extractTestIds(report, { rootDir: VITEST_ROOT });
+    assert.equal(ids.has('test/math.test.js::adds at the top level'), false);
+    assert.equal(ids.size, 5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectRunner
+// ---------------------------------------------------------------------------
+
+describe('detectRunner', () => {
+  const cases = [
+    [null, null],
+    ['a string', null],
+    [{}, null],
+    [{ testResults: [] }, null],
+    [{ numTotalTests: 0 }, null],
+    [{ numTotalTests: 0, testResults: [] }, 'vitest'],
+    [{ suites: [] }, null],
+    [{ suites: [], config: {} }, null],
+    [{ suites: [], config: { rootDir: '/repo' } }, 'playwright'],
+  ];
+  for (const [input, expected] of cases) {
+    it(`${JSON.stringify(input)} -> ${JSON.stringify(expected)}`, () => {
+      assert.equal(detectRunner(input), expected);
+    });
+  }
+});
