@@ -90,10 +90,13 @@ exercised against temporary repositories built by the test suite. With the runne
 fixed, this is the next thing a run should be able to demonstrate — give it enough budget to
 reach a second iteration.
 
-**A phase gives no heartbeat.** `designing` was the last line of output for nine and a half
-minutes while a single Opus child ran, with nothing distinguishing it from a hung process.
-An operator watching an unattended run cannot tell progress from a hang, and the cheapest
-wrong response — killing it — costs the whole run.
+**A phase still cannot tick, but it now says so.** Children run under `execFileSync`, which
+blocks the event loop for the whole call, so a periodic heartbeat is impossible without
+making the driver async — a rewrite, not a fix, and not attempted. Every child is instead
+bracketed by two unstyled lines: `<phase>: <model> running, no output until it returns`
+before, and `<phase>: returned after Ns, N tokens` after. That converts nine and a half
+silent minutes from "possibly hung" into "expected, and here is what it cost". If the async
+conversion is ever done for other reasons, a real tick becomes available for free.
 
 **A real race.** `race.enabled` is `false` by default, and the mechanism has only been
 exercised against temporary repositories: real worktrees, real cleanup and real `--ff-only`

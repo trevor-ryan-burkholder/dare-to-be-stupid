@@ -52,6 +52,8 @@ import {
   driveRun,
   extractJsonObject,
   gateScore,
+  childEndLine,
+  childStartLine,
   parseClaudeEnvelope,
   parseReviewerReport,
   recordProgress,
@@ -973,6 +975,35 @@ describe('appendBlooper', () => {
 // ---------------------------------------------------------------------------
 // The loop, driven to each terminal state
 // ---------------------------------------------------------------------------
+
+describe('the lines that bracket a child', () => {
+  // Children run under execFileSync, so nothing can tick while one is out. These two lines
+  // are the whole of the progress an operator gets, which is why their content is asserted
+  // exactly rather than for substrings.
+  it('warns that silence is expected, and names the model doing the waiting', () => {
+    assert.equal(
+      childStartLine('design', 'claude-opus-5'),
+      'design: claude-opus-5 running, no output until it returns',
+    );
+  });
+
+  it('reports elapsed seconds and spend when the child returns', () => {
+    assert.equal(
+      childEndLine('design', { ok: true, tokens: 120000 }, 570),
+      'design: returned after 570s, 120000 tokens',
+    );
+  });
+
+  it('says failed rather than returned when the child did not succeed', () => {
+    // A failed child that reads as "returned" is the same lie as a silent hang.
+    assert.equal(childEndLine('review', { ok: false, tokens: 12 }, 3), 'review: failed after 3s, 12 tokens');
+  });
+
+  it('names the phase on both lines, since minutes of nothing separate them', () => {
+    assert.equal(childStartLine('builder', 'm').startsWith('builder:'), true);
+    assert.equal(childEndLine('builder', { ok: true, tokens: 1 }, 1).startsWith('builder:'), true);
+  });
+});
 
 describe('driveRun', () => {
   /**

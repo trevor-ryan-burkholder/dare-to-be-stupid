@@ -1824,6 +1824,33 @@ export function spawnClaude(options) {
 }
 
 /**
+ * The line printed before a child starts.
+ *
+ * Its job is to say that silence is expected. A phase that prints its name and then nothing
+ * for nine minutes reads as a hang, and an operator who kills it loses the run.
+ *
+ * @param {string} phase
+ * @param {string} model
+ * @returns {string}
+ */
+export function childStartLine(phase, model) {
+  return `${phase}: ${model} running, no output until it returns`;
+}
+
+/**
+ * The line printed once a child returns. Names the phase again, because the start line may
+ * be minutes and several screens back.
+ *
+ * @param {string} phase
+ * @param {{ ok: boolean, tokens: number }} result
+ * @param {number} seconds
+ * @returns {string}
+ */
+export function childEndLine(phase, result, seconds) {
+  return `${phase}: ${result.ok ? 'returned' : 'failed'} after ${seconds}s, ${result.tokens} tokens`;
+}
+
+/**
  * @param {string[]} argv
  * @param {{ cwd?: string, env?: Record<string, string | undefined>, log?: (line: string) => void }} [io]
  * @returns {number} process exit code
@@ -1833,6 +1860,31 @@ export function main(argv, io = {}) {
   const env = io.env ?? process.env;
   const write = io.log ?? ((/** @type {string} */ line) => process.stdout.write(`${line}\n`));
   const mode = styleMode(env);
+
+  /**
+   * Run one `claude -p` child, bracketed by the only progress an operator ever gets.
+   *
+   * Children are spawned with `execFileSync`, so the event loop is blocked for the whole
+   * call: a periodic tick is impossible without making the entire driver async, which is a
+   * rewrite rather than a fix. What is possible is the information that was actually
+   * missing — which phase started, on which model, that nothing will print until it
+   * returns, and how long it took once it has. An observed design phase sat silent for nine
+   * and a half minutes, indistinguishable from a hung process, and the cheapest wrong
+   * response to that is killing a run that was working.
+   *
+   * Unstyled on purpose: this is progress, and progress that lies about its own timing is
+   * worse than none.
+   *
+   * @param {Parameters<typeof spawnClaude>[0]} options
+   * @returns {ReturnType<typeof spawnClaude>}
+   */
+  const runChild = (options) => {
+    write(verbatim(childStartLine(options.phase, options.model)));
+    const startedAt = Date.now();
+    const result = spawnClaude(options);
+    write(verbatim(childEndLine(options.phase, result, Math.round((Date.now() - startedAt) / 1000))));
+    return result;
+  };
 
   try {
     assertNotNested(env);
@@ -1895,7 +1947,7 @@ export function main(argv, io = {}) {
       return 1;
     }
     write(verbatim('authoring PRD.md'));
-    const authored = spawnClaude({
+    const authored = runChild({
       prompt: `${template('prd-author.md')}\n\n---\n\nThe idea:\n\n${idea}`,
       model: config.prdModel,
       phase: 'prd',
@@ -1921,7 +1973,7 @@ export function main(argv, io = {}) {
 
   // ---- Phase 1: design + quality plugins --------------------------------
   write(verbatim('designing'));
-  const designed = spawnClaude({
+  const designed = runChild({
     prompt: `${template('architect.md')}\n\n---\n\nPRD.md:\n\n${prd}`,
     model: config.designModel,
     phase: 'design',
@@ -2068,7 +2120,7 @@ export function main(argv, io = {}) {
         });
         writeBrief(dareDir, iteration, candidateBrief, worktree.index);
 
-        const built = spawnClaude({
+        const built = runChild({
           prompt: candidateBrief,
           model: config.builderModel,
           systemPrompt: builderSystemPrompt(cwd),
@@ -2125,7 +2177,7 @@ export function main(argv, io = {}) {
     task: `Build what PRD.md specifies. Every gate listed below must pass from the first iteration, so a missing script is a failing gate rather than an excuse.`,
     effects: {
       build: (brief) =>
-        spawnClaude({
+        runChild({
           prompt: brief,
           model: config.builderModel,
           systemPrompt: builderSystemPrompt(cwd),
@@ -2134,7 +2186,7 @@ export function main(argv, io = {}) {
           env,
         }),
       review: (reviewer, ids) =>
-        spawnClaude({
+        runChild({
           prompt: [
             `You are the ${reviewer} auditor, one member of a panel of ${config.reviewers.length}.`,
             '',
@@ -2153,7 +2205,7 @@ export function main(argv, io = {}) {
           env,
         }),
       realityCheck: () =>
-        spawnClaude({
+        runChild({
           prompt:
             'Read PRD.md and the repository. Answer one question: is this PRD buildable with the code present, or ' +
             'is the loop chasing an impossible spec? Begin your answer with the single word buildable or unbuildable, ' +
@@ -2164,7 +2216,7 @@ export function main(argv, io = {}) {
           env,
         }),
       extractLesson: (evidence) =>
-        spawnClaude({
+        runChild({
           prompt: `${template('lesson-extractor.md')}\n\n---\n\nThe evidence:\n\n${evidence}`,
           model: config.lessonModel,
           phase: 'lesson-extractor',
