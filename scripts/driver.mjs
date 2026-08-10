@@ -40,7 +40,7 @@ import {
   saveLessons,
   selectLessons,
 } from './lessons.mjs';
-import { installQualityPlugins } from './plugins.mjs';
+import { hasFrontend, installQualityPlugins } from './plugins.mjs';
 import { applyWinner, createWorktrees, removeWorktrees, selectWinner, shouldRace } from './race.mjs';
 import {
   evaluateIteration,
@@ -1891,7 +1891,10 @@ export function main(argv, io = {}) {
   /** Every gate, named for the brief, so a builder is never surprised by one. */
   const gateNames = [
     ...commandGates(dareDir).map((gate) => `${gate.name}: ${gate.command.join(' ')}`),
-    ...provisioning.gates.map((gate) => `design-slop: ${gate.command.join(' ')}`),
+    ...provisioning.gates.map(
+      (gate) =>
+        `quality:${gate.plugin}: ${gate.command.join(' ')}${gate.frontendOnly ? ' (armed once this repo renders a UI)' : ''}`,
+    ),
     'ci: a workflow under .github/workflows that actually runs build, lint, types, unit and e2e',
     'docs: README.md and docs/api-contract.md, neither a stub',
     'observability: structured logging in source, and a health endpoint that answers when the app is started',
@@ -1912,9 +1915,15 @@ export function main(argv, io = {}) {
    */
   const gateTree = (dir) => {
     const treeDare = path.join(dir, '.dare');
+    // Arming is a question about the code, so it is asked where the code is, every
+    // iteration. Resolving it once at provisioning time asked it of a repository holding a
+    // PRD and nothing else, so the answer was always "no frontend" and the design gate never
+    // armed on a greenfield build (DESIGN.md §5.1).
     const treeGates = [
       ...commandGates(treeDare),
-      ...provisioning.gates.map((gate) => ({ name: 'design-slop', command: gate.command, required: true })),
+      ...provisioning.gates
+        .filter((gate) => !gate.frontendOnly || hasFrontend(dir))
+        .map((gate) => ({ name: `quality:${gate.plugin}`, command: gate.command, required: true })),
     ];
     const browsers = ensurePlaywrightBrowsers({ cwd: dir, dareDir: treeDare, run: shell });
     if (browsers.installed) write(verbatim(browsers.detail));

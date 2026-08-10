@@ -90,21 +90,54 @@ describe('installQualityPlugins', () => {
     assert.deepStrictEqual(calls, [DETECT]);
   });
 
-  it('arms the gate when the repo has a frontend', () => {
+  it('carries the gate with its arming condition rather than resolving it', () => {
     const cwd = makeProject({ 'index.html': '<!doctype html>\n' });
     const { runner } = fakeRunner({ [DETECT]: { ok: true } });
     const result = installQualityPlugins({ cwd, plugins: ['impeccable'], runner });
-    assert.deepStrictEqual(result.gates, [{ plugin: 'impeccable', command: ['npx', 'impeccable', 'detect', 'src/'] }]);
+    assert.deepStrictEqual(result.gates, [
+      { plugin: 'impeccable', command: ['npx', 'impeccable', 'detect', 'src/'], frontendOnly: true },
+    ]);
   });
 
-  it('skips the gate, with a warning, on a project with no user interface', () => {
-    // DESIGN.md §5.1 caveat 1 — the one gate the spec allows to be skipped rather than failed.
-    const cwd = makeProject({ 'package.json': '{"name":"api","dependencies":{"fastify":"^4"}}\n' });
+  it('still carries a frontend-only gate on a repository that has no frontend yet', () => {
+    // The bug this defends against shipped, and it silently disabled the design gate for
+    // every greenfield run. Provisioning happens once, after the design phase and before the
+    // builder has written a line, so the repository is a PRD and some docs. Resolving
+    // `hasFrontend` there answers "no" for a React application that does not exist yet, and
+    // the gate never armed for the rest of the run.
+    //
+    // The decision now belongs to the caller, which re-asks each iteration against the tree
+    // as it actually is. DESIGN.md §5.1's carve-out is unchanged - a genuine non-UI project
+    // still skips - it is only decided at a moment when the answer can be true.
+    const cwd = makeProject({ 'PRD.md': '# Build a React dashboard\n' });
     const { runner } = fakeRunner({ [DETECT]: { ok: true } });
     const result = installQualityPlugins({ cwd, plugins: ['impeccable'], runner });
+    assert.deepStrictEqual(result.gates, [
+      { plugin: 'impeccable', command: ['npx', 'impeccable', 'detect', 'src/'], frontendOnly: true },
+    ]);
+    assert.deepStrictEqual(result.warnings, []);
+  });
+
+  it('marks a plugin that inspects any codebase as not frontend-only', () => {
+    const cwd = makeProject({ 'package.json': '{"name":"api"}\n' });
+    const { runner } = fakeRunner({ ['npx --no-install knip --version']: { ok: true } });
+    const result = installQualityPlugins({ cwd, plugins: ['knip'], runner });
+    assert.equal(result.gates.length, 1);
+    assert.equal(result.gates[0].frontendOnly, false);
+  });
+
+  it('warns rather than aborting when an optional detector will not install', () => {
+    // semgrep needs python3 and a reachable registry. Neither is worth killing a run over,
+    // and unlike impeccable it does not carry a definition-of-done line on its own.
+    const cwd = makeProject({ 'package.json': '{"name":"api"}\n' });
+    const { runner } = fakeRunner({
+      ['semgrep --version']: { ok: false },
+      ['python3 -m pip install --user --quiet semgrep']: { ok: false, stderr: 'no python3' },
+    });
+    const result = installQualityPlugins({ cwd, plugins: ['semgrep'], runner });
     assert.deepStrictEqual(result.gates, []);
     assert.equal(result.warnings.length, 1);
-    assert.equal(result.warnings[0].includes('no frontend detected'), true);
+    assert.equal(result.warnings[0].includes('semgrep'), true);
   });
 
   it('aborts when a required plugin will not install', () => {

@@ -86,6 +86,32 @@ a request without the role and look for where it is rejected.
 Playwright against the real thing, not mocked component tests. A component test proves a
 component renders; it does not prove the page works.
 
+Every page-level Playwright spec asserts accessibility with `@axe-core/playwright`, as its
+own named test, one per page:
+
+```js
+import AxeBuilder from '@axe-core/playwright';
+
+test('checkout page has no serious accessibility violations', async ({ page }) => {
+  await page.goto('/checkout');
+  const { violations } = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa'])
+    .analyze();
+  expect(violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
+});
+```
+
+Assert on the mapped violation list rather than a count, so a failure names what broke
+instead of saying `3 !== 0`.
+
+A separate accessibility gate would only tell the run what is red *today*. A named
+Playwright test enters the ratchet, and the ratchet is monotonic — once that page is clean,
+it may never quietly stop being clean for the rest of the run. That is worth more than a
+gate, and it costs one test.
+
+Also add `eslint-plugin-jsx-a11y` (or the framework equivalent) to the lint config. It
+catches the static half for free, inside a gate that already runs.
+
 ## Scope discipline
 
 Every unrelated change is regression surface, and a regression costs a full iteration plus

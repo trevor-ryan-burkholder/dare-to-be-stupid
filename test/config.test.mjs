@@ -56,7 +56,7 @@ describe('defaultConfig', () => {
       prdModel: 'claude-sonnet-5',
       styleModel: 'claude-fable-5',
       lessonModel: 'claude-sonnet-5',
-      qualityPlugins: ['impeccable'],
+      qualityPlugins: ['impeccable', 'knip', 'semgrep'],
       deploy: { enabled: false, command: '' },
       extractTests: true,
       chaos: 1,

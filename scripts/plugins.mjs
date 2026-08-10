@@ -50,6 +50,33 @@ export const KNOWN_PLUGINS = {
     gate: ['npx', 'impeccable', 'detect', 'src/'],
     note: 'frontend design-slop detector; deterministic rules, JSON output, exit codes (DESIGN.md §5.1)',
   },
+  knip: {
+    name: 'knip',
+    required: false,
+    frontendOnly: false,
+    detect: ['npx', '--no-install', 'knip', '--version'],
+    install: ['npm', 'install', '--save-dev', '--no-audit', '--no-fund', 'knip'],
+    // Deliberately narrowed to files and dependencies. knip's unused-*exports* analysis is
+    // its noisy half: on a young codebase an export with no caller yet is ordinary, and a
+    // gate that fails an honest repository costs a whole iteration. An unused file or an
+    // unused declared dependency is almost never a false positive, and both are exactly the
+    // gold-plating the builder brief already forbids without anything checking.
+    gate: ['npx', 'knip', '--include', 'files,dependencies'],
+    note: 'dead file and unused dependency detector; enforces the no-gold-plating rule the builder brief states',
+  },
+  semgrep: {
+    name: 'semgrep',
+    required: false,
+    frontendOnly: false,
+    detect: ['semgrep', '--version'],
+    install: ['python3', '-m', 'pip', 'install', '--user', '--quiet', 'semgrep'],
+    // `security-audit` is `npm audit`, which only ever inspects declared dependencies. It
+    // has nothing to say about the code the builder wrote thirty seconds ago. This is the
+    // detector half of DESIGN.md §14's open question, and a detector rather than a fourth
+    // reviewer on purpose: the panel already supplies opinions, and opinions can be charmed.
+    gate: ['semgrep', '--config', 'p/security-audit', '--error', '--quiet'],
+    note: 'static analysis over first-party source; rules-based, exit codes (DESIGN.md §14)',
+  },
 };
 
 /** Dependency names that mean the repo renders a user interface. */
@@ -172,7 +199,7 @@ export function resolvePlugin(name) {
  * @param {{ cwd: string, plugins: string[], runner?: Runner }} options
  * @returns {{
  *   installed: string[], skipped: string[], warnings: string[],
- *   gates: { plugin: string, command: string[] }[]
+ *   gates: { plugin: string, command: string[], frontendOnly: boolean }[]
  * }}
  * @throws {PluginInstallError} when a required plugin cannot be provisioned
  */
@@ -186,7 +213,7 @@ export function installQualityPlugins(options) {
   const skipped = [];
   /** @type {string[]} */
   const warnings = [];
-  /** @type {{ plugin: string, command: string[] }[]} */
+  /** @type {{ plugin: string, command: string[], frontendOnly: boolean }[]} */
   const gates = [];
 
   for (const name of plugins) {
@@ -212,13 +239,12 @@ export function installQualityPlugins(options) {
     }
 
     if (spec.gate === null) continue;
-    if (spec.frontendOnly && !hasFrontend(cwd)) {
-      warnings.push(
-        `${spec.name}'s gate is not armed: no frontend detected, and its detector only inspects UI (DESIGN.md §5.1).`,
-      );
-      continue;
-    }
-    gates.push({ plugin: spec.name, command: spec.gate });
+    // `frontendOnly` is carried, not resolved. Provisioning happens once, before the builder
+    // has written a line; asking "does this repo have a frontend" here asks it of a
+    // directory containing a PRD and nothing else, and the answer is always no. That
+    // disarmed the design gate for every greenfield run — which is the entire use case.
+    // The caller re-asks each iteration, against the tree as it actually is.
+    gates.push({ plugin: spec.name, command: spec.gate, frontendOnly: spec.frontendOnly });
   }
 
   return { installed, skipped, warnings, gates };

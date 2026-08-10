@@ -315,6 +315,32 @@ subsequent iteration.
 - Where a quality plugin exposes a gate command, it becomes a Phase-3 gate; where it
   exposes only guidance/skills, it informs the builder and reviewer.
 
+### 5.0 The other detectors, and why they are detectors
+
+`qualityPlugins` defaults to `["impeccable", "knip", "semgrep"]`. All three are
+**deterministic CLIs with exit codes**, because Phase 3 is defined as exit codes and no LLM.
+A model-based quality plugin cannot go here: the panel already supplies three opinions, and
+the thing a gate adds that an opinion cannot is that it may not be talked round.
+
+- **knip** — dead files and unused dependencies. The builder brief forbids gold-plating
+  ("no abstraction with one caller"); nothing checked it. Scoped to `--include
+  files,dependencies` on purpose: knip's unused-*exports* analysis is its noisy half, and on
+  a young codebase an export with no caller yet is ordinary rather than wrong.
+- **semgrep** — static analysis over first-party source. `security-audit` is `npm audit`,
+  which inspects **declared dependencies only** and has nothing to say about code written
+  thirty seconds ago. This is the detector half of §14's open question.
+
+impeccable is `required: true` — failing to provision it kills the run, because it carries a
+DoD line. knip and semgrep are optional and degrade to a warning: semgrep needs `python3`,
+and neither is worth killing a run over on a machine that lacks it.
+
+**Accessibility is deliberately not a gate.** `@axe-core/playwright` assertions belong
+*inside* the Playwright specs, which the builder brief now requires for every page. A gate
+would report what is red today; a named Playwright test enters the **ratchet**, so a page
+that has ever been clean may never quietly stop being clean for the rest of the run. That is
+a stronger guarantee than a gate, obtained by reusing the machine already built.
+`eslint-plugin-jsx-a11y` covers the static half inside the existing lint gate.
+
 ### 5.1 impeccable — the flagship entry (confirmed)
 
 [impeccable](https://impeccable.style/) is a frontend design skill/plugin (1 skill, 23
@@ -325,8 +351,17 @@ commands, a 58/59-rule "AI slop" detector). It plugs into `dare` in three places
   `plugins.mjs` runs this idempotently before the loop.
 - **As a Phase-3 gate:** impeccable ships a CI CLI — `npx impeccable detect src/` — with
   **deterministic rules, JSON output, and exit codes**. This is wired directly as a gate
-  (call it `gate:design-slop`). Exit non-zero = iteration fails before review, same as
-  lint. This is the deterministic half of DoD line 5 (§4).
+  (`quality:impeccable`). Exit non-zero = iteration fails before review, same as lint. This
+  is the deterministic half of DoD line 5 (§4).
+
+  **Arming is decided per iteration, not at provisioning.** This is a correctness point that
+  was wrong for four versions. Provisioning runs once, after Phase 1 and before the first
+  build, when the repository holds a PRD and some design docs and **no code**. Asking
+  `hasFrontend` there answers "no" for a React application that has not been written yet, so
+  the gate was disarmed for the whole run — on a greenfield build, which is the primary use
+  case. `installQualityPlugins` now *carries* `frontendOnly` and the driver re-evaluates it
+  against the tree each iteration. The §5.1 carve-out below is unchanged; it is merely asked
+  at a moment when the answer can be true.
 - **As build-time guidance:** impeccable's Claude Code build installs **hooks + a
   subagent** that inspect each UI edit and feed findings back mid-build, plus commands the
   builder can invoke (`/impeccable polish`, `/impeccable audit`, `/impeccable distill`,
@@ -568,7 +603,7 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `prdModel` | `claude-sonnet-5` | Phase 0 PRD authoring |
 | `styleModel` | `claude-fable-5` | Junkion narration + "dare me" idea invention; pure flavor, never touches gate logic |
 | `lessonModel` | `claude-sonnet-5` | the cold lesson extractor (§13.8); advisory, so it never needs the strongest model |
-| `qualityPlugins` | `["impeccable"]` | auto-installed in Phase 1 (§5) |
+| `qualityPlugins` | `["impeccable", "knip", "semgrep"]` | auto-installed in Phase 1 (§5); impeccable required, the other two degrade to a warning |
 | `deploy.enabled` | **false** | preview-only when enabled; never prod |
 | `deploy.command` | `""` | pluggable shell deploy; empty → auto-detect (vercel.json/netlify.toml/Dockerfile), else no-op. Reference recipe: `vercel deploy --prebuilt` |
 | `extractTests` | true | parse JSON reporter output into ratchet IDs |
