@@ -334,6 +334,25 @@ impeccable is `required: true` — failing to provision it kills the run, becaus
 DoD line. knip and semgrep are optional and degrade to a warning: semgrep needs `python3`,
 and neither is worth killing a run over on a machine that lacks it.
 
+**Detection and direction are different halves of DoD line 5, and only one can be a gate.**
+impeccable answers "is this choice wrong"; nothing deterministic can answer "is this choice
+*distinctive*", which is the failure mode of generated UI. `templates/frontend-direction.md`
+(adapted from Anthropic's `frontend-design` skill) is appended to the builder's system
+prompt by `builderSystemPrompt`, and only when `hasFrontend` is true — re-asked each
+iteration, for the same reason the gate is.
+
+Its **principles** are taken and its **workflow is not**. The source prescribes
+brainstorm → explore → plan → critique → build. This loop already owns the process, and a
+second process in the same prompt yields a builder that redesigns instead of shipping while
+the ratchet charges it for every test written along the way.
+
+It is *appended*, never inherited, and that is the load-bearing part. A `claude -p` child
+picks up whatever skills the operator happens to have installed, so guidance acquired by
+inheritance would make a build depend on the machine it ran on. §10 already forces
+`outputStyle: default` to stop a persona leaking into a build; the same argument applies to
+skills, and only what is appended here is versioned with the plugin. **The general problem —
+that builder children inherit the operator's whole skill surface — remains open.**
+
 **Accessibility is deliberately not a gate.** `@axe-core/playwright` assertions belong
 *inside* the Playwright specs, which the builder brief now requires for every page. A gate
 would report what is red today; a named Playwright test enters the **ratchet**, so a page

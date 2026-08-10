@@ -1688,6 +1688,28 @@ function template(name) {
 }
 
 /**
+ * The builder's system prompt, plus visual direction when there is a UI to direct.
+ *
+ * Two things make this a function rather than a string. The condition is re-asked every
+ * iteration, because a greenfield repository has no frontend until the builder writes one —
+ * the same mistake that kept the design gate disarmed for whole runs (DESIGN.md §5.1). And
+ * both builder call sites go through here, so the raced builder and the ordinary one cannot
+ * drift apart on what they were told.
+ *
+ * Guidance is *appended*, never inherited. A `claude -p` child picks up whatever skills the
+ * operator happens to have installed, which would make a build depend on the machine it ran
+ * on; what the builder was told is decided here, and versioned with the plugin.
+ *
+ * @param {string} cwd
+ * @returns {string}
+ */
+export function builderSystemPrompt(cwd) {
+  const base = template('builder-system.md');
+  if (!hasFrontend(cwd)) return base;
+  return `${base}\n\n---\n\n${template('frontend-direction.md')}`;
+}
+
+/**
  * Every id the reviewer must return an entry for: the PRD's own numbering plus the five
  * DoD lines (DESIGN.md §4).
  *
@@ -2016,7 +2038,7 @@ export function main(argv, io = {}) {
         const built = spawnClaude({
           prompt: candidateBrief,
           model: config.builderModel,
-          systemPrompt: template('builder-system.md'),
+          systemPrompt: builderSystemPrompt(cwd),
           phase: 'builder',
           cwd: worktree.dir,
           env,
@@ -2073,7 +2095,7 @@ export function main(argv, io = {}) {
         spawnClaude({
           prompt: brief,
           model: config.builderModel,
-          systemPrompt: template('builder-system.md'),
+          systemPrompt: builderSystemPrompt(cwd),
           phase: 'builder',
           cwd,
           env,

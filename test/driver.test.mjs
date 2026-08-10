@@ -58,6 +58,7 @@ import {
   runGates,
   shouldContinue,
 } from '../scripts/driver.mjs';
+import { builderSystemPrompt } from '../scripts/driver.mjs';
 import { loadState, saveState } from '../scripts/ratchet.mjs';
 
 /** @type {string[]} */
@@ -610,6 +611,42 @@ describe('claudeArgs and the permission policy', () => {
   it('appends a system prompt when one is given', () => {
     const args = claudeArgs({ model: 'm', phase: 'builder', systemPrompt: 'be hostile' });
     assert.equal(args.includes('be hostile'), true);
+  });
+});
+
+describe('builderSystemPrompt', () => {
+  /** @param {Record<string, string>} files */
+  function tree(files) {
+    const dir = makeTempDir();
+    for (const [relative, contents] of Object.entries(files)) {
+      const full = path.join(dir, relative);
+      mkdirSync(path.dirname(full), { recursive: true });
+      writeFileSync(full, contents, 'utf8');
+    }
+    return dir;
+  }
+
+  it('says nothing about visual direction on a repository with no user interface', () => {
+    const prompt = builderSystemPrompt(tree({ 'package.json': '{"name":"cli"}' }));
+    assert.equal(prompt.includes('Visual direction'), false);
+    assert.equal(prompt.includes('Do not gold-plate'), true, 'the builder brief itself went missing');
+  });
+
+  it('appends visual direction once the repository renders a user interface', () => {
+    // Guidance a detector cannot supply: impeccable can rule that a choice is wrong, but no
+    // deterministic rule can say a choice is distinctive.
+    const prompt = builderSystemPrompt(tree({ 'index.html': '<!doctype html>' }));
+    assert.equal(prompt.includes('Visual direction'), true);
+    assert.equal(prompt.includes('Do not gold-plate'), true, 'the direction replaced the brief instead of joining it');
+  });
+
+  it('carries the principles but not a competing workflow', () => {
+    // The source skill prescribes brainstorm/explore/plan/critique/build. This loop already
+    // owns the process; two processes in one prompt produce a builder that redesigns rather
+    // than ships, while the ratchet charges it for every test written on the way.
+    const prompt = builderSystemPrompt(tree({ 'index.html': '<!doctype html>' }));
+    assert.equal(prompt.includes('Spend boldness in one place'), true);
+    assert.equal(/brainstorm a short design plan/i.test(prompt), false);
   });
 });
 
