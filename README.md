@@ -1,12 +1,35 @@
 # dare-to-be-stupid
 Act now! Claude Code does EVERYTHING autonomously - batteries not included, warranty void, prod not invited. Dare to be stupid!
 
-`DESIGN.md` is the spec. `CLAUDE.md` is how work happens in this repo.
+One command hands a specification to a loop that designs, builds, gates, audits and ships
+it — unattended — until it passes an enterprise definition of done, or the budget dies.
 
-## Status
+```
+/dare ./PRD.md          # build an existing spec
+/dare "a link shortener with an admin page"
+/dare                   # dare-me mode: it invents its own
+```
 
-All eight slices of `DESIGN.md` §12 are built and gated. What remains is live verification
-that cannot be done from unit tests — see "Not yet proven" below.
+**Pre-production only.** The build children run with `--dangerously-skip-permissions`.
+Point this at a throwaway repository and nothing else.
+
+## How it works
+
+```
+ideate ──► design ──► build ──► gates ──► ratchet ──► audit ──► ship
+                        ▲                    │          │
+                        └────────────────────┴──────────┘
+                          regression, failing gate, or finding
+```
+
+Three things make it terminate instead of oscillate:
+
+- **A ratchet.** Every test ID that has ever passed is recorded. If one stops passing, the
+  run hard-resets and the regression becomes the only task.
+- **A cold auditor.** Review happens in a separate process with no build log and no hint an
+  agent wrote the code, because a builder cannot judge its own work.
+- **A budget.** Iterations and tokens are both capped, read from what the children actually
+  reported rather than estimated.
 
 ## Install
 
@@ -15,31 +38,12 @@ that cannot be done from unit tests — see "Not yet proven" below.
 /plugin install dare-to-be-stupid@dare-to-be-stupid
 ```
 
-Then `/dare <path|"idea"|nothing>` from inside a throwaway repository.
+Requires Node ≥ 22.12, the `claude` CLI, and a git repository. The run installs its own test
+tooling and quality plugins.
 
-## Not yet proven
+`DESIGN.md` is the spec. `CLAUDE.md` is how work happens in this repo.
 
-These need a live run and cannot be settled by the suite:
-
-- the guard hook denying a real PreToolUse event, with the plugin installed
-- `extractTestIds` against live reporter output rather than the committed fixtures
-- a deliberately incomplete build actually drawing a `fail` verdict from a cold reviewer
-- a first end-to-end `/dare` against a throwaway repo with `deploy.enabled: false`
-
-`claude -p` child spawning and JSON envelope parsing **is** verified against claude 2.1.226.
-
-## Slice status
-
-| # | Slice | State |
-|---|---|---|
-| 1 | `hooks/guard.mjs` + `hooks/hooks.json` | done |
-| 2 | `extractTestIds` + real reporter fixtures | done |
-| 3 | ratchet | done |
-| 4 | `plugins.mjs` + `init.mjs` (preflight, security scan, config) | done |
-| 5 | `driver.mjs` | done |
-| 6 | `templates/` | done |
-| 7 | output style | done |
-| 8 | plugin + marketplace manifests, `/dare` command | done |
+---
 
 ## The guard hook
 
@@ -80,7 +84,7 @@ tests/checkout.spec.js::cart > totals > sums line items::chromium
 | the same ID appears twice | worst status wins, so a passing entry can never mask a failing one |
 | Playwright `flaky` (failed, then passed on retry) | **not** counted as passed; retrievable via `statuses: ['flaky']` |
 | vitest `todo` / `pending` | treated as skipped |
-| a well-formed run with zero tests | returns an empty set — refusing to advance on that is the ratchet's job (slice 3) |
+| a well-formed run with zero tests | returns an empty set — refusing to advance on that is the ratchet's job |
 
 The same spec run under two Playwright projects is two IDs, because it is two results.
 
@@ -92,8 +96,7 @@ two runs of each so the suite can assert the ID set is stable across identical r
 
 `.dare/state.json` holds every test ID that has **ever** passed. An iteration that drops
 one is a regression: hard reset, the regression becomes the next build task, nothing else
-proceeds (`DESIGN.md` §1.2). This is what makes an autonomous loop terminate instead of
-oscillating.
+proceeds (`DESIGN.md` §1.2).
 
 ```json
 { "version": 1, "iteration": 12, "passing": ["src/api.test.ts::rejects an expired token"], "lastGoodCommit": "a1b2c3d" }
@@ -120,9 +123,9 @@ temp file and a rename.
 
 ## Preflight
 
-`dare init` (`scripts/init.mjs`) is the last point at which a human is still in the loop.
-It runs every check in `DESIGN.md` §3.5 and exits non-zero if any fails — and it runs *all*
-of them even after one fails, so an operator fixes everything in one pass:
+`scripts/init.mjs` is the last point at which a human is still in the loop. `/dare` runs it
+first and refuses to continue if it exits non-zero — and it runs *all* checks even after
+one fails, so an operator fixes everything in one pass:
 
 ```
 node scripts/init.mjs --yes
@@ -139,10 +142,6 @@ node scripts/init.mjs --yes
 | `config` | `.dare/config.json` is unreadable (it is scaffolded when simply absent) |
 | `agent-surface` | the security scan finds anything blocking |
 | `danger-acknowledged` | `--yes` was not passed |
-
-`.dare/config.json` validation is strict: an unknown key is an **error**, not a shrug. A
-typo'd `maxIteration` that silently kept the default would give an unattended run hours of
-behaviour nobody asked for, with no way to tell.
 
 ## Agent-config security scan
 
@@ -161,35 +160,39 @@ out, so a required gate never depends on the network.
 Matched secrets are redacted to a four-character prefix and a length. A scanner that prints
 the credential it found has just copied it into your scrollback and your CI log.
 
-## Quality plugins
-
-`scripts/plugins.mjs` provisions the plugins in `qualityPlugins` idempotently before the
-loop. A **required** plugin that fails to install aborts the run — it contributes a
-definition-of-done line, and dropping it silently would ship having never checked that
-line. An unknown plugin name is an error rather than a guessed `npx <name>`.
-
-impeccable's `gate:design-slop` is armed only when the repo actually renders a user
-interface; on an API or CLI project it is skipped with a warning, which is the single gate
-skip `DESIGN.md` §5.1 carves out.
-
 ## The loop
 
-`scripts/driver.mjs` runs build → gates → ratchet → review → ship, and the order is the
+`scripts/driver.mjs` runs build → gates → ratchet → audit → ship, and the order is the
 point. Gates before review because they are free and deterministic, and there is no reason
 to spend a panel of cold reads on something that does not compile. Ratchet before review
 because a regression ends the iteration whatever a reviewer would have said about the rest.
 
-| Terminal state | Reached when |
+### The gates
+
+Every gate must run. A gate that cannot run is a failure, not a skip — the single exception
+`DESIGN.md` §5.1 carves out is `design-slop`, which is simply not armed on a project with no
+user interface.
+
+| Gate | How it is decided |
 |---|---|
-| `SHIPPED` | gates green, nothing regressed, panel unanimous with `file:line` evidence |
-| `STALLED` | `stallLimit` iterations with no gate improvement and no new passing test |
-| `BUDGET` | `maxIterations` or `tokenCeiling` exhausted |
-| `ABORTED` | builder process failed, test report unreadable, or the reality check found the PRD unbuildable |
+| `build` `lint` `types` `e2e` `security-audit` | exit code |
+| `unit` | exit code, and it writes the reporter JSON the ratchet reads |
+| `ci` | a workflow file exists under `.github/workflows` |
+| `docs` | `README.md` and `docs/api-contract.md` exist and are not stubs |
+| `observability` | structured logging **and** a health endpoint are present in source |
+| `red-evidence` | every newly passing test was observed failing first |
+| `design-slop` | impeccable's detector, armed only when the repo renders a UI |
 
-### The reviewer parser is the product
+`red-evidence` is `DESIGN.md` §8's RED-before-GREEN enforced structurally.
+`.dare/red-evidence.json` accumulates every ID ever seen not passing; a newly passing ID
+that was never in that set fails the gate as unproven. It kills tautological tests *before*
+review rather than after, when they have already cost an iteration. Unreadable evidence
+counts as no evidence.
 
-`DESIGN.md` §1.1 exists because a builder satisfices. The parser is the only thing between
-a satisficed build and a `SHIPPED` tag, so it is deliberately hostile:
+### The auditor
+
+`DESIGN.md` §1.1 exists because a builder satisfices. The parser is the only thing between a
+satisficed build and a `SHIPPED` tag, so it is deliberately hostile:
 
 - output that will not parse is a **fail** — not a retry, not a shrug
 - `pass` with no evidence, or evidence that is not a real `path/file.ext:LINE`, is
@@ -198,14 +201,106 @@ a satisficed build and a `SHIPPED` tag, so it is deliberately hostile:
 - the reviewer's own top-level `verdict` is advisory; the verdict is computed from the
   entries, so a reviewer that stamps `pass` over a failing entry does not get to
 
+With `requireUnanimous` (the default), every panel member must return a clean pass.
+
+### Terminal states
+
+| State | Reached when |
+|---|---|
+| `SHIPPED` | gates green, nothing regressed, panel unanimous with `file:line` evidence |
+| `STALLED` | `stallLimit` iterations with no gate improvement and no new passing test |
+| `BUDGET` | `maxIterations` or `tokenCeiling` exhausted |
+| `ABORTED` | builder process failed, test report unreadable, or the reality check found the PRD unbuildable |
+
 Budget accounting reads `total_cost_usd` and every `usage` bucket — including cache tokens —
-from the real `claude -p --output-format json` envelope, rather than estimating. An
-estimate that drifts low never trips the ceiling.
+from the real `claude -p --output-format json` envelope, rather than estimating. An estimate
+that drifts low never trips the ceiling.
+
+## Configuration
+
+`.dare/config.json` is scaffolded on first run. Validation is strict: an unknown key is an
+**error**, not a shrug. A typo'd `maxIteration` that silently kept the default would give an
+unattended run hours of behaviour nobody asked for, with no way to tell.
+
+| Key | Default | |
+|---|---|---|
+| `maxIterations` | `25` | hard iteration cap |
+| `stallLimit` | `4` | iterations with no measurable improvement before `STALLED` |
+| `tokenCeiling` | `4000000` | total tokens across every child |
+| `reviewers` | `["security","correctness","design"]` | the cold panel |
+| `requireUnanimous` | `true` | one dissent blocks the ship |
+| `qualityPlugins` | `["impeccable"]` | provisioned before the loop |
+| `deploy` | `{ "enabled": false }` | off by default; pre-production only |
+| `chaos` | `1` | scope budget: 1 surgical, 2 normal, 3 feral |
+| `realityCheck.after` | `3` | stalled iterations before asking if the PRD is buildable |
+| `dareMe.enabled` | `true` | allow `/dare` with no arguments |
+
+Environment: `DARE_CHAOS=1|2|3` overrides the dial. `DARE_STYLE=plain` disables the output
+style. Nothing else is overridable, so an unattended run stays reproducible from the repo.
+
+### What a run leaves in `.dare/`
+
+| File | |
+|---|---|
+| `state.json` | the ratchet. Not writable by the builder |
+| `config.json` | the settings above. Not writable by the builder |
+| `bloopers.log` | one JSON line per hard reset: iteration, regressed IDs, diff stat |
+| `red-evidence.json` | every test ID ever seen not passing |
+| `test-report.json` | the latest reporter output the ratchet read |
+
+## The output style
+
+Runs narrate in the voice of an '80s Junkion — reassembled advertising copy, game show
+patter, emergency broadcast. Failing tests are a voluntary recall; shipping is a
+limited-time offer; the budget running out is the end of the broadcast day.
+
+The mapping is tight on purpose. Every line still carries the real module, count or state:
+
+```
+WE ARE ISSUING A VOLUNTARY RECALL ON AUTH-MIDDLEWARE. AFFECTED UNITS: FOURTEEN.
+```
+
+`scripts/style.mjs` is pure — it takes an event record and returns a string, reads no state
+and decides nothing. Nothing it returns is fed back into a gate result, the ratchet, or
+reviewer JSON.
+
+**Never styled, in either mode:** code, identifiers, file paths, JSON, commit messages, test
+names, stack traces, error text. Failure output is verbatim.
+
+`DARE_STYLE=plain` is a full bypass, not a quieter voice — plain mode builds a different,
+literal string from the same record.
+
+## Status
+
+All eight slices of `DESIGN.md` §12 are built and gated: **562 tests**, lint and typecheck
+clean.
+
+| # | Slice | State |
+|---|---|---|
+| 1 | `hooks/guard.mjs` + `hooks/hooks.json` | done |
+| 2 | `extractTestIds` + real reporter fixtures | done |
+| 3 | ratchet | done |
+| 4 | `plugins.mjs` + `init.mjs` (preflight, security scan, config) | done |
+| 5 | `driver.mjs` | done |
+| 6 | `templates/` | done |
+| 7 | output style | done |
+| 8 | plugin + marketplace manifests, `/dare` command | done |
+
+### Not yet proven
+
+These need a live run and cannot be settled by the suite:
+
+- the guard hook denying a real PreToolUse event, with the plugin installed
+- `extractTestIds` against live reporter output rather than the committed fixtures
+- a deliberately incomplete build actually drawing a `fail` verdict from a cold reviewer
+- a first end-to-end `/dare` against a throwaway repo with `deploy.enabled: false`
+
+`claude -p` child spawning and JSON envelope parsing **is** verified against claude 2.1.226.
 
 ## Working on this repo
 
 Requires Node ≥ 22.12. Dev dependencies only — the plugin itself has no runtime
-dependencies.
+dependencies, and a test asserts that structurally by checking every import.
 
 ```
 npm install
