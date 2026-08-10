@@ -15,7 +15,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -24,6 +24,13 @@ import { defaultConfig } from '../scripts/config.mjs';
 import {
   DriverError,
   airtimeRemaining,
+  commandGates,
+  loadRedEvidence,
+  parseDriverArgs,
+  recordRedEvidence,
+  redEvidenceGate,
+  requiredIdsFor,
+  staticGates,
   appendBlooper,
   assertNotNested,
   claudeArgs,
@@ -550,7 +557,7 @@ describe('driveRun', () => {
       review: () => ({ ...ok, text: JSON.stringify({ requirements: [GOOD_ENTRY] }) }),
       realityCheck: () => ({ ...ok, text: 'buildable' }),
       gates: () => ({ ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }] }),
-      readTestReport: () => ({ numTotalTests: 1, testResults: [] }),
+      readTestReports: () => [{ numTotalTests: 1, testResults: [] }],
       commit: () => 'commit1',
       diffStat: () => ' 1 file changed',
       ship: () => {},
@@ -608,7 +615,7 @@ describe('driveRun', () => {
   it('ships when the gates pass, nothing regressed and the panel is unanimous', () => {
     let shipped = 0;
     const { outcome } = run({
-      readTestReport: () => ONE_PASSING,
+      readTestReports: () => [ONE_PASSING],
       ship: () => {
         shipped += 1;
       },
@@ -618,14 +625,14 @@ describe('driveRun', () => {
   });
 
   it('records the passing tests in the ratchet when it ships', () => {
-    const { outcome, dareDir } = run({ readTestReport: () => ONE_PASSING });
+    const { outcome, dareDir } = run({ readTestReports: () => [ONE_PASSING] });
     assert.deepStrictEqual(outcome.passing, ['test/a.test.js::works']);
     assert.equal(loadState(dareDir).lastGoodCommit, 'commit1');
   });
 
   it('does not ship when a reviewer withholds evidence', () => {
     const { outcome } = run({
-      readTestReport: () => ONE_PASSING,
+      readTestReports: () => [ONE_PASSING],
       review: () => ({
         ok: true,
         costUsd: 0,
@@ -639,7 +646,7 @@ describe('driveRun', () => {
 
   it('does not ship when a reviewer process dies', () => {
     const { outcome } = run({
-      readTestReport: () => ONE_PASSING,
+      readTestReports: () => [ONE_PASSING],
       review: () => ({ ok: false, costUsd: 0, tokens: 0, raw: 'segfault', text: '' }),
     });
     assert.notEqual(outcome.state, 'SHIPPED');
@@ -649,7 +656,7 @@ describe('driveRun', () => {
     let reviews = 0;
     run(
       {
-        readTestReport: () => ONE_PASSING,
+        readTestReports: () => [ONE_PASSING],
         gates: () => ({ ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'boom' }] }),
         review: () => {
           reviews += 1;
@@ -663,7 +670,7 @@ describe('driveRun', () => {
 
   it('hard-resets and writes a blooper when a passing test disappears', () => {
     const { outcome, dareDir } = run(
-      { readTestReport: () => ({ numTotalTests: 0, testResults: [] }) },
+      { readTestReports: () => [{ numTotalTests: 0, testResults: [] }] },
       { maxIterations: 2 },
       ['test/a.test.js::works'],
     );
@@ -703,7 +710,7 @@ describe('driveRun', () => {
       requiredIds: ['PRD-1.1'],
       task: 'build the thing',
       effects: effectsWith({
-        readTestReport: () => ({ numTotalTests: 0, testResults: [] }),
+        readTestReports: () => [{ numTotalTests: 0, testResults: [] }],
         build: () => {
           writeFileSync(path.join(root, 'app.txt'), 'broken by the builder\n', 'utf8');
           return { ok: true, text: '', costUsd: 0, tokens: 1, raw: '' };
@@ -716,7 +723,7 @@ describe('driveRun', () => {
 
   it('never loses a ratchet id to a reset', () => {
     const { dareDir } = run(
-      { readTestReport: () => ({ numTotalTests: 0, testResults: [] }) },
+      { readTestReports: () => [{ numTotalTests: 0, testResults: [] }] },
       { maxIterations: 2 },
       ['test/a.test.js::works'],
     );
@@ -726,7 +733,7 @@ describe('driveRun', () => {
   it('ends BUDGET when the iteration limit is reached', () => {
     const { outcome } = run(
       {
-        readTestReport: () => ONE_PASSING,
+        readTestReports: () => [ONE_PASSING],
         review: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: '{"requirements":[]}' }),
       },
       { maxIterations: 2, stallLimit: 99, realityCheck: { after: 99 } },
@@ -738,7 +745,7 @@ describe('driveRun', () => {
   it('ends BUDGET when the token ceiling is reached', () => {
     const { outcome } = run(
       {
-        readTestReport: () => ONE_PASSING,
+        readTestReports: () => [ONE_PASSING],
         review: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: '{"requirements":[]}' }),
       },
       { tokenCeiling: 150, maxIterations: 99, stallLimit: 99, realityCheck: { after: 99 } },
@@ -749,7 +756,7 @@ describe('driveRun', () => {
   it('ends STALLED when nothing improves', () => {
     const { outcome } = run(
       {
-        readTestReport: () => ONE_PASSING,
+        readTestReports: () => [ONE_PASSING],
         review: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: '{"requirements":[]}' }),
       },
       { maxIterations: 99, stallLimit: 2, realityCheck: { after: 99 } },
@@ -764,7 +771,7 @@ describe('driveRun', () => {
   });
 
   it('ends ABORTED when the test report cannot be read, rather than assuming nothing regressed', () => {
-    const { outcome } = run({ readTestReport: () => ({ nonsense: true }) });
+    const { outcome } = run({ readTestReports: () => [{ nonsense: true }] });
     assert.equal(outcome.state, 'ABORTED');
     assert.equal(outcome.reason.includes('test report could not be read'), true);
   });
@@ -772,7 +779,7 @@ describe('driveRun', () => {
   it('ends ABORTED when the reality check says the PRD is unbuildable', () => {
     const { outcome, dareDir } = run(
       {
-        readTestReport: () => ONE_PASSING,
+        readTestReports: () => [ONE_PASSING],
         review: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: '{"requirements":[]}' }),
         realityCheck: () => ({
           ok: true,
@@ -794,7 +801,7 @@ describe('driveRun', () => {
   it('carries on when the reality check says the PRD is buildable', () => {
     const { outcome } = run(
       {
-        readTestReport: () => ONE_PASSING,
+        readTestReports: () => [ONE_PASSING],
         review: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: '{"requirements":[]}' }),
         realityCheck: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: 'buildable, keep going' }),
       },
@@ -808,7 +815,7 @@ describe('driveRun', () => {
     const tasks = [];
     run(
       {
-        readTestReport: () => ONE_PASSING,
+        readTestReports: () => [ONE_PASSING],
         gates: () => ({ ok: false, results: [{ name: 'typecheck', ok: false, status: 1, detail: 'TS2339' }] }),
         build: (task) => {
           tasks.push(task);
@@ -826,7 +833,7 @@ describe('driveRun', () => {
     const tasks = [];
     run(
       {
-        readTestReport: () => ({ numTotalTests: 0, testResults: [] }),
+        readTestReports: () => [{ numTotalTests: 0, testResults: [] }],
         build: (task) => {
           tasks.push(task);
           return { ok: true, text: '', costUsd: 0, tokens: 1, raw: '' };
@@ -841,7 +848,7 @@ describe('driveRun', () => {
   it('accumulates the real cost and tokens the children reported', () => {
     const { outcome } = run(
       {
-        readTestReport: () => ONE_PASSING,
+        readTestReports: () => [ONE_PASSING],
         build: () => ({ ok: true, text: '', costUsd: 0.5, tokens: 40, raw: '' }),
         review: () => ({
           ok: true,
@@ -856,5 +863,170 @@ describe('driveRun', () => {
     assert.equal(outcome.state, 'SHIPPED');
     assert.equal(outcome.costUsd, 0.75);
     assert.equal(outcome.spentTokens, 50);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The CLI surface and the gates it assembles
+// ---------------------------------------------------------------------------
+
+describe('parseDriverArgs', () => {
+  it('reads a quoted idea as the input', () => {
+    assert.deepStrictEqual(parseDriverArgs(['a', 'todo', 'app']), {
+      input: 'a todo app',
+      yes: false,
+      confirmPrd: false,
+    });
+  });
+
+  it('reads a path as the input', () => {
+    assert.equal(parseDriverArgs(['./PRD.md']).input, './PRD.md');
+  });
+
+  it('treats no arguments as no input, which is dare-me mode', () => {
+    assert.equal(parseDriverArgs([]).input, '');
+  });
+
+  it('keeps flags out of the input', () => {
+    assert.deepStrictEqual(parseDriverArgs(['--yes', 'an', 'idea', '--confirm-prd']), {
+      input: 'an idea',
+      yes: true,
+      confirmPrd: true,
+    });
+  });
+});
+
+describe('requiredIdsFor', () => {
+  it('finds every PRD id and appends the five DoD lines', () => {
+    const prd = 'PRD-1.1 does a thing.\nPRD-2.3 does another.\nPRD-1.2 and one more.';
+    assert.deepStrictEqual(requiredIdsFor(prd), [
+      'PRD-1.1',
+      'PRD-1.2',
+      'PRD-2.3',
+      'DoD-1-requirements',
+      'DoD-2-security',
+      'DoD-3-ci',
+      'DoD-4-docs-observability',
+      'DoD-5-design',
+    ]);
+  });
+
+  it('deduplicates an id mentioned more than once', () => {
+    assert.deepStrictEqual(requiredIdsFor('PRD-1.1 here and PRD-1.1 again').slice(0, 1), ['PRD-1.1']);
+  });
+
+  it('still requires the DoD lines when the PRD has no numbered requirements', () => {
+    assert.equal(requiredIdsFor('a prose document').length, 5);
+  });
+});
+
+describe('commandGates', () => {
+  it('covers every deterministic gate DESIGN.md phase 3 names', () => {
+    assert.deepStrictEqual(
+      commandGates('/repo/.dare').map((gate) => gate.name),
+      ['build', 'lint', 'types', 'unit', 'e2e', 'security-audit'],
+    );
+  });
+
+  it('points the unit reporter at the file the ratchet reads', () => {
+    const unit = commandGates('/repo/.dare').find((gate) => gate.name === 'unit');
+    assert.equal(unit?.command.includes('--outputFile=/repo/.dare/test-report.json'), true);
+  });
+});
+
+describe('staticGates', () => {
+  /** @param {Record<string, string>} files */
+  function repoWith(files) {
+    const dir = makeTempDir();
+    for (const [relative, contents] of Object.entries(files)) {
+      const full = path.join(dir, relative);
+      mkdirSync(path.dirname(full), { recursive: true });
+      writeFileSync(full, contents, 'utf8');
+    }
+    return dir;
+  }
+
+  const PROSE = 'x'.repeat(400);
+
+  it('fails all three on an empty repository', () => {
+    assert.deepStrictEqual(
+      staticGates(repoWith({})).map((gate) => [gate.name, gate.ok]),
+      [
+        ['ci', false],
+        ['docs', false],
+        ['observability', false],
+      ],
+    );
+  });
+
+  it('passes ci only when a workflow file exists', () => {
+    const named = (/** @type {string} */ dir) => staticGates(dir).find((gate) => gate.name === 'ci');
+    assert.equal(named(repoWith({ '.github/workflows/ci.yml': 'on: push' }))?.ok, true);
+    assert.equal(named(repoWith({ '.github/workflows/notes.txt': 'x' }))?.ok, false);
+  });
+
+  it('fails docs when a required document is a stub rather than absent', () => {
+    const dir = repoWith({ 'README.md': PROSE, 'docs/api-contract.md': '# TODO\n' });
+    const docs = staticGates(dir).find((gate) => gate.name === 'docs');
+    assert.equal(docs?.ok, false);
+    assert.equal(docs?.detail.includes('docs/api-contract.md'), true);
+  });
+
+  it('passes docs when both documents are substantial', () => {
+    const dir = repoWith({ 'README.md': PROSE, 'docs/api-contract.md': PROSE });
+    assert.equal(staticGates(dir).find((gate) => gate.name === 'docs')?.ok, true);
+  });
+
+  it('requires both structured logging and a health endpoint for observability', () => {
+    const loggerOnly = repoWith({ 'src/app.ts': 'logger.info("up");' });
+    const healthOnly = repoWith({ 'src/app.ts': 'app.get("/health", handler);' });
+    const both = repoWith({ 'src/app.ts': 'logger.info("up");\napp.get("/healthz", handler);' });
+    assert.equal(staticGates(loggerOnly).find((gate) => gate.name === 'observability')?.ok, false);
+    assert.equal(staticGates(healthOnly).find((gate) => gate.name === 'observability')?.ok, false);
+    assert.equal(staticGates(both).find((gate) => gate.name === 'observability')?.ok, true);
+  });
+
+  it('does not count a health route found inside node_modules', () => {
+    const dir = repoWith({
+      'node_modules/pkg/index.js': 'logger.info("x");\napp.get("/health", h);',
+      'src/app.ts': 'export const x = 1;',
+    });
+    assert.equal(staticGates(dir).find((gate) => gate.name === 'observability')?.ok, false);
+  });
+});
+
+describe('red-evidence', () => {
+  it('passes when every newly passing test was seen failing first', () => {
+    const gate = redEvidenceGate({ previousPassing: ['a::1'], passing: ['a::1', 'b::2'], redSeen: ['b::2'] });
+    assert.equal(gate.ok, true);
+  });
+
+  it('fails a test that has only ever been green', () => {
+    const gate = redEvidenceGate({ previousPassing: ['a::1'], passing: ['a::1', 'b::2'], redSeen: [] });
+    assert.equal(gate.ok, false);
+    assert.equal(gate.detail.includes('b::2'), true);
+  });
+
+  it('does not re-judge tests the ratchet already holds', () => {
+    assert.equal(redEvidenceGate({ previousPassing: ['a::1'], passing: ['a::1'], redSeen: [] }).ok, true);
+  });
+
+  it('names every unproven test, sorted', () => {
+    const gate = redEvidenceGate({ previousPassing: [], passing: ['z::1', 'a::1'], redSeen: [] });
+    assert.equal(gate.detail.endsWith('a::1, z::1'), true);
+  });
+
+  it('accumulates evidence across iterations and survives a reload', () => {
+    const dir = makeTempDir();
+    assert.deepStrictEqual([...loadRedEvidence(dir)], []);
+    recordRedEvidence(dir, ['b::2']);
+    recordRedEvidence(dir, ['c::3', 'b::2']);
+    assert.deepStrictEqual([...loadRedEvidence(dir)].sort(), ['b::2', 'c::3']);
+  });
+
+  it('treats unreadable evidence as no evidence, so new tests stay unproven', () => {
+    const dir = makeTempDir();
+    writeFileSync(path.join(dir, 'red-evidence.json'), '{ not json', 'utf8');
+    assert.deepStrictEqual([...loadRedEvidence(dir)], []);
   });
 });

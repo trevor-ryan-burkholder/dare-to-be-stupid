@@ -20,17 +20,24 @@
  *     reason to spend a panel of cold reads on something that does not compile.
  */
 
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 
+import { loadConfig } from './config.mjs';
+import { installQualityPlugins } from './plugins.mjs';
 import {
   evaluateIteration,
   extractTestIds,
   formatBlooperRecord,
   hardReset,
   loadState,
+  parseReport,
   saveState,
 } from './ratchet.mjs';
+import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
 
 /** @typedef {import('./config.mjs').DareConfig} DareConfig */
 /** @typedef {'SHIPPED' | 'STALLED' | 'BUDGET' | 'ABORTED'} TerminalState */
@@ -452,7 +459,7 @@ export function appendBlooper(dareDir, event) {
  *   review: (reviewer: string) => ClaudeResult,
  *   realityCheck: () => ClaudeResult,
  *   gates: () => { ok: boolean, results: GateResult[] },
- *   readTestReport: () => unknown,
+ *   readTestReports: () => unknown[],
  *   commit: (message: string) => string,
  *   diffStat: () => string,
  *   ship: (iteration: number) => void,
@@ -530,9 +537,16 @@ export function driveRun(options) {
     /** @type {Set<string>} */
     let passing;
     try {
-      passing = config.extractTests
-        ? extractTestIds(effects.readTestReport(), { rootDir })
-        : new Set(loadState(dareDir).passing);
+      if (config.extractTests) {
+        // Every runner's report contributes ids. A repo with both a unit suite and an
+        // e2e suite has two, and the ratchet must hold both or it protects half the work.
+        passing = new Set();
+        for (const report of effects.readTestReports()) {
+          for (const id of extractTestIds(report, { rootDir })) passing.add(id);
+        }
+      } else {
+        passing = new Set(loadState(dareDir).passing);
+      }
     } catch (error) {
       // An unreadable report is not evidence that nothing regressed.
       return finish('ABORTED', `test report could not be read: ${/** @type {Error} */ (error).message}`);
@@ -616,4 +630,482 @@ export function driveRun(options) {
       }
     }
   }
+}
+
+// ===========================================================================
+// Phase 3 gate definitions (DESIGN.md §2, §4)
+// ===========================================================================
+
+/** Where the driver expects each runner to leave its JSON report. */
+export const UNIT_REPORT = 'test-report.json';
+export const E2E_REPORT = 'e2e-report.json';
+export const RED_EVIDENCE = 'red-evidence.json';
+
+/**
+ * The gates that are just an exit code.
+ *
+ * The unit gate writes its reporter output where the ratchet will look for it, because a
+ * run whose tests passed but produced no machine-readable report gives the ratchet nothing
+ * to hold — and the ratchet is what makes the loop terminate.
+ *
+ * @param {string} dareDir
+ * @returns {Gate[]}
+ */
+export function commandGates(dareDir) {
+  const unitOut = path.join(dareDir, UNIT_REPORT);
+  return [
+    { name: 'build', command: ['npm', 'run', 'build'], required: true },
+    { name: 'lint', command: ['npm', 'run', 'lint'], required: true },
+    { name: 'types', command: ['npm', 'run', 'typecheck'], required: true },
+    { name: 'unit', command: ['npx', 'vitest', 'run', '--reporter=json', `--outputFile=${unitOut}`], required: true },
+    { name: 'e2e', command: ['npx', 'playwright', 'test'], required: true },
+    { name: 'security-audit', command: ['npm', 'audit', '--audit-level=high'], required: true },
+  ];
+}
+
+/**
+ * @param {string} file
+ * @param {number} minimumBytes
+ * @returns {boolean} true when the file exists and is not a stub
+ */
+function isSubstantial(file, minimumBytes) {
+  if (!existsSync(file)) return false;
+  try {
+    return readFileSync(file, 'utf8').replace(/\s+/g, ' ').trim().length >= minimumBytes;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @param {string} dir
+ * @param {number} depth
+ * @param {(contents: string) => boolean} predicate
+ * @returns {boolean}
+ */
+function anySourceMatches(dir, depth, predicate) {
+  if (depth > 6 || !existsSync(dir)) return false;
+  /** @type {import('node:fs').Dirent[]} */
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (['node_modules', '.git', 'dist', 'build', 'coverage'].includes(entry.name)) continue;
+      if (anySourceMatches(full, depth + 1, predicate)) return true;
+      continue;
+    }
+    if (!entry.isFile() || !/\.(mjs|cjs|js|jsx|ts|tsx|vue|svelte|py|go|rb)$/.test(entry.name)) continue;
+    try {
+      if (predicate(readFileSync(full, 'utf8'))) return true;
+    } catch {
+      continue;
+    }
+  }
+  return false;
+}
+
+/**
+ * The DoD gates that are a fact about the repository rather than an exit code
+ * (DESIGN.md §4 lines 3 and 4).
+ *
+ * @param {string} cwd
+ * @returns {GateResult[]}
+ */
+export function staticGates(cwd) {
+  const workflowDir = path.join(cwd, '.github', 'workflows');
+  const workflows = existsSync(workflowDir)
+    ? readdirSync(workflowDir).filter((name) => /\.ya?ml$/.test(name))
+    : [];
+
+  const readme = isSubstantial(path.join(cwd, 'README.md'), 200);
+  const contract = isSubstantial(path.join(cwd, 'docs', 'api-contract.md'), 200);
+
+  const hasLogger = anySourceMatches(cwd, 0, (contents) =>
+    /\b(pino|winston|bunyan|structuredLog|logger\.(info|warn|error))\b/.test(contents),
+  );
+  const hasHealth = anySourceMatches(cwd, 0, (contents) => /['"`]\/(health|healthz|_health)\b/.test(contents));
+
+  return [
+    {
+      name: 'ci',
+      ok: workflows.length > 0,
+      status: workflows.length > 0 ? 0 : 1,
+      detail: workflows.length > 0 ? `${workflows.length} workflow(s)` : 'no workflow under .github/workflows',
+    },
+    {
+      name: 'docs',
+      ok: readme && contract,
+      status: readme && contract ? 0 : 1,
+      detail:
+        readme && contract
+          ? 'README.md and docs/api-contract.md present and non-stub'
+          : `missing or stubbed: ${[!readme && 'README.md', !contract && 'docs/api-contract.md']
+              .filter(Boolean)
+              .join(', ')}`,
+    },
+    {
+      name: 'observability',
+      ok: hasLogger && hasHealth,
+      status: hasLogger && hasHealth ? 0 : 1,
+      detail:
+        hasLogger && hasHealth
+          ? 'structured logging and a health endpoint found'
+          : `missing: ${[!hasLogger && 'structured logging', !hasHealth && 'health endpoint']
+              .filter(Boolean)
+              .join(', ')}`,
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// red-evidence (DESIGN.md §8)
+// ---------------------------------------------------------------------------
+
+/**
+ * Test ids that have been observed *not* passing at some point in this run.
+ *
+ * @param {string} dareDir
+ * @returns {Set<string>}
+ */
+export function loadRedEvidence(dareDir) {
+  const file = path.join(dareDir, RED_EVIDENCE);
+  if (!existsSync(file)) return new Set();
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8'));
+    /** @type {unknown[]} */
+    const seen = Array.isArray(parsed.seenFailing) ? parsed.seenFailing : [];
+    return new Set(seen.filter((id) => typeof id === 'string').map(String));
+  } catch {
+    // Unreadable evidence is no evidence. Every new test is then unproven, which fails
+    // the gate loudly rather than quietly crediting tests that were never red.
+    return new Set();
+  }
+}
+
+/**
+ * @param {string} dareDir
+ * @param {Iterable<string>} nonPassing
+ * @returns {Set<string>}
+ */
+export function recordRedEvidence(dareDir, nonPassing) {
+  const seen = loadRedEvidence(dareDir);
+  for (const id of nonPassing) seen.add(id);
+  mkdirSync(dareDir, { recursive: true });
+  writeFileSync(
+    path.join(dareDir, RED_EVIDENCE),
+    `${JSON.stringify({ seenFailing: [...seen].sort() }, null, 2)}\n`,
+    'utf8',
+  );
+  return seen;
+}
+
+/**
+ * RED before GREEN. A test that has only ever been green is unproven: it may assert
+ * nothing, or assert something that was already true. This is the structural version of
+ * that rule — it kills tautological tests before review rather than after, when they have
+ * already cost an iteration.
+ *
+ * @param {{ previousPassing: Iterable<string>, passing: Iterable<string>, redSeen: Iterable<string> }} options
+ * @returns {GateResult}
+ */
+export function redEvidenceGate(options) {
+  const before = new Set(options.previousPassing);
+  const red = new Set(options.redSeen);
+  const unproven = [...new Set(options.passing)].filter((id) => !before.has(id) && !red.has(id)).sort();
+  return {
+    name: 'red-evidence',
+    ok: unproven.length === 0,
+    status: unproven.length === 0 ? 0 : 1,
+    detail:
+      unproven.length === 0
+        ? 'every newly passing test was seen failing first'
+        : `never observed failing, so unproven: ${unproven.join(', ')}`,
+  };
+}
+
+// ===========================================================================
+// CLI
+// ===========================================================================
+
+/**
+ * @param {string[]} argv
+ * @returns {{ input: string, yes: boolean, confirmPrd: boolean }}
+ */
+export function parseDriverArgs(argv) {
+  const flags = new Set(argv.filter((argument) => argument.startsWith('--')));
+  const positional = argv.filter((argument) => !argument.startsWith('--'));
+  return {
+    input: positional.join(' ').trim(),
+    yes: flags.has('--yes'),
+    confirmPrd: flags.has('--confirm-prd'),
+  };
+}
+
+/**
+ * Read a prompt template that ships with the plugin.
+ * @param {string} name
+ * @returns {string}
+ */
+function template(name) {
+  return readFileSync(new URL(`../templates/${name}`, import.meta.url), 'utf8');
+}
+
+/**
+ * Every id the reviewer must return an entry for: the PRD's own numbering plus the five
+ * DoD lines (DESIGN.md §4).
+ *
+ * @param {string} prd
+ * @returns {string[]}
+ */
+export function requiredIdsFor(prd) {
+  const prdIds = [...new Set([...prd.matchAll(/\bPRD-\d+\.\d+\b/g)].map((match) => match[0]))].sort();
+  return [
+    ...prdIds,
+    'DoD-1-requirements',
+    'DoD-2-security',
+    'DoD-3-ci',
+    'DoD-4-docs-observability',
+    'DoD-5-design',
+  ];
+}
+
+/**
+ * @param {string} command
+ * @param {string[]} args
+ * @param {{ cwd: string }} options
+ * @returns {{ ok: boolean, status: number, stdout: string, stderr: string }}
+ */
+function shell(command, args, options) {
+  try {
+    const stdout = execFileSync(command, args, {
+      cwd: options.cwd,
+      stdio: 'pipe',
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    return { ok: true, status: 0, stdout, stderr: '' };
+  } catch (error) {
+    const failure = /** @type {{ status?: number, stdout?: string, stderr?: string, message: string }} */ (error);
+    return {
+      ok: false,
+      status: typeof failure.status === 'number' ? failure.status : 1,
+      stdout: failure.stdout ?? '',
+      stderr: failure.stderr ?? failure.message,
+    };
+  }
+}
+
+/**
+ * Spawn one `claude -p` child and read its envelope.
+ *
+ * @param {{ prompt: string, model: string, systemPrompt?: string, dangerous?: boolean, cwd: string }} options
+ * @returns {ClaudeResult}
+ */
+function spawnClaude(options) {
+  const args = claudeArgs(options);
+  const result = shell('claude', args, { cwd: options.cwd });
+  if (!result.ok && result.stdout.trim() === '') {
+    return { ok: false, text: '', costUsd: 0, tokens: 0, raw: result.stderr };
+  }
+  return parseClaudeEnvelope(result.stdout);
+}
+
+/**
+ * @param {string[]} argv
+ * @param {{ cwd?: string, env?: Record<string, string | undefined>, log?: (line: string) => void }} [io]
+ * @returns {number} process exit code
+ */
+export function main(argv, io = {}) {
+  const cwd = io.cwd ?? process.cwd();
+  const env = io.env ?? process.env;
+  const write = io.log ?? ((/** @type {string} */ line) => process.stdout.write(`${line}\n`));
+  const mode = styleMode(env);
+
+  try {
+    assertNotNested(env);
+  } catch (error) {
+    write(verbatim(/** @type {Error} */ (error).message));
+    return 1;
+  }
+
+  const dareDir = path.join(cwd, '.dare');
+  /** @type {DareConfig} */
+  let config;
+  try {
+    config = loadConfig(dareDir, { env });
+  } catch (error) {
+    // Failure output is verbatim and unstyled (DESIGN.md §9), and a missing or broken
+    // config must read as an instruction, not a stack trace.
+    write(verbatim(/** @type {Error} */ (error).message));
+    return 1;
+  }
+  const { input, confirmPrd } = parseDriverArgs(argv);
+  /** @type {Record<string, string | undefined>} */
+  const childEnv = { ...env, [REENTRANCY_ENV]: '1' };
+
+  write(banner({ mode }));
+
+  // ---- Phase 0: ideate --------------------------------------------------
+  const prdPath = path.join(cwd, 'PRD.md');
+  if (input !== '' && existsSync(path.resolve(cwd, input))) {
+    write(verbatim(`using ${input}`));
+    if (path.resolve(cwd, input) !== prdPath) writeFileSync(prdPath, readFileSync(path.resolve(cwd, input), 'utf8'));
+  } else {
+    const idea =
+      input !== ''
+        ? input
+        : config.dareMe.enabled
+          ? 'Invent a small, genuinely useful project that can be built and tested unattended, then specify it.'
+          : '';
+    if (idea === '') {
+      write(verbatim('no PRD, no idea, and dareMe is disabled. Nothing to build.'));
+      return 1;
+    }
+    write(verbatim('authoring PRD.md'));
+    const authored = spawnClaude({
+      prompt: `${template('prd-author.md')}\n\n---\n\nThe idea:\n\n${idea}`,
+      model: config.prdModel,
+      dangerous: true,
+      cwd,
+    });
+    if (!authored.ok) {
+      write(verbatim(`PRD authoring failed: ${authored.raw.slice(0, 800)}`));
+      write(stamp('ABORTED', { mode }));
+      return 1;
+    }
+    if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
+    if (confirmPrd) {
+      write(verbatim(`PRD.md written. Review it, then re-run without --confirm-prd.`));
+      return 0;
+    }
+  }
+
+  const prd = readFileSync(prdPath, 'utf8');
+  const requiredIds = requiredIdsFor(prd);
+
+  // ---- Phase 1: design + quality plugins --------------------------------
+  write(verbatim('designing'));
+  const designed = spawnClaude({
+    prompt: `${template('architect.md')}\n\n---\n\nPRD.md:\n\n${prd}`,
+    model: config.designModel,
+    dangerous: true,
+    cwd,
+  });
+  if (!designed.ok) {
+    write(verbatim(`design phase failed: ${designed.raw.slice(0, 800)}`));
+    write(stamp('ABORTED', { mode }));
+    return 1;
+  }
+
+  const provisioning = installQualityPlugins({ cwd, plugins: config.qualityPlugins, runner: shell });
+  for (const warning of provisioning.warnings) write(verbatim(warning));
+
+  // ---- Phases 2-6: the loop ---------------------------------------------
+  const unitReport = path.join(dareDir, UNIT_REPORT);
+  const e2eReport = path.join(dareDir, E2E_REPORT);
+  const gates = [
+    ...commandGates(dareDir),
+    ...provisioning.gates.map((gate) => ({ name: 'design-slop', command: gate.command, required: true })),
+  ];
+
+  const outcome = driveRun({
+    config,
+    dareDir,
+    rootDir: cwd,
+    requiredIds,
+    task: `Build what PRD.md specifies. Scope budget: chaos ${config.chaos}.`,
+    effects: {
+      build: (task) =>
+        spawnClaude({
+          prompt: task,
+          model: config.builderModel,
+          systemPrompt: template('builder-system.md'),
+          dangerous: true,
+          cwd,
+        }),
+      review: (reviewer) =>
+        spawnClaude({
+          prompt: `You are the ${reviewer} auditor. Audit this repository now and return your report.`,
+          model: config.reviewerModel,
+          systemPrompt: template('reviewer-system.md'),
+          cwd,
+        }),
+      realityCheck: () =>
+        spawnClaude({
+          prompt:
+            'Read PRD.md and the repository. Answer one question: is this PRD buildable with the code present, or ' +
+            'is the loop chasing an impossible spec? Begin your answer with the single word buildable or unbuildable, ' +
+            'then give your reasons.',
+          model: config.reviewerModel,
+          cwd,
+        }),
+      gates: () => {
+        const commandResults = runGates(gates, { cwd, run: shell });
+        const previousPassing = loadState(dareDir).passing;
+        /** @type {Set<string>} */
+        const passing = new Set();
+        /** @type {Set<string>} */
+        const nonPassing = new Set();
+        for (const file of [unitReport, e2eReport]) {
+          if (!existsSync(file)) continue;
+          try {
+            for (const test of parseReport(readFileSync(file, 'utf8'), { rootDir: cwd }).tests) {
+              (test.status === 'passed' ? passing : nonPassing).add(test.id);
+            }
+          } catch {
+            // The ratchet reports this failure itself; the gate does not need to guess.
+          }
+        }
+        const red = recordRedEvidence(dareDir, nonPassing);
+        const results = [
+          ...commandResults.results,
+          ...staticGates(cwd),
+          redEvidenceGate({ previousPassing, passing, redSeen: red }),
+        ];
+        return { ok: results.every((result) => result.ok), results };
+      },
+      readTestReports: () =>
+        [unitReport, e2eReport].filter((file) => existsSync(file)).map((file) => readFileSync(file, 'utf8')),
+      commit: (message) => {
+        shell('git', ['add', '-A'], { cwd });
+        shell('git', ['commit', '--no-verify', '-m', message], { cwd });
+        return shell('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim();
+      },
+      diffStat: () => shell('git', ['diff', '--stat', 'HEAD~1'], { cwd }).stdout.trim(),
+      ship: (iteration) => {
+        const tag = `dare/iter-${String(iteration).padStart(3, '0')}`;
+        shell('git', ['tag', '-f', tag], { cwd });
+        shell('git', ['tag', '-f', 'dare/GRAND-PRIZE'], { cwd });
+        if (config.deploy.enabled && config.deploy.command !== '') {
+          const parts = config.deploy.command.split(' ').filter((part) => part.length > 0);
+          const deployed = shell(parts[0], parts.slice(1), { cwd });
+          if (!deployed.ok) write(verbatim(`deploy failed: ${deployed.stderr.trim()}`));
+        }
+      },
+      now: () => new Date().toISOString(),
+      log: (line) => write(verbatim(line)),
+    },
+  });
+
+  write(render({ kind: 'terminal', state: outcome.state }, { mode }));
+  write(stamp(outcome.state, { mode }));
+  write(
+    verbatim(
+      `${outcome.state}: ${outcome.reason}\niterations: ${outcome.iterations}  tokens: ${outcome.spentTokens}  ` +
+        `cost: $${outcome.costUsd.toFixed(4)}  passing: ${outcome.passing.length}`,
+    ),
+  );
+  void childEnv;
+  return outcome.state === 'SHIPPED' ? 0 : 1;
+}
+
+const invokedDirectly =
+  typeof process.argv[1] === 'string' && pathToFileURL(process.argv[1]).href === import.meta.url;
+if (invokedDirectly) {
+  process.exitCode = main(process.argv.slice(2));
 }
