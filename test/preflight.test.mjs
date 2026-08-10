@@ -207,6 +207,36 @@ describe('individual checks', () => {
     assert.equal(result.detail, 'no remote configured');
   });
 
+  it('does not count its own run state, or preflight could never pass twice', () => {
+    // The first run scaffolds .dare/config.json. Counting that made every subsequent run
+    // fail on the file the previous run had created, so /dare refused after attempt one.
+    const result = checkCleanWorkingTree(
+      probeWith({ 'git status --porcelain': { ok: true, stdout: '?? .dare/\n' } }),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.detail, 'working tree is clean');
+  });
+
+  it('ignores every path under .dare/ but nothing else', () => {
+    const result = checkCleanWorkingTree(
+      probeWith({
+        'git status --porcelain': {
+          ok: true,
+          stdout: '?? .dare/\n M .dare/state.json\n?? .dare/bloopers.log\n M src/app.ts\n',
+        },
+      }),
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.detail, '1 uncommitted change(s)');
+  });
+
+  it('is not fooled by a path that merely starts with the same letters', () => {
+    const result = checkCleanWorkingTree(
+      probeWith({ 'git status --porcelain': { ok: true, stdout: '?? .daredevil/notes.md\n' } }),
+    );
+    assert.equal(result.ok, false);
+  });
+
   it('counts the uncommitted changes it found', () => {
     const result = checkCleanWorkingTree(
       probeWith({ 'git status --porcelain': { ok: true, stdout: ' M a\n?? b\n M c\n' } }),

@@ -143,6 +143,27 @@ export function checkHasCommits(probe) {
 }
 
 /**
+ * Is this porcelain line dare's own run state rather than the operator's work?
+ *
+ * `git status --porcelain` emits two status characters, a space, then the path.
+ *
+ * @param {string} line
+ * @returns {boolean}
+ */
+function isDareOwned(line) {
+  const target = line.slice(3).trim().replace(/^"|"$/g, '');
+  return target === '.dare' || target === '.dare/' || target.startsWith('.dare/');
+}
+
+/**
+ * The check exists to stop the ratchet's `git reset --hard` from destroying work the
+ * operator has not committed. `.dare/` is not that work — it is the run's own state, which
+ * preflight scaffolds itself.
+ *
+ * Counting it made preflight unpassable: the first run writes `.dare/config.json`, and
+ * every run after that failed on the file the previous run had created. An untracked
+ * `.dare/` is also safe from `reset --hard`, which leaves untracked files alone.
+ *
  * @param {Probe} probe
  * @returns {CheckResult}
  */
@@ -151,7 +172,10 @@ export function checkCleanWorkingTree(probe) {
   if (!result.ok) {
     return check('clean-working-tree', false, `git status failed: ${result.stderr.trim()}`, 'Ensure git works here.');
   }
-  const dirty = result.stdout.split('\n').filter((line) => line.trim().length > 0);
+  const dirty = result.stdout
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .filter((line) => !isDareOwned(line));
   return check(
     'clean-working-tree',
     dirty.length === 0,
