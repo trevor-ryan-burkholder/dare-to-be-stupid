@@ -21,13 +21,26 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { compileBrief, writeBrief } from './brief.mjs';
 import { loadConfig } from './config.mjs';
+import { hasMeaningfulHistory, historyContext } from './history.mjs';
+import {
+  addLesson,
+  findResolvedStruggles,
+  markLessonsUsed,
+  parseLessonExtraction,
+  readLessons,
+  saveLessons,
+  selectLessons,
+} from './lessons.mjs';
 import { installQualityPlugins } from './plugins.mjs';
+import { applyWinner, createWorktrees, removeWorktrees, selectWinner, shouldRace } from './race.mjs';
 import {
   evaluateIteration,
   extractTestIds,
@@ -47,7 +60,16 @@ import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
  * @typedef {{ id: string, status: 'pass' | 'fail', evidence: string | null, detail: string }} RequirementVerdict
  */
 /**
- * @typedef {{ verdict: 'pass' | 'fail', requirements: RequirementVerdict[], problems: string[] }} ReviewerReport
+ * @typedef {{
+ *   id: string, status: 'pass' | 'fail', severity: string, confidence: number,
+ *   evidence: string | null, detail: string, repairHint: string, actionable: boolean
+ * }} AdvisoryFinding
+ */
+/**
+ * @typedef {{
+ *   verdict: 'pass' | 'fail', requirements: RequirementVerdict[],
+ *   advisories: AdvisoryFinding[], problems: string[]
+ * }} ReviewerReport
  */
 
 /** Environment marker used to refuse nested runs (DESIGN.md §13.6). */
@@ -84,11 +106,130 @@ export function assertNotNested(env) {
 }
 
 // ---------------------------------------------------------------------------
+// Reviewer ownership (DESIGN.md §1.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Turn an ownership pattern into a matcher. `*` matches any run of characters; every other
+ * character is literal, so `DoD-2-security` means that id and nothing adjacent to it.
+ *
+ * @param {string} pattern
+ * @returns {RegExp}
+ */
+function ownershipMatcher(pattern) {
+  // Split on the wildcard, then escape each literal segment. Doing it this way rather
+  // than through a placeholder character means no input can be mistaken for the placeholder.
+  const escaped = pattern
+    .split('*')
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('.*');
+  return new RegExp(`^${escaped}$`);
+}
+
+/**
+ * @typedef {{
+ *   assignments: { reviewer: string, ids: string[] }[],
+ *   uncovered: string[],
+ *   shared: { id: string, reviewers: string[] }[]
+ * }} OwnershipPlan
+ */
+
+/**
+ * Split the required ids across the panel.
+ *
+ * DESIGN.md §1.1 asks for a heterogeneous panel — a security auditor, a correctness auditor
+ * and a design auditor, each owning the lines it is expert in. Three generalists each
+ * re-adjudicating all of it is a different thing wearing the same name: it costs three full
+ * reads and produces three shallow opinions per line instead of one expert one.
+ *
+ * Assignment is deterministic and total. Every id lands with at least one *active* reviewer
+ * or it appears in `uncovered`, and an uncovered id stops the run before a single reviewer
+ * is spawned — an id nobody was asked about would otherwise pass by never being judged,
+ * which is the exact failure the parser exists to prevent.
+ *
+ * @param {string[]} requiredIds
+ * @param {{ reviewers: string[], ownership: Record<string, string[]> }} options
+ * @returns {OwnershipPlan}
+ */
+export function ownershipPlan(requiredIds, options) {
+  const ids = [...new Set(requiredIds)].sort();
+  const matchers = new Map(
+    options.reviewers.map((reviewer) => [reviewer, (options.ownership[reviewer] ?? []).map(ownershipMatcher)]),
+  );
+
+  /** @type {Map<string, string[]>} */
+  const owned = new Map(options.reviewers.map((reviewer) => [reviewer, []]));
+  /** @type {string[]} */
+  const uncovered = [];
+  /** @type {{ id: string, reviewers: string[] }[]} */
+  const shared = [];
+
+  for (const id of ids) {
+    /** @type {string[]} */
+    const owners = [];
+    for (const reviewer of options.reviewers) {
+      if ((matchers.get(reviewer) ?? []).some((matcher) => matcher.test(id))) owners.push(reviewer);
+    }
+    if (owners.length === 0) {
+      uncovered.push(id);
+      continue;
+    }
+    // Two owners is legal but never the default: it is a second cold read of the same line,
+    // which is worth paying for only when an operator has decided it is.
+    if (owners.length > 1) shared.push({ id, reviewers: owners });
+    for (const owner of owners) (owned.get(owner) ?? []).push(id);
+  }
+
+  return {
+    assignments: options.reviewers.map((reviewer) => ({ reviewer, ids: owned.get(reviewer) ?? [] })),
+    uncovered,
+    shared,
+  };
+}
+
+/**
+ * Refuse a run whose panel does not cover the specification.
+ *
+ * This fires before review, not during it. An id with no owner is not a reviewer's mistake
+ * to make — it is a configuration that cannot produce a verdict, and discovering that after
+ * paying for a panel of whole-repository reads is discovering it too late.
+ *
+ * @param {string[]} requiredIds
+ * @param {{ reviewers: string[], ownership: Record<string, string[]> }} options
+ * @returns {OwnershipPlan}
+ * @throws {DriverError}
+ */
+export function assertOwnershipCovers(requiredIds, options) {
+  const plan = ownershipPlan(requiredIds, options);
+  if (plan.uncovered.length > 0) {
+    throw new DriverError(
+      `no reviewer owns ${plan.uncovered.join(', ')}. Every PRD requirement and DoD line must be owned by an active ` +
+        'reviewer before the panel runs (DESIGN.md §1.1); an unowned id would ship having never been judged. Add a ' +
+        'pattern to `ownership` in .dare/config.json, or add the reviewer that owns it to `reviewers`.',
+    );
+  }
+  const empty = plan.assignments.filter((assignment) => assignment.ids.length === 0).map((a) => a.reviewer);
+  if (empty.length > 0) {
+    throw new DriverError(
+      `reviewer ${empty.join(', ')} owns none of the required ids. A panel member with nothing to judge spends a whole ` +
+        'cold read of the repository on nothing; remove it from `reviewers`, or give it ids in `ownership`.',
+    );
+  }
+  return plan;
+}
+
+// ---------------------------------------------------------------------------
 // Reviewer output (DESIGN.md §4)
 // ---------------------------------------------------------------------------
 
 /** Evidence must be a real `path/file.ext:LINE`, not a gesture at one. */
 const EVIDENCE_PATTERN = /^[^\s:]+\.[A-Za-z0-9]+:\d+$/;
+
+/** Ids in this shape are advisory findings, not specification compliance (DESIGN.md §4.1). */
+const ADVISORY_ID_PATTERN = /^advisory[-:]/i;
+
+/** Severities an advisory finding may declare, weakest first. */
+const ADVISORY_SEVERITIES = ['trivial', 'minor', 'major', 'critical'];
 
 /**
  * Pull a JSON object out of model output, which may arrive bare, fenced, or wrapped in
@@ -121,6 +262,49 @@ export function extractJsonObject(text) {
 }
 
 /**
+ * Read one advisory finding.
+ *
+ * Advisory findings are the one place a number is allowed to influence anything, and the
+ * influence is deliberately small: they never touch the verdict, they only decide whether a
+ * suggestion is worth handing to the next builder iteration. Requirement compliance stays
+ * deterministic (DESIGN.md §4.1).
+ *
+ * A finding is *actionable* only with a real `file:line` and a confidence at or above the
+ * configured threshold. Everything else is recorded and ignored — a low-confidence hunch
+ * fed back as work is how a loop spends its remaining budget chasing an opinion.
+ *
+ * @param {Record<string, unknown>} record
+ * @param {string} id
+ * @param {number} minConfidence
+ * @returns {AdvisoryFinding}
+ */
+function readAdvisory(record, id, minConfidence) {
+  const evidence = typeof record.evidence === 'string' && EVIDENCE_PATTERN.test(record.evidence)
+    ? record.evidence
+    : null;
+  const rawConfidence = Number(record.confidence);
+  // An absent or unreadable confidence is zero, not a default pass. The reviewer that
+  // declines to say how sure it is has said how sure it is.
+  const confidence = Number.isFinite(rawConfidence) && rawConfidence >= 0 && rawConfidence <= 1 ? rawConfidence : 0;
+  const severity =
+    typeof record.severity === 'string' && ADVISORY_SEVERITIES.includes(record.severity.toLowerCase())
+      ? record.severity.toLowerCase()
+      : 'minor';
+  const status = record.status === 'pass' ? 'pass' : 'fail';
+
+  return {
+    id,
+    status: /** @type {'pass' | 'fail'} */ (status),
+    severity,
+    confidence,
+    evidence,
+    detail: typeof record.detail === 'string' ? record.detail : '',
+    repairHint: typeof record.repairHint === 'string' ? record.repairHint : '',
+    actionable: status === 'fail' && evidence !== null && confidence >= minConfidence,
+  };
+}
+
+/**
  * Parse and *judge* a reviewer's output.
  *
  * The parser is where the adversarial framing is actually enforced, so it is deliberately
@@ -129,33 +313,47 @@ export function extractJsonObject(text) {
  *   - Output that will not parse is a fail. Not a retry, not a shrug.
  *   - A requirement marked `pass` with no evidence, or with evidence that is not a real
  *     `file:line`, is flipped to `fail` before anything is counted.
- *   - Every required id must have an entry. A missing entry invalidates the audit rather
- *     than being treated as not applicable.
+ *   - Every id this reviewer *owns* must have an entry. A missing entry invalidates the
+ *     audit rather than being treated as not applicable.
  *   - The reviewer's own top-level `verdict` is advisory. The verdict returned here is
  *     computed from the entries, so a reviewer that says pass over a failing entry does
  *     not get to.
  *
+ * Entries whose id is in the `advisory-*` shape are the one exception, and they are held to
+ * one side: they carry severity and confidence, and they cannot move the verdict in either
+ * direction (DESIGN.md §4.1).
+ *
  * @param {string} raw the reviewer's stdout
- * @param {{ requiredIds: string[] }} options every PRD requirement and DoD line
+ * @param {{ requiredIds: string[], minConfidence?: number }} options the ids this reviewer owns
  * @returns {ReviewerReport}
  */
 export function parseReviewerReport(raw, options) {
   const required = [...new Set(options.requiredIds)];
+  const requiredSet = new Set(required);
+  const minConfidence = typeof options.minConfidence === 'number' ? options.minConfidence : 0.7;
   /** @type {string[]} */
   const problems = [];
+  /** @type {AdvisoryFinding[]} */
+  const advisories = [];
 
   const parsed = extractJsonObject(raw);
   if (parsed === null) {
     return {
       verdict: 'fail',
       requirements: [],
+      advisories,
       problems: ['reviewer output could not be parsed as JSON; unparseable output is a fail (DESIGN.md §4)'],
     };
   }
 
   const entries = /** @type {Record<string, unknown>} */ (parsed).requirements;
   if (!Array.isArray(entries)) {
-    return { verdict: 'fail', requirements: [], problems: ['reviewer output has no `requirements` array'] };
+    return {
+      verdict: 'fail',
+      requirements: [],
+      advisories,
+      problems: ['reviewer output has no `requirements` array'],
+    };
   }
 
   /** @type {RequirementVerdict[]} */
@@ -172,6 +370,12 @@ export function parseReviewerReport(raw, options) {
     const id = typeof record.id === 'string' ? record.id : '';
     if (id === '') {
       problems.push('a requirement entry has no id');
+      continue;
+    }
+    // A required id in the advisory shape is still required. Compliance wins the tie, so a
+    // reviewer cannot demote a DoD line by renaming it.
+    if (ADVISORY_ID_PATTERN.test(id) && !requiredSet.has(id)) {
+      advisories.push(readAdvisory(record, id, minConfidence));
       continue;
     }
     const evidence = typeof record.evidence === 'string' && record.evidence.length > 0 ? record.evidence : null;
@@ -213,26 +417,47 @@ export function parseReviewerReport(raw, options) {
   if (requirements.length === 0) problems.push('reviewer returned no requirement entries at all');
   const verdict = requirements.length > 0 && requirements.every((entry) => entry.status === 'pass') ? 'pass' : 'fail';
 
-  return { verdict, requirements, problems };
+  return { verdict, requirements, advisories, problems };
 }
 
 /**
  * The panel is unanimous or the run continues (DESIGN.md §1.1, §10 `requireUnanimous`).
  *
+ * With ownership in force each member answers a different question, so the panel's verdict
+ * is the conjunction of specialists rather than a vote of generalists. `requiredIds` is
+ * re-checked here against the union of what came back: ownership is asserted before the
+ * panel runs, but a reviewer that returns a truncated report would otherwise leave an id
+ * unjudged, and an unjudged id must never read as a pass.
+ *
  * @param {ReviewerReport[]} reports
- * @param {{ requireUnanimous: boolean }} options
- * @returns {{ verdict: 'pass' | 'fail', failing: string[] }}
+ * @param {{ requireUnanimous: boolean, requiredIds?: string[] }} options
+ * @returns {{ verdict: 'pass' | 'fail', failing: string[], advisories: AdvisoryFinding[] }}
  */
 export function combinePanel(reports, options) {
-  if (reports.length === 0) return { verdict: 'fail', failing: ['no reviewer returned a report'] };
+  if (reports.length === 0) {
+    return { verdict: 'fail', failing: ['no reviewer returned a report'], advisories: [] };
+  }
 
   /** @type {string[]} */
   const failing = [];
+  /** @type {Set<string>} */
+  const judged = new Set();
+  /** @type {AdvisoryFinding[]} */
+  const advisories = [];
+
   for (const report of reports) {
     for (const entry of report.requirements) {
+      judged.add(entry.id);
       if (entry.status === 'fail') failing.push(`${entry.id}: ${entry.detail || 'no detail given'}`);
     }
     for (const problem of report.problems) failing.push(problem);
+    for (const advisory of report.advisories) advisories.push(advisory);
+  }
+
+  /** @type {string[]} */
+  const unjudged = [...new Set(options.requiredIds ?? [])].filter((id) => !judged.has(id)).sort();
+  for (const id of unjudged) {
+    failing.push(`${id} was judged by no member of the panel; an unjudged id cannot pass (DESIGN.md §1.1)`);
   }
 
   // A member that reported a problem has not returned a clean pass, whatever its own
@@ -242,7 +467,20 @@ export function combinePanel(reports, options) {
   const passes = reports.filter((report) => report.verdict === 'pass' && report.problems.length === 0).length;
   const enough = options.requireUnanimous ? passes === reports.length : passes > reports.length / 2;
 
-  return { verdict: enough ? 'pass' : 'fail', failing: [...new Set(failing)] };
+  // Advisory findings never appear here. They are suggestions with a number attached, and a
+  // number must not be able to hold a compliant build back or push a failing one through.
+  return {
+    verdict: enough && unjudged.length === 0 ? 'pass' : 'fail',
+    failing: [...new Set(failing)],
+    advisories: advisories
+      .filter((advisory) => advisory.actionable)
+      .sort(
+        (a, b) =>
+          ADVISORY_SEVERITIES.indexOf(b.severity) - ADVISORY_SEVERITIES.indexOf(a.severity) ||
+          b.confidence - a.confidence ||
+          a.id.localeCompare(b.id),
+      ),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -461,6 +699,9 @@ export const PHASE_PERMISSIONS = {
   design: { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep', 'Write', 'Edit'] },
   review: { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep'] },
   'reality-check': { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep'] },
+  // Reads the evidence it was handed and answers with a sentence or with null. It has no
+  // reason to write, and lesson memory is driver-owned precisely so that it cannot.
+  'lesson-extractor': { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep'] },
 };
 
 /**
@@ -535,11 +776,17 @@ export function appendBlooper(dareDir, event) {
 // The loop
 // ---------------------------------------------------------------------------
 
+/** @typedef {{ applied: boolean, detail: string, tokens: number, costUsd: number }} RaceOutcome */
+
 /**
  * @typedef {{
- *   build: (task: string) => ClaudeResult,
- *   review: (reviewer: string) => ClaudeResult,
+ *   build: (brief: string) => ClaudeResult,
+ *   review: (reviewer: string, ids: string[]) => ClaudeResult,
  *   realityCheck: () => ClaudeResult,
+ *   extractLesson?: (evidence: string) => ClaudeResult,
+ *   race?: (objective: import('./brief.mjs').Objective, iteration: number) => RaceOutcome,
+ *   history?: (findings: string[]) => import('./brief.mjs').HistoryNote[],
+ *   changedFiles?: () => string[],
  *   gates: () => { ok: boolean, results: GateResult[] },
  *   readTestReports: () => unknown[],
  *   commit: (message: string) => string,
@@ -561,9 +808,15 @@ export function appendBlooper(dareDir, event) {
 /**
  * Drive a run to a terminal state.
  *
- * The phase order is the spec's, and the order is the point: build, gates, ratchet,
- * review, ship. Gates before review because they are free. Ratchet before review because a
+ * The phase order is the spec's, and the order is the point: build, gates, ratchet, review,
+ * ship. Gates before review because they are free. Ratchet before review because a
  * regression ends the iteration whatever a reviewer would have said about the rest of it.
+ *
+ * What the builder receives each time round is a *compiled brief* rather than an
+ * accumulated conversation (DESIGN.md §8.1). The loop carries an objective — one record
+ * saying what to do and why it is what to do — and every iteration renders that objective,
+ * the ratchet, the selected lessons and any history into a document that is archived before
+ * it is sent. The run's memory lives in the driver's artifacts, not in a child's context.
  *
  * @param {{
  *   config: DareConfig,
@@ -571,6 +824,7 @@ export function appendBlooper(dareDir, event) {
  *   rootDir: string,
  *   requiredIds: string[],
  *   task: string,
+ *   gateNames?: string[],
  *   effects: Effects,
  * }} options
  * @returns {RunOutcome}
@@ -578,36 +832,31 @@ export function appendBlooper(dareDir, event) {
 export function driveRun(options) {
   const { config, dareDir, rootDir, requiredIds, effects } = options;
 
+  // Settled before anything is spawned. An id no reviewer owns cannot be judged, and a
+  // panel that cannot judge every id cannot produce a pass — finding that out after paying
+  // for three whole-repository reads is finding it out too late (DESIGN.md §1.1).
+  const panelPlan = assertOwnershipCovers(requiredIds, {
+    reviewers: config.reviewers,
+    ownership: config.ownership,
+  });
+
   /** @type {RunProgress} */
   let progress = { iteration: 0, spentTokens: 0, stalledIterations: 0, bestGateScore: 0, bestPassingCount: 0 };
   let costUsd = 0;
-  let task = options.task;
+  let builderTokens = 0;
+  let builderRuns = 0;
 
-  /**
-   * @param {TerminalState} state
-   * @param {string} reason
-   * @returns {RunOutcome}
-   */
-  /**
-   * Terminate on an infrastructure failure rather than a verdict.
-   *
-   * The work in the tree is committed first. Leaving it uncommitted would strand the run:
-   * the next preflight refuses a dirty tree, so the operator would have to clean up by
-   * hand before resuming. The ratchet is deliberately not advanced — this commit is a
-   * resting place, not a verified good state, so `lastGoodCommit` still points at the last
-   * commit that actually passed.
-   *
-   * @param {ClaudeResult} result
-   * @param {number} iteration
-   * @param {string} what
-   * @returns {RunOutcome}
-   */
-  const landCleanly = (result, iteration, what) => {
-    effects.commit(`dare: stopped during ${what} at iteration ${iteration} (work in progress)`);
-    return result.exhausted
-      ? finish('BUDGET', `the ${what} ran out of allowance mid-iteration; the tree is committed and the run can resume`)
-      : finish('ABORTED', `the ${what} failed and returned no usable output: ${result.raw.slice(0, 400)}`);
+  /** @type {import('./brief.mjs').Objective} */
+  let objective = {
+    kind: 'initial',
+    headline: options.task,
+    reason: 'this is the first iteration; nothing has been built, gated or judged yet',
   };
+
+  /** @type {import('./lessons.mjs').IterationRecord[]} */
+  const iterationHistory = [];
+  /** Failures a lesson has already been attempted for, so none is paid for twice. */
+  const lessonsAttempted = new Set();
 
   /**
    * @param {TerminalState} state
@@ -623,6 +872,108 @@ export function driveRun(options) {
     passing: loadState(dareDir).passing,
   });
 
+  /**
+   * Terminate on an infrastructure failure rather than a verdict.
+   *
+   * The work in the tree is committed first. Leaving it uncommitted would strand the run:
+   * the next preflight refuses a dirty tree, so the operator would have to clean up by hand
+   * before resuming. The ratchet is deliberately not advanced — this commit is a resting
+   * place, not a verified good state, so `lastGoodCommit` still points at the last commit
+   * that actually passed.
+   *
+   * @param {ClaudeResult} result
+   * @param {number} iteration
+   * @param {string} what
+   * @returns {RunOutcome}
+   */
+  const landCleanly = (result, iteration, what) => {
+    effects.commit(`dare: stopped during ${what} at iteration ${iteration} (work in progress)`);
+    return result.exhausted
+      ? finish('BUDGET', `the ${what} ran out of allowance mid-iteration; the tree is committed and the run can resume`)
+      : finish('ABORTED', `the ${what} failed and returned no usable output: ${result.raw.slice(0, 400)}`);
+  };
+
+  /**
+   * Everything an objective says, as one string, for keyword matching.
+   *
+   * @param {import('./brief.mjs').Objective} current
+   * @returns {string}
+   */
+  const objectiveText = (current) =>
+    [
+      current.headline,
+      current.reason,
+      ...(current.gateFailures ?? []).map((gate) => `${gate.name} ${gate.detail}`),
+      ...(current.regressions ?? []),
+      ...(current.findings ?? []),
+    ].join('\n');
+
+  /**
+   * Extract at most one lesson, from the oldest struggle not yet attempted.
+   *
+   * Every failure path here is a shrug. Lesson memory is advisory (DESIGN.md §13.8): it
+   * informs a later brief and nothing else, so a broken extractor, an unparseable answer or
+   * a store that will not write must never be able to end a run that is otherwise fine.
+   *
+   * @returns {void}
+   */
+  const maybeExtractLesson = () => {
+    if (!config.lessons.enabled || effects.extractLesson === undefined) return;
+    try {
+      const struggle = findResolvedStruggles(iterationHistory).find((entry) => !lessonsAttempted.has(entry.key));
+      if (struggle === undefined) return;
+      lessonsAttempted.add(struggle.key);
+
+      const evidence = [
+        `Failure: ${struggle.key}`,
+        `First observed on iteration ${struggle.introduced}; still failing after ${struggle.attempts} iteration(s).`,
+        `Passing again as of iteration ${struggle.resolved}.`,
+        '',
+        'Files touched by each attempt, in order:',
+        ...struggle.changed.map(
+          (files, index) => `- attempt ${index + 1}: ${files.join(', ') || '(no files recorded)'}`,
+        ),
+      ].join('\n');
+
+      const result = effects.extractLesson(evidence);
+      progress = { ...progress, spentTokens: progress.spentTokens + result.tokens };
+      costUsd += result.costUsd;
+      if (!result.ok) return;
+
+      const candidate = parseLessonExtraction(result.text);
+      if (candidate === null) return;
+
+      const { store, problem } = readLessons(dareDir);
+      if (problem !== null) effects.log(problem);
+      // The evidence is the driver's, not the extractor's. It saw those iteration numbers
+      // because they were handed to it, and it has no way to know them independently.
+      const outcome = addLesson(store, {
+        ...candidate,
+        evidence: { introduced: struggle.introduced, resolved: struggle.resolved, tests: candidate.evidence.tests },
+      });
+      if (outcome.added === null) return;
+      saveLessons(dareDir, outcome.store);
+      effects.log(`lesson ${outcome.added.id} recorded: ${outcome.added.lesson}`);
+    } catch (error) {
+      effects.log(`lesson extraction was skipped: ${/** @type {Error} */ (error).message}`);
+    }
+  };
+
+  /**
+   * Close out an iteration: record what failed, consider a lesson, and score progress.
+   *
+   * @param {number} iteration
+   * @param {string[]} failures stable keys, so the same failure reads the same next time
+   * @param {number} score
+   * @param {number} passingCount
+   * @returns {void}
+   */
+  const closeIteration = (iteration, failures, score, passingCount) => {
+    iterationHistory.push({ iteration, failures, changed: effects.changedFiles?.() ?? [] });
+    maybeExtractLesson();
+    progress = recordProgress(progress, { gateScore: score, passingCount });
+  };
+
   for (;;) {
     const permission = shouldContinue(progress, config);
     if (!permission.continue) return finish(permission.state, permission.reason);
@@ -631,15 +982,65 @@ export function driveRun(options) {
     effects.event?.({ kind: 'iteration', number: iterationNumber, total: config.maxIterations });
     effects.event?.({ kind: 'airtime', fractionLeft: airtimeRemaining(progress, config).fractionLeft });
 
-    // ---- Phase 2: build -------------------------------------------------
-    const built = effects.build(task);
-    progress = { ...progress, spentTokens: progress.spentTokens + built.tokens };
-    costUsd += built.costUsd;
-    if (!built.ok) return landCleanly(built, iterationNumber, 'builder');
+    // ---- The brief: compile it, archive it, then hand it over ------------
+    const stored = readLessons(dareDir);
+    if (stored.problem !== null) effects.log(stored.problem);
+    const relevant = config.lessons.enabled
+      ? selectLessons(
+          stored.store,
+          { text: objectiveText(objective), tests: objective.regressions ?? [] },
+          { limit: config.lessons.maxPerBrief },
+        )
+      : [];
+    if (relevant.length > 0) {
+      saveLessons(
+        dareDir,
+        markLessonsUsed(
+          stored.store,
+          relevant.map((lesson) => lesson.id),
+        ),
+      );
+    }
+
+    const brief = compileBrief({
+      iteration: iterationNumber,
+      chaos: config.chaos,
+      objective,
+      protectedTests: loadState(dareDir).passing,
+      lessons: relevant,
+      history: effects.history?.(objective.findings ?? []) ?? [],
+      gates: options.gateNames ?? [],
+    });
+    writeBrief(dareDir, iterationNumber, brief);
+
+    // ---- Phase 2: build, or race out of a stall (DESIGN.md §13.6) --------
+    const raceDecision = shouldRace({
+      config,
+      progress,
+      averageBuilderTokens: builderRuns === 0 ? undefined : Math.round(builderTokens / builderRuns),
+    });
+    let raced = false;
+    if (raceDecision.race && effects.race !== undefined) {
+      const outcome = effects.race(objective, iterationNumber);
+      progress = { ...progress, spentTokens: progress.spentTokens + outcome.tokens };
+      costUsd += outcome.costUsd;
+      effects.log(`race: ${outcome.detail}`);
+      raced = outcome.applied;
+    }
+
+    if (!raced) {
+      const built = effects.build(brief);
+      builderTokens += built.tokens;
+      builderRuns += 1;
+      progress = { ...progress, spentTokens: progress.spentTokens + built.tokens };
+      costUsd += built.costUsd;
+      if (!built.ok) return landCleanly(built, iterationNumber, 'builder');
+    }
 
     // ---- Phase 3: gates -------------------------------------------------
     const gateOutcome = effects.gates();
     const score = gateScore(gateOutcome.results);
+    const failedGates = gateOutcome.results.filter((result) => !result.ok);
 
     // ---- Phase 4: ratchet ----------------------------------------------
     /** @type {Set<string>} */
@@ -673,44 +1074,68 @@ export function driveRun(options) {
       if (decision.target !== null) hardReset({ cwd: rootDir, commit: decision.target });
       effects.event?.({ kind: 'reset', regressions: decision.regressions.length });
       effects.log(`regression: ${decision.regressions.join(', ')}`);
-      task = decision.task;
-      progress = recordProgress(progress, { gateScore: score, passingCount: state.passing.length });
+      objective = {
+        kind: 'regression',
+        headline: 'Restore the tests listed below. Change nothing else.',
+        reason:
+          `the ratchet is monotonic and ${decision.regressions.length} test(s) that passed earlier no longer pass, ` +
+          'so the tree was reset to the last commit that held them',
+        regressions: decision.regressions,
+      };
+      closeIteration(iterationNumber, decision.regressions, score, state.passing.length);
       continue;
     }
 
     if (decision.action === 'reject') {
       effects.log(decision.reason);
-      task = `${options.task}\n\nNo tests passed on the previous iteration. Make the suite run and pass before anything else.`;
-      progress = recordProgress(progress, { gateScore: score, passingCount: 0 });
+      objective = {
+        kind: 'no-tests',
+        headline: `${options.task}\n\nBefore anything else: make the test suite run and pass.`,
+        reason:
+          'no test passed on the previous iteration. An empty result is not evidence that nothing regressed, so the ' +
+          'ratchet cannot advance on it and nothing else can be judged',
+      };
+      closeIteration(iterationNumber, ['ratchet:no-passing-tests'], score, 0);
       continue;
     }
 
     if (!gateOutcome.ok) {
-      const failed = gateOutcome.results.filter((result) => !result.ok);
-      effects.log(`gates failed: ${failed.map((result) => result.name).join(', ')}`);
-      task = [
-        'These gates failed. Fix them before anything else.',
-        '',
-        ...failed.map((result) => `- ${result.name}: ${result.detail}`),
-      ].join('\n');
-      progress = recordProgress(progress, { gateScore: score, passingCount: passing.size });
+      effects.log(`gates failed: ${failedGates.map((result) => result.name).join(', ')}`);
+      objective = {
+        kind: 'gates',
+        headline: 'Make these gates pass. Nothing else this iteration.',
+        reason:
+          `${failedGates.length} gate(s) failed on iteration ${iterationNumber}. Gates run before the audit because ` +
+          'they are free and deterministic, and there is no reason to pay for a cold read of something that does ' +
+          'not compile',
+        gateFailures: failedGates.map((result) => ({ name: result.name, detail: result.detail })),
+      };
+      closeIteration(
+        iterationNumber,
+        failedGates.map((result) => `gate:${result.name}`),
+        score,
+        passing.size,
+      );
       continue;
     }
 
     // ---- Phase 5: review ------------------------------------------------
+    // Each member is asked only about the ids it owns, and must return every one of them.
     /** @type {ReviewerReport[]} */
     const reports = [];
-    for (const reviewer of config.reviewers) {
-      const result = effects.review(reviewer);
+    for (const { reviewer, ids } of panelPlan.assignments) {
+      const result = effects.review(reviewer, ids);
       progress = { ...progress, spentTokens: progress.spentTokens + result.tokens };
       costUsd += result.costUsd;
       // A reviewer that died is not a reviewer that found problems. Scoring it as a
       // failing audit would hand the builder "output could not be parsed" as though it
       // were a finding, and burn the remaining iterations against a wall.
       if (!result.ok) return landCleanly(result, iterationNumber, `${reviewer} audit`);
-      reports.push(parseReviewerReport(result.text, { requiredIds }));
+      reports.push(
+        parseReviewerReport(result.text, { requiredIds: ids, minConfidence: config.advisory.minConfidence }),
+      );
     }
-    const panel = combinePanel(reports, { requireUnanimous: config.requireUnanimous });
+    const panel = combinePanel(reports, { requireUnanimous: config.requireUnanimous, requiredIds });
 
     // ---- Phase 6: ship, or bank the progress and hand the findings back ---
     const commit = effects.commit(
@@ -728,10 +1153,30 @@ export function driveRun(options) {
     }
 
     effects.log(`review outstanding: ${panel.failing.length} finding(s)`);
-    task = ['The audit found these outstanding. Address them.', '', ...panel.failing.map((item) => `- ${item}`)].join(
-      '\n',
+    objective = {
+      kind: 'review',
+      headline: 'Address the audit findings below.',
+      reason:
+        `the panel returned ${panel.failing.length} outstanding finding(s) on iteration ${iterationNumber}, and a ` +
+        'run ships only when every member passes on every id it owns',
+      findings: panel.failing,
+      advisories: panel.advisories.map((advisory) => ({
+        id: advisory.id,
+        severity: advisory.severity,
+        confidence: advisory.confidence,
+        evidence: advisory.evidence,
+        detail: advisory.detail,
+        repairHint: advisory.repairHint,
+      })),
+    };
+    closeIteration(
+      iterationNumber,
+      reports.flatMap((report) =>
+        report.requirements.filter((entry) => entry.status === 'fail').map((entry) => `requirement:${entry.id}`),
+      ),
+      score,
+      passing.size,
     );
-    progress = recordProgress(progress, { gateScore: score, passingCount: passing.size });
 
     // ---- §13.3 reality-check circuit-breaker ----------------------------
     if (progress.stalledIterations === config.realityCheck.after) {
@@ -757,6 +1202,8 @@ const DARE_IGNORE = [
   '# dare machine state. Never commit these: a hard reset would revert the ratchet to an',
   '# older state.json and silently drop test ids it had already earned.',
   '.dare/state.json',
+  '.dare/lessons.json',
+  '.dare/briefs/',
   '.dare/red-evidence.json',
   '.dare/bloopers.log',
   '.dare/test-report.json',
@@ -895,32 +1342,186 @@ function anySourceMatches(dir, depth, predicate) {
 }
 
 /**
+ * The validation commands DoD line 3 requires a CI workflow to actually run.
+ *
+ * Matching is on the command text of `run:` steps. It is regex over YAML rather than a
+ * parsed document because parsing YAML would mean a runtime dependency, and the question
+ * being asked is narrow enough to answer without one: does any step in any workflow invoke
+ * this class of command. A workflow that calls a script which calls the real command will
+ * read as missing, which errs toward failing a gate — the correct direction.
+ *
+ * @type {{ name: string, pattern: RegExp }[]}
+ */
+const CI_REQUIRED_COMMANDS = [
+  { name: 'build', pattern: /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?build\b/ },
+  { name: 'lint', pattern: /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?lint\b|\beslint\b/ },
+  { name: 'types', pattern: /\btypecheck\b|\btype-check\b|\btsc\b/ },
+  { name: 'unit', pattern: /\bvitest\b|\bjest\b|node\s+--test\b|\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b/ },
+  { name: 'e2e', pattern: /\bplaywright\b|\bcypress\b|\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test:)?e2e\b/ },
+];
+
+/**
+ * Does this repository have CI that runs the validation set, or only a file that says CI?
+ *
+ * The presence check this replaces passed on an empty workflow. That is not a hypothetical:
+ * a builder under pressure to satisfy a gate named `ci` will write the smallest file that
+ * makes the gate stop complaining, and the smallest file that satisfies "a YAML file exists
+ * under .github/workflows" runs nothing at all.
+ *
+ * @param {string} cwd
+ * @returns {{ workflows: string[], covered: string[], missing: string[] }}
+ */
+export function inspectCiWorkflows(cwd) {
+  const workflowDir = path.join(cwd, '.github', 'workflows');
+  const workflows = existsSync(workflowDir)
+    ? readdirSync(workflowDir).filter((name) => /\.ya?ml$/.test(name)).sort()
+    : [];
+
+  /** @type {string[]} */
+  const steps = [];
+  for (const name of workflows) {
+    try {
+      const contents = readFileSync(path.join(workflowDir, name), 'utf8');
+      // `run:` may be a single line or a block scalar; take the whole file's text for the
+      // command search and rely on the patterns being specific enough to mean something.
+      steps.push(contents);
+    } catch {
+      // A workflow that cannot be read contributes no coverage, which fails the gate.
+    }
+  }
+  const text = steps.join('\n');
+
+  const covered = CI_REQUIRED_COMMANDS.filter((command) => command.pattern.test(text)).map((c) => c.name);
+  const missing = CI_REQUIRED_COMMANDS.filter((command) => !covered.includes(command.name)).map((c) => c.name);
+  return { workflows, covered, missing };
+}
+
+/**
+ * The health endpoint's path, as it appears in the source, or null.
+ *
+ * @param {string} cwd
+ * @returns {string | null}
+ */
+export function findHealthPath(cwd) {
+  /** @type {string | null} */
+  let found = null;
+  anySourceMatches(cwd, 0, (contents) => {
+    const match = contents.match(/['"`](\/(?:health|healthz|_health))\b/);
+    if (match === null) return false;
+    found = match[1];
+    return true;
+  });
+  return found;
+}
+
+/**
+ * The command that starts this application, or null when it declares none.
+ *
+ * @param {string} cwd
+ * @returns {string | null}
+ */
+export function startCommand(cwd) {
+  const manifest = path.join(cwd, 'package.json');
+  if (!existsSync(manifest)) return null;
+  try {
+    const scripts = JSON.parse(readFileSync(manifest, 'utf8')).scripts ?? {};
+    return typeof scripts.start === 'string' && scripts.start.trim() !== '' ? 'npm start' : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Where the health probe lives, resolved against this file so it works from any cwd. */
+const HEALTH_PROBE = fileURLToPath(new URL('./health-probe.mjs', import.meta.url));
+
+/**
+ * Judge DoD line 4's observability half.
+ *
+ * Two checks with deliberately different strengths, and the difference is worth stating.
+ *
+ * The health endpoint is checked by *asking it*, whenever the repository declares a way to
+ * start itself. "A source file contains the string /health" is satisfied by a route
+ * registered after the 404 handler, by a handler that throws, and by a server that cannot
+ * boot — all of which a request catches and a grep does not.
+ *
+ * Structured logging stays a static check, and that is a decision rather than an omission:
+ * the behavioural version would be to run the application and inspect its stdout for
+ * structure, which is neither cheap nor deterministic. Log output depends on level
+ * configuration, on whether anything happened to log during the probe window, and on
+ * transports that may write somewhere other than stdout. A logger call in source is the
+ * honest proxy, and it is recorded here as a proxy rather than dressed up as evidence.
+ *
+ * @param {string} cwd
+ * @param {{ run?: import('./plugins.mjs').Runner, probeTimeoutMs?: number }} [options]
+ * @returns {GateResult}
+ */
+export function observabilityGate(cwd, options = {}) {
+  const hasLogger = anySourceMatches(cwd, 0, (contents) =>
+    /\b(pino|winston|bunyan|structuredLog|logger\.(info|warn|error))\b/.test(contents),
+  );
+  const healthPath = findHealthPath(cwd);
+
+  if (!hasLogger || healthPath === null) {
+    /** @type {string[]} */
+    const missing = [];
+    if (!hasLogger) missing.push('structured logging');
+    if (healthPath === null) missing.push('health endpoint');
+    return { name: 'observability', ok: false, status: 1, detail: `missing: ${missing.join(', ')}` };
+  }
+
+  const start = startCommand(cwd);
+  if (options.run === undefined || start === null) {
+    // Nothing declares how to start this application, so there is nothing to ask. The
+    // static finding stands, and says so rather than claiming it was probed.
+    return {
+      name: 'observability',
+      ok: true,
+      status: 0,
+      detail: `structured logging present; ${healthPath} declared but not probed (no start script)`,
+    };
+  }
+
+  const timeout = options.probeTimeoutMs ?? 30_000;
+  const probe = options.run(
+    process.execPath,
+    [HEALTH_PROBE, '--command', start, '--path', healthPath, '--timeout', String(timeout)],
+    { cwd },
+  );
+  const detail = (probe.stdout || probe.stderr || `exit ${probe.status}`).trim();
+  return {
+    name: 'observability',
+    ok: probe.ok,
+    status: probe.ok ? 0 : 1,
+    detail: probe.ok ? `structured logging present; ${detail}` : `health probe failed: ${detail}`,
+  };
+}
+
+/**
  * The DoD gates that are a fact about the repository rather than an exit code
  * (DESIGN.md §4 lines 3 and 4).
  *
  * @param {string} cwd
+ * @param {{ run?: import('./plugins.mjs').Runner, probeTimeoutMs?: number }} [options]
  * @returns {GateResult[]}
  */
-export function staticGates(cwd) {
-  const workflowDir = path.join(cwd, '.github', 'workflows');
-  const workflows = existsSync(workflowDir)
-    ? readdirSync(workflowDir).filter((name) => /\.ya?ml$/.test(name))
-    : [];
+export function staticGates(cwd, options = {}) {
+  const ci = inspectCiWorkflows(cwd);
 
   const readme = isSubstantial(path.join(cwd, 'README.md'), 200);
   const contract = isSubstantial(path.join(cwd, 'docs', 'api-contract.md'), 200);
 
-  const hasLogger = anySourceMatches(cwd, 0, (contents) =>
-    /\b(pino|winston|bunyan|structuredLog|logger\.(info|warn|error))\b/.test(contents),
-  );
-  const hasHealth = anySourceMatches(cwd, 0, (contents) => /['"`]\/(health|healthz|_health)\b/.test(contents));
+  const ciOk = ci.workflows.length > 0 && ci.missing.length === 0;
 
   return [
     {
       name: 'ci',
-      ok: workflows.length > 0,
-      status: workflows.length > 0 ? 0 : 1,
-      detail: workflows.length > 0 ? `${workflows.length} workflow(s)` : 'no workflow under .github/workflows',
+      ok: ciOk,
+      status: ciOk ? 0 : 1,
+      detail: ciOk
+        ? `${ci.workflows.length} workflow(s) running ${ci.covered.join(', ')}`
+        : ci.workflows.length === 0
+          ? 'no workflow under .github/workflows'
+          : `workflows exist but never run: ${ci.missing.join(', ')}`,
     },
     {
       name: 'docs',
@@ -933,17 +1534,7 @@ export function staticGates(cwd) {
               .filter(Boolean)
               .join(', ')}`,
     },
-    {
-      name: 'observability',
-      ok: hasLogger && hasHealth,
-      status: hasLogger && hasHealth ? 0 : 1,
-      detail:
-        hasLogger && hasHealth
-          ? 'structured logging and a health endpoint found'
-          : `missing: ${[!hasLogger && 'structured logging', !hasHealth && 'health endpoint']
-              .filter(Boolean)
-              .join(', ')}`,
-    },
+    observabilityGate(cwd, options),
   ];
 }
 
@@ -1132,15 +1723,23 @@ function shell(command, args, options) {
 /**
  * Spawn one `claude -p` child and read its envelope.
  *
+ * The runner is injectable so that the two properties that matter about a child — the
+ * permissions it is given and the environment it inherits — can be asserted without one
+ * being spawned. Both have been wrong before, and neither is visible in a run's output.
+ *
  * @param {{ prompt: string, model: string, systemPrompt?: string, phase: string, cwd: string,
- *   env: Record<string, string | undefined> }} options
+ *   env: Record<string, string | undefined>,
+ *   run?: (command: string, args: string[],
+ *     options: { cwd: string, env?: Record<string, string | undefined> }) =>
+ *     { ok: boolean, status: number, stdout: string, stderr: string } }} options
  * @returns {ClaudeResult}
  */
-function spawnClaude(options) {
+export function spawnClaude(options) {
   const args = claudeArgs(options);
+  const run = options.run ?? shell;
   // Every Claude child carries the re-entrancy marker. This is the half of the no-nesting
   // rule the guard hook cannot enforce: the hook sees tool calls, not our own children.
-  const result = shell('claude', args, { cwd: options.cwd, env: childEnvironment(options.env) });
+  const result = run('claude', args, { cwd: options.cwd, env: childEnvironment(options.env) });
   if (!result.ok && result.stdout.trim() === '') {
     return { ok: false, text: '', costUsd: 0, tokens: 0, raw: result.stderr };
   }
@@ -1177,6 +1776,11 @@ export function main(argv, io = {}) {
     return 1;
   }
   const { input, confirmPrd } = parseDriverArgs(argv);
+
+  // Measured before the run commits anything of its own. A repository that was empty when
+  // dare arrived never has history worth quoting back at a builder, however many commits
+  // dare goes on to add — those are the builder's own work, restated (DESIGN.md §8.2).
+  const greenfield = !hasMeaningfulHistory({ cwd, run: shell });
 
   write(banner({ mode }));
 
@@ -1261,10 +1865,167 @@ export function main(argv, io = {}) {
   // ---- Phases 2-6: the loop ---------------------------------------------
   const unitReport = path.join(dareDir, UNIT_REPORT);
   const e2eReport = path.join(dareDir, E2E_REPORT);
-  const gates = [
-    ...commandGates(dareDir),
-    ...provisioning.gates.map((gate) => ({ name: 'design-slop', command: gate.command, required: true })),
+
+  /** Every gate, named for the brief, so a builder is never surprised by one. */
+  const gateNames = [
+    ...commandGates(dareDir).map((gate) => `${gate.name}: ${gate.command.join(' ')}`),
+    ...provisioning.gates.map((gate) => `design-slop: ${gate.command.join(' ')}`),
+    'ci: a workflow under .github/workflows that actually runs build, lint, types, unit and e2e',
+    'docs: README.md and docs/api-contract.md, neither a stub',
+    'observability: structured logging in source, and a health endpoint that answers when the app is started',
+    'red-evidence: every newly passing test must have been seen failing first',
   ];
+
+  /**
+   * Gate one tree.
+   *
+   * Parameterised by directory rather than closed over `cwd`, because a raced candidate is
+   * gated exactly like the main tree — in its own worktree, writing its own reports. The
+   * one thing that stays the main tree's is the ratchet: `previousPassing` is read from the
+   * driver's `.dare`, never from a candidate's, so no candidate can influence what counts
+   * as a regression (DESIGN.md §13.6).
+   *
+   * @param {string} dir
+   * @returns {{ ok: boolean, results: GateResult[], passing: Set<string> }}
+   */
+  const gateTree = (dir) => {
+    const treeDare = path.join(dir, '.dare');
+    const treeGates = [
+      ...commandGates(treeDare),
+      ...provisioning.gates.map((gate) => ({ name: 'design-slop', command: gate.command, required: true })),
+    ];
+    const browsers = ensurePlaywrightBrowsers({ cwd: dir, dareDir: treeDare, run: shell });
+    if (browsers.installed) write(verbatim(browsers.detail));
+    const commandResults = runGates(treeGates, { cwd: dir, run: shell });
+    const previousPassing = loadState(dareDir).passing;
+
+    /** @type {Set<string>} */
+    const passing = new Set();
+    /** @type {Set<string>} */
+    const nonPassing = new Set();
+    for (const file of [path.join(treeDare, UNIT_REPORT), path.join(treeDare, E2E_REPORT)]) {
+      if (!existsSync(file)) continue;
+      try {
+        for (const test of parseReport(readFileSync(file, 'utf8'), { rootDir: dir }).tests) {
+          (test.status === 'passed' ? passing : nonPassing).add(test.id);
+        }
+      } catch {
+        // The ratchet reports this failure itself; the gate does not need to guess.
+      }
+    }
+    const red = recordRedEvidence(treeDare, nonPassing);
+    const results = [
+      ...commandResults.results,
+      ...staticGates(dir, { run: shell }),
+      redEvidenceGate({ previousPassing, passing, redSeen: red }),
+    ];
+    return { ok: results.every((result) => result.ok), results, passing };
+  };
+
+  /**
+   * Which files this iteration touched, committed or not.
+   *
+   * Used only as evidence for whether two repair attempts were materially different
+   * (`lessons.mjs`). A gate-failing iteration has not committed anything yet, so the
+   * uncommitted answer is the true one; a committed iteration has a clean tree, so the last
+   * commit is.
+   *
+   * @returns {string[]}
+   */
+  const changedFiles = () => {
+    const dirty = shell('git', ['diff', '--name-only', 'HEAD'], { cwd }).stdout.split('\n').filter(Boolean);
+    const untracked = shell('git', ['ls-files', '--others', '--exclude-standard'], { cwd })
+      .stdout.split('\n')
+      .filter(Boolean);
+    if (dirty.length > 0 || untracked.length > 0) return [...new Set([...dirty, ...untracked])].sort();
+    return shell('git', ['diff', '--name-only', 'HEAD~1', 'HEAD'], { cwd }).stdout.split('\n').filter(Boolean).sort();
+  };
+
+  /**
+   * Run one race (DESIGN.md §13.6).
+   *
+   * Whether to race at all was decided by `shouldRace` before this was called. This part is
+   * mechanism: isolated worktrees, one builder each, gates on every candidate, a
+   * deterministic winner, and cleanup on every path out — including the paths where nothing
+   * won and the paths that threw.
+   *
+   * @param {import('./brief.mjs').Objective} objective
+   * @param {number} iteration
+   * @returns {RaceOutcome}
+   */
+  const runRace = (objective, iteration) => {
+    const base = shell('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim();
+    const parentDir = path.join(os.tmpdir(), `dare-race-${process.pid}-${iteration}`);
+    mkdirSync(parentDir, { recursive: true });
+    const created = createWorktrees({ cwd, run: shell, n: config.race.n, base, parentDir });
+    for (const problem of created.problems) write(verbatim(problem));
+
+    let tokens = 0;
+    let costUsd = 0;
+    try {
+      if (created.worktrees.length === 0) {
+        return { applied: false, detail: 'no worktree could be created; the ordinary path continues', tokens, costUsd };
+      }
+
+      const ratchetPassing = loadState(dareDir).passing;
+      /** @type {import('./race.mjs').Candidate[]} */
+      const candidates = [];
+
+      for (const worktree of created.worktrees) {
+        const candidateBrief = compileBrief({
+          iteration,
+          chaos: config.chaos,
+          objective,
+          protectedTests: ratchetPassing,
+          gates: gateNames,
+          raceCandidate: { index: worktree.index, of: created.worktrees.length },
+        });
+        writeBrief(dareDir, iteration, candidateBrief, worktree.index);
+
+        const built = spawnClaude({
+          prompt: candidateBrief,
+          model: config.builderModel,
+          systemPrompt: template('builder-system.md'),
+          phase: 'builder',
+          cwd: worktree.dir,
+          env,
+        });
+        tokens += built.tokens;
+        costUsd += built.costUsd;
+        if (!built.ok) {
+          candidates.push({ ...worktree, commit: null, gates: [], regressions: [], filesChanged: 0 });
+          continue;
+        }
+
+        shell('git', ['add', '-A'], { cwd: worktree.dir });
+        shell('git', ['commit', '--no-verify', '-m', `dare: race candidate ${worktree.index} (iteration ${iteration})`], {
+          cwd: worktree.dir,
+        });
+        const commit = shell('git', ['rev-parse', 'HEAD'], { cwd: worktree.dir }).stdout.trim();
+        const gated = gateTree(worktree.dir);
+        candidates.push({
+          ...worktree,
+          commit: commit === base ? null : commit,
+          gates: gated.results,
+          regressions: ratchetPassing.filter((id) => !gated.passing.has(id)),
+          filesChanged: shell('git', ['diff', '--name-only', `${base}..HEAD`], { cwd: worktree.dir })
+            .stdout.split('\n')
+            .filter(Boolean).length,
+        });
+      }
+
+      const selection = selectWinner(candidates);
+      if (selection.winner === null || selection.winner.commit === null) {
+        return { applied: false, detail: selection.reason, tokens, costUsd };
+      }
+      const merged = applyWinner({ cwd, run: shell, commit: selection.winner.commit });
+      return { applied: merged.ok, detail: `${selection.reason}; ${merged.detail}`, tokens, costUsd };
+    } finally {
+      const cleaned = removeWorktrees({ cwd, run: shell, worktrees: created.worktrees });
+      for (const problem of cleaned.problems) write(verbatim(problem));
+      rmSync(parentDir, { recursive: true, force: true });
+    }
+  };
 
   /** @type {RunOutcome} */
   let outcome;
@@ -1274,31 +2035,31 @@ export function main(argv, io = {}) {
     dareDir,
     rootDir: cwd,
     requiredIds,
-    task: [
-      `Build what PRD.md specifies. Scope budget: chaos ${config.chaos}.`,
-      '',
-      'Every iteration runs these gates and all of them must pass. They exist from the first',
-      'iteration, so a missing script is a failing gate, not an excuse:',
-      '',
-      ...gates.map((gate) => `- ${gate.name}: ${gate.command.join(' ')}`),
-      '- ci: a workflow under .github/workflows',
-      '- docs: README.md and docs/api-contract.md, neither a stub',
-      '- observability: structured logging and a health endpoint in source',
-      '- red-evidence: every newly passing test must have been seen failing first',
-    ].join('\n'),
+    gateNames,
+    task: `Build what PRD.md specifies. Every gate listed below must pass from the first iteration, so a missing script is a failing gate rather than an excuse.`,
     effects: {
-      build: (task) =>
+      build: (brief) =>
         spawnClaude({
-          prompt: task,
+          prompt: brief,
           model: config.builderModel,
           systemPrompt: template('builder-system.md'),
           phase: 'builder',
           cwd,
           env,
         }),
-      review: (reviewer) =>
+      review: (reviewer, ids) =>
         spawnClaude({
-          prompt: `You are the ${reviewer} auditor. Audit this repository now and return your report.`,
+          prompt: [
+            `You are the ${reviewer} auditor, one member of a panel of ${config.reviewers.length}.`,
+            '',
+            'You own the ids below and must return exactly one entry for each of them. The other',
+            'auditors own the rest. Do not adjudicate theirs, and do not assume anyone will cover',
+            'yours — an id you leave out invalidates this audit.',
+            '',
+            ...ids.map((id) => `- ${id}`),
+            '',
+            'Read PRD.md, the documents under docs/, and the repository. Then return your report.',
+          ].join('\n'),
           model: config.reviewerModel,
           systemPrompt: template('reviewer-system.md'),
           phase: 'review',
@@ -1316,32 +2077,20 @@ export function main(argv, io = {}) {
           cwd,
           env,
         }),
+      extractLesson: (evidence) =>
+        spawnClaude({
+          prompt: `${template('lesson-extractor.md')}\n\n---\n\nThe evidence:\n\n${evidence}`,
+          model: config.lessonModel,
+          phase: 'lesson-extractor',
+          cwd,
+          env,
+        }),
+      race: runRace,
+      history: (findings) => historyContext({ cwd, run: shell, findings, greenfield }),
+      changedFiles,
       gates: () => {
-        const browsers = ensurePlaywrightBrowsers({ cwd, dareDir, run: shell });
-        if (browsers.installed) write(verbatim(browsers.detail));
-        const commandResults = runGates(gates, { cwd, run: shell });
-        const previousPassing = loadState(dareDir).passing;
-        /** @type {Set<string>} */
-        const passing = new Set();
-        /** @type {Set<string>} */
-        const nonPassing = new Set();
-        for (const file of [unitReport, e2eReport]) {
-          if (!existsSync(file)) continue;
-          try {
-            for (const test of parseReport(readFileSync(file, 'utf8'), { rootDir: cwd }).tests) {
-              (test.status === 'passed' ? passing : nonPassing).add(test.id);
-            }
-          } catch {
-            // The ratchet reports this failure itself; the gate does not need to guess.
-          }
-        }
-        const red = recordRedEvidence(dareDir, nonPassing);
-        const results = [
-          ...commandResults.results,
-          ...staticGates(cwd),
-          redEvidenceGate({ previousPassing, passing, redSeen: red }),
-        ];
-        return { ok: results.every((result) => result.ok), results };
+        const gated = gateTree(cwd);
+        return { ok: gated.ok, results: gated.results };
       },
       readTestReports: () =>
         [unitReport, e2eReport].filter((file) => existsSync(file)).map((file) => readFileSync(file, 'utf8')),

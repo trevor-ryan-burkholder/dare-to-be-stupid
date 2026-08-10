@@ -59,17 +59,24 @@ function deny(rule, reason) {
  */
 const PATH_KEY_RE = /(^|_)path$|Path$/;
 
-/** Basenames that are off limits when they sit directly inside a `.dare` directory. */
-const PROTECTED_BASENAMES = new Set(['state.json', 'config.json']);
+/**
+ * Basenames that are off limits when they sit directly inside a `.dare` directory.
+ *
+ * `lessons.json` joined `state.json` and `config.json` when lesson memory arrived. It is
+ * the same argument in a different coat: a builder that can edit the memory it is handed is
+ * not constrained by it, and a store the builder can write is one it can use to tell the
+ * next iteration whatever it likes.
+ */
+const PROTECTED_BASENAMES = new Set(['state.json', 'config.json', 'lessons.json']);
 
-/** `.dare/state.json` or `.dare/config.json`, either separator, not part of a longer name. */
-const PROTECTED_LITERAL_RE = /(^|[^\w.-])\.dare[\\/](state|config)\.json(?![\w.-])/;
+/** A protected `.dare` file, either separator, not part of a longer name. */
+const PROTECTED_LITERAL_RE = /(^|[^\w.-])\.dare[\\/](state|config|lessons)\.json(?![\w.-])/;
 
 /** A `.dare` path component on its own. */
 const DARE_DIR_RE = /(^|[^\w.-])\.dare(?![\w.-])/;
 
-/** A bare `state.json` / `config.json`, used only in combination with DARE_DIR_RE. */
-const PROTECTED_BASENAME_RE = /(^|[^\w.-])(state|config)\.json(?![\w.-])/;
+/** A bare protected basename, used only in combination with DARE_DIR_RE. */
+const PROTECTED_BASENAME_RE = /(^|[^\w.-])(state|config|lessons)\.json(?![\w.-])/;
 
 /** The `/dare` slash command as a standalone word. */
 const SLASH_DARE_RE = /(^|\s)\/dare(\s|$)/;

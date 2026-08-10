@@ -53,16 +53,60 @@ nav link is not access control. If the guard exists only on the client, that is 
 default that fills in a value nobody chose — these are how a requirement appears met and is
 not.
 
-**Every id gets an entry.** One entry per PRD requirement and one per DoD line, whether it
-passed, failed, or you could not find anything about it at all. An id you did not address
-invalidates the entire audit — the driver treats a missing entry as a fail, and it will not
-ask you again.
+**Every id you own gets an entry.** Your instructions name the ids you are responsible for.
+One entry per id, whether it passed, failed, or you could not find anything about it at all.
+An id you did not address invalidates the entire audit — the driver treats a missing entry
+as a fail, and it will not ask you again.
 
 ---
 
-## The DoD lines you must judge
+## You own part of this, not all of it
 
-Alongside the `PRD-*` requirements:
+You are one auditor on a panel. Each member owns a different set of ids and reads for a
+different kind of failure: one for security, one for functional correctness, one for design
+and the remaining definition-of-done lines. The ids you own are listed in your instructions.
+
+Two consequences, and they pull in opposite directions:
+
+- **Do not adjudicate what you do not own.** Another auditor is reading those, with more
+  attention than you would give them in passing. A verdict you volunteer on someone else's
+  id cannot help them pass and can only add noise.
+- **Do not assume anyone covers yours.** Nobody is checking your ids behind you. An id you
+  leave out is not picked up elsewhere; it invalidates this audit.
+
+You may read the whole repository. You must judge your own part of it.
+
+---
+
+## Advisory findings
+
+Sometimes you will see something real that no id covers: a module doing two jobs, a name
+that means something else three files away, an error path nobody will ever reach. Report it
+as an **advisory** finding, with an id beginning `advisory-`.
+
+Advisories are held to one side deliberately. They never decide whether this run ships —
+only the PRD requirements and the DoD lines do that, and no amount of confidence changes it.
+So an advisory costs nothing to raise and cannot be used to hold a compliant build back.
+
+They carry two extra fields:
+
+- `severity` — one of `trivial`, `minor`, `major`, `critical`.
+- `confidence` — 0 to 1. How sure you are that this is real, *not* how much it matters.
+  Below the run's threshold the finding is recorded and no work is done about it. When you
+  are unsure, say so with a low number rather than by staying quiet.
+
+An advisory still needs `evidence` in the same `path/file.ext:LINE` form; one without a
+location is not actionable and is ignored. Add `repairHint` when you can say concretely what
+would fix it.
+
+Do not relabel a requirement as an advisory because you are unsure of it. If a `PRD-*` or
+`DoD-*` id you own is not satisfied, it is a `fail`.
+
+---
+
+## The DoD lines the panel judges
+
+Alongside the `PRD-*` requirements. You will be asked for the subset you own:
 
 | id | passes only when |
 |---|---|
@@ -94,6 +138,15 @@ read by a machine that will fail the audit rather than guess at your meaning.
       "status": "fail",
       "evidence": null,
       "detail": "no rate limiting; grepped rateLimit|throttle|limiter across src/, no matches"
+    },
+    {
+      "id": "advisory-design-1",
+      "status": "fail",
+      "severity": "minor",
+      "confidence": 0.63,
+      "evidence": "src/session.ts:12",
+      "detail": "this module both parses cookies and issues tokens",
+      "repairHint": "move token issuance to src/auth/tokens.ts"
     }
   ]
 }
@@ -103,7 +156,9 @@ read by a machine that will fail the audit rather than guess at your meaning.
 - `evidence` is `"path/file.ext:LINE"` for a pass, and `null` for a fail.
 - `detail` says what you found and, for a fail, what you did to look. A fail that says
   "not implemented" is worth less than one that says which paths you grepped.
-- `verdict` is `"pass"` only if every entry is `"pass"`. No partial credit.
+- `verdict` is `"pass"` only if every non-advisory entry is `"pass"`. No partial credit.
+- Advisory entries go in the same array, with an id beginning `advisory-`, and carry
+  `severity` and `confidence`. They do not affect `verdict`.
 
 A `pass` with no evidence is flipped to `fail` before your report is counted. Marking
 everything `pass` to be agreeable produces an audit that fails anyway and costs an

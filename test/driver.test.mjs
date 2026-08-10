@@ -15,7 +15,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -41,8 +41,14 @@ import {
   staticGates,
   appendBlooper,
   assertNotNested,
+  assertOwnershipCovers,
   claudeArgs,
   combinePanel,
+  inspectCiWorkflows,
+  observabilityGate,
+  ownershipPlan,
+  spawnClaude,
+  startCommand,
   driveRun,
   extractJsonObject,
   gateScore,
@@ -251,6 +257,7 @@ describe('combinePanel', () => {
         ? { id: 'PRD-1.1', status: /** @type {'pass'} */ ('pass'), evidence: 'src/a.ts:1', detail: '' }
         : { id: 'PRD-1.1', status: /** @type {'fail'} */ ('fail'), evidence: null, detail: 'missing' },
     ],
+    advisories: /** @type {import('../scripts/driver.mjs').AdvisoryFinding[]} */ ([]),
     problems: /** @type {string[]} */ ([]),
   });
 
@@ -268,6 +275,7 @@ describe('combinePanel', () => {
     assert.deepStrictEqual(combinePanel([], { requireUnanimous: true }), {
       verdict: 'fail',
       failing: ['no reviewer returned a report'],
+      advisories: [],
     });
   });
 
@@ -275,9 +283,27 @@ describe('combinePanel', () => {
     const suspicious = {
       verdict: /** @type {'pass'} */ ('pass'),
       requirements: /** @type {import('../scripts/driver.mjs').RequirementVerdict[]} */ ([]),
+      advisories: /** @type {import('../scripts/driver.mjs').AdvisoryFinding[]} */ ([]),
       problems: ['id missing'],
     };
     assert.equal(combinePanel([suspicious], { requireUnanimous: true }).verdict, 'fail');
+  });
+
+  it('fails when the panel between them never judged a required id', () => {
+    // Ownership is asserted before the panel runs, so this is the second line of defence:
+    // a reviewer that returns a truncated report leaves an id unjudged, and an unjudged id
+    // must never read as a pass.
+    const panel = combinePanel([report('pass')], { requireUnanimous: true, requiredIds: ['PRD-1.1', 'DoD-2-security'] });
+    assert.equal(panel.verdict, 'fail');
+    assert.equal(
+      panel.failing.some((finding) => finding.startsWith('DoD-2-security was judged by no member')),
+      true,
+      `expected an unjudged-id finding, got ${JSON.stringify(panel.failing)}`,
+    );
+  });
+
+  it('passes when the ids it was asked about were all judged', () => {
+    assert.equal(combinePanel([report('pass')], { requireUnanimous: true, requiredIds: ['PRD-1.1'] }).verdict, 'pass');
   });
 
   it('accepts a majority when unanimity is not required', () => {
@@ -546,8 +572,16 @@ describe('claudeArgs and the permission policy', () => {
 
   it('refuses a phase with no declared policy rather than inheriting one', () => {
     // A new phase written next to the builder must not quietly acquire its powers.
-    assert.throws(() => claudeArgs({ prompt: 'x', model: 'm', phase: 'lesson-extractor' }), DriverError);
+    assert.throws(() => claudeArgs({ prompt: 'x', model: 'm', phase: 'summariser' }), DriverError);
     assert.throws(() => permissionsFor('anything-new'), DriverError);
+  });
+
+  it('gives the lesson extractor a cold read and nothing more', () => {
+    // Lesson memory is driver-owned. The extractor reads evidence and answers; it has no
+    // reason to write, and the store it feeds is one a builder may not touch either.
+    const policy = permissionsFor('lesson-extractor');
+    assert.equal(policy.dangerous, false);
+    assert.deepStrictEqual(policy.allowedTools, ['Read', 'Glob', 'Grep']);
   });
 
   it('forces the default output style on every phase', () => {
@@ -590,6 +624,258 @@ describe('childEnvironment', () => {
 // ---------------------------------------------------------------------------
 // Re-entrancy and the blooper reel
 // ---------------------------------------------------------------------------
+
+describe('the re-entrancy marker reaches the child', () => {
+  /**
+   * @param {string} phase
+   * @returns {{ calls: { command: string, args: string[], env: Record<string, string | undefined> }[] }}
+   */
+  function spawnWithRecorder(phase) {
+    /** @type {{ command: string, args: string[], env: Record<string, string | undefined> }[]} */
+    const calls = [];
+    spawnClaude({
+      prompt: 'do it',
+      model: 'claude-sonnet-5',
+      phase,
+      cwd: '/somewhere',
+      env: { PATH: '/usr/bin' },
+      run: (command, args, options) => {
+        calls.push({ command, args, env: options.env ?? {} });
+        return { ok: true, status: 0, stdout: JSON.stringify({ is_error: false, result: 'ok' }), stderr: '' };
+      },
+    });
+    return { calls };
+  }
+
+  it('passes the marker in the environment of every phase, not merely computes it', () => {
+    // The bug this defends against shipped once: the marker was built and then discarded,
+    // because the shell wrapper had no way to carry an environment. `assertNotNested` was
+    // therefore unreachable from a child, and the driver half of the no-nesting rule did
+    // nothing at all.
+    for (const phase of Object.keys(PHASE_PERMISSIONS)) {
+      const { calls } = spawnWithRecorder(phase);
+      assert.equal(calls.length, 1, `${phase} spawned ${calls.length} children`);
+      assert.equal(calls[0].env[REENTRANCY_ENV], '1', `${phase} child did not carry the marker`);
+    }
+  });
+
+  it('leaves the rest of the environment intact, so the child still finds its tools', () => {
+    assert.equal(spawnWithRecorder('builder').calls[0].env.PATH, '/usr/bin');
+  });
+
+  it('produces an environment the driver would refuse to start in', () => {
+    const inherited = spawnWithRecorder('review').calls[0].env;
+    assert.throws(() => assertNotNested(inherited), DriverError);
+  });
+
+  it('carries the phase permissions through to the real argv', () => {
+    assert.equal(spawnWithRecorder('builder').calls[0].args.includes('--dangerously-skip-permissions'), true);
+    for (const phase of Object.keys(PHASE_PERMISSIONS).filter((name) => name !== 'builder')) {
+      assert.equal(
+        spawnWithRecorder(phase).calls[0].args.includes('--dangerously-skip-permissions'),
+        false,
+        `${phase} was spawned in dangerous mode`,
+      );
+    }
+  });
+});
+
+describe('ownershipPlan', () => {
+  const ALL_IDS = [
+    'PRD-1.1',
+    'PRD-2.3',
+    'DoD-1-requirements',
+    'DoD-2-security',
+    'DoD-3-ci',
+    'DoD-4-docs-observability',
+    'DoD-5-design',
+  ];
+
+  /** @param {Partial<{ reviewers: string[], ownership: Record<string, string[]> }>} [overrides] */
+  function planFor(overrides = {}) {
+    const config = defaultConfig();
+    return ownershipPlan(ALL_IDS, {
+      reviewers: overrides.reviewers ?? config.reviewers,
+      ownership: overrides.ownership ?? config.ownership,
+    });
+  }
+
+  it('splits every id across the panel and leaves none unowned', () => {
+    const plan = planFor();
+    assert.deepStrictEqual(plan.uncovered, []);
+    assert.deepStrictEqual(
+      plan.assignments.map((assignment) => [assignment.reviewer, assignment.ids]),
+      [
+        ['security', ['DoD-2-security']],
+        ['correctness', ['DoD-1-requirements', 'PRD-1.1', 'PRD-2.3']],
+        ['design', ['DoD-3-ci', 'DoD-4-docs-observability', 'DoD-5-design']],
+      ],
+    );
+  });
+
+  it('gives no two reviewers the same id under the default split', () => {
+    assert.deepStrictEqual(planFor().shared, []);
+  });
+
+  it('reports an id no active reviewer owns', () => {
+    // The security auditor is configured but not on the panel, so its line has no owner.
+    const plan = planFor({ reviewers: ['correctness', 'design'] });
+    assert.deepStrictEqual(plan.uncovered, ['DoD-2-security']);
+  });
+
+  it('treats * as a wildcard and everything else as literal', () => {
+    const plan = ownershipPlan(['PRD-1.1', 'PRD-1.1-extra', 'XPRD-1.1'], {
+      reviewers: ['correctness'],
+      ownership: { correctness: ['PRD-*'] },
+    });
+    assert.deepStrictEqual(plan.assignments[0].ids, ['PRD-1.1', 'PRD-1.1-extra']);
+    assert.deepStrictEqual(plan.uncovered, ['XPRD-1.1']);
+  });
+
+  it('does not let a regex metacharacter in a pattern match something else', () => {
+    // `DoD-1.requirements` would match `DoD-1-requirements` if the dot were left live.
+    const plan = ownershipPlan(['DoD-1-requirements'], {
+      reviewers: ['correctness'],
+      ownership: { correctness: ['DoD-1.requirements'] },
+    });
+    assert.deepStrictEqual(plan.uncovered, ['DoD-1-requirements']);
+  });
+
+  it('allows shared ownership when it is configured, and says which ids are shared', () => {
+    const plan = planFor({
+      ownership: { security: ['DoD-2-security', 'PRD-*'], correctness: ['PRD-*', 'DoD-1-requirements'], design: ['DoD-3-ci', 'DoD-4-docs-observability', 'DoD-5-design'] },
+    });
+    assert.deepStrictEqual(plan.uncovered, []);
+    assert.deepStrictEqual(
+      plan.shared.map((entry) => entry.id),
+      ['PRD-1.1', 'PRD-2.3'],
+    );
+  });
+});
+
+describe('assertOwnershipCovers', () => {
+  it('returns the plan when the panel covers the specification', () => {
+    const config = defaultConfig();
+    const plan = assertOwnershipCovers(['PRD-1.1', 'DoD-2-security', 'DoD-1-requirements', 'DoD-3-ci'], {
+      reviewers: ['security', 'correctness', 'design'],
+      ownership: config.ownership,
+    });
+    assert.equal(plan.uncovered.length, 0);
+  });
+
+  it('throws, naming the id, when nobody owns one', () => {
+    assert.throws(
+      () => assertOwnershipCovers(['PRD-1.1', 'DoD-9-invented'], defaultConfig()),
+      (/** @type {Error} */ error) => error instanceof DriverError && error.message.includes('DoD-9-invented'),
+    );
+  });
+
+  it('throws when a reviewer on the panel owns nothing at all', () => {
+    // A member with no ids is a whole cold read of the repository spent on nothing.
+    assert.throws(
+      () => assertOwnershipCovers(['PRD-1.1'], { reviewers: ['correctness', 'security'], ownership: defaultConfig().ownership }),
+      (/** @type {Error} */ error) => error instanceof DriverError && error.message.includes('security'),
+    );
+  });
+});
+
+describe('advisory findings', () => {
+  /**
+   * @param {Record<string, unknown>} advisory
+   * @param {number} [minConfidence]
+   */
+  function parseWith(advisory, minConfidence = 0.7) {
+    return parseReviewerReport(
+      JSON.stringify({ requirements: [{ ...GOOD_ENTRY }, advisory] }),
+      { requiredIds: ['PRD-1.1'], minConfidence },
+    );
+  }
+
+  const CONFIDENT = {
+    id: 'advisory-design-4',
+    status: 'fail',
+    severity: 'minor',
+    confidence: 0.9,
+    evidence: 'src/foo.ts:91',
+    detail: 'the module is doing two things',
+    repairHint: 'split the export',
+  };
+
+  it('does not let an advisory failure change the verdict', () => {
+    // The whole point: PRD and DoD compliance is deterministic, and a finding with a
+    // number attached must not be able to hold a compliant build back.
+    const report = parseWith(CONFIDENT);
+    assert.equal(report.verdict, 'pass');
+    assert.deepStrictEqual(report.problems, []);
+    assert.deepStrictEqual(
+      report.requirements.map((entry) => entry.id),
+      ['PRD-1.1'],
+    );
+  });
+
+  it('keeps a confident, evidenced advisory as actionable', () => {
+    const [advisory] = parseWith(CONFIDENT).advisories;
+    assert.equal(advisory.actionable, true);
+    assert.equal(advisory.severity, 'minor');
+    assert.equal(advisory.confidence, 0.9);
+    assert.equal(advisory.repairHint, 'split the export');
+  });
+
+  it('does not act on an advisory below the configured threshold', () => {
+    // A low-confidence hunch fed back as work is how a loop spends its last iterations
+    // chasing an opinion.
+    assert.equal(parseWith({ ...CONFIDENT, confidence: 0.4 }).advisories[0].actionable, false);
+    assert.equal(parseWith({ ...CONFIDENT, confidence: 0.4 }, 0.3).advisories[0].actionable, true);
+  });
+
+  it('treats a missing or unreadable confidence as zero', () => {
+    assert.equal(parseWith({ ...CONFIDENT, confidence: undefined }).advisories[0].confidence, 0);
+    assert.equal(parseWith({ ...CONFIDENT, confidence: 'very' }).advisories[0].confidence, 0);
+    assert.equal(parseWith({ ...CONFIDENT, confidence: 7 }).advisories[0].confidence, 0);
+  });
+
+  it('will not act on an advisory with no real file:line', () => {
+    // Evidence stays mandatory for anything actionable, advisory or not.
+    assert.equal(parseWith({ ...CONFIDENT, evidence: null }).advisories[0].actionable, false);
+    assert.equal(parseWith({ ...CONFIDENT, evidence: 'somewhere in src/' }).advisories[0].actionable, false);
+  });
+
+  it('keeps a required id required even when it wears an advisory name', () => {
+    // Otherwise a reviewer could demote a DoD line by renaming it.
+    const report = parseReviewerReport(
+      JSON.stringify({ requirements: [{ id: 'advisory-2', status: 'fail', evidence: null, detail: 'x' }] }),
+      { requiredIds: ['advisory-2'] },
+    );
+    assert.equal(report.verdict, 'fail');
+    assert.deepStrictEqual(report.advisories, []);
+    assert.deepStrictEqual(
+      report.requirements.map((entry) => entry.id),
+      ['advisory-2'],
+    );
+  });
+
+  it('surfaces only actionable advisories from the panel, worst first', () => {
+    const withAdvisories = (/** @type {Record<string, unknown>[]} */ advisories) =>
+      parseReviewerReport(JSON.stringify({ requirements: [GOOD_ENTRY, ...advisories] }), {
+        requiredIds: ['PRD-1.1'],
+      });
+    const panel = combinePanel(
+      [
+        withAdvisories([
+          { ...CONFIDENT, id: 'advisory-1', severity: 'minor', confidence: 0.8 },
+          { ...CONFIDENT, id: 'advisory-2', severity: 'major', confidence: 0.8 },
+          { ...CONFIDENT, id: 'advisory-3', confidence: 0.1 },
+        ]),
+      ],
+      { requireUnanimous: true, requiredIds: ['PRD-1.1'] },
+    );
+    assert.equal(panel.verdict, 'pass');
+    assert.deepStrictEqual(
+      panel.advisories.map((advisory) => advisory.id),
+      ['advisory-2', 'advisory-1'],
+    );
+  });
+});
 
 describe('assertNotNested', () => {
   it('allows a first run', () => {
@@ -652,8 +938,9 @@ describe('driveRun', () => {
    * @param {Partial<import('../scripts/driver.mjs').Effects>} overrides
    * @param {Partial<import('../scripts/config.mjs').DareConfig>} [configOverrides]
    * @param {string[]} [seedPassing]
+   * @param {string[]} [requiredIds]
    */
-  function run(overrides, configOverrides = {}, seedPassing = []) {
+  function run(overrides, configOverrides = {}, seedPassing = [], requiredIds = ['PRD-1.1']) {
     const root = makeTempDir();
     const dareDir = path.join(root, '.dare');
     if (seedPassing.length > 0) {
@@ -678,7 +965,7 @@ describe('driveRun', () => {
       config: { ...defaultConfig(), maxIterations: 5, stallLimit: 3, reviewers: ['correctness'], ...configOverrides },
       dareDir,
       rootDir: root,
-      requiredIds: ['PRD-1.1'],
+      requiredIds,
       task: 'build the thing',
       effects: effectsWith(overrides),
     });
@@ -891,39 +1178,247 @@ describe('driveRun', () => {
     assert.equal(outcome.state, 'BUDGET');
   });
 
-  it('hands the failing gate names back as the next build task', () => {
+  it('hands the failing gate names back in the next brief', () => {
     /** @type {string[]} */
-    const tasks = [];
+    const briefs = [];
     run(
       {
         readTestReports: () => [ONE_PASSING],
         gates: () => ({ ok: false, results: [{ name: 'typecheck', ok: false, status: 1, detail: 'TS2339' }] }),
-        build: (task) => {
-          tasks.push(task);
+        build: (brief) => {
+          briefs.push(brief);
           return { ok: true, text: '', costUsd: 0, tokens: 1, raw: '' };
         },
       },
       { maxIterations: 2 },
     );
-    assert.equal(tasks[0], 'build the thing');
-    assert.equal(tasks[1].includes('typecheck: TS2339'), true);
+    assert.equal(briefs[0].includes('build the thing'), true);
+    assert.equal(briefs[1].includes('typecheck'), true);
+    assert.equal(briefs[1].includes('TS2339'), true);
+    assert.equal(briefs[1].includes('### Failing gates'), true);
   });
 
-  it('hands the regression task back after a reset', () => {
+  it('hands the regression back in the next brief, above everything else', () => {
     /** @type {string[]} */
-    const tasks = [];
+    const briefs = [];
     run(
       {
         readTestReports: () => [{ numTotalTests: 0, testResults: [] }],
-        build: (task) => {
-          tasks.push(task);
+        build: (brief) => {
+          briefs.push(brief);
           return { ok: true, text: '', costUsd: 0, tokens: 1, raw: '' };
         },
       },
       { maxIterations: 2 },
       ['test/a.test.js::works'],
     );
-    assert.equal(tasks[1].startsWith('Restore these tests.'), true);
+    assert.equal(briefs[1].includes('Restore the tests listed below'), true);
+    assert.equal(briefs[1].includes('test/a.test.js::works'), true);
+    assert.equal(briefs[1].includes('outrank everything else'), true);
+  });
+
+  it('archives a brief for every iteration', () => {
+    // The brief is the only record of what the builder was actually asked for. A run that
+    // ends badly is diagnosed from these; reconstructing them from what it did is guesswork.
+    const { dareDir } = run(
+      {
+        readTestReports: () => [ONE_PASSING],
+        gates: () => ({ ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'no' }] }),
+      },
+      { maxIterations: 3 },
+    );
+    assert.deepStrictEqual(readdirSync(path.join(dareDir, 'briefs')).sort(), [
+      'iter-001.md',
+      'iter-002.md',
+      'iter-003.md',
+    ]);
+  });
+
+  it('asks each reviewer only about the ids it owns', () => {
+    /** @type {[string, string[]][]} */
+    const asked = [];
+    run(
+      {
+        readTestReports: () => [ONE_PASSING],
+        review: (reviewer, ids) => {
+          asked.push([reviewer, ids]);
+          return {
+            ok: true,
+            costUsd: 0,
+            tokens: 1,
+            raw: '',
+            text: JSON.stringify({
+              requirements: ids.map((id) => ({ id, status: 'pass', evidence: 'src/a.ts:1', detail: 'found' })),
+            }),
+          };
+        },
+      },
+      { reviewers: ['security', 'correctness', 'design'] },
+      [],
+      ['PRD-1.1', 'DoD-1-requirements', 'DoD-2-security', 'DoD-3-ci', 'DoD-4-docs-observability', 'DoD-5-design'],
+    );
+    assert.deepStrictEqual(asked, [
+      ['security', ['DoD-2-security']],
+      ['correctness', ['DoD-1-requirements', 'PRD-1.1']],
+      ['design', ['DoD-3-ci', 'DoD-4-docs-observability', 'DoD-5-design']],
+    ]);
+  });
+
+  it('extracts a lesson only after a failure resisted one repair and fell to another', () => {
+    // The evidence pattern from DESIGN.md §13.8, driven through the real loop: lint fails,
+    // a repair does not fix it, a different repair does. Nothing asks the builder what it
+    // learned; the driver notices the shape and pays for one cold extraction.
+    let iteration = 0;
+    /** @type {string[]} */
+    const extractions = [];
+    const { dareDir } = run(
+      {
+        readTestReports: () => [ONE_PASSING],
+        gates: () => {
+          iteration += 1;
+          return iteration <= 2
+            ? { ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'playwright config unreadable' }] }
+            : { ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }] };
+        },
+        // Different files each attempt, which is what makes the second repair a different
+        // one rather than the first one finished.
+        changedFiles: () => [`src/attempt-${iteration}.ts`],
+        review: () => ({
+          ok: true,
+          costUsd: 0,
+          tokens: 1,
+          raw: '',
+          text: JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'fail', evidence: null, detail: 'missing' }] }),
+        }),
+        extractLesson: (evidence) => {
+          extractions.push(evidence);
+          return {
+            ok: true,
+            costUsd: 0,
+            tokens: 5,
+            raw: '',
+            text: JSON.stringify({
+              lesson: 'Read the playwright config before assuming the browser is missing.',
+              trigger: ['playwright', 'prd-1.1'],
+              scope: ['e2e'],
+              evidence: { introduced: 1, resolved: 3, tests: [] },
+            }),
+          };
+        },
+      },
+      { maxIterations: 4, stallLimit: 9 },
+    );
+
+    assert.equal(extractions.length, 1, `expected exactly one extraction, got ${extractions.length}`);
+    assert.equal(extractions[0].includes('gate:lint'), true);
+    assert.equal(extractions[0].includes('First observed on iteration 1'), true);
+
+    const stored = JSON.parse(readFileSync(path.join(dareDir, 'lessons.json'), 'utf8'));
+    assert.equal(stored.version, 1);
+    assert.deepStrictEqual(
+      stored.lessons.map((/** @type {{ id: string }} */ lesson) => lesson.id),
+      ['lesson-0001'],
+    );
+    // The evidence is the driver's, not the extractor's.
+    assert.deepStrictEqual(stored.lessons[0].evidence.introduced, 1);
+    assert.deepStrictEqual(stored.lessons[0].evidence.resolved, 3);
+
+    // And it reaches a later brief, because its trigger matches that objective.
+    const later = readFileSync(path.join(dareDir, 'briefs', 'iter-004.md'), 'utf8');
+    assert.equal(later.includes('Read the playwright config'), true, 'the stored lesson never reached a brief');
+  });
+
+  it('does not let a broken lesson extractor end an otherwise healthy run', () => {
+    // Lesson memory is advisory. Nothing it does may decide a run.
+    const { outcome } = run(
+      {
+        readTestReports: () => [ONE_PASSING],
+        extractLesson: () => {
+          throw new Error('the extractor exploded');
+        },
+      },
+      { maxIterations: 2 },
+    );
+    assert.equal(outcome.state, 'SHIPPED');
+  });
+
+  it('races only once the loop has stalled, and skips the ordinary build when a winner lands', () => {
+    let builds = 0;
+    /** @type {number[]} */
+    const raced = [];
+    run(
+      {
+        // Nothing passes, so no iteration improves anything and the stall counter climbs.
+        readTestReports: () => [{ numTotalTests: 0, testResults: [] }],
+        gates: () => ({ ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'no' }] }),
+        build: (brief) => {
+          builds += 1;
+          void brief;
+          return { ok: true, text: '', costUsd: 0, tokens: 100, raw: '' };
+        },
+        race: (objective, iterationNumber) => {
+          raced.push(iterationNumber);
+          void objective;
+          return { applied: true, detail: 'candidate 1 won', tokens: 200, costUsd: 0 };
+        },
+      },
+      { maxIterations: 4, stallLimit: 9, race: { enabled: true, n: 2, after: 1 } },
+    );
+
+    // Iteration 1 cannot race: nothing has stalled yet. Iteration 4 cannot either — a race
+    // needs one iteration to run and one to land the winner, and there is only one left.
+    assert.deepStrictEqual(raced, [2, 3]);
+    assert.equal(builds, 2, 'the ordinary builder ran during an iteration a race had already won');
+  });
+
+  it('never races while racing is disabled, however long the loop stalls', () => {
+    let raced = 0;
+    run(
+      {
+        readTestReports: () => [{ numTotalTests: 0, testResults: [] }],
+        gates: () => ({ ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'no' }] }),
+        race: () => {
+          raced += 1;
+          return { applied: false, detail: 'should never happen', tokens: 0, costUsd: 0 };
+        },
+      },
+      { maxIterations: 4, stallLimit: 9 },
+    );
+    assert.equal(raced, 0);
+  });
+
+  it('falls back to the ordinary builder when a race produces no winner', () => {
+    let builds = 0;
+    run(
+      {
+        readTestReports: () => [{ numTotalTests: 0, testResults: [] }],
+        gates: () => ({ ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'no' }] }),
+        build: () => {
+          builds += 1;
+          return { ok: true, text: '', costUsd: 0, tokens: 100, raw: '' };
+        },
+        race: () => ({ applied: false, detail: 'no candidate passed every gate', tokens: 50, costUsd: 0 }),
+      },
+      { maxIterations: 3, stallLimit: 9, race: { enabled: true, n: 2, after: 1 } },
+    );
+    assert.equal(builds, 3, 'a race that landed nothing should still leave the iteration a builder');
+  });
+
+  it('refuses to start when no reviewer owns a required id', () => {
+    // Before the panel, not during it. An unowned id would ship having never been judged,
+    // and discovering that after paying for three whole-repository reads is too late.
+    assert.throws(
+      () =>
+        driveRun({
+          config: { ...defaultConfig(), reviewers: ['security'] },
+          dareDir: makeTempDir(),
+          rootDir: makeTempDir(),
+          requiredIds: ['PRD-1.1', 'DoD-2-security'],
+          task: 'x',
+          effects: effectsWith({}),
+        }),
+      (/** @type {Error} */ error) => error instanceof DriverError && error.message.includes('PRD-1.1'),
+    );
   });
 
   it('lands on BUDGET, not ABORTED, when the builder runs out of allowance', () => {
@@ -1113,10 +1608,53 @@ describe('staticGates', () => {
     );
   });
 
-  it('passes ci only when a workflow file exists', () => {
-    const named = (/** @type {string} */ dir) => staticGates(dir).find((gate) => gate.name === 'ci');
-    assert.equal(named(repoWith({ '.github/workflows/ci.yml': 'on: push' }))?.ok, true);
-    assert.equal(named(repoWith({ '.github/workflows/notes.txt': 'x' }))?.ok, false);
+  /** A workflow that really runs the validation set DoD line 3 asks for. */
+  const REAL_WORKFLOW = [
+    'on: push',
+    'jobs:',
+    '  check:',
+    '    steps:',
+    '      - run: npm run build',
+    '      - run: npm run lint',
+    '      - run: npm run typecheck',
+    '      - run: npx vitest run',
+    '      - run: npx playwright test',
+  ].join('\n');
+
+  it('passes ci when a workflow runs the whole validation set', () => {
+    const gate = staticGates(repoWith({ '.github/workflows/ci.yml': REAL_WORKFLOW })).find((g) => g.name === 'ci');
+    assert.equal(gate?.ok, true);
+    assert.equal(gate?.detail.includes('build'), true);
+  });
+
+  it('fails ci for a workflow that exists but runs nothing', () => {
+    // The presence check this replaced passed on exactly this file. A builder under
+    // pressure to satisfy a gate called `ci` writes the smallest file that quiets it.
+    const gate = staticGates(repoWith({ '.github/workflows/ci.yml': 'on: push' })).find((g) => g.name === 'ci');
+    assert.equal(gate?.ok, false);
+    assert.equal(gate?.detail.includes('never run'), true);
+  });
+
+  it('fails ci when the workflow runs some commands but not all of them', () => {
+    const partial = ['on: push', 'jobs:', '  check:', '    steps:', '      - run: npm run lint'].join('\n');
+    const gate = staticGates(repoWith({ '.github/workflows/ci.yml': partial })).find((g) => g.name === 'ci');
+    assert.equal(gate?.ok, false);
+    assert.equal(gate?.detail.includes('types'), true, `expected the missing commands named, got ${gate?.detail}`);
+  });
+
+  it('fails ci when there is no workflow at all', () => {
+    const gate = staticGates(repoWith({ '.github/workflows/notes.txt': 'x' })).find((g) => g.name === 'ci');
+    assert.equal(gate?.ok, false);
+    assert.equal(gate?.detail, 'no workflow under .github/workflows');
+  });
+
+  it('reads the validation set across several workflow files', () => {
+    // Splitting lint and tests across two workflows is normal, and is not a failure.
+    const dir = repoWith({
+      '.github/workflows/lint.yml': 'steps:\n  - run: npm run lint\n  - run: npm run typecheck',
+      '.github/workflows/test.yml': 'steps:\n  - run: npm run build\n  - run: npx vitest run\n  - run: npx playwright test',
+    });
+    assert.equal(staticGates(dir).find((gate) => gate.name === 'ci')?.ok, true);
   });
 
   it('fails docs when a required document is a stub rather than absent', () => {
@@ -1138,6 +1676,75 @@ describe('staticGates', () => {
     assert.equal(staticGates(loggerOnly).find((gate) => gate.name === 'observability')?.ok, false);
     assert.equal(staticGates(healthOnly).find((gate) => gate.name === 'observability')?.ok, false);
     assert.equal(staticGates(both).find((gate) => gate.name === 'observability')?.ok, true);
+  });
+
+  it('reports which validation commands a workflow covers', () => {
+    const dir = repoWith({ '.github/workflows/ci.yml': REAL_WORKFLOW });
+    const inspected = inspectCiWorkflows(dir);
+    assert.deepStrictEqual(inspected.workflows, ['ci.yml']);
+    assert.deepStrictEqual(inspected.covered, ['build', 'lint', 'types', 'unit', 'e2e']);
+    assert.deepStrictEqual(inspected.missing, []);
+  });
+
+  it('finds the start command only when the package really declares one', () => {
+    assert.equal(startCommand(repoWith({ 'package.json': '{"scripts":{"start":"node server.js"}}' })), 'npm start');
+    assert.equal(startCommand(repoWith({ 'package.json': '{"scripts":{"build":"tsc"}}' })), null);
+    assert.equal(startCommand(repoWith({ 'package.json': '{ broken' })), null);
+    assert.equal(startCommand(repoWith({})), null);
+  });
+
+  it('probes the health endpoint when the application declares how to start', () => {
+    // The static check is satisfied by the string being present. This one asks.
+    /** @type {string[][]} */
+    const invoked = [];
+    const dir = repoWith({
+      'src/app.ts': 'logger.info("up");\napp.get("/healthz", handler);',
+      'package.json': '{"scripts":{"start":"node server.js"}}',
+    });
+    const gate = observabilityGate(dir, {
+      run: (command, args) => {
+        invoked.push([command, ...args]);
+        return { ok: true, status: 0, stdout: 'health endpoint answered 200', stderr: '' };
+      },
+    });
+    assert.equal(gate.ok, true);
+    assert.equal(invoked.length, 1);
+    assert.equal(invoked[0].includes('--path'), true);
+    assert.equal(invoked[0].includes('/healthz'), true, `probed the wrong path: ${invoked[0].join(' ')}`);
+    assert.equal(invoked[0].includes('npm start'), true);
+  });
+
+  it('fails observability when the health endpoint does not answer', () => {
+    const dir = repoWith({
+      'src/app.ts': 'logger.info("up");\napp.get("/health", handler);',
+      'package.json': '{"scripts":{"start":"node server.js"}}',
+    });
+    const gate = observabilityGate(dir, {
+      run: () => ({ ok: false, status: 1, stdout: 'health endpoint answered 404', stderr: '' }),
+    });
+    assert.equal(gate.ok, false);
+    assert.equal(gate.detail.includes('404'), true);
+  });
+
+  it('says so when it passed observability without probing anything', () => {
+    // Honest about being a static finding rather than claiming it asked.
+    const dir = repoWith({ 'src/app.ts': 'logger.info("up");\napp.get("/health", handler);' });
+    const gate = observabilityGate(dir, { run: () => ({ ok: true, status: 0, stdout: '', stderr: '' }) });
+    assert.equal(gate.ok, true);
+    assert.equal(gate.detail.includes('not probed'), true);
+  });
+
+  it('never reaches the probe when the source has no health endpoint at all', () => {
+    let probed = false;
+    const dir = repoWith({ 'src/app.ts': 'logger.info("up");', 'package.json': '{"scripts":{"start":"node s.js"}}' });
+    const gate = observabilityGate(dir, {
+      run: () => {
+        probed = true;
+        return { ok: true, status: 0, stdout: '', stderr: '' };
+      },
+    });
+    assert.equal(gate.ok, false);
+    assert.equal(probed, false, 'started an application to look for a route that is not written');
   });
 
   it('does not count a health route found inside node_modules', () => {

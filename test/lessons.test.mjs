@@ -1,0 +1,355 @@
+/**
+ * Tests for lesson memory (DESIGN.md §13.8).
+ *
+ * Two opposite failure modes are being defended against at once, and they pull in different
+ * directions.
+ *
+ * The first is a store that fills with filler. A model asked what it learned will always
+ * answer, and every useless sentence stored here is read by every later brief. So the bar
+ * for admission is high, and much of what follows is an attempt to get something worthless
+ * past it.
+ *
+ * The second is a store that takes a run down with it. This memory is advisory: nothing
+ * that decides pass or fail reads it. A corrupt suggestion file must therefore degrade to
+ * no suggestions rather than to a stopped run — the exact opposite of how the ratchet
+ * fails, and the difference is deliberate.
+ */
+
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { after, describe, it } from 'node:test';
+
+import {
+  addLesson,
+  emptyStore,
+  findResolvedStruggles,
+  markLessonsUsed,
+  nextLessonId,
+  parseLessonExtraction,
+  readLessons,
+  saveLessons,
+  selectLessons,
+  validateLesson,
+} from '../scripts/lessons.mjs';
+
+/** @type {string[]} */
+const temporaryDirs = [];
+
+/** @returns {string} */
+function makeTempDir() {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-lessons-'));
+  temporaryDirs.push(dir);
+  return dir;
+}
+
+after(() => {
+  for (const dir of temporaryDirs) rmSync(dir, { recursive: true, force: true });
+});
+
+const GOOD = {
+  trigger: ['playwright', 'storagestate'],
+  scope: ['e2e', 'authentication'],
+  lesson: 'Generate the authenticated storageState only after the server reports healthy.',
+  evidence: { introduced: 6, resolved: 8, tests: ['tests/auth.spec.ts::opens dashboard::chromium'] },
+  uses: 0,
+};
+
+describe('validateLesson', () => {
+  it('accepts a well-formed lesson and normalises its tags', () => {
+    const lesson = validateLesson({ ...GOOD, trigger: ['Playwright', ' AUTH ', 'auth'] });
+    assert.notEqual(lesson, null);
+    assert.deepStrictEqual(lesson?.trigger, ['auth', 'playwright']);
+    assert.deepStrictEqual(lesson?.evidence, {
+      introduced: 6,
+      resolved: 8,
+      tests: ['tests/auth.spec.ts::opens dashboard::chromium'],
+    });
+  });
+
+  it('rejects a lesson with no trigger, which could never be retrieved for a reason', () => {
+    assert.equal(validateLesson({ ...GOOD, trigger: [] }), null);
+    assert.equal(validateLesson({ ...GOOD, trigger: undefined }), null);
+  });
+
+  it('rejects a slogan and rejects a transcript', () => {
+    assert.equal(validateLesson({ ...GOOD, lesson: 'be careful' }), null);
+    assert.equal(validateLesson({ ...GOOD, lesson: 'x'.repeat(401) }), null);
+  });
+
+  it('rejects evidence that could not have happened', () => {
+    assert.equal(validateLesson({ ...GOOD, evidence: { introduced: 8, resolved: 6, tests: [] } }), null);
+    assert.equal(validateLesson({ ...GOOD, evidence: { introduced: -1, resolved: 2, tests: [] } }), null);
+    assert.equal(validateLesson({ ...GOOD, evidence: { introduced: 1.5, resolved: 2, tests: [] } }), null);
+  });
+
+  it('rejects anything that is not an object at all', () => {
+    for (const candidate of [null, 'a lesson', 42, ['a lesson']]) {
+      assert.equal(validateLesson(candidate), null, `accepted ${JSON.stringify(candidate)}`);
+    }
+  });
+
+  it('caps the number of triggers and scopes it will store', () => {
+    const lesson = validateLesson({
+      ...GOOD,
+      trigger: Array.from({ length: 20 }, (_, index) => `t${index}`),
+      scope: Array.from({ length: 20 }, (_, index) => `s${index}`),
+    });
+    assert.equal(lesson?.trigger.length, 8);
+    assert.equal(lesson?.scope.length, 5);
+  });
+});
+
+describe('the lesson store on disk', () => {
+  it('round-trips a stored lesson', () => {
+    const dir = makeTempDir();
+    const { store } = addLesson(emptyStore(), GOOD);
+    saveLessons(dir, store);
+    const read = readLessons(dir);
+    assert.equal(read.problem, null);
+    assert.equal(read.store.lessons.length, 1);
+    assert.equal(read.store.lessons[0].id, 'lesson-0001');
+    assert.equal(read.store.lessons[0].lesson, GOOD.lesson);
+  });
+
+  it('treats a missing file as a run that has not learned anything', () => {
+    const read = readLessons(makeTempDir());
+    assert.deepStrictEqual(read.store, { version: 1, lessons: [] });
+    assert.equal(read.problem, null);
+  });
+
+  it('degrades to no lessons and a warning when the file is not JSON', () => {
+    // The opposite of the ratchet, on purpose: this file cannot make a wrong build look
+    // right, so refusing to continue over it would let a corrupt hint file kill a good run.
+    const dir = makeTempDir();
+    writeFileSync(path.join(dir, 'lessons.json'), '{ not json', 'utf8');
+    const read = readLessons(dir);
+    assert.deepStrictEqual(read.store.lessons, []);
+    assert.equal(read.problem?.includes('not valid JSON'), true);
+  });
+
+  it('degrades when the version is one it does not write', () => {
+    const dir = makeTempDir();
+    writeFileSync(path.join(dir, 'lessons.json'), JSON.stringify({ version: 99, lessons: [] }), 'utf8');
+    const read = readLessons(dir);
+    assert.deepStrictEqual(read.store.lessons, []);
+    assert.equal(read.problem?.includes('version 99'), true);
+  });
+
+  it('drops malformed entries, keeps the good ones, and says how many went', () => {
+    const dir = makeTempDir();
+    writeFileSync(
+      path.join(dir, 'lessons.json'),
+      JSON.stringify({
+        version: 1,
+        lessons: [{ id: 'lesson-0001', ...GOOD }, { id: 'nonsense', ...GOOD }, { id: 'lesson-0003' }],
+      }),
+      'utf8',
+    );
+    const read = readLessons(dir);
+    assert.deepStrictEqual(
+      read.store.lessons.map((lesson) => lesson.id),
+      ['lesson-0001'],
+    );
+    assert.equal(read.problem?.includes('2 malformed lesson(s)'), true);
+  });
+
+  it('writes the store sorted, so its diffs stay readable', () => {
+    const dir = makeTempDir();
+    saveLessons(dir, {
+      version: 1,
+      lessons: [
+        { id: 'lesson-0002', ...GOOD },
+        { id: 'lesson-0001', ...GOOD, lesson: 'Another lesson entirely, long enough to be stored.' },
+      ],
+    });
+    const written = JSON.parse(readFileSync(path.join(dir, 'lessons.json'), 'utf8'));
+    assert.deepStrictEqual(
+      written.lessons.map((/** @type {{ id: string }} */ lesson) => lesson.id),
+      ['lesson-0001', 'lesson-0002'],
+    );
+  });
+});
+
+describe('addLesson', () => {
+  it('numbers lessons in sequence', () => {
+    let store = emptyStore();
+    store = addLesson(store, GOOD).store;
+    store = addLesson(store, { ...GOOD, lesson: 'A different lesson, also long enough to store.' }).store;
+    assert.deepStrictEqual(
+      store.lessons.map((lesson) => lesson.id),
+      ['lesson-0001', 'lesson-0002'],
+    );
+    assert.equal(nextLessonId(store), 'lesson-0003');
+  });
+
+  it('refuses a second copy of the same lesson', () => {
+    const first = addLesson(emptyStore(), GOOD);
+    const second = addLesson(first.store, { ...GOOD, lesson: GOOD.lesson.toUpperCase() });
+    assert.equal(second.added, null);
+    assert.equal(second.reason.includes('already stored'), true);
+    assert.equal(second.store.lessons.length, 1);
+  });
+
+  it('stores nothing when the candidate is not a lesson', () => {
+    const outcome = addLesson(emptyStore(), { lesson: 'no' });
+    assert.equal(outcome.added, null);
+    assert.deepStrictEqual(outcome.store.lessons, []);
+  });
+});
+
+describe('parseLessonExtraction', () => {
+  it('reads a bare object', () => {
+    assert.equal(parseLessonExtraction(JSON.stringify(GOOD))?.lesson, GOOD.lesson);
+  });
+
+  it('reads an object wrapped in a lesson key', () => {
+    assert.equal(parseLessonExtraction(JSON.stringify({ lesson: GOOD }))?.lesson, GOOD.lesson);
+  });
+
+  it('reads an object inside a fenced block with prose around it', () => {
+    const raw = `Here is what I found:\n\n\`\`\`json\n${JSON.stringify(GOOD)}\n\`\`\`\n\nThat is all.`;
+    assert.equal(parseLessonExtraction(raw)?.lesson, GOOD.lesson);
+  });
+
+  it('returns null for the answer it is meant to be cheap to give', () => {
+    for (const raw of ['null', 'NULL', '  null  ', JSON.stringify(null), '']) {
+      assert.equal(parseLessonExtraction(raw), null, `did not read ${JSON.stringify(raw)} as no lesson`);
+    }
+  });
+
+  it('returns null rather than throwing on anything unreadable', () => {
+    for (const raw of ['{ broken', 'I could not think of one', '[]', '{"lesson": "too short"}']) {
+      assert.equal(parseLessonExtraction(raw), null, `did not reject ${JSON.stringify(raw)}`);
+    }
+  });
+});
+
+describe('selectLessons', () => {
+  /** @type {import('../scripts/lessons.mjs').LessonStore} */
+  const store = {
+    version: 1,
+    lessons: [
+      { id: 'lesson-0001', ...GOOD },
+      {
+        id: 'lesson-0002',
+        trigger: ['prisma', 'migration'],
+        scope: ['database'],
+        lesson: 'Run prisma migrate deploy rather than dev in a non-interactive environment.',
+        evidence: { introduced: 2, resolved: 4, tests: [] },
+        uses: 0,
+      },
+    ],
+  };
+
+  it('returns the lesson whose trigger appears in the objective', () => {
+    const chosen = selectLessons(store, { text: 'the playwright suite cannot authenticate' });
+    assert.deepStrictEqual(
+      chosen.map((lesson) => lesson.id),
+      ['lesson-0001'],
+    );
+  });
+
+  it('keeps an irrelevant lesson out entirely', () => {
+    // The failure this prevents: every lesson injected into every brief, which is how a
+    // memory becomes noise.
+    assert.deepStrictEqual(selectLessons(store, { text: 'the lint gate reports an unused import' }), []);
+  });
+
+  it('matches against failing test ids as well as prose', () => {
+    const chosen = selectLessons(store, { text: 'a regression', tests: ['tests/db.spec.ts::prisma connects'] });
+    assert.deepStrictEqual(
+      chosen.map((lesson) => lesson.id),
+      ['lesson-0002'],
+    );
+  });
+
+  it('orders by how many tags matched, then by id', () => {
+    const chosen = selectLessons(store, { text: 'playwright storagestate prisma' });
+    assert.deepStrictEqual(
+      chosen.map((lesson) => lesson.id),
+      ['lesson-0001', 'lesson-0002'],
+    );
+  });
+
+  it('honours the limit, and returns nothing at all for a limit of zero', () => {
+    assert.equal(selectLessons(store, { text: 'playwright prisma' }, { limit: 1 }).length, 1);
+    assert.deepStrictEqual(selectLessons(store, { text: 'playwright prisma' }, { limit: 0 }), []);
+  });
+
+  it('returns the same list in the same order for the same context', () => {
+    const context = { text: 'playwright prisma migration' };
+    assert.deepStrictEqual(selectLessons(store, context), selectLessons(store, context));
+  });
+
+  it('counts a use only when a lesson was actually selected', () => {
+    const marked = markLessonsUsed(store, ['lesson-0001']);
+    assert.equal(marked.lessons[0].uses, 1);
+    assert.equal(marked.lessons[1].uses, 0);
+  });
+});
+
+describe('findResolvedStruggles', () => {
+  it('finds a failure that survived one repair and fell to a different one', () => {
+    const struggles = findResolvedStruggles([
+      { iteration: 1, failures: ['gate:e2e'], changed: ['tests/auth.spec.ts'] },
+      { iteration: 2, failures: ['gate:e2e'], changed: ['tests/auth.spec.ts'] },
+      { iteration: 3, failures: [], changed: ['src/server.ts'] },
+    ]);
+    assert.deepStrictEqual(
+      struggles.map((struggle) => [struggle.key, struggle.introduced, struggle.resolved]),
+      [['gate:e2e', 1, 3]],
+    );
+  });
+
+  it('ignores a failure that cleared on the first attempt', () => {
+    // One failure and one fix teaches nothing transferable; it is just work.
+    assert.deepStrictEqual(
+      findResolvedStruggles([
+        { iteration: 1, failures: ['gate:lint'], changed: ['src/a.ts'] },
+        { iteration: 2, failures: [], changed: ['src/a.ts'] },
+      ]),
+      [],
+    );
+  });
+
+  it('ignores a failure that is still failing', () => {
+    assert.deepStrictEqual(
+      findResolvedStruggles([
+        { iteration: 1, failures: ['gate:e2e'], changed: ['a.ts'] },
+        { iteration: 2, failures: ['gate:e2e'], changed: ['b.ts'] },
+      ]),
+      [],
+    );
+  });
+
+  it('ignores a repair that touched the same files every time', () => {
+    // Same failure, same files, then green usually means the second attempt was the first
+    // one finished. There is nothing reusable in "it worked once I completed it".
+    assert.deepStrictEqual(
+      findResolvedStruggles([
+        { iteration: 1, failures: ['gate:types'], changed: ['src/a.ts'] },
+        { iteration: 2, failures: ['gate:types'], changed: ['src/a.ts'] },
+        { iteration: 3, failures: [], changed: ['src/a.ts'] },
+      ]),
+      [],
+    );
+  });
+
+  it('returns struggles in a stable order', () => {
+    const history = [
+      { iteration: 1, failures: ['gate:e2e', 'gate:lint'], changed: ['a.ts'] },
+      { iteration: 2, failures: ['gate:e2e', 'gate:lint'], changed: ['b.ts'] },
+      { iteration: 3, failures: [], changed: ['c.ts'] },
+    ];
+    assert.deepStrictEqual(
+      findResolvedStruggles(history).map((struggle) => struggle.key),
+      ['gate:e2e', 'gate:lint'],
+    );
+  });
+
+  it('finds nothing in an empty history', () => {
+    assert.deepStrictEqual(findResolvedStruggles([]), []);
+  });
+});

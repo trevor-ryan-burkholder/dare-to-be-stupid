@@ -139,11 +139,17 @@ describe('every file the plugin depends on is present', () => {
     'scripts/security-scan.mjs',
     'scripts/plugins.mjs',
     'scripts/style.mjs',
+    'scripts/brief.mjs',
+    'scripts/lessons.mjs',
+    'scripts/history.mjs',
+    'scripts/race.mjs',
+    'scripts/health-probe.mjs',
     'hooks/guard.mjs',
     'templates/prd-author.md',
     'templates/architect.md',
     'templates/builder-system.md',
     'templates/reviewer-system.md',
+    'templates/lesson-extractor.md',
   ];
   for (const relative of required) {
     it(`${relative} exists`, () => {

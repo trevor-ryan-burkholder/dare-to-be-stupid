@@ -49,6 +49,27 @@ evidence. Cheaper than three full generalist passes and sharper on each axis. Th
 panel runs on the **strongest** model (§10) — the smartest thing in the loop should be the
 one deciding, not the one building.
 
+**Ownership is explicit, total, and checked before the panel runs.** "Heterogeneous" only
+means something if the split is written down, so `ownership` in `.dare/config.json` maps
+each reviewer to the id patterns it owns (`PRD-*`, `DoD-2-security`, …). The rules:
+
+- Each reviewer is told **only** the ids it owns, and must return an entry for **every one**
+  of them. A missing owned id invalidates that member's audit, exactly as before.
+- The union of ownership must cover every required PRD and DoD id. An **uncovered id ends
+  the run before a single reviewer is spawned** — an id nobody was asked about would
+  otherwise pass by never being judged, which is the failure the parser exists to prevent.
+  Discovering it *after* paying for three whole-repository reads is discovering it too late.
+- A reviewer on the panel that owns nothing is refused for the same reason in reverse: it is
+  a full cold read spent on nothing.
+- **Duplicate ownership is legal but never the default.** Two owners on one id is a second
+  cold read of the same line, worth paying for only when an operator has decided it is.
+- `combinePanel` re-checks coverage against what actually came back, so a truncated report
+  cannot leave an id silently unjudged.
+
+The default split follows this section: correctness owns `PRD-*` and `DoD-1-requirements`,
+security owns `DoD-2-security`, design owns `DoD-3-ci`, `DoD-4-docs-observability` and
+`DoD-5-design`.
+
 ### 1.2 The ratchet
 The characteristic death of an autonomous loop is oscillation: fix A break B, fix B break
 A, until budget death with nothing to show. `.dare/state.json` holds every test ID that
@@ -73,12 +94,15 @@ loop is phases 2–6.
    PHASE 1  DESIGN      PRD → design docs      (claude -p, arch template)     [once]
                         + auto-install quality plugins (impeccable, …)
    ─────────────────────────────────────────────────────────────  loop start ↓
-   PHASE 2  BUILD       claude -p, --dangerously-skip-permissions, builder prompt
+   PHASE 2a BRIEF       compile the objective + evidence into .dare/briefs/iter-NNN.md
+                        (deterministic, no LLM)                                   (§8.1)
+   PHASE 2b BUILD       claude -p, --dangerously-skip-permissions, brief as the task
+                        (or, when stalled and armed, a worktree race — §13.6)
    PHASE 3  GATES       exit codes only. build · lint · types · unit · e2e ·
                         red-evidence · security-audit · ci · docs · observability.  no LLM.
    PHASE 4  RATCHET     regression? hard reset, feed back, restart iteration
-   PHASE 5  REVIEW      specialized cold claude -p panel, unanimous-or-continue,
-                        vs PRD + design + DoD  (strongest model)
+   PHASE 5  REVIEW      specialized cold claude -p panel, each member on the ids it owns,
+                        unanimous-or-continue, vs PRD + design + DoD  (strongest model)
    PHASE 6  SHIP        commit · tag dare/iter-NNN · push · preview deploy
    ─────────────────────────────────────────────────────────────  loop end ↑
 ```
@@ -183,9 +207,27 @@ judgment ones are Phase-5 reviewer lines.
 |---|----------|-------------|-----------|
 | 1 | **PRD requirements met** | Reviewer (cold) | one verdict object per `PRD-*` id, `file:line` evidence, unanimous |
 | 2 | **Security** | Gate + Reviewer | dependency audit exit-0 **and** `/security-review`-style cold pass; negative-case auth checks (guard on handler, not hidden nav link) |
-| 3 | **CI / build config** | Gate | a real CI workflow exists and its command set goes green locally (`build · lint · types · unit · e2e`) |
-| 4 | **Docs + observability** | Gate + Reviewer | `README` + `docs/api-contract.md` present and non-stub; structured logging present; a `/health` (or equivalent) endpoint responds |
+| 3 | **CI / build config** | Gate | a workflow under `.github/workflows` whose `run:` steps **actually invoke** build, lint, types, unit and e2e — presence of a file is not the check |
+| 4 | **Docs + observability** | Gate + Reviewer | `README` + `docs/api-contract.md` present and non-stub; structured logging present; a `/health` (or equivalent) endpoint that **answers a real request** when the app declares a start script |
 | 5 | **Design quality** | Gate + Reviewer | `npx impeccable detect src/` exit-0 (§5.1; skipped on non-UI projects); design docs exist and match the code; architecture is coherent, not accidental |
+
+**Where a gate checks behaviour, and where it deliberately does not.** A presence check is
+satisfied by the smallest artifact that quiets it, and a builder under pressure to clear a
+gate called `ci` will write exactly that — a workflow file that runs nothing. So `ci` reads
+the `run:` steps, and `/health` is asked a real question by starting the application
+(`scripts/health-probe.mjs`, and the probe kills the whole process group afterwards, because
+a leaked server poisons every later iteration with a port conflict).
+
+Two things stay static, on purpose:
+
+- **Structured logging.** The behavioural version means running the app and inspecting
+  stdout for structure, which is neither cheap nor deterministic: it depends on level
+  configuration, on whether anything happened to log during the probe window, and on
+  transports that may not write to stdout at all. A logger call in source is the honest
+  proxy, and the gate records it as a proxy rather than dressing it up as evidence.
+- **The health probe when no start script exists.** Nothing declares how to start the
+  application, so there is nothing to ask. The gate passes on the static finding and *says
+  in its detail line that it did not probe*, rather than reporting a request it never made.
 
 **Reviewer parser rules (unchanged, still non-negotiable):**
 - Default `fail`. `pass` requires the reviewer to *personally locate* the code and cite
@@ -212,6 +254,29 @@ Output contract:
   ]
 }
 ```
+
+### 4.1 Advisory findings — the one place a number is allowed
+
+Reviewers see real problems that no id covers: a module doing two jobs, an error path nobody
+reaches. Those arrive as entries whose id begins `advisory-`, carrying `severity`
+(`trivial`/`minor`/`major`/`critical`), `confidence` (0–1), the same mandatory `file:line`
+`evidence`, and an optional `repairHint`.
+
+The rules exist to stop this becoming a probabilistic verdict:
+
+- **Compliance is never confidence-weighted.** PRD requirements and DoD lines are
+  deterministic blockers whatever number is attached to anything. Advisories cannot move
+  `verdict` in either direction — they cannot hold a compliant build back, and they cannot
+  push a failing one through.
+- A required id that arrives wearing an `advisory-` name is **still required**. Compliance
+  wins the tie, so a reviewer cannot demote a DoD line by renaming it.
+- An advisory becomes *actionable* — carried into the next Build Brief as a suggestion —
+  only with real `file:line` evidence **and** a confidence at or above
+  `advisory.minConfidence` (§10). Below it, the finding is recorded and no work is done
+  about it. A low-confidence hunch fed back as work is how a loop spends its last iterations
+  chasing an opinion.
+- Because advisories never gate shipping, they can only ever be addressed on an iteration
+  that was failing for some other reason. That is the intended ceiling on their cost.
 
 ---
 
@@ -274,8 +339,12 @@ hooks fire **regardless** of permission mode, which makes them the only reliable
 put a limit when everything else is off.
 
 `hooks/guard.mjs` reads the PreToolUse payload as JSON on stdin and blocks exactly:
-1. Writes to `.dare/state.json` or `.dare/config.json` — the ratchet is not editable by
-   the process it constrains.
+1. Writes to `.dare/state.json`, `.dare/config.json` or `.dare/lessons.json` — the ratchet,
+   its configuration and the lesson store are not editable by the process they constrain. A
+   builder that can rewrite the memory it is handed is not constrained by it: it could store
+   itself any instruction it liked and receive that back as evidence next iteration. The
+   rest of `.dare/` — the blooper reel, the archived briefs — stays readable and writable;
+   the driver owns those, and nothing reads them back as a decision.
 2. `git push --force`, `rebase`, `filter-branch`, `reflog expire` — recovery stays
    possible.
 3. `rm -rf` outside `/tmp`.
@@ -296,6 +365,11 @@ dare-to-be-stupid/
 ├── scripts/
 │   ├── driver.mjs                # the loop. node, no deps.
 │   ├── ratchet.mjs               # ratchet + extractTestIds (unit-tested first)
+│   ├── brief.mjs                 # compiles the per-iteration Build Brief (§8.1)
+│   ├── lessons.mjs               # sparse evidence-derived lesson memory (§13.8)
+│   ├── history.mjs               # conditional git-history context (§8.2)
+│   ├── race.mjs                  # stalled-only worktree racing (§13.6)
+│   ├── health-probe.mjs          # starts the app and asks /health (§4 line 4)
 │   ├── plugins.mjs               # quality-plugin auto-install
 │   └── init.js                   # scaffolds .dare/config.json, refuses risky remotes
 ├── hooks/
@@ -305,7 +379,8 @@ dare-to-be-stupid/
 │   ├── prd-author.md             # idea → PRD           (Phase 0)
 │   ├── architect.md              # PRD → design docs     (Phase 1)
 │   ├── builder-system.md         # Phase 2
-│   └── reviewer-system.md        # Phase 5 (the actual product)
+│   ├── reviewer-system.md        # Phase 5 (the actual product)
+│   └── lesson-extractor.md       # evidence → one lesson, or null (§13.8)
 ├── output-styles/junkion.md
 └── test/fixtures/                # real vitest + playwright reporter output
 ```
@@ -343,6 +418,59 @@ build children it spawns (§3), fenced by the guard hook (§6).
 - Guards on the route handler and API layer. Hiding a nav link is not access control.
 - Scope discipline. Every unrelated change is regression surface, and a regression costs a
   full iteration plus a hard reset.
+
+### 8.1 The Build Brief — what the builder is actually handed
+
+> **The repository and the driver's own artifacts are the memory. A child's conversation is
+> disposable.**
+>
+> This is the invariant the whole phase exists to serve, and it is not a style preference.
+> Every `claude -p` child is a fresh process, so the loop's behaviour is exactly as
+> reproducible as the thing it hands over. Feed a builder an accumulated transcript and the
+> run starts depending on how a previous child happened to narrate itself — which cannot be
+> audited, cannot be replayed, and grows without bound. Feed it a document compiled from
+> gate exit codes, the ratchet and the audit, and the run depends only on state that is on
+> disk and can be read back afterwards.
+
+Before every build, `scripts/brief.mjs` compiles one Markdown document from driver-owned
+evidence and archives it to `.dare/briefs/iter-NNN.md`. It carries:
+
+- the **objective** — one of `initial`, `gates`, `regression`, `review`, `no-tests` — and,
+  explicitly, **why this objective and not another one**;
+- the failing gates with their output, the regressed test ids, or the audit findings,
+  whichever produced the objective;
+- actionable advisory findings (§4.1), clearly marked as not deciding whether the run ships;
+- the ratchet's protected tests, the chaos scope budget (§13.4), the gate list, and the
+  standing constraints (don't touch unrelated code, don't edit protected state, don't
+  declare completion);
+- the lessons selected for *this* objective (§13.8), and git history only when it is
+  warranted (§8.2).
+
+Two properties are load-bearing. It is **deterministic**: same state, same bytes — sets are
+sorted and nothing consults a clock. And **nothing is dropped silently**: where a list is
+capped the brief says how many were left out, because a brief showing ten of forty
+regressions reads exactly like a brief with ten regressions.
+
+The archived briefs are debugging artifacts. When a run ends badly the first question is
+what the builder was actually asked for on the iteration it went wrong, and reconstructing
+that from what it did is guesswork. A raced iteration archives one brief per candidate.
+
+### 8.2 Git history — only where the code has any
+
+A builder changing code it did not write is in a different position from one writing a file
+that did not exist ten minutes ago. So `scripts/history.mjs` adds a few commit subjects and
+a targeted `git blame` line for the files an objective actually points at — and only when
+every one of these holds:
+
+- the repository already had real history **when the run started** (a run that generated the
+  whole application has nothing but its own commits, and quoting those back to the builder
+  is quoting the builder);
+- the file has more than one commit touching it, so it predates this run;
+- a finding cited a `file:line`, which is what blame is aimed at.
+
+Capped at three files, five commits each. No model, no analysis — `git log` and `git blame`,
+bounded, handed to the brief as data. Every condition here exists to stop this becoming a
+habit rather than a judgement.
 
 ---
 
@@ -396,12 +524,14 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `stallLimit` | 4 | iterations with no gate improvement before abort |
 | `tokenCeiling` | 4_000_000 | |
 | `reviewers` | `["security","correctness","design"]` | the specialized cold panel (§1.1); each owns its DoD lines |
+| `ownership` | see §1.1 | reviewer → id patterns (`*` is the only wildcard). Must cover every required id, or the run refuses to start |
 | `requireUnanimous` | true | every panel member must return pass on its lines |
 | `builderModel` | `claude-sonnet-5` | iterates a lot; too-cheap thrashes and costs more iterations than it saves |
 | `reviewerModel` | `claude-opus-5` | the judge should be the smartest thing in the loop |
 | `designModel` | `claude-opus-5` | Phase 1 — design mistakes compound across every later iteration |
 | `prdModel` | `claude-sonnet-5` | Phase 0 PRD authoring |
 | `styleModel` | `claude-fable-5` | Junkion narration + "dare me" idea invention; pure flavor, never touches gate logic |
+| `lessonModel` | `claude-sonnet-5` | the cold lesson extractor (§13.8); advisory, so it never needs the strongest model |
 | `qualityPlugins` | `["impeccable"]` | auto-installed in Phase 1 (§5) |
 | `deploy.enabled` | **false** | preview-only when enabled; never prod |
 | `deploy.command` | `""` | pluggable shell deploy; empty → auto-detect (vercel.json/netlify.toml/Dockerfile), else no-op. Reference recipe: `vercel deploy --prebuilt` |
@@ -409,7 +539,9 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `chaos` | 1 | stupidity dial, 1–3; per-iteration scope budget (§13) |
 | `realityCheck.after` | 3 | stalled iterations before the buildability breaker fires (§13) |
 | `dareMe.enabled` | true | allow `/dare` with no args to invent its own PRD (§13) |
-| `race.enabled` / `race.n` | false / 3 | parallel worktree builders per iteration (§13.6) |
+| `race.enabled` / `race.n` / `race.after` | false / 3 / 2 | worktree builders raced **only after `after` stalled iterations** (§13.6) |
+| `advisory.minConfidence` | 0.7 | below this an advisory finding is recorded and not acted on (§4.1). Cannot affect PRD/DoD compliance at any value |
+| `lessons.enabled` / `lessons.maxPerBrief` | true / 3 | evidence-derived lesson memory, and how many may enter one brief (§13.8) |
 
 `init.js` refuses to initialize against a remote matching `prod`, `production`, `client`,
 or `customer`, and requires a clean working tree (the ratchet's `reset --hard` destroys
@@ -485,13 +617,42 @@ The token/iteration budget is surfaced in the Junkion status line as "broadcast 
 remaining," ticking down each iteration. `BUDGET` terminal state reads as the broadcast
 signing off. Cosmetic; reads real remaining budget.
 
-### 13.6 Worktree racing — *optional, off by default* (borrowed from ECC's cascade)
-`race.enabled` (default `false`). When on, each iteration spawns `race.n` builders in
-parallel **git worktrees**, each attempting the current task independently; the first to
-pass gates + ratchet wins the commit, the losers are discarded. On-brand (more airtime,
-more chaos, faster convergence on hard tasks) but a real complexity jump: N× token spend
-per iteration and merge/cleanup logic. Flagged as optional precisely because it fights
-dare's "tiny" principle — turn it on knowingly, like the stupidity dial.
+### 13.6 Worktree racing — *optional, off by default, and stalled-only*
+`race.enabled` (default `false`). **Racing is an escape maneuver, not the normal execution
+path.** An earlier draft of this section raced every iteration; that multiplies the bill by
+`n` for a loop that was already converging. What is implemented instead:
+
+```
+normal builder → normal builder → race.after consecutive stalled iterations reached
+  → spawn race.n candidate builders, one per isolated git worktree
+  → gate each candidate independently, against the main ratchet
+  → pick the winner deterministically → git merge --ff-only → resume the normal loop
+```
+
+The constraints are the design:
+
+- **Armed by a stall, disarmed by progress.** `race.after` (default 2) consecutive
+  iterations with no gate improvement. Any improvement resets the counter.
+- **The budget wins.** A race is refused unless the remaining ceiling covers `race.n`
+  builders *with headroom* — the winner still needs an iteration to merge, gate and review,
+  and a run that dies mid-race has spent `n` times as much to reach the same place. Before
+  any builder has been observed, the estimate deliberately assumes an expensive one.
+- **Candidates are isolated.** Each works in its own detached worktree with its own
+  `.dare/` (untracked, so it does not exist there until its own gates create it). No
+  candidate can read or advance the ratchet; `previousPassing` is always read from the main
+  driver's state, so what counts as a regression is never a candidate's to decide.
+- **No vote.** A candidate is viable only if every gate passed *and* nothing regressed —
+  a candidate that regressed a protected test is disqualified, not ranked. Ties break on
+  smallest diff, then candidate order. Both are properties of the work rather than opinions
+  about it, so a deterministic winner always exists and **no cold chooser is needed or
+  used**.
+- **Cleanup on every path out**, including the failing ones and the ones that throw. A
+  leaked worktree is not cosmetic: `git worktree add` refuses a directory it already knows
+  about, so one abandoned race breaks every later race, and the error names a directory
+  rather than the race that left it behind.
+- The winner lands by `git merge --ff-only`. The main tree has not moved, so the merge is a
+  pointer move; if that is ever untrue it fails loudly rather than inventing a merge commit
+  nobody reviewed.
 
 > **Re-entrancy guard (not optional):** whatever the settings, the driver refuses to spawn
 > a nested `dare` run and caps concurrent builders. ECC learned the hard way that
@@ -502,6 +663,41 @@ dare's "tiny" principle — turn it on knowingly, like the stupidity dial.
 On `SHIPPED`, in addition to `dare/iter-NNN`, the driver tags the winning commit
 `dare/GRAND-PRIZE` (Junkion: "grand prize awarded"). One trophy tag per run; a later run
 that ships moves it. Purely a bookmark to the last commit that passed the whole DoD.
+
+### 13.8 Lesson memory — sparse, evidence-derived, driver-owned
+`lessons.enabled` (default `true`), stored in `.dare/lessons.json`. A lesson is one piece of
+reusable technical knowledge the run **earned**, and the qualifying evidence is a specific
+shape:
+
+```
+iteration N     failure X observed
+iteration N+1   failure X still observed   → the obvious repair did not work
+iteration N+k   failure X gone             → something else did
+```
+
+plus a requirement that the attempts touched *different files*. Same failure, same files,
+then green usually means the second attempt was the first one finished, and there is nothing
+transferable in "it worked once I completed it". Comparing changed file sets is a coarse
+proxy for "materially different repair" and a deliberate one — the alternative is asking a
+model to judge its own diffs.
+
+**The builder is never asked what it learned.** A model asked that question always answers,
+and a store of confident generalities is worse than an empty one because every later brief
+has to read it. Extraction instead runs as a cold `claude -p` child (`lesson-extractor.md`,
+read-only tools, never dangerous mode) over evidence the driver assembled, and returning
+`null` is an explicitly cheap answer.
+
+- **Retrieval is keyword matching** on triggers, scopes, test ids and paths. No embeddings,
+  no vector store, no MCP. A lesson can always be explained: it is here because *this* word
+  is in *that* failure. At most `lessons.maxPerBrief` enter a brief, and an irrelevant
+  lesson enters none.
+- **The driver owns it.** Builders cannot write `.dare/lessons.json` — the guard hook denies
+  it alongside the ratchet (§6).
+- **It is advisory, and it fails the opposite way to the ratchet.** Unreadable ratchet state
+  stops a run, because continuing would silently discard earned ids. An unreadable lesson
+  store degrades to *no lessons* plus a warning, because it cannot make a wrong build look
+  right and refusing to continue over it would let a corrupt hint file kill a healthy run.
+  Failing to extract a lesson never fails a build.
 
 ---
 

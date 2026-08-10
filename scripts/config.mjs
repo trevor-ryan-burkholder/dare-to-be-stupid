@@ -12,15 +12,18 @@ import path from 'node:path';
 /** @typedef {{ enabled: boolean, command: string }} DeployConfig */
 /** @typedef {{ after: number }} RealityCheckConfig */
 /** @typedef {{ enabled: boolean }} DareMeConfig */
-/** @typedef {{ enabled: boolean, n: number }} RaceConfig */
+/** @typedef {{ enabled: boolean, n: number, after: number }} RaceConfig */
+/** @typedef {{ minConfidence: number }} AdvisoryConfig */
+/** @typedef {{ enabled: boolean, maxPerBrief: number }} LessonsConfig */
 /**
  * @typedef {{
  *   maxIterations: number, stallLimit: number, tokenCeiling: number,
- *   reviewers: string[], requireUnanimous: boolean,
+ *   reviewers: string[], ownership: Record<string, string[]>, requireUnanimous: boolean,
  *   builderModel: string, reviewerModel: string, designModel: string,
- *   prdModel: string, styleModel: string,
+ *   prdModel: string, styleModel: string, lessonModel: string,
  *   qualityPlugins: string[], deploy: DeployConfig, extractTests: boolean,
- *   chaos: number, realityCheck: RealityCheckConfig, dareMe: DareMeConfig, race: RaceConfig
+ *   chaos: number, realityCheck: RealityCheckConfig, dareMe: DareMeConfig, race: RaceConfig,
+ *   advisory: AdvisoryConfig, lessons: LessonsConfig
  * }} DareConfig
  */
 
@@ -36,6 +39,27 @@ export class ConfigError extends Error {
 const CONFIG_FILE = 'config.json';
 
 /**
+ * Who owns which ids (DESIGN.md §1.1).
+ *
+ * The panel is heterogeneous: three specialists, not three generalists re-reading the whole
+ * repository. That only means anything if each one is handed a different question, so
+ * ownership is declared here rather than left to the prompt. A `*` matches any run of
+ * characters; everything else is literal.
+ *
+ * The split follows §1.1's own description of the panel. The correctness auditor owns the
+ * PRD requirements and the DoD line that aggregates them; the security auditor owns the
+ * security line; the design auditor owns the rest of the DoD, which is where CI, docs,
+ * observability and design coherence live.
+ *
+ * @type {Record<string, string[]>}
+ */
+export const DEFAULT_OWNERSHIP = {
+  security: ['DoD-2-security'],
+  correctness: ['PRD-*', 'DoD-1-requirements'],
+  design: ['DoD-3-ci', 'DoD-4-docs-observability', 'DoD-5-design'],
+};
+
+/**
  * The defaults from DESIGN.md §10.
  * @returns {DareConfig}
  */
@@ -45,19 +69,23 @@ export function defaultConfig() {
     stallLimit: 4,
     tokenCeiling: 4_000_000,
     reviewers: ['security', 'correctness', 'design'],
+    ownership: Object.fromEntries(Object.entries(DEFAULT_OWNERSHIP).map(([reviewer, ids]) => [reviewer, [...ids]])),
     requireUnanimous: true,
     builderModel: 'claude-sonnet-5',
     reviewerModel: 'claude-opus-5',
     designModel: 'claude-opus-5',
     prdModel: 'claude-sonnet-5',
     styleModel: 'claude-fable-5',
+    lessonModel: 'claude-sonnet-5',
     qualityPlugins: ['impeccable'],
     deploy: { enabled: false, command: '' },
     extractTests: true,
     chaos: 1,
     realityCheck: { after: 3 },
     dareMe: { enabled: true },
-    race: { enabled: false, n: 3 },
+    race: { enabled: false, n: 3, after: 2 },
+    advisory: { minConfidence: 0.7 },
+    lessons: { enabled: true, maxPerBrief: 3 },
   };
 }
 
@@ -72,6 +100,21 @@ const KNOWN_REVIEWERS = new Set(['security', 'correctness', 'design']);
 function requirePositiveInteger(value, key) {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
     throw new ConfigError(`${key} must be a positive integer; got ${JSON.stringify(value)}.`);
+  }
+  return value;
+}
+
+/**
+ * A confidence, not a count. Advisory findings carry one, and the threshold they are
+ * compared against has to live on the same scale.
+ *
+ * @param {unknown} value
+ * @param {string} key
+ * @returns {number}
+ */
+function requireFraction(value, key) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw new ConfigError(`${key} must be a number between 0 and 1; got ${JSON.stringify(value)}.`);
   }
   return value;
 }
@@ -164,6 +207,7 @@ export function validateConfig(input) {
     'designModel',
     'prdModel',
     'styleModel',
+    'lessonModel',
   ])) {
     if (key in source) merged[key] = requireString(source[key], key);
   }
@@ -183,6 +227,21 @@ export function validateConfig(input) {
       );
     }
     merged.reviewers = reviewers;
+  }
+
+  if ('ownership' in source) {
+    const ownership = requireObject(source.ownership, 'ownership');
+    rejectUnknownKeys(ownership, KNOWN_REVIEWERS, 'ownership');
+    /** @type {Record<string, string[]>} */
+    const owned = {};
+    for (const [reviewer, patterns] of Object.entries(ownership)) {
+      const list = requireStringArray(patterns, `ownership.${reviewer}`);
+      if (list.some((pattern) => pattern.trim().length === 0)) {
+        throw new ConfigError(`ownership.${reviewer} contains an empty pattern, which would match nothing.`);
+      }
+      owned[reviewer] = list;
+    }
+    merged.ownership = owned;
   }
 
   if ('chaos' in source) {
@@ -221,10 +280,34 @@ export function validateConfig(input) {
 
   if ('race' in source) {
     const race = requireObject(source.race, 'race');
-    rejectUnknownKeys(race, new Set(['enabled', 'n']), 'race');
+    rejectUnknownKeys(race, new Set(['enabled', 'n', 'after']), 'race');
     merged.race = {
       enabled: 'enabled' in race ? requireBoolean(race.enabled, 'race.enabled') : defaults.race.enabled,
       n: 'n' in race ? requirePositiveInteger(race.n, 'race.n') : defaults.race.n,
+      after: 'after' in race ? requirePositiveInteger(race.after, 'race.after') : defaults.race.after,
+    };
+  }
+
+  if ('advisory' in source) {
+    const advisory = requireObject(source.advisory, 'advisory');
+    rejectUnknownKeys(advisory, new Set(['minConfidence']), 'advisory');
+    merged.advisory = {
+      minConfidence:
+        'minConfidence' in advisory
+          ? requireFraction(advisory.minConfidence, 'advisory.minConfidence')
+          : defaults.advisory.minConfidence,
+    };
+  }
+
+  if ('lessons' in source) {
+    const lessons = requireObject(source.lessons, 'lessons');
+    rejectUnknownKeys(lessons, new Set(['enabled', 'maxPerBrief']), 'lessons');
+    merged.lessons = {
+      enabled: 'enabled' in lessons ? requireBoolean(lessons.enabled, 'lessons.enabled') : defaults.lessons.enabled,
+      maxPerBrief:
+        'maxPerBrief' in lessons
+          ? requirePositiveInteger(lessons.maxPerBrief, 'lessons.maxPerBrief')
+          : defaults.lessons.maxPerBrief,
     };
   }
 

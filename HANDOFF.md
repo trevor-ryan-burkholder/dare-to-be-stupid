@@ -1,10 +1,12 @@
 # Verification status
 
-The build is finished. All eight slices of `DESIGN.md` §12 are implemented and gated —
-see the README for what each one does, and `DESIGN.md` for why.
+The build is finished, and the architecture iteration this file used to list as deferred is
+now implemented — reviewer ownership, the Build Brief, lesson memory, advisory findings,
+behavioural gates, conditional history and stalled-only racing. See `DESIGN.md` for why each
+one is shaped the way it is.
 
-This file tracks the one thing the test suite cannot settle: whether the pieces work
-against reality. Everything below was either verified live or is still outstanding.
+What follows is the one thing the test suite cannot settle: whether the pieces work against
+reality.
 
 ---
 
@@ -38,8 +40,10 @@ cache is keyed by version, and stale copies masquerade as failed fixes. See "Rel
 **A deliberately incomplete build must draw a `fail` from a cold reviewer.** Plant a missing
 requirement, run the reviewer template through a `claude -p` child, and confirm the parser
 returns `fail` with `file:line` evidence on what *was* built. The parser is unit-tested
-hard; what is unproven is whether a real reviewer, given the real prompt, produces output
-in the shape the parser expects.
+hard; what is unproven is whether a real reviewer, given the real prompt, produces output in
+the shape the parser expects. Now also worth confirming that a reviewer handed **only the
+ids it owns** returns exactly those, and that an `advisory-` entry comes back in the
+documented shape rather than as prose.
 
 **A first real run.** Against a throwaway repository with an initial commit and
 `deploy.enabled: false`. The loop is the only major component that has never met reality.
@@ -47,48 +51,38 @@ Watch the ratchet catch one regression before letting it run long — that behav
 reason the whole design exists, and it has only ever been exercised against temporary
 repositories built by the test suite.
 
+**A real race.** `race.enabled` is `false` by default, and the mechanism has only been
+exercised against temporary repositories: real worktrees, real cleanup and real `--ff-only`
+merges, but never a real builder inside one. Turn it on knowingly against a throwaway
+repository first, and check `git worktree list` is clean afterwards.
+
+**A real health probe.** `scripts/health-probe.mjs` is tested against a hand-written server
+that answers, one that 404s, one that never answers and one that will not start. It has not
+been pointed at a generated application's `npm start`. The failure mode to watch for is an
+application that ignores `PORT`.
+
 ---
-
-## Next architecture iteration
-
-Two invariant bugs were found and fixed in 0.1.4 — the re-entrancy marker was built and
-discarded so no child ever received it, and dangerous mode was not builder-only. Both are
-described in that commit. The following were specified alongside them and deliberately
-left undone, in roughly this order:
-
-1. **Reviewer ownership.** `DESIGN.md` §1.1 describes a specialized panel, but the code has
-   every reviewer adjudicate every requirement. Heterogeneous ownership needs: each reviewer
-   receiving only the ids it owns, every owned id required back, the union of ownership
-   covering every PRD and DoD id, and an uncovered id failing *before* review begins. The
-   largest of these, and the one real spec mismatch left.
-2. **Build Brief** (`scripts/brief.mjs`) — a deterministic per-iteration task compiled from
-   driver-owned evidence rather than conversation, archived to `.dare/briefs/iter-NNN.md`.
-3. **Lesson memory** (`scripts/lessons.mjs`, `templates/lesson-extractor.md`) — sparse,
-   evidence-derived, driver-owned, never builder-writable. Extraction must never fail a
-   build. No embeddings, no vector store.
-4. **Advisory finding metadata** — severity and confidence for *advisory* findings only.
-   PRD and DoD failures stay deterministic blockers regardless of confidence.
-5. **Behavioural gates** — the `ci`, `docs` and `observability` gates currently check for
-   presence, not behaviour. Health could be probed, and a workflow inspected for whether it
-   actually invokes the validation commands.
-6. **Conditional git-history context** — only when modifying mature code, kept narrow.
-7. **Stalled-only worktree racing.** `race: { enabled, n }` is already in `DESIGN.md` §10 and
-   in the config schema, and is unimplemented. An escape maneuver, not the normal path:
-   disabled by default, budget-respecting, deterministic winner selection.
-
-When adding a phase, note that `PHASE_PERMISSIONS` in `scripts/driver.mjs` throws for an
-undeclared phase rather than defaulting. `lesson-extractor` has no policy yet, so it will
-fail closed until one is written — deliberately.
 
 ## Unverified risk
 
 The `prd` and `design` phases moved from a blanket permission bypass to
 `--allowedTools Read Glob Grep Write Edit`. That has **not** been confirmed against a live
 child. If the flag does not in fact permit writing, both phases fail at the first real run.
-Cheap to check: start a small run and see whether `PRD.md` appears.
+Cheap to check: start a small run and see whether `PRD.md` appears. The `lesson-extractor`
+phase uses the same mechanism minus the write tools, so the same doubt applies to it —
+though it is advisory, and a lesson that fails to extract cannot fail a build.
+
+The lesson store's *usefulness* is unproven in a way the tests cannot reach. Storage,
+retrieval, protection and the fail-safe paths are covered; whether the extractor produces
+lessons worth reading is a judgement only a long run can settle. Read `.dare/lessons.json`
+after the first real run and delete it if it has filled with generalities — retrieval is
+designed so that an empty store costs nothing.
 
 ## Decisions
 
-All recorded in `DESIGN.md` §14, alongside the one question deliberately left open:
-whether to add a backend or security quality plugin beside impeccable, which only inspects
-user interfaces.
+All recorded in `DESIGN.md` §14, alongside the one question deliberately left open: whether
+to add a backend or security quality plugin beside impeccable, which only inspects user
+interfaces.
+
+When adding a phase, note that `PHASE_PERMISSIONS` in `scripts/driver.mjs` throws for an
+undeclared phase rather than defaulting. Only `builder` runs in dangerous mode.

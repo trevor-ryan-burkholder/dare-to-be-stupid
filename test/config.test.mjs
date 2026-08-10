@@ -44,20 +44,45 @@ describe('defaultConfig', () => {
       stallLimit: 4,
       tokenCeiling: 4000000,
       reviewers: ['security', 'correctness', 'design'],
+      ownership: {
+        security: ['DoD-2-security'],
+        correctness: ['PRD-*', 'DoD-1-requirements'],
+        design: ['DoD-3-ci', 'DoD-4-docs-observability', 'DoD-5-design'],
+      },
       requireUnanimous: true,
       builderModel: 'claude-sonnet-5',
       reviewerModel: 'claude-opus-5',
       designModel: 'claude-opus-5',
       prdModel: 'claude-sonnet-5',
       styleModel: 'claude-fable-5',
+      lessonModel: 'claude-sonnet-5',
       qualityPlugins: ['impeccable'],
       deploy: { enabled: false, command: '' },
       extractTests: true,
       chaos: 1,
       realityCheck: { after: 3 },
       dareMe: { enabled: true },
-      race: { enabled: false, n: 3 },
+      race: { enabled: false, n: 3, after: 2 },
+      advisory: { minConfidence: 0.7 },
+      lessons: { enabled: true, maxPerBrief: 3 },
     });
+  });
+
+  it('covers every DoD line and the PRD numbering between the three reviewers', () => {
+    // The panel is only heterogeneous if the split is total. An id no reviewer owns cannot
+    // be judged, and the run refuses to start rather than ship something unjudged.
+    const owned = Object.values(defaultConfig().ownership).flat();
+    for (const id of ['DoD-1-requirements', 'DoD-2-security', 'DoD-3-ci', 'DoD-4-docs-observability', 'DoD-5-design']) {
+      assert.equal(owned.includes(id), true, `no reviewer owns ${id}`);
+    }
+    assert.equal(owned.includes('PRD-*'), true, 'no reviewer owns the PRD requirements');
+  });
+
+  it('gives no id to two reviewers by default', () => {
+    // Duplicate ownership is allowed when an operator asks for it, and is never the
+    // default: it is a second whole-repository read of the same line.
+    const owned = Object.values(defaultConfig().ownership).flat();
+    assert.equal(owned.length, new Set(owned).size, 'an id is owned twice by default');
   });
 
   it('never enables deploy by default, because a run is pre-production only', () => {
@@ -84,8 +109,32 @@ describe('validateConfig merges over the defaults', () => {
   });
 
   it('merges nested objects key by key rather than replacing them', () => {
-    assert.deepStrictEqual(validateConfig({ race: { enabled: true } }).race, { enabled: true, n: 3 });
+    assert.deepStrictEqual(validateConfig({ race: { enabled: true } }).race, { enabled: true, n: 3, after: 2 });
     assert.deepStrictEqual(validateConfig({ deploy: { enabled: true } }).deploy, { enabled: true, command: '' });
+    assert.deepStrictEqual(validateConfig({ lessons: { maxPerBrief: 1 } }).lessons, { enabled: true, maxPerBrief: 1 });
+  });
+
+  it('takes an ownership map that reassigns ids between reviewers', () => {
+    const config = validateConfig({ ownership: { security: ['DoD-2-security', 'PRD-4.*'] } });
+    assert.deepStrictEqual(config.ownership, { security: ['DoD-2-security', 'PRD-4.*'] });
+  });
+
+  it('refuses ownership for a reviewer that does not exist', () => {
+    // A pattern parked on a misspelled reviewer owns nothing, and the ids it names would
+    // silently go unjudged.
+    assert.throws(() => validateConfig({ ownership: { securty: ['DoD-2-security'] } }), ConfigError);
+  });
+
+  it('refuses an empty ownership pattern, which would match nothing', () => {
+    assert.throws(() => validateConfig({ ownership: { security: ['  '] } }), ConfigError);
+  });
+
+  it('takes an advisory confidence threshold only on its own scale', () => {
+    assert.equal(validateConfig({ advisory: { minConfidence: 0 } }).advisory.minConfidence, 0);
+    assert.equal(validateConfig({ advisory: { minConfidence: 1 } }).advisory.minConfidence, 1);
+    for (const bad of [-0.1, 1.5, 70, '0.7', null]) {
+      assert.throws(() => validateConfig({ advisory: { minConfidence: bad } }), ConfigError, `accepted ${bad}`);
+    }
   });
 });
 

@@ -130,6 +130,29 @@ describe('blocked: protected-state', () => {
     event.tool_input = { file_path: '.dare/state.json' };
     assertDenied(event, 'protected-state');
   });
+
+  // Lesson memory is driver-owned (DESIGN.md §13.8). A builder that can edit the memory it
+  // is handed is not constrained by it: it could write itself whatever instruction it
+  // preferred and receive that back as evidence on the next iteration.
+  const deniedLessons = [
+    ["echo '[]' > .dare/lessons.json", 'redirect over the lesson store'],
+    ['rm .dare/lessons.json', 'deleting the lesson store'],
+    ["cd .dare && echo '{}' > lessons.json", 'chdir first, protected name second'],
+    ['bash -c "cat .dare/lessons.json"', 'reaching it through a wrapped shell'],
+  ];
+  for (const [command, label] of deniedLessons) {
+    it(`denies ${label}: ${command}`, () => {
+      assertDenied(bashEvent(command), 'protected-state');
+    });
+  }
+
+  it('denies a Write to .dare/lessons.json', () => {
+    assertDenied(pathEvent('pretooluse-write.json', 'file_path', '.dare/lessons.json'), 'protected-state');
+  });
+
+  it('denies an Edit to the absolute .dare/lessons.json', () => {
+    assertDenied(pathEvent('pretooluse-edit.json', 'file_path', `${FIXTURE_CWD}/.dare/lessons.json`), 'protected-state');
+  });
 });
 
 describe('allowed: protected-state neighbours', () => {
@@ -138,6 +161,8 @@ describe('allowed: protected-state neighbours', () => {
     ['cat tsconfig.json', 'a name that merely ends in config.json'],
     ['ls .dare', 'listing the dare directory'],
     ['cat .dare/bloopers.log', 'the blooper reel, which the driver owns (DESIGN.md §13.2)'],
+    ['cat .dare/briefs/iter-004.md', 'an archived build brief, which is a debugging artifact'],
+    ['cat lessons.json', 'a lessons file that is not inside .dare'],
     ['ls .dare && cat tsconfig.json', 'the dare directory and a config-suffixed name together'],
     ["echo '{}' > src/state.json", 'an application file that happens to be called state.json'],
     ['git add .dare/bloopers.log', 'staging the blooper reel'],

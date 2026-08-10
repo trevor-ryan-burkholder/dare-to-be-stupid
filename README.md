@@ -75,7 +75,7 @@ mode, so it keeps working when the builder runs with `--dangerously-skip-permiss
 
 | Rule              | What it blocks                                                                                                   | What it deliberately leaves alone                                                                          |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `protected-state` | anything touching `.dare/state.json` or `.dare/config.json`                                                      | the rest of `.dare/`, including `bloopers.log`; `tsconfig.json`; an app's own `src/state.json`             |
+| `protected-state` | anything touching `.dare/state.json`, `.dare/config.json` or `.dare/lessons.json`                                | the rest of `.dare/`, including `bloopers.log` and `briefs/`; `tsconfig.json`; an app's own `src/state.json` |
 | `git-history`     | `push --force` / `-f` / `--force-with-lease`, `rebase`, `filter-branch`, `reflog expire`                         | ordinary pushes, `git reset --hard` (the ratchet needs it), `git reflog`, "rebase" inside a commit message |
 | `rm-recursive`    | recursive `rm` outside the temp directory, and any recursive `rm` whose target cannot be resolved before it runs | non-recursive `rm`, `rm -rf /tmp/...`, `rmdir`                                                             |
 | `nested-dare`     | a builder invoking `/dare`                                                                                       | the word "dare" in prose, paths and filenames containing it                                                |
@@ -204,11 +204,17 @@ user interface.
 | --------------------------------------------- | ------------------------------------------------------------------ |
 | `build` `lint` `types` `e2e` `security-audit` | exit code                                                          |
 | `unit`                                        | exit code, and it writes the reporter JSON the ratchet reads       |
-| `ci`                                          | a workflow file exists under `.github/workflows`                   |
+| `ci`                                          | a workflow whose `run:` steps really invoke build, lint, types, unit and e2e |
 | `docs`                                        | `README.md` and `docs/api-contract.md` exist and are not stubs     |
-| `observability`                               | structured logging **and** a health endpoint are present in source |
+| `observability`                               | structured logging in source, **and** `/health` answers a real request when the app declares a start script |
 | `red-evidence`                                | every newly passing test was observed failing first                |
 | `design-slop`                                 | impeccable's detector, armed only when the repo renders a UI       |
+
+Two of those are behavioural rather than textual, deliberately. A presence check is satisfied
+by the smallest artifact that quiets it, and the smallest file satisfying "a workflow exists"
+runs nothing at all — so `ci` reads the steps, and `scripts/health-probe.mjs` starts the
+application and asks it. Structured logging stays a source check on purpose; `DESIGN.md` §4
+says why, and the gate reports it as the proxy it is rather than dressing it up as evidence.
 
 `red-evidence` is `DESIGN.md` §8's RED-before-GREEN enforced structurally.
 `.dare/red-evidence.json` accumulates every ID ever seen not passing; a newly passing ID
@@ -255,12 +261,22 @@ unattended run hours of behaviour nobody asked for, with no way to tell.
 | `stallLimit`         | `4`                                   | iterations with no measurable improvement before `STALLED` |
 | `tokenCeiling`       | `4000000`                             | total tokens across every child                            |
 | `reviewers`          | `["security","correctness","design"]` | the cold panel                                             |
+| `ownership`          | one id set per reviewer               | which ids each member owns; must cover every required id   |
 | `requireUnanimous`   | `true`                                | one dissent blocks the ship                                |
+| `advisory.minConfidence` | `0.7`                             | below this an advisory finding is recorded, not acted on   |
+| `lessons`            | `{ "enabled": true, "maxPerBrief": 3 }` | evidence-derived lesson memory                           |
 | `qualityPlugins`     | `["impeccable"]`                      | provisioned before the loop                                |
 | `deploy`             | `{ "enabled": false }`                | off by default; pre-production only                        |
 | `chaos`              | `1`                                   | scope budget: 1 surgical, 2 normal, 3 feral                |
 | `realityCheck.after` | `3`                                   | stalled iterations before asking if the PRD is buildable   |
+| `race`               | `{ "enabled": false, "n": 3, "after": 2 }` | worktree racing, armed only by a stall               |
 | `dareMe.enabled`     | `true`                                | allow `/dare` with no arguments                            |
+
+The panel is **heterogeneous**: each reviewer is asked only about the ids `ownership` gives
+it, and must return every one of them. If any required PRD or DoD id has no owner, the run
+refuses to start — an id nobody was asked about would otherwise pass by never being judged.
+Reviewers may also volunteer `advisory-` findings carrying `severity` and `confidence`;
+those never decide whether a run ships, at any confidence. Compliance stays deterministic.
 
 Environment: `DARE_CHAOS=1|2|3` overrides the dial. `DARE_STYLE=plain` disables the output
 style. Nothing else is overridable, so an unattended run stays reproducible from the repo.
@@ -271,9 +287,18 @@ style. Nothing else is overridable, so an unattended run stays reproducible from
 | ------------------- | ----------------------------------------------------------------- |
 | `state.json`        | the ratchet. Not writable by the builder                          |
 | `config.json`       | the settings above. Not writable by the builder                   |
+| `lessons.json`      | evidence-derived lessons. Driver-owned; not writable by the builder |
+| `briefs/`           | the compiled task handed to each iteration, archived for debugging |
 | `bloopers.log`      | one JSON line per hard reset: iteration, regressed IDs, diff stat |
 | `red-evidence.json` | every test ID ever seen not passing                               |
 | `test-report.json`  | the latest reporter output the ratchet read                       |
+
+Every builder iteration is handed a **compiled brief** rather than a growing conversation:
+the objective, why it is the objective, the failing evidence, the protected tests, and any
+lessons that match this particular failure. The repository and these artifacts are the run's
+memory; a child's context is disposable. The archived briefs exist so that when a run ends
+badly you can read what the builder was actually asked for, instead of inferring it from
+what it did.
 
 ## The output style
 

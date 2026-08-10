@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import { parseReviewerReport } from '../scripts/driver.mjs';
+import { parseLessonExtraction } from '../scripts/lessons.mjs';
 
 const TEMPLATE_DIR = new URL('../templates/', import.meta.url);
 
@@ -29,6 +30,7 @@ const REVIEWER = readTemplate('reviewer-system.md');
 const BUILDER = readTemplate('builder-system.md');
 const PRD_AUTHOR = readTemplate('prd-author.md');
 const ARCHITECT = readTemplate('architect.md');
+const LESSON_EXTRACTOR = readTemplate('lesson-extractor.md');
 
 /**
  * Every fenced json block in a template.
@@ -50,7 +52,11 @@ describe('the reviewer template and the parser agree', () => {
 
   it('embeds an example the parser reads without complaint', () => {
     const example = JSON.parse(jsonBlocks(REVIEWER)[0]);
-    const ids = example.requirements.map((/** @type {{ id: string }} */ entry) => entry.id);
+    // The panel is heterogeneous, so a reviewer is asked only about the ids it owns.
+    // Advisory entries are not owned ids; they are volunteered.
+    const ids = example.requirements
+      .map((/** @type {{ id: string }} */ entry) => entry.id)
+      .filter((/** @type {string} */ id) => !id.startsWith('advisory-'));
     const report = parseReviewerReport(jsonBlocks(REVIEWER)[0], { requiredIds: ids });
     assert.deepStrictEqual(report.problems, [], 'the documented example must not trip the parser');
     assert.deepStrictEqual(
@@ -60,6 +66,28 @@ describe('the reviewer template and the parser agree', () => {
         ['DoD-2-security', 'fail'],
       ],
     );
+  });
+
+  it('embeds an advisory example the parser reads as advisory, not as compliance', () => {
+    // If the template teaches a shape the parser buckets differently, every advisory a real
+    // reviewer raises would either be ignored or would wrongly block a compliant build.
+    const report = parseReviewerReport(jsonBlocks(REVIEWER)[0], { requiredIds: ['PRD-3.2', 'DoD-2-security'] });
+    assert.equal(report.advisories.length, 1, 'the documented advisory was not read as one');
+    assert.equal(report.advisories[0].severity, 'minor');
+    assert.equal(report.advisories[0].confidence, 0.63);
+    assert.equal(report.advisories[0].evidence, 'src/session.ts:12');
+    assert.equal(report.advisories[0].repairHint.length > 0, true);
+  });
+
+  it('teaches that advisory confidence cannot decide the verdict', () => {
+    assert.equal(REVIEWER.includes('They never decide whether this run ships'), true);
+    assert.equal(REVIEWER.includes('do not affect `verdict`'), true);
+  });
+
+  it('tells the reviewer it owns a subset, and that nobody covers it behind them', () => {
+    assert.equal(REVIEWER.includes('You own part of this, not all of it'), true);
+    assert.equal(REVIEWER.includes('Do not adjudicate what you do not own'), true);
+    assert.equal(REVIEWER.includes('Do not assume anyone covers yours'), true);
   });
 
   it('embeds an example whose passing entry really satisfies the evidence rule', () => {
@@ -94,7 +122,7 @@ describe('the reviewer template stays hostile', () => {
     ['path/file.ext:LINE', 'the evidence format'],
     ['A passing test is not evidence', 'the rule about tests that assert nothing'],
     ['Check the negative case', 'the rule about auth'],
-    ['Every id gets an entry', 'the rule about missing entries'],
+    ['Every id you own gets an entry', 'the rule about missing entries'],
     ['Do not fix anything', 'read-only framing'],
     ['No partial credit', 'the absence of a middle status'],
   ];
@@ -194,6 +222,45 @@ describe('the architect template', () => {
   });
 });
 
+describe('the lesson-extractor template and the lesson parser agree', () => {
+  it('embeds exactly one json example, and the parser stores it', () => {
+    const blocks = jsonBlocks(LESSON_EXTRACTOR);
+    assert.equal(blocks.length, 1);
+    const lesson = parseLessonExtraction(blocks[0]);
+    assert.notEqual(lesson, null, 'the documented example is not a lesson the parser would keep');
+    assert.equal((lesson?.trigger.length ?? 0) > 0, true);
+    assert.equal(lesson?.evidence.introduced, 6);
+    assert.equal(lesson?.evidence.resolved, 8);
+  });
+
+  it('makes returning nothing an easy and consequence-free answer', () => {
+    // An extractor that feels obliged to produce something produces filler, and every
+    // useless sentence stored is read by every later brief.
+    assert.equal(LESSON_EXTRACTOR.includes('return `null`'), true);
+    assert.equal(LESSON_EXTRACTOR.includes('Nothing bad happens when you do'), true);
+    assert.equal(LESSON_EXTRACTOR.includes('no build fails for it'), true);
+  });
+
+  it('shows what does not count as a lesson, concretely', () => {
+    for (const antiExample of ['Be careful when changing authentication.', 'Read the error message.']) {
+      assert.equal(LESSON_EXTRACTOR.includes(antiExample), true, `lost the counter-example: ${antiExample}`);
+    }
+  });
+
+  it('requires triggers that will actually recur, and says why', () => {
+    assert.equal(LESSON_EXTRACTOR.includes('literally'), true);
+    assert.equal(LESSON_EXTRACTOR.includes('Useless triggers'), true);
+  });
+
+  it('does not ask what the builder learned', () => {
+    // The whole design of this memory is that lessons come from evidence, never from
+    // self-report. A model asked what it learned will always answer.
+    for (const tell of ['what did you learn', 'what you learned', 'reflect on']) {
+      assert.equal(LESSON_EXTRACTOR.toLowerCase().includes(tell), false, `lesson extractor asks for self-report: ${tell}`);
+    }
+  });
+});
+
 describe('every template', () => {
   /** @type {[string, string][]} */
   const all = [
@@ -201,6 +268,7 @@ describe('every template', () => {
     ['builder-system.md', BUILDER],
     ['prd-author.md', PRD_AUTHOR],
     ['architect.md', ARCHITECT],
+    ['lesson-extractor.md', LESSON_EXTRACTOR],
   ];
 
   for (const [name, contents] of all) {
