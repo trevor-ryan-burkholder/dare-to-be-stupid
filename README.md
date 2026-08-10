@@ -17,7 +17,7 @@ Act now! Claude Code does EVERYTHING autonomously - batteries not included, warr
         [_____]       [_____]
 ```
 
-> _"Put down that chainsaw and listen to me
+> _"Put down that chainsaw and listen to me;
 > It's time for us to join in the fight"_
 >
 > — "Weird Al" Yankovic, 1985. The song plays over the Junkions in
