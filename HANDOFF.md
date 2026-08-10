@@ -47,6 +47,21 @@ lets the guard tell a run from an operator, so it was measured rather than assum
 a recursive `rm` whose target was an unresolved shell variable, and refused a command
 touching `.dare/config.json` from inside a run.
 
+**A cold reviewer's output parses, and an incomplete build draws a `fail`.** One live
+`claude -p` child on `claude-opus-5`, given `templates/reviewer-system.md` and the driver's
+own review prompt, pointed at a genuinely half-finished build: 124s, 430335 tokens, $0.83.
+It returned `"verdict": "fail"`; `parseReviewerReport` consumed it without throwing; the
+four ids it was handed came back as exactly those four and no others; evidence carried
+`file:line` (`src/parse.js:81`, `src/parse.js:72`, `package.json:7`); and one advisory came
+back in the documented shape rather than as prose. It failed the one requirement that was
+genuinely unbuilt — the CLI binary — and passed the three that were done.
+
+Worth recording *how* it audited, because the prompt is doing the work: it re-ran the code
+with `node -e` and said so — "verified by direct execution, not by trusting the suite" —
+rather than reading the tests and agreeing with them. That is the behaviour
+`templates/reviewer-system.md` exists to produce, and it is now observed rather than hoped
+for.
+
 **The token ceiling stops at the first child past the line.** It was previously read only by
 `shouldContinue`, between iterations, so a single iteration could run arbitrarily far past
 the limit before anything looked — an observed run ended `2100900 of 1000000`. Every child's
@@ -73,14 +88,6 @@ the `no-tests` brief. Worth noting what this was *not*: not a silent failure. Th
 was detected, logged and fed back. What was missing was the one fact needed to act on it.
 
 ## Outstanding
-
-**A deliberately incomplete build must draw a `fail` from a cold reviewer.** Plant a missing
-requirement, run the reviewer template through a `claude -p` child, and confirm the parser
-returns `fail` with `file:line` evidence on what *was* built. The parser is unit-tested
-hard; what is unproven is whether a real reviewer, given the real prompt, produces output in
-the shape the parser expects. Now also worth confirming that a reviewer handed **only the
-ids it owns** returns exactly those, and that an `advisory-` entry comes back in the
-documented shape rather than as prose.
 
 **A run that reaches the panel, and a ratchet that catches a real regression.** The first
 real runs died before either. Both stopped in iteration 1 with `passing: 0`, so no id ever
