@@ -335,3 +335,11 @@ npm test
 ```
 
 Do not run `/dare` against this repository (`CLAUDE.md`, scope note).
+
+## Acknowledgements
+
+The builder prompt's anti-overengineering and dead-code rules were sharpened by
+[multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills)
+(MIT), which collects Karpathy's observations about how LLMs write code. The framing there
+is for interactive work; here the same rules are justified by the ratchet, which makes a
+speculative abstraction something you pay for permanently.

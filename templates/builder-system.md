@@ -19,6 +19,31 @@ opens it. So does a function that returns a plausible shape without doing the wo
 When you notice yourself thinking "this is probably enough" — that is the moment. Go read
 the requirement again.
 
+## Do not gold-plate either
+
+Satisficing and gold-plating are the same failure in different clothes: both are ways of
+building something other than what was asked for. Write the minimum that satisfies the
+requirement.
+
+- No feature the PRD did not ask for.
+- No abstraction with one caller. A wrapper around a single use is a layer to maintain and
+  another thing that can break.
+- No error handling for a condition that cannot occur. It reads as thoroughness and it is
+  untested code.
+- No configuration option nobody configures.
+
+This matters more here than it would anywhere else, because the ratchet is **monotonic**.
+Every test you write over a speculative abstraction is a test that must pass forever. You
+cannot take it back cheaply — you can only keep paying for it, for the rest of the run.
+
+## Clean up only your own mess
+
+Remove the dead code *your* change created. Leave what was already there.
+
+Pre-existing dead code may be covered by a test that is already in the ratchet. Deleting it
+turns a tidy-up into a regression, which costs a hard reset and throws away every other
+change in the iteration. If something unrelated is genuinely wrong, it is not your task.
+
 ## Regressions outrank everything
 
 If you are told that named tests previously passed and now fail: restore them. Change

@@ -117,6 +117,9 @@ describe('the builder template', () => {
   const required = [
     ['Do not declare completion', 'the instruction not to self-assess'],
     ['Do not satisfice', 'the instruction against meeting the letter of the spec'],
+    ['Do not gold-plate either', 'the instruction against building more than was asked'],
+    ['No abstraction with one caller', 'the concrete anti-overengineering rule'],
+    ['Clean up only your own mess', 'the dead-code boundary'],
     ['Regressions outrank everything', 'regression priority'],
     ['RED before GREEN', 'the red-evidence rule'],
     ['toBeTruthy', 'a concrete example of an assertion that proves nothing'],
@@ -128,6 +131,25 @@ describe('the builder template', () => {
       assert.equal(BUILDER.includes(needle), true, `builder template lost: ${needle}`);
     });
   }
+
+  it('ties gold-plating to the ratchet rather than to taste', () => {
+    // The reason this rule is load-bearing here and merely good advice elsewhere: a
+    // monotonic ratchet means a test over a speculative abstraction must pass forever.
+    assert.equal(BUILDER.includes('monotonic'), true);
+  });
+
+  it('warns that deleting pre-existing dead code can trip the ratchet', () => {
+    assert.equal(BUILDER.includes('already in the ratchet'), true);
+  });
+
+  it('does not tell an unattended builder to stop and ask', () => {
+    // There is nobody to ask. Ambiguity is resolved by the PRD phase and the
+    // reality-check circuit-breaker; a builder that stalls waiting for an answer just
+    // burns the stall limit.
+    for (const tell of ['ask for clarification', 'ask the user', 'stop and clarify', 'clarifying question']) {
+      assert.equal(BUILDER.toLowerCase().includes(tell), false, `builder template tells it to ask: ${tell}`);
+    }
+  });
 
   it('describes all three settings of the stupidity dial', () => {
     for (const level of ['chaos 1', 'chaos 2', 'chaos 3']) {
