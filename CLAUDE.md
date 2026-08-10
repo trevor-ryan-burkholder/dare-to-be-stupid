@@ -43,8 +43,12 @@ These are the load-bearing properties. A change that breaks one is wrong even if
   "optimize" this into a subagent.
 - **Nothing defaults to pass.** Missing evidence, unparseable reviewer output, a crashed
   gate, a timeout — all fail. If you are writing `catch { return pass }`, stop.
-- **The guard hook is not editable by what it guards.** Builder processes may not write
-  `.dare/state.json` or `.dare/config.json`.
+- **The guard hook is not editable by what it guards.** Processes inside a run — marked by
+  `DARE_RUNNING` in their environment — may not write `.dare/state.json`,
+  `.dare/config.json` or `.dare/lessons.json`. Outside a run these are ordinary files, and
+  the operator edits them from wherever they like, including from inside Claude Code. The
+  boundary is the run, not the plugin being installed: a rule that also locks out the person
+  who owns the repository has stopped being a guard and started being a nuisance.
 - **Style never touches logic.** The Junkion layer renders at output only. It may not
   inform gate results, ratchet state, or reviewer JSON. `DARE_STYLE=plain` must fully
   bypass it.

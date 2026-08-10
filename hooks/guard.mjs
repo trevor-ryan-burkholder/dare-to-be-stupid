@@ -6,13 +6,19 @@
  * of permission mode, which makes this the only reliable place to put a limit.
  *
  * Blocked categories, and nothing else:
- *   1. protected-state — anything touching `.dare/state.json` or `.dare/config.json`.
- *      The ratchet is not editable by the process it constrains.
+ *   1. protected-state — anything touching `.dare/state.json`, `.dare/config.json` or
+ *      `.dare/lessons.json`, **while inside a run**. A run does not edit what constrains
+ *      it. Outside a run there is no constrained process, and the operator may edit their
+ *      own configuration from wherever they like — including from inside Claude Code,
+ *      which is the only place some of them work. See {@link insideRun}.
  *   2. git-history    — `git push --force`, `rebase`, `filter-branch`, `reflog expire`.
  *      Recovery stays possible.
  *   3. rm-recursive   — recursive `rm` outside the temp directory.
  *   4. nested-dare    — a builder invoking `/dare`. CLAUDE.md invariant "No nesting";
  *      DESIGN.md §13.6 requires this at the hook as well as at the driver.
+ *
+ * Only category 1 is scoped to a run. The other three are refused to everyone: none of
+ * them becomes reasonable merely because a human asked for it in this session.
  *
  * Everything else is allowed. That restraint is the plugin.
  *
@@ -308,8 +314,45 @@ export function isProtectedStatePath(candidate, cwd) {
   return path.basename(path.dirname(resolved)) === '.dare';
 }
 
+/**
+ * The environment variable the driver stamps on every `claude -p` child it spawns
+ * (`childEnvironment` in `scripts/driver.mjs`). Kept as a literal rather than imported so
+ * the hook has no dependency on the driver: hooks run from an install cache and must work
+ * even when nothing else of the plugin is loadable.
+ */
+const RUN_MARKER_ENV = 'DARE_RUNNING';
+
+/**
+ * Is this tool call happening inside a run?
+ *
+ * The protected files are protected *from a run*, not from the person who owns the
+ * repository. `DESIGN.md` §6 says they are "not editable by the process they constrain",
+ * and the process being constrained is the run — a builder that can rewrite the ratchet,
+ * its configuration or its lesson store is not constrained by any of them.
+ *
+ * An operator is not that process. Before this distinction existed the rule was
+ * unconditional, which meant nobody could change `.dare/config.json` from inside Claude
+ * Code at any time, and `HANDOFF.md`'s own instruction to delete a useless
+ * `.dare/lessons.json` was impossible to carry out. The fix for that must not be "ask the
+ * human to leave the agent and run a command", because a plugin that offloads its own work
+ * onto a terminal has not done the work.
+ *
+ * The marker is sound in the direction that matters. The driver sets it in the environment
+ * of the `claude` child; PreToolUse hooks inherit that environment, which is verified live
+ * rather than assumed. A builder cannot clear it: the hook's environment comes from the
+ * `claude` process the driver spawned, not from any shell the builder can run.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @returns {boolean}
+ */
+export function insideRun(env) {
+  const marker = env[RUN_MARKER_ENV];
+  return marker !== undefined && marker !== '';
+}
+
 const PROTECTED_REASON =
-  'references .dare/state.json or .dare/config.json. The ratchet is not editable by the process it constrains (DESIGN.md §6).';
+  'references .dare/state.json, .dare/config.json or .dare/lessons.json. A run does not edit the ratchet, ' +
+  'the configuration or the lesson store that constrain it (DESIGN.md §6).';
 
 /**
  * @param {string} command
@@ -522,14 +565,23 @@ function wrappedCommands(segments) {
 
 /**
  * Run every Bash rule over one command string, recursing into command substitutions.
+ *
+ * Only `protected-state` is conditional on being inside a run. The other three rules —
+ * history destruction, recursive removal, nested runs — are refused to everyone, because
+ * none of them becomes reasonable merely because a human asked for it in this session.
+ *
  * @param {string} command
  * @param {string} cwd
+ * @param {{ insideRun?: boolean }} [options] defaults to inside a run, which is the deny side
  * @returns {Decision}
  */
-export function checkBashCommand(command, cwd) {
+export function checkBashCommand(command, cwd, options = {}) {
+  // Defaults to "inside a run", which is the deny-side default. A caller that forgets to
+  // say where it is gets the stricter answer, not the looser one.
+  const running = options.insideRun ?? true;
   const { segments, substitutions } = tokenizeCommand(command);
   const checks = [
-    checkProtectedState(command, segments),
+    running ? checkProtectedState(command, segments) : ALLOW,
     checkNestedDare(segments),
     checkGitHistory(segments),
     checkRecursiveRemove(segments, cwd),
@@ -538,7 +590,7 @@ export function checkBashCommand(command, cwd) {
     if (result.decision === 'deny') return result;
   }
   for (const inner of [...substitutions, ...wrappedCommands(segments)]) {
-    const result = checkBashCommand(inner, cwd);
+    const result = checkBashCommand(inner, cwd, { insideRun: running });
     if (result.decision === 'deny') return result;
   }
   return ALLOW;
@@ -557,7 +609,7 @@ function checkToolPaths(toolInput, cwd) {
     if (isProtectedStatePath(value, cwd)) {
       return deny(
         'protected-state',
-        `${value} is ratchet state. It is not editable by the process it constrains (DESIGN.md §6).`,
+        `${value} is run state. A run does not edit what constrains it (DESIGN.md §6).`,
       );
     }
   }
@@ -566,8 +618,13 @@ function checkToolPaths(toolInput, cwd) {
 
 /**
  * Decide a single PreToolUse payload.
+ *
+ * `options.env` is how the guard tells a run from an operator; it defaults to this
+ * process's environment, which is the one the hook actually inherits from the `claude`
+ * child the driver spawned.
+ *
  * @param {unknown} payload
- * @param {{ cwd?: string }} [options]
+ * @param {{ cwd?: string, env?: Record<string, string | undefined> }} [options]
  * @returns {Decision}
  */
 export function evaluate(payload, options = {}) {
@@ -580,6 +637,7 @@ export function evaluate(payload, options = {}) {
   const record = /** @type {Record<string, unknown>} */ (payload);
   const cwd =
     typeof record.cwd === 'string' && record.cwd.length > 0 ? record.cwd : (options.cwd ?? process.cwd());
+  const running = insideRun(options.env ?? process.env);
   const toolName = typeof record.tool_name === 'string' ? record.tool_name : '';
   const toolInput =
     record.tool_input !== null && typeof record.tool_input === 'object' && !Array.isArray(record.tool_input)
@@ -594,10 +652,10 @@ export function evaluate(payload, options = {}) {
         'Bash payload carried no command string. A guard that fails open is not a guard.',
       );
     }
-    return checkBashCommand(command, cwd);
+    return checkBashCommand(command, cwd, { insideRun: running });
   }
 
-  return checkToolPaths(toolInput ?? {}, cwd);
+  return running ? checkToolPaths(toolInput ?? {}, cwd) : ALLOW;
 }
 
 /**

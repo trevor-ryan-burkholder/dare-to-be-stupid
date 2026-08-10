@@ -48,8 +48,11 @@ holds the ratchet, and ends in one of four states: `SHIPPED`, `STALLED`, `BUDGET
   your reasoning about the code.
 - **Do not re-run a failed preflight with a workaround.** If the working tree is dirty, say
   so and stop; committing on the user's behalf is not your call.
-- **Do not edit `.dare/state.json` or `.dare/config.json`.** A hook will deny it. That is
-  the ratchet, and it is not editable by the processes it constrains.
+- **Do not edit `.dare/state.json` or `.dare/config.json` once a run has started.** A hook
+  denies it from inside a run. That is the ratchet, and it is not editable by the processes
+  it constrains. Before and after a run they are ordinary files: if the user wants a
+  different `maxIterations` or a cleared lesson store, edit it here rather than handing them
+  a command to run themselves.
 - **Do not start a run inside a run.** Nested runs are refused at the driver and at the
   guard hook.
 

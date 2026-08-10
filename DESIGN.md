@@ -339,12 +339,28 @@ hooks fire **regardless** of permission mode, which makes them the only reliable
 put a limit when everything else is off.
 
 `hooks/guard.mjs` reads the PreToolUse payload as JSON on stdin and blocks exactly:
-1. Writes to `.dare/state.json`, `.dare/config.json` or `.dare/lessons.json` — the ratchet,
-   its configuration and the lesson store are not editable by the process they constrain. A
-   builder that can rewrite the memory it is handed is not constrained by it: it could store
-   itself any instruction it liked and receive that back as evidence next iteration. The
-   rest of `.dare/` — the blooper reel, the archived briefs — stays readable and writable;
-   the driver owns those, and nothing reads them back as a decision.
+1. Writes to `.dare/state.json`, `.dare/config.json` or `.dare/lessons.json` **from inside a
+   run** — the ratchet, its configuration and the lesson store are not editable by the
+   process they constrain. A builder that can rewrite the memory it is handed is not
+   constrained by it: it could store itself any instruction it liked and receive that back
+   as evidence next iteration. The rest of `.dare/` — the blooper reel, the archived
+   briefs — stays readable and writable; the driver owns those, and nothing reads them back
+   as a decision.
+
+   "Inside a run" is `DARE_RUNNING` in the hook's own environment. The driver stamps it on
+   every `claude -p` child it spawns, and PreToolUse hooks inherit the environment of the
+   `claude` process — verified live against claude 2.1.226, not assumed. A builder cannot
+   clear it, because the hook's environment comes from the process the driver spawned rather
+   than from any shell the builder can run.
+
+   The scoping is not a softening; it is the rule finally matching its own justification.
+   Applied unconditionally this clause locked the *operator* out of `.dare/config.json` in
+   every session forever — there was no way to change `maxIterations` from inside Claude
+   Code, and this project's own advice to delete a useless `.dare/lessons.json` could not be
+   followed. A plugin that answers that with "open a terminal and run a command" has moved
+   its work onto the user instead of doing it. Only this clause is scoped; rules 2–4 are
+   refused to everyone, because none of them becomes reasonable merely because a human asked
+   for it in this session.
 2. `git push --force`, `rebase`, `filter-branch`, `reflog expire` — recovery stays
    possible.
 3. `rm -rf` outside `/tmp`.

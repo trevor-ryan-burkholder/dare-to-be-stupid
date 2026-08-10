@@ -57,26 +57,40 @@ function pathEvent(fixture, key, filePath) {
 }
 
 /**
+ * The environment of a builder: the marker the driver stamps on every child it spawns.
+ * The default for these tables, because a run is the process the guard exists to constrain.
+ */
+const IN_RUN = { DARE_RUNNING: '1' };
+
+/** The environment of a person at a keyboard, who is not the accused. */
+const OPERATOR = /** @type {Record<string, string | undefined>} */ ({});
+
+/**
  * Decision without the prose, so tables assert the rule that fired rather than its wording.
  * @param {unknown} event
+ * @param {Record<string, string | undefined>} [env]
  * @returns {{ decision: string, rule?: string }}
  */
-function ruling(event) {
-  const result = evaluate(event);
+function ruling(event, env = IN_RUN) {
+  const result = evaluate(event, { env });
   return result.decision === 'deny' ? { decision: 'deny', rule: result.rule } : { decision: 'allow' };
 }
 
 /**
  * @param {unknown} event
  * @param {string} rule
+ * @param {Record<string, string | undefined>} [env]
  */
-function assertDenied(event, rule) {
-  assert.deepStrictEqual(ruling(event), { decision: 'deny', rule });
+function assertDenied(event, rule, env = IN_RUN) {
+  assert.deepStrictEqual(ruling(event, env), { decision: 'deny', rule });
 }
 
-/** @param {unknown} event */
-function assertAllowed(event) {
-  assert.deepStrictEqual(ruling(event), { decision: 'allow' });
+/**
+ * @param {unknown} event
+ * @param {Record<string, string | undefined>} [env]
+ */
+function assertAllowed(event, env = IN_RUN) {
+  assert.deepStrictEqual(ruling(event, env), { decision: 'allow' });
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +166,58 @@ describe('blocked: protected-state', () => {
 
   it('denies an Edit to the absolute .dare/lessons.json', () => {
     assertDenied(pathEvent('pretooluse-edit.json', 'file_path', `${FIXTURE_CWD}/.dare/lessons.json`), 'protected-state');
+  });
+});
+
+describe('protected-state is scoped to a run, not to the plugin being installed', () => {
+  // The rule protects these files from the run they constrain. Applied unconditionally it
+  // also locked out the operator, in every session, forever: `.dare/config.json` could not
+  // be changed from inside Claude Code at all, and HANDOFF.md's own instruction to delete a
+  // useless `.dare/lessons.json` could not be carried out. The answer to that is not to send
+  // the human to a terminal.
+
+  const protectedCommands = [
+    "echo '{}' > .dare/state.json",
+    'cat .dare/config.json',
+    'rm .dare/lessons.json',
+    "cd .dare && echo '{}' > config.json",
+  ];
+
+  for (const command of protectedCommands) {
+    it(`denies inside a run: ${command}`, () => {
+      assertDenied(bashEvent(command), 'protected-state', IN_RUN);
+    });
+
+    it(`allows the same command outside a run: ${command}`, () => {
+      assertAllowed(bashEvent(command), OPERATOR);
+    });
+  }
+
+  for (const target of ['.dare/config.json', '.dare/state.json', '.dare/lessons.json']) {
+    it(`lets an operator Write ${target}, and refuses a run the same Write`, () => {
+      const event = pathEvent('pretooluse-write.json', 'file_path', target);
+      assertAllowed(event, OPERATOR);
+      assertDenied(event, 'protected-state', IN_RUN);
+    });
+  }
+
+  it('treats an empty marker as outside a run, since that is how an unset variable arrives', () => {
+    assertAllowed(bashEvent('cat .dare/config.json'), { DARE_RUNNING: '' });
+  });
+
+  it('still refuses the other three categories to an operator', () => {
+    // Scoping applies to protected-state alone. History destruction, recursive removal and
+    // nested runs do not become reasonable because a human asked for them in this session.
+    assertDenied(bashEvent('git push --force origin main'), 'git-history', OPERATOR);
+    assertDenied(bashEvent('rm -rf /home/someone/project'), 'rm-recursive', OPERATOR);
+    assertDenied(bashEvent('/dare "build me a thing"'), 'nested-dare', OPERATOR);
+  });
+
+  it('defaults to the deny side when a caller says nothing about where it is', () => {
+    // checkBashCommand is exported. A caller that forgets the third argument must get the
+    // stricter answer; a guard whose default is "allow" is a guard with an off switch.
+    const decision = checkBashCommand('cat .dare/config.json', FIXTURE_CWD);
+    assert.equal(decision.decision, 'deny');
   });
 });
 
@@ -386,10 +452,11 @@ describe('blocked: malformed-payload', () => {
 
 describe('deny reasons', () => {
   it('names the ratchet for protected state', () => {
-    const result = evaluate(bashEvent('cat .dare/state.json'));
+    const result = evaluate(bashEvent('cat .dare/state.json'), { env: IN_RUN });
     assert.equal(
       result.decision === 'deny' ? result.reason : '',
-      'Command references .dare/state.json or .dare/config.json. The ratchet is not editable by the process it constrains (DESIGN.md §6).',
+      'Command references .dare/state.json, .dare/config.json or .dare/lessons.json. A run does not edit the ' +
+        'ratchet, the configuration or the lesson store that constrain it (DESIGN.md §6).',
     );
   });
 
@@ -533,10 +600,13 @@ describe('renderDecision', () => {
 describe('guard.mjs as a process', () => {
   /**
    * @param {string} stdin
+   * @param {Record<string, string | undefined>} [env]
    * @returns {Promise<{ code: number, stdout: string }>}
    */
-  async function run(stdin) {
-    const child = execFileAsync('node', [GUARD]);
+  async function run(stdin, env) {
+    // The encoding is pinned because supplying options at all selects the overload that
+    // would otherwise hand back a Buffer.
+    const child = execFileAsync('node', [GUARD], { encoding: 'utf8', ...(env === undefined ? {} : { env }) });
     child.child.stdin?.end(stdin);
     try {
       const { stdout } = await child;
@@ -563,6 +633,27 @@ describe('guard.mjs as a process', () => {
     const { code, stdout } = await run(JSON.stringify(bashEvent('git push origin main')));
     assert.equal(code, 0);
     assert.equal(stdout, '');
+  });
+
+  it('reads the run marker from its own environment, which is the only way it arrives', async () => {
+    // The unit tables inject `env`; production does not. This is that seam. The driver sets
+    // DARE_RUNNING on the `claude` child and the hook inherits it - confirmed live against
+    // claude 2.1.226 before this scoping was written, not assumed.
+    const payload = JSON.stringify(bashEvent('cat .dare/config.json'));
+
+    const inRun = await run(payload, { ...process.env, DARE_RUNNING: '1' });
+    assert.equal(inRun.code, 0);
+    assert.equal(
+      JSON.parse(inRun.stdout).hookSpecificOutput.permissionDecision,
+      'deny',
+      'a builder was allowed to read the config that constrains it',
+    );
+
+    const operator = { ...process.env };
+    delete operator.DARE_RUNNING;
+    const outsideRun = await run(payload, operator);
+    assert.equal(outsideRun.code, 0);
+    assert.equal(outsideRun.stdout, '', 'an operator was locked out of their own configuration');
   });
 
   it('fails closed on a payload that is not valid JSON', async () => {
