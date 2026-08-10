@@ -66,9 +66,22 @@ describe('plugin.json', () => {
 
 describe('marketplace.json', () => {
   it('resolves the plugin from this repository', () => {
-    assert.equal(MARKETPLACE.plugins.length, 1);
-    assert.equal(MARKETPLACE.plugins[0].name, PLUGIN.name);
-    assert.equal(MARKETPLACE.plugins[0].source, './');
+    const self = MARKETPLACE.plugins.find((/** @type {{ name: string }} */ entry) => entry.name === PLUGIN.name);
+    assert.notEqual(self, undefined, 'the marketplace does not carry this plugin');
+    assert.equal(self.source, './');
+  });
+
+  it('carries impeccable, pinned, so the design gate finds its tool already installed', () => {
+    // The design-slop gate shells to impeccable. Shipping the two together means a run on a
+    // frontend target does not discover its detector is missing halfway through an
+    // iteration - and the pin means it does not discover a different detector either.
+    const impeccable = MARKETPLACE.plugins.find(
+      (/** @type {{ name: string }} */ entry) => entry.name === 'impeccable',
+    );
+    assert.notEqual(impeccable, undefined, 'impeccable is not offered alongside the loop');
+    assert.equal(impeccable.source.source, 'git-subdir');
+    assert.equal(impeccable.source.url, 'https://github.com/pbakaus/impeccable.git');
+    assert.match(impeccable.source.sha, /^[0-9a-f]{40}$/);
   });
 
   it('names an owner, so the marketplace entry is attributable', () => {

@@ -8,6 +8,22 @@
       "name": "dare-to-be-stupid",
       "source": "./",
       "description": "An autonomous build loop with an external auditor and a monotonic test ratchet. Pre-production only; never point it at anything with users."
+    },
+    {
+      "name": "impeccable",
+      "description": "Deterministic frontend design-slop detector. The design gate a dare run arms on any target that renders a user interface; carried here so the two arrive together rather than the gate discovering its tool is missing mid-run.",
+      "author": {
+        "name": "Paul Bakaus"
+      },
+      "category": "design",
+      "homepage": "https://impeccable.style",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/pbakaus/impeccable.git",
+        "path": "plugin",
+        "ref": "main",
+        "sha": "aee6ce9352b842217b3f57c78296a7a4fa35a7f3"
+      }
     }
   ]
 }
