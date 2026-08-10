@@ -1261,6 +1261,27 @@ describe('driveRun', () => {
     assert.equal(briefs[1].includes('### Failing gates'), true);
   });
 
+  it('names the runner in the no-tests brief, because a green npm test hides the real cause', () => {
+    // Observed against a real run: the builder wrote a correct `node:test` suite, `npm test`
+    // passed, and `npx vitest run` collected zero tests from it. Told only that no test
+    // passed, a builder rewrites tests that were never wrong. The runner is the fact it
+    // cannot discover on its own, so the brief has to carry it.
+    /** @type {string[]} */
+    const briefs = [];
+    run(
+      {
+        readTestReports: () => [{ numTotalTests: 0, testResults: [] }],
+        build: (brief) => {
+          briefs.push(brief);
+          return { ok: true, text: '', costUsd: 0, tokens: 1, raw: '' };
+        },
+      },
+      { maxIterations: 2 },
+    );
+    assert.equal(briefs[1].includes('make the test suite run and pass'), true);
+    assert.equal(briefs[1].includes('npx vitest run'), true);
+  });
+
   it('hands the regression back in the next brief, above everything else', () => {
     /** @type {string[]} */
     const briefs = [];

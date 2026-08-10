@@ -153,6 +153,9 @@ describe('the builder template', () => {
     ['toBeTruthy', 'a concrete example of an assertion that proves nothing'],
     ['route handler', 'where guards belong'],
     ['.dare/state.json', 'the files it may not touch'],
+    ['npx vitest run --reporter=json', 'the runner the unit gate collects with'],
+    ['npx playwright test', 'the runner the e2e gate collects with'],
+    ['invisible to the ratchet', 'what a suite the gates cannot collect is worth'],
   ];
   for (const [needle, what] of required) {
     it(`still states ${what}`, () => {

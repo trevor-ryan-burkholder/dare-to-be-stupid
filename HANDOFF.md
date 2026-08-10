@@ -47,6 +47,23 @@ lets the guard tell a run from an operator, so it was measured rather than assum
 a recursive `rm` whose target was an unresolved shell variable, and refused a command
 touching `.dare/config.json` from inside a run.
 
+**The loop has met reality.** On 10 August 2026, twice, against two throwaway repositories
+with different PRDs. Preflight passed ten checks and scaffolded config; the run added its
+machine state to `.gitignore`, authored or accepted a PRD, wrote design documents under
+`docs/`, committed each phase, and the builder produced source and tests. Neither run
+shipped, and the reason is recorded below — but the pipeline itself is no longer theoretical.
+
+**The unit gate only collects vitest, and that used to be unsaid.** Both runs independently
+built correct `node:test` suites, declared `"test": "node --test"`, and drew
+`No test suite found in file …` from `npx vitest run --reporter=json` — a report of zero
+tests. `extractTestIds` then correctly returned nothing, `driveRun` correctly rejected the
+iteration with the `no-tests` objective, and the ratchet correctly refused to advance. Every
+component behaved as designed; the run still could not progress, because the builder was
+never told which runner the gate collects with while `templates/builder-system.md`
+simultaneously told it to use whatever tools it liked. Fixed in 0.7.0 at the template and in
+the `no-tests` brief. Worth noting what this was *not*: not a silent failure. The rejection
+was detected, logged and fed back. What was missing was the one fact needed to act on it.
+
 ## Outstanding
 
 **A deliberately incomplete build must draw a `fail` from a cold reviewer.** Plant a missing
@@ -57,11 +74,25 @@ the shape the parser expects. Now also worth confirming that a reviewer handed *
 ids it owns** returns exactly those, and that an `advisory-` entry comes back in the
 documented shape rather than as prose.
 
-**A first real run.** Against a throwaway repository with an initial commit and
-`deploy.enabled: false`. The loop is the only major component that has never met reality.
-Watch the ratchet catch one regression before letting it run long — that behaviour is the
-reason the whole design exists, and it has only ever been exercised against temporary
-repositories built by the test suite.
+**A run that reaches the panel, and a ratchet that catches a real regression.** The first
+real runs died before either. Both stopped in iteration 1 with `passing: 0`, so no id ever
+entered the ratchet, no reset was ever reachable, and the reviewers were never called. The
+regression behaviour is the reason the whole design exists and it has still only ever been
+exercised against temporary repositories built by the test suite. With the runner mismatch
+fixed, this is the next thing a run should be able to demonstrate — give it enough budget to
+reach a second iteration.
+
+**The token ceiling is a stopping condition, not a cap.** A run configured with
+`tokenCeiling: 1000000` ended `BUDGET: token ceiling reached: 2100900 of 1000000` — a 2.1×
+overshoot inside a single iteration, because the remaining airtime is evaluated between
+units of work rather than enforced during one. Harmless at the $1.32 this cost; not harmless
+for an operator who reads `tokenCeiling` as a bound. Read `airtimeRemaining` before deciding
+whether the fix is a tighter check, a smaller unit of work, or honest documentation.
+
+**A phase gives no heartbeat.** `designing` was the last line of output for nine and a half
+minutes while a single Opus child ran, with nothing distinguishing it from a hung process.
+An operator watching an unattended run cannot tell progress from a hang, and the cheapest
+wrong response — killing it — costs the whole run.
 
 **A real race.** `race.enabled` is `false` by default, and the mechanism has only been
 exercised against temporary repositories: real worktrees, real cleanup and real `--ff-only`

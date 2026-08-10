@@ -1104,7 +1104,9 @@ export function driveRun(options) {
         headline: `${options.task}\n\nBefore anything else: make the test suite run and pass.`,
         reason:
           'no test passed on the previous iteration. An empty result is not evidence that nothing regressed, so the ' +
-          'ratchet cannot advance on it and nothing else can be judged',
+          'ratchet cannot advance on it and nothing else can be judged. Check the runner before rewriting the ' +
+          'tests: the gate collects them with `npx vitest run`, so a suite written for a runner vitest cannot ' +
+          'collect reports zero tests however green `npm test` looks',
       };
       closeIteration(iterationNumber, ['ratchet:no-passing-tests'], score, 0);
       continue;
