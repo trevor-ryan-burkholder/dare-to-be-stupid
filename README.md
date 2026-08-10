@@ -11,7 +11,7 @@ Building in the slice order of `DESIGN.md` §12.
 |---|---|---|
 | 1 | `hooks/guard.mjs` + `hooks/hooks.json` | done |
 | 2 | `extractTestIds` + real reporter fixtures | done |
-| 3 | ratchet | not started |
+| 3 | ratchet | done |
 | 4 | `plugins.mjs` + `init.js` | not started |
 | 5 | `driver.mjs` | not started |
 | 6 | `templates/` | not started |
@@ -64,6 +64,36 @@ The same spec run under two Playwright projects is two IDs, because it is two re
 Fixtures are real committed output from real runs of vitest 4.1.10 and Playwright 1.62.1,
 two runs of each so the suite can assert the ID set is stable across identical runs. See
 `test/fixtures/reporters/README.md` for provenance and how to regenerate them.
+
+## The ratchet
+
+`.dare/state.json` holds every test ID that has **ever** passed. An iteration that drops
+one is a regression: hard reset, the regression becomes the next build task, nothing else
+proceeds (`DESIGN.md` §1.2). This is what makes an autonomous loop terminate instead of
+oscillating.
+
+```json
+{ "version": 1, "iteration": 12, "passing": ["src/api.test.ts::rejects an expired token"], "lastGoodCommit": "a1b2c3d" }
+```
+
+`evaluateIteration` returns one of three decisions:
+
+| Decision | When | Effect |
+|---|---|---|
+| `advance` | nothing lost, something passed | passing set **unions**, iteration increments, commit recorded |
+| `reset` | any previously-passing ID is missing | hard reset to `lastGoodCommit`, regression task emitted, **state left untouched** |
+| `reject` | nothing passed at all | no state change — "no tests ran" is not evidence that nothing regressed |
+
+Regressions are checked before anything else, so an iteration that gains three new tests
+and loses one old one is still a reset (`DESIGN.md` §8: regressions outrank everything).
+
+`recordAdvance` unions and never subtracts — handed a smaller set than it holds, it keeps
+everything. `loadState` treats a *missing* file as a first run, but a corrupt, unreadable
+or unknown-version one throws: silently starting from an empty passing set would erase
+every ID ever earned while the run still looked healthy. State is written atomically via a
+temp file and a rename.
+
+`hardReset` is tested against a real git repository, not a stubbed command runner.
 
 ## Working on this repo
 
