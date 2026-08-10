@@ -49,6 +49,44 @@ repositories built by the test suite.
 
 ---
 
+## Next architecture iteration
+
+Two invariant bugs were found and fixed in 0.1.4 — the re-entrancy marker was built and
+discarded so no child ever received it, and dangerous mode was not builder-only. Both are
+described in that commit. The following were specified alongside them and deliberately
+left undone, in roughly this order:
+
+1. **Reviewer ownership.** `DESIGN.md` §1.1 describes a specialized panel, but the code has
+   every reviewer adjudicate every requirement. Heterogeneous ownership needs: each reviewer
+   receiving only the ids it owns, every owned id required back, the union of ownership
+   covering every PRD and DoD id, and an uncovered id failing *before* review begins. The
+   largest of these, and the one real spec mismatch left.
+2. **Build Brief** (`scripts/brief.mjs`) — a deterministic per-iteration task compiled from
+   driver-owned evidence rather than conversation, archived to `.dare/briefs/iter-NNN.md`.
+3. **Lesson memory** (`scripts/lessons.mjs`, `templates/lesson-extractor.md`) — sparse,
+   evidence-derived, driver-owned, never builder-writable. Extraction must never fail a
+   build. No embeddings, no vector store.
+4. **Advisory finding metadata** — severity and confidence for *advisory* findings only.
+   PRD and DoD failures stay deterministic blockers regardless of confidence.
+5. **Behavioural gates** — the `ci`, `docs` and `observability` gates currently check for
+   presence, not behaviour. Health could be probed, and a workflow inspected for whether it
+   actually invokes the validation commands.
+6. **Conditional git-history context** — only when modifying mature code, kept narrow.
+7. **Stalled-only worktree racing.** `race: { enabled, n }` is already in `DESIGN.md` §10 and
+   in the config schema, and is unimplemented. An escape maneuver, not the normal path:
+   disabled by default, budget-respecting, deterministic winner selection.
+
+When adding a phase, note that `PHASE_PERMISSIONS` in `scripts/driver.mjs` throws for an
+undeclared phase rather than defaulting. `lesson-extractor` has no policy yet, so it will
+fail closed until one is written — deliberately.
+
+## Unverified risk
+
+The `prd` and `design` phases moved from a blanket permission bypass to
+`--allowedTools Read Glob Grep Write Edit`. That has **not** been confirmed against a live
+child. If the flag does not in fact permit writing, both phases fail at the first real run.
+Cheap to check: start a small run and see whether `PRD.md` appears.
+
 ## Decisions
 
 All recorded in `DESIGN.md` §14, alongside the one question deliberately left open:
