@@ -412,6 +412,21 @@ export function parseClaudeEnvelope(stdout) {
 }
 
 /**
+ * Settings forced on every child.
+ *
+ * A child inherits the operator's active output style. Verified live: with a persona style
+ * set, a `claude -p` child asked only for the name field of package.json answered in that
+ * persona. For the reviewer that is a correctness bug rather than a cosmetic one — its
+ * output is machine-parsed, and CLAUDE.md's invariant is that the style layer may not
+ * inform reviewer JSON. For the builder it is worse in a quieter way: a persona in the
+ * system prompt changes what gets written.
+ *
+ * The driver applies the Junkion voice itself, at render, from `style.mjs`. Children speak
+ * plainly.
+ */
+const CHILD_SETTINGS = JSON.stringify({ outputStyle: 'default' });
+
+/**
  * Build the argv for a `claude -p` child.
  *
  * `--dangerously-skip-permissions` is applied only to build children. The reviewer is a
@@ -422,7 +437,7 @@ export function parseClaudeEnvelope(stdout) {
  * @returns {string[]}
  */
 export function claudeArgs(options) {
-  const args = ['-p', '--output-format', 'json', '--model', options.model];
+  const args = ['-p', '--output-format', 'json', '--settings', CHILD_SETTINGS, '--model', options.model];
   if (options.systemPrompt !== undefined && options.systemPrompt.length > 0) {
     args.push('--append-system-prompt', options.systemPrompt);
   }

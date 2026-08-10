@@ -487,10 +487,33 @@ describe('claudeArgs', () => {
       '-p',
       '--output-format',
       'json',
+      '--settings',
+      '{"outputStyle":"default"}',
       '--model',
       'claude-sonnet-5',
       'do it',
     ]);
+  });
+
+  it('forces the default output style on every child', () => {
+    // Verified live: a child inherits the operator's active output style, and a reviewer
+    // narrating in a persona corrupts the JSON the parser depends on. CLAUDE.md: the style
+    // layer may not inform reviewer JSON.
+    for (const options of [
+      { prompt: 'x', model: 'm' },
+      { prompt: 'x', model: 'm', dangerous: true },
+      { prompt: 'x', model: 'm', systemPrompt: 'be hostile' },
+    ]) {
+      const args = claudeArgs(options);
+      const at = args.indexOf('--settings');
+      assert.notEqual(at, -1, 'child was not given a settings override');
+      assert.deepStrictEqual(JSON.parse(args[at + 1]), { outputStyle: 'default' });
+    }
+  });
+
+  it('puts every flag before the prompt, so the prompt is never read as one', () => {
+    const args = claudeArgs({ prompt: 'do it', model: 'm', systemPrompt: 's', dangerous: true });
+    assert.equal(args[args.length - 1], 'do it');
   });
 
   it('skips permissions only when asked, which is only for build children', () => {
