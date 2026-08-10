@@ -46,7 +46,8 @@ Track against `DESIGN.md` §12.
 - [x] 2 — `extractTestIds` + fixtures from **real** vitest and Playwright reporter output
       (two runs of each committed; verification item 3 below still wants a live check)
 - [x] 3 — ratchet logic, isolated and unit-tested (monotonic pass-set, hard reset path)
-- [ ] 4 — `scripts/plugins.mjs` (impeccable install) + `scripts/init.js` (preflight, §3.5/§3.6)
+- [x] 4 — `scripts/plugins.mjs` (impeccable install) + `scripts/init.mjs` (preflight, §3.5/§3.6)
+      split into `config.mjs`, `security-scan.mjs`, `preflight.mjs`, `init.mjs`
 - [ ] 5 — `scripts/driver.mjs` loop wiring, terminal states, model routing (§10)
 - [ ] 6 — `templates/`: prd-author, architect, builder-system, reviewer-system
 - [ ] 7 — `output-styles/junkion.md` + launch banner and terminal-state stamps (§9.1)

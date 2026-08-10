@@ -12,7 +12,7 @@ Building in the slice order of `DESIGN.md` §12.
 | 1 | `hooks/guard.mjs` + `hooks/hooks.json` | done |
 | 2 | `extractTestIds` + real reporter fixtures | done |
 | 3 | ratchet | done |
-| 4 | `plugins.mjs` + `init.js` | not started |
+| 4 | `plugins.mjs` + `init.mjs` (preflight, security scan, config) | done |
 | 5 | `driver.mjs` | not started |
 | 6 | `templates/` | not started |
 | 7 | output style | not started |
@@ -94,6 +94,60 @@ every ID ever earned while the run still looked healthy. State is written atomic
 temp file and a rename.
 
 `hardReset` is tested against a real git repository, not a stubbed command runner.
+
+## Preflight
+
+`dare init` (`scripts/init.mjs`) is the last point at which a human is still in the loop.
+It runs every check in `DESIGN.md` §3.5 and exits non-zero if any fails — and it runs *all*
+of them even after one fails, so an operator fixes everything in one pass:
+
+```
+node scripts/init.mjs --yes
+```
+
+| Check | Fails when |
+|---|---|
+| `node-version` | below 22.12 |
+| `claude-cli` | `claude` is missing or not callable |
+| `git-repository` | not inside a work tree |
+| `clean-working-tree` | uncommitted changes exist — the ratchet's `reset --hard` would destroy them |
+| `safe-remote` | a remote's path contains `prod`, `production`, `client` or `customer` |
+| `network` | the npm registry is unreachable |
+| `config` | `.dare/config.json` is unreadable (it is scaffolded when simply absent) |
+| `agent-surface` | the security scan finds anything blocking |
+| `danger-acknowledged` | `--yes` was not passed |
+
+`.dare/config.json` validation is strict: an unknown key is an **error**, not a shrug. A
+typo'd `maxIteration` that silently kept the default would give an unattended run hours of
+behaviour nobody asked for, with no way to tell.
+
+## Agent-config security scan
+
+The guard hook is runtime safety; this is the static, pre-run half (`DESIGN.md` §3.6).
+Because the builder runs unattended with permissions skipped, it trusts the target repo
+completely — so the repo's own agent surface is scanned first. Built in rather than shelled
+out, so a required gate never depends on the network.
+
+| Blocks | Deliberately allows |
+|---|---|
+| committed credentials (AWS, Anthropic, OpenAI, GitHub, Slack, Google, private keys, assigned secrets) | `process.env.API_KEY`, empty `.env.example` entries, prose about keys |
+| prompt injection in `CLAUDE.md`/`AGENTS.md`/`.claude/*.md` | the same words in ordinary docs, and "do not ignore failing tests" |
+| hooks or MCP commands that pipe downloads into a shell, decode-and-exec, read `~/.ssh`, or POST a secret | an ordinary hook, and a hook that merely mentions `curl` |
+| agent config that is not parseable, since it cannot be reviewed | MCP servers, reported as a **warning** listing what the run will trust |
+
+Matched secrets are redacted to a four-character prefix and a length. A scanner that prints
+the credential it found has just copied it into your scrollback and your CI log.
+
+## Quality plugins
+
+`scripts/plugins.mjs` provisions the plugins in `qualityPlugins` idempotently before the
+loop. A **required** plugin that fails to install aborts the run — it contributes a
+definition-of-done line, and dropping it silently would ship having never checked that
+line. An unknown plugin name is an error rather than a guessed `npx <name>`.
+
+impeccable's `gate:design-slop` is armed only when the repo actually renders a user
+interface; on an API or CLI project it is skipped with a warning, which is the single gate
+skip `DESIGN.md` §5.1 carves out.
 
 ## Working on this repo
 

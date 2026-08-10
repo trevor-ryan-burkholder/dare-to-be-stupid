@@ -1,0 +1,301 @@
+/**
+ * Preflight (DESIGN.md §3.5).
+ *
+ * The goal is that the only things an operator does are install the plugin, be in a repo,
+ * and run `/dare`. Everything else is either checked and explained here, or installed by
+ * the run itself. Preflight runs *before* the driver and fails loud rather than starting a
+ * half-configured unattended run.
+ *
+ * Every check reports `ok`, a human `detail`, and a `fix`. All checks are attempted even
+ * after one fails, so the operator sees every problem at once rather than discovering them
+ * one restart at a time. A check that cannot be performed is a failure, never a skip.
+ */
+
+import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+
+import { ConfigError, initConfig, riskyRemoteWord } from './config.mjs';
+import { blockingFindings, formatFindings, scanAgentSurface } from './security-scan.mjs';
+
+/** @typedef {{ name: string, ok: boolean, blocking: boolean, detail: string, fix: string }} CheckResult */
+/** @typedef {(command: string, args: string[]) => { ok: boolean, stdout: string, stderr: string }} Probe */
+
+/** DESIGN.md §3.5 and CLAUDE.md hard constraint 2: matches impeccable's floor. */
+export const MINIMUM_NODE = '22.12.0';
+
+/**
+ * Compare dotted numeric versions without pulling in semver.
+ *
+ * Prerelease and build metadata are ignored rather than ordered: `22.12.0-rc.1` compares
+ * equal to `22.12.0`. This check asks whether the runtime is at least a given version, not
+ * whether it is a final release, and half-implementing semver precedence here would be a
+ * subtle wrong answer instead of an honest simplification.
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {number} negative when a < b
+ */
+export function compareVersions(a, b) {
+  const parse = (/** @type {string} */ value) =>
+    value
+      .replace(/^v/, '')
+      .split(/[-+]/)[0]
+      .split('.')
+      .map((part) => Number.parseInt(part, 10))
+      .map((part) => (Number.isNaN(part) ? 0 : part));
+  const left = parse(a);
+  const right = parse(b);
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    const difference = (left[i] ?? 0) - (right[i] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+/**
+ * Default probe: really shells out, read-only.
+ * @param {string} cwd
+ * @returns {Probe}
+ */
+export function defaultProbe(cwd) {
+  return (command, args) => {
+    try {
+      const stdout = execFileSync(command, args, { cwd, stdio: 'pipe', encoding: 'utf8' });
+      return { ok: true, stdout, stderr: '' };
+    } catch (error) {
+      const failure = /** @type {{ stdout?: string, stderr?: string, message: string }} */ (error);
+      return { ok: false, stdout: failure.stdout ?? '', stderr: failure.stderr ?? failure.message };
+    }
+  };
+}
+
+/**
+ * @param {string} name
+ * @param {boolean} ok
+ * @param {string} detail
+ * @param {string} fix
+ * @param {boolean} [blocking]
+ * @returns {CheckResult}
+ */
+function check(name, ok, detail, fix, blocking = true) {
+  return { name, ok, blocking, detail, fix };
+}
+
+/**
+ * @param {string} nodeVersion
+ * @returns {CheckResult}
+ */
+export function checkNodeVersion(nodeVersion) {
+  return check(
+    'node-version',
+    compareVersions(nodeVersion, MINIMUM_NODE) >= 0,
+    `node ${nodeVersion} (minimum ${MINIMUM_NODE})`,
+    `Install Node ${MINIMUM_NODE} or newer; it is the floor for the driver and for impeccable.`,
+  );
+}
+
+/**
+ * @param {Probe} probe
+ * @returns {CheckResult}
+ */
+export function checkClaudeCli(probe) {
+  const result = probe('claude', ['--version']);
+  return check(
+    'claude-cli',
+    result.ok,
+    result.ok ? `claude ${result.stdout.trim()}` : `claude could not be run: ${result.stderr.trim()}`,
+    'Install the Claude Code CLI and sign in; the driver spawns `claude -p` children and inherits that auth.',
+  );
+}
+
+/**
+ * @param {Probe} probe
+ * @returns {CheckResult}
+ */
+export function checkGitRepository(probe) {
+  const result = probe('git', ['rev-parse', '--is-inside-work-tree']);
+  const ok = result.ok && result.stdout.trim() === 'true';
+  return check(
+    'git-repository',
+    ok,
+    ok ? 'inside a git work tree' : 'not inside a git work tree',
+    'Run `dare` from inside a git repository; the ratchet resets to commits and cannot work without one.',
+  );
+}
+
+/**
+ * @param {Probe} probe
+ * @returns {CheckResult}
+ */
+export function checkCleanWorkingTree(probe) {
+  const result = probe('git', ['status', '--porcelain']);
+  if (!result.ok) {
+    return check('clean-working-tree', false, `git status failed: ${result.stderr.trim()}`, 'Ensure git works here.');
+  }
+  const dirty = result.stdout.split('\n').filter((line) => line.trim().length > 0);
+  return check(
+    'clean-working-tree',
+    dirty.length === 0,
+    dirty.length === 0 ? 'working tree is clean' : `${dirty.length} uncommitted change(s)`,
+    'Commit or stash first. The ratchet performs `git reset --hard`, which destroys uncommitted work.',
+  );
+}
+
+/**
+ * @param {Probe} probe
+ * @returns {CheckResult}
+ */
+export function checkRemoteIsNotProduction(probe) {
+  const result = probe('git', ['remote', '-v']);
+  const urls = result.ok
+    ? [
+        ...new Set(
+          result.stdout
+            .split('\n')
+            .map((line) => line.split(/\s+/)[1])
+            .filter((url) => typeof url === 'string' && url.length > 0),
+        ),
+      ]
+    : [];
+  if (urls.length === 0) {
+    return check('safe-remote', true, 'no remote configured', 'Nothing to do; a local-only repo is fine.');
+  }
+  for (const url of urls) {
+    const word = riskyRemoteWord(url);
+    if (word !== null) {
+      return check(
+        'safe-remote',
+        false,
+        `remote ${url} contains ${JSON.stringify(word)}`,
+        'Point dare at a throwaway repository. It is pre-production only and never runs against anything with users.',
+      );
+    }
+  }
+  return check('safe-remote', true, `${urls.length} remote(s), none look like production`, 'Nothing to do.');
+}
+
+/**
+ * Reachability of the npm registry. Needed because the run installs vitest, Playwright
+ * browsers and the quality plugins itself (DESIGN.md §3.5).
+ *
+ * @param {Probe} probe
+ * @returns {CheckResult}
+ */
+export function checkNetwork(probe) {
+  const result = probe('npm', ['ping', '--silent']);
+  return check(
+    'network',
+    result.ok,
+    result.ok ? 'npm registry reachable' : `npm registry unreachable: ${result.stderr.trim() || 'no response'}`,
+    'Restore network access; the run provisions vitest, Playwright and the quality plugins itself.',
+  );
+}
+
+/**
+ * Scaffolds `.dare/config.json` when it is absent — the one check that fixes itself.
+ *
+ * @param {string} dareDir
+ * @returns {CheckResult}
+ */
+export function checkConfig(dareDir) {
+  try {
+    const { created, path: file } = initConfig(dareDir);
+    return check('config', true, created ? `scaffolded ${file}` : `loaded ${file}`, 'Nothing to do.');
+  } catch (error) {
+    const message = error instanceof ConfigError ? error.message : /** @type {Error} */ (error).message;
+    return check('config', false, message, 'Fix or delete .dare/config.json and let `dare init` scaffold a fresh one.');
+  }
+}
+
+/**
+ * The static half of the safety story (DESIGN.md §3.6).
+ *
+ * @param {string} cwd
+ * @returns {CheckResult}
+ */
+export function checkAgentSurface(cwd) {
+  const { findings, filesScanned } = scanAgentSurface(cwd);
+  const blocking = blockingFindings(findings);
+  const warnings = findings.filter((finding) => finding.severity === 'warn');
+  const summary =
+    blocking.length === 0
+      ? `scanned ${filesScanned} file(s), no blocking findings` +
+        (warnings.length > 0 ? `\n${formatFindings(warnings)}` : '')
+      : `scanned ${filesScanned} file(s)\n${formatFindings(findings)}`;
+  return check(
+    'agent-surface',
+    blocking.length === 0,
+    summary,
+    'Remove the offending hook, instruction, MCP entry or credential. dare runs unattended with permissions ' +
+      'skipped, so it trusts this repository completely.',
+  );
+}
+
+/**
+ * The premise, acknowledged (DESIGN.md §3.5, final row).
+ *
+ * @param {{ yes: boolean, interactive: boolean }} options
+ * @returns {CheckResult}
+ */
+export function checkDangerAcknowledged(options) {
+  return check(
+    'danger-acknowledged',
+    options.yes,
+    options.yes
+      ? '--dangerously-skip-permissions acknowledged'
+      : 'the builder runs with --dangerously-skip-permissions and this run has not been acknowledged',
+    options.interactive
+      ? 'Confirm when prompted, or pass --yes.'
+      : 'Pass --yes. Unattended runs cannot ask, and the guard hook is the only limit that remains.',
+  );
+}
+
+/**
+ * Run every preflight check.
+ *
+ * @param {{
+ *   cwd: string,
+ *   yes?: boolean,
+ *   interactive?: boolean,
+ *   nodeVersion?: string,
+ *   probe?: Probe,
+ *   dareDir?: string,
+ * }} options
+ * @returns {{ ok: boolean, checks: CheckResult[], failures: CheckResult[] }}
+ */
+export function runPreflight(options) {
+  const cwd = options.cwd;
+  const probe = options.probe ?? defaultProbe(cwd);
+  const dareDir = options.dareDir ?? path.join(cwd, '.dare');
+
+  const checks = [
+    checkNodeVersion(options.nodeVersion ?? process.versions.node),
+    checkClaudeCli(probe),
+    checkGitRepository(probe),
+    checkCleanWorkingTree(probe),
+    checkRemoteIsNotProduction(probe),
+    checkNetwork(probe),
+    checkConfig(dareDir),
+    checkAgentSurface(cwd),
+    checkDangerAcknowledged({ yes: options.yes ?? false, interactive: options.interactive ?? false }),
+  ];
+
+  const failures = checks.filter((result) => !result.ok && result.blocking);
+  return { ok: failures.length === 0, checks, failures };
+}
+
+/**
+ * Render a preflight result for a terminal. Plain and unstyled: this is failure output
+ * (DESIGN.md §9).
+ *
+ * @param {{ ok: boolean, checks: CheckResult[], failures: CheckResult[] }} result
+ * @returns {string}
+ */
+export function formatPreflight(result) {
+  const lines = result.checks.map((entry) => `${entry.ok ? 'ok  ' : 'FAIL'} ${entry.name}: ${entry.detail}`);
+  if (result.failures.length > 0) {
+    lines.push('', 'preflight failed. Fix these before starting a run:');
+    for (const failure of result.failures) lines.push(`  ${failure.name}: ${failure.fix}`);
+  }
+  return lines.join('\n');
+}
