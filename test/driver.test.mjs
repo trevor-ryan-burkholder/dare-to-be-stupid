@@ -23,7 +23,11 @@ import { after, describe, it } from 'node:test';
 import { defaultConfig } from '../scripts/config.mjs';
 import {
   DriverError,
+  PHASE_PERMISSIONS,
+  REENTRANCY_ENV,
   airtimeRemaining,
+  childEnvironment,
+  permissionsFor,
   commandGates,
   dareIgnoreUpdate,
   ensureDareIgnored,
@@ -508,51 +512,78 @@ describe('parseClaudeEnvelope', () => {
   });
 });
 
-describe('claudeArgs', () => {
-  it('asks for json and pins the model', () => {
-    assert.deepStrictEqual(claudeArgs({ prompt: 'do it', model: 'claude-sonnet-5' }), [
-      '-p',
-      '--output-format',
-      'json',
-      '--settings',
-      '{"outputStyle":"default"}',
-      '--model',
-      'claude-sonnet-5',
-      'do it',
-    ]);
+describe('claudeArgs and the permission policy', () => {
+  it('asks for json, pins the model, and puts the prompt last', () => {
+    const args = claudeArgs({ prompt: 'do it', model: 'claude-sonnet-5', phase: 'builder' });
+    assert.equal(args.slice(0, 5).join(' '), '-p --output-format json --settings {"outputStyle":"default"}');
+    assert.equal(args.includes('claude-sonnet-5'), true);
+    assert.equal(args[args.length - 1], 'do it');
   });
 
-  it('forces the default output style on every child', () => {
-    // Verified live: a child inherits the operator's active output style, and a reviewer
-    // narrating in a persona corrupts the JSON the parser depends on. CLAUDE.md: the style
-    // layer may not inform reviewer JSON.
-    for (const options of [
-      { prompt: 'x', model: 'm' },
-      { prompt: 'x', model: 'm', dangerous: true },
-      { prompt: 'x', model: 'm', systemPrompt: 'be hostile' },
-    ]) {
-      const args = claudeArgs(options);
+  it('gives dangerous mode to the builder and to nothing else', () => {
+    // The builder's job is arbitrary - install packages, run tools, restructure a tree.
+    // Every other phase has a narrow job and gets exactly the tools for it.
+    for (const phase of Object.keys(PHASE_PERMISSIONS)) {
+      const dangerous = claudeArgs({ prompt: 'x', model: 'm', phase }).includes('--dangerously-skip-permissions');
+      assert.equal(dangerous, phase === 'builder', `${phase} has the wrong permission level`);
+    }
+  });
+
+  it('never lets a reading phase write', () => {
+    for (const phase of ['review', 'reality-check']) {
+      const tools = PHASE_PERMISSIONS[phase].allowedTools;
+      assert.equal(tools.includes('Write'), false, `${phase} can write`);
+      assert.equal(tools.includes('Edit'), false, `${phase} can edit`);
+      assert.equal(claudeArgs({ prompt: 'x', model: 'm', phase }).includes('--allowedTools'), true);
+    }
+  });
+
+  it('lets the document phases write, since writing a document is their job', () => {
+    for (const phase of ['prd', 'design']) {
+      assert.equal(PHASE_PERMISSIONS[phase].allowedTools.includes('Write'), true);
+    }
+  });
+
+  it('refuses a phase with no declared policy rather than inheriting one', () => {
+    // A new phase written next to the builder must not quietly acquire its powers.
+    assert.throws(() => claudeArgs({ prompt: 'x', model: 'm', phase: 'lesson-extractor' }), DriverError);
+    assert.throws(() => permissionsFor('anything-new'), DriverError);
+  });
+
+  it('forces the default output style on every phase', () => {
+    for (const phase of Object.keys(PHASE_PERMISSIONS)) {
+      const args = claudeArgs({ prompt: 'x', model: 'm', phase });
       const at = args.indexOf('--settings');
-      assert.notEqual(at, -1, 'child was not given a settings override');
+      assert.notEqual(at, -1, `${phase} was given no settings override`);
       assert.deepStrictEqual(JSON.parse(args[at + 1]), { outputStyle: 'default' });
     }
   });
 
-  it('puts every flag before the prompt, so the prompt is never read as one', () => {
-    const args = claudeArgs({ prompt: 'do it', model: 'm', systemPrompt: 's', dangerous: true });
-    assert.equal(args[args.length - 1], 'do it');
-  });
-
-  it('skips permissions only when asked, which is only for build children', () => {
-    assert.equal(claudeArgs({ prompt: 'x', model: 'm' }).includes('--dangerously-skip-permissions'), false);
-    assert.equal(
-      claudeArgs({ prompt: 'x', model: 'm', dangerous: true }).includes('--dangerously-skip-permissions'),
-      true,
-    );
-  });
-
   it('appends a system prompt when one is given', () => {
-    assert.equal(claudeArgs({ prompt: 'x', model: 'm', systemPrompt: 'be hostile' }).includes('be hostile'), true);
+    const args = claudeArgs({ prompt: 'x', model: 'm', phase: 'builder', systemPrompt: 'be hostile' });
+    assert.equal(args.includes('be hostile'), true);
+  });
+});
+
+describe('childEnvironment', () => {
+  it('marks the child as being inside a run', () => {
+    assert.equal(childEnvironment({})[REENTRANCY_ENV], '1');
+  });
+
+  it('keeps the rest of the environment, so children still find their tools', () => {
+    assert.equal(childEnvironment({ PATH: '/usr/bin', HOME: '/home/x' }).PATH, '/usr/bin');
+  });
+
+  it('produces an environment its own guard would refuse', () => {
+    // The point of the marker: a builder that shells out to the driver must be refused
+    // there, because the guard hook only sees the slash command, never our own children.
+    assert.throws(() => assertNotNested(childEnvironment(process.env)), DriverError);
+  });
+
+  it('does not mutate the environment it was handed', () => {
+    const env = { PATH: '/usr/bin' };
+    childEnvironment(env);
+    assert.equal(REENTRANCY_ENV in env, false);
   });
 });
 

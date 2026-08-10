@@ -196,7 +196,9 @@ describe('the command', () => {
     const lines = [];
     const git = (/** @type {string[]} */ args) => (args[0] === 'log' ? 'abc1234\n' : '\n');
     assert.equal(main({ log: (line) => lines.push(line), git }), 0);
-    assert.equal(lines[0], 'ok: version 0.1.3, no shipped file changed since abc1234');
+    // The shape, not the number: hard-coding the version makes this fail on every bump,
+    // which teaches whoever is bumping to edit tests reflexively.
+    assert.match(lines[0], /^ok: version \d+\.\d+\.\d+, no shipped file changed since abc1234$/);
   });
 
   // Deliberately not asserted here: whether *this* repository is releasable right now.

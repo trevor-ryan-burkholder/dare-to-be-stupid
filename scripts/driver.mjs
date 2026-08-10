@@ -445,21 +445,70 @@ export function parseClaudeEnvelope(stdout) {
 const CHILD_SETTINGS = JSON.stringify({ outputStyle: 'default' });
 
 /**
+ * What each phase is allowed to do, in one table so a new phase cannot inherit a blanket
+ * permission bypass by being written next to one that has it.
+ *
+ * Only the builder gets `--dangerously-skip-permissions`. It is the one phase whose job is
+ * arbitrary: install packages, run tools, restructure a tree. Everything else has a narrow
+ * job and gets exactly the tools for it — the document phases write, the reading phases
+ * cannot write at all. A reviewer that can edit the code it is auditing is not a cold read.
+ *
+ * @type {Record<string, { dangerous: boolean, allowedTools: string[] }>}
+ */
+export const PHASE_PERMISSIONS = {
+  builder: { dangerous: true, allowedTools: [] },
+  prd: { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep', 'Write', 'Edit'] },
+  design: { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep', 'Write', 'Edit'] },
+  review: { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep'] },
+  'reality-check': { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep'] },
+};
+
+/**
+ * @param {string} phase
+ * @returns {{ dangerous: boolean, allowedTools: string[] }}
+ * @throws {DriverError} for a phase with no declared policy
+ */
+export function permissionsFor(phase) {
+  const policy = PHASE_PERMISSIONS[phase];
+  if (policy === undefined) {
+    // Fail closed: an undeclared phase must not quietly default to the builder's powers.
+    throw new DriverError(
+      `no permission policy declared for phase ${JSON.stringify(phase)}. Add one to PHASE_PERMISSIONS ` +
+        'rather than letting a new phase inherit whatever the last one had.',
+    );
+  }
+  return policy;
+}
+
+/**
+ * The environment a child runs with.
+ *
+ * Carries the re-entrancy marker, which is the whole point: without it a builder that
+ * shells out to the driver starts a nested run and `assertNotNested` never sees it. The
+ * guard hook only catches the slash command, so this is the other half of the defence
+ * rather than a duplicate of it.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @returns {Record<string, string | undefined>}
+ */
+export function childEnvironment(env) {
+  return { ...env, [REENTRANCY_ENV]: '1' };
+}
+
+/**
  * Build the argv for a `claude -p` child.
  *
- * `--dangerously-skip-permissions` is applied only to build children. The reviewer is a
- * cold read with no reason to touch anything, and the ideate and design phases write
- * documents; none of them get it (DESIGN.md §7).
- *
- * @param {{ prompt: string, model: string, systemPrompt?: string, dangerous?: boolean }} options
+ * @param {{ prompt: string, model: string, systemPrompt?: string, phase: string }} options
  * @returns {string[]}
  */
 export function claudeArgs(options) {
+  const policy = permissionsFor(options.phase);
   const args = ['-p', '--output-format', 'json', '--settings', CHILD_SETTINGS, '--model', options.model];
   if (options.systemPrompt !== undefined && options.systemPrompt.length > 0) {
     args.push('--append-system-prompt', options.systemPrompt);
   }
-  if (options.dangerous === true) args.push('--dangerously-skip-permissions');
+  if (policy.dangerous) args.push('--dangerously-skip-permissions');
+  else if (policy.allowedTools.length > 0) args.push('--allowedTools', ...policy.allowedTools);
   args.push(options.prompt);
   return args;
 }
@@ -1055,13 +1104,15 @@ export function requiredIdsFor(prd) {
 /**
  * @param {string} command
  * @param {string[]} args
- * @param {{ cwd: string }} options
+ * @param {{ cwd: string, env?: Record<string, string | undefined> }} options
  * @returns {{ ok: boolean, status: number, stdout: string, stderr: string }}
  */
 function shell(command, args, options) {
   try {
     const stdout = execFileSync(command, args, {
       cwd: options.cwd,
+      // Defaults to this process's environment, so gates and git calls are unaffected.
+      env: options.env ?? process.env,
       stdio: 'pipe',
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
@@ -1081,12 +1132,15 @@ function shell(command, args, options) {
 /**
  * Spawn one `claude -p` child and read its envelope.
  *
- * @param {{ prompt: string, model: string, systemPrompt?: string, dangerous?: boolean, cwd: string }} options
+ * @param {{ prompt: string, model: string, systemPrompt?: string, phase: string, cwd: string,
+ *   env: Record<string, string | undefined> }} options
  * @returns {ClaudeResult}
  */
 function spawnClaude(options) {
   const args = claudeArgs(options);
-  const result = shell('claude', args, { cwd: options.cwd });
+  // Every Claude child carries the re-entrancy marker. This is the half of the no-nesting
+  // rule the guard hook cannot enforce: the hook sees tool calls, not our own children.
+  const result = shell('claude', args, { cwd: options.cwd, env: childEnvironment(options.env) });
   if (!result.ok && result.stdout.trim() === '') {
     return { ok: false, text: '', costUsd: 0, tokens: 0, raw: result.stderr };
   }
@@ -1123,8 +1177,6 @@ export function main(argv, io = {}) {
     return 1;
   }
   const { input, confirmPrd } = parseDriverArgs(argv);
-  /** @type {Record<string, string | undefined>} */
-  const childEnv = { ...env, [REENTRANCY_ENV]: '1' };
 
   write(banner({ mode }));
 
@@ -1165,8 +1217,9 @@ export function main(argv, io = {}) {
     const authored = spawnClaude({
       prompt: `${template('prd-author.md')}\n\n---\n\nThe idea:\n\n${idea}`,
       model: config.prdModel,
-      dangerous: true,
+      phase: 'prd',
       cwd,
+      env,
     });
     if (!authored.ok) {
       write(verbatim(`PRD authoring failed: ${authored.raw.slice(0, 800)}`));
@@ -1190,8 +1243,9 @@ export function main(argv, io = {}) {
   const designed = spawnClaude({
     prompt: `${template('architect.md')}\n\n---\n\nPRD.md:\n\n${prd}`,
     model: config.designModel,
-    dangerous: true,
+    phase: 'design',
     cwd,
+    env,
   });
   if (!designed.ok) {
     write(verbatim(`design phase failed: ${designed.raw.slice(0, 800)}`));
@@ -1238,15 +1292,18 @@ export function main(argv, io = {}) {
           prompt: task,
           model: config.builderModel,
           systemPrompt: template('builder-system.md'),
-          dangerous: true,
+          phase: 'builder',
           cwd,
+          env,
         }),
       review: (reviewer) =>
         spawnClaude({
           prompt: `You are the ${reviewer} auditor. Audit this repository now and return your report.`,
           model: config.reviewerModel,
           systemPrompt: template('reviewer-system.md'),
+          phase: 'review',
           cwd,
+          env,
         }),
       realityCheck: () =>
         spawnClaude({
@@ -1255,7 +1312,9 @@ export function main(argv, io = {}) {
             'is the loop chasing an impossible spec? Begin your answer with the single word buildable or unbuildable, ' +
             'then give your reasons.',
           model: config.reviewerModel,
+          phase: 'reality-check',
           cwd,
+          env,
         }),
       gates: () => {
         const browsers = ensurePlaywrightBrowsers({ cwd, dareDir, run: shell });
@@ -1328,7 +1387,6 @@ export function main(argv, io = {}) {
         `cost: $${outcome.costUsd.toFixed(4)}  passing: ${outcome.passing.length}`,
     ),
   );
-  void childEnv;
   return outcome.state === 'SHIPPED' ? 0 : 1;
 }
 
