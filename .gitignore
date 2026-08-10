@@ -1,0 +1,5 @@
+node_modules/
+*.tsbuildinfo
+
+# Run state for a `dare` run, never this repo's own (see CLAUDE.md scope note).
+.dare/
