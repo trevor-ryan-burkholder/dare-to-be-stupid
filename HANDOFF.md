@@ -128,17 +128,21 @@ application that ignores `PORT`.
 # Planned work — making the harness stack-agnostic
 
 Specified on 11 August 2026. The `.dare/**` integrity item from the same plan was implemented
-in 0.10.0. On 11 August 2026 **items 1, 6, 3, 2 and 5 were implemented** — item 1 in 0.11.0 and
-0.12.0, item 6 in 0.13.0, item 3 in 0.14.0, item 2 in 0.15.0, item 5 in 0.16.0; see below.
-**Items 4, 7, 8 and 9 remain.** What follows is scoped against the code as it stands, with the
-seams located, so it can be picked up without re-deriving them.
+in 0.10.0. On 11 August 2026 **items 1, 2, 3, 5, 6 and 7 were implemented** — item 1 in 0.11.0
+and 0.12.0, item 6 in 0.13.0, item 3 in 0.14.0, item 2 in 0.15.0, item 5 in 0.16.0, item 7 in
+0.17.0; see below. **Items 4, 8 and 9 remain.** What follows is scoped against the code as it
+stands, with the seams located, so it can be picked up without re-deriving them.
 
-Of what is left: item 7 (run manifest) is self-contained and has no blocker. Item 8
-(integration-test layer) is next in value, and the argument for it is now stronger than when it
-was written — five items landed tonight on unit tests alone, and the one live check that was
-possible without spending money (`parseNumstat` against real `git` output) is recorded above.
-Item 4 is still blocked on the `dotnet` SDK. Item 9 spends real money and needs an operator
-awake to watch it.
+Of what is left, **item 8 is the one to do next, and its argument is now much stronger than
+when it was written.** Six items landed on 11 August on unit tests alone. Every one of them is
+green, and not one of them has been near a live `claude -p` child, a real worktree, or a real
+`npx vitest run`. The closing lesson of this file — that `claudeArgs` was unit-tested while the
+defect lived in another program's parsing of the array it built — now applies to six more
+components. The one live check that was possible without spending money was done and recorded
+(`parseNumstat` against real `git` output); the rest need the tiered harness item 8 describes.
+
+Item 4 is still blocked: `dotnet` is not installed, re-checked on 11 August 2026. Item 9 spends
+real money and wants an operator awake to watch it.
 
 ## Blocker to resolve first
 
@@ -228,10 +232,16 @@ Read these before designing anything; several are smaller than they look.
    this measure understates a large asset swap. That is recorded in `DESIGN.md` §13.6 and in
    a test rather than papered over, because inventing a line count for a blob would be worse
    than admitting there is not one.
-7. **Run manifest.** A driver-owned `.dare/run.json` recording start time, start commit, plugin
-   version, config hash, claude version, models, toolchain, capabilities and tool versions. No
-   secrets. Informational: a malformed or uncreatable manifest may fail a run, but its contents
-   must never decide one. It is protected automatically by the 0.10.0 invariant.
+7. ~~**Run manifest.**~~ **Done — 0.17.0.** `scripts/run-manifest.mjs`, written once after the
+   design phase — the first moment every field exists. `DESIGN.md` §7.1. Three notes:
+   - **"Contents never decide" is enforced, not just asserted.** There is no reader function,
+     and a test greps `scripts/` for one. No code path can consult the file, which is a
+     stronger guarantee than any amount of care.
+   - **A failed version probe contributes no key.** Recording `"unknown"` would put a string in
+     the manifest that reads like a version and is not one.
+   - **It needed no new guard rule**, which is the 0.10.0 positional protection paying off
+     exactly as predicted — `guard.test.mjs` had already listed `.dare/run.json` as a
+     hypothetical, and the hypothetical came true without a code change.
 8. **Integration-test layer.** Three tiers, documented and separately runnable: deterministic
    unit tests; local integration tests needing real binaries but no paid API; live tests that
    spend money. The argv bug recorded above is the reason — `claudeArgs` was unit-tested, and

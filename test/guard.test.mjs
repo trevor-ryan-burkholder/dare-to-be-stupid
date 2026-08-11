@@ -279,7 +279,10 @@ describe('blocked: every mutation under .dare/', () => {
     // A builder that could rewrite this could declare away the capability whose gate it
     // cannot pass, and the run would ship having never checked it (DESIGN.md §3.7).
     ['.dare/capabilities.json', 'the capability manifest'],
-    ['.dare/run.json', 'a driver-owned artifact that did not exist when the list was written'],
+    // Added to this list before the file existed, as a driver-owned artifact the enumerated
+    // rule would have missed. It exists now (§7.1) and needed no new rule, which is the
+    // positional guard doing exactly what it was changed to do in 0.10.0.
+    ['.dare/run.json', 'the run manifest'],
     ['.dare/state.json.bak', 'a backup beside the ratchet'],
     ['./.dare/state.json', 'a path with a leading dot segment'],
     ['src/../.dare/state.json', 'a path that walks back into the directory'],

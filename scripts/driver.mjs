@@ -58,6 +58,7 @@ import {
   loadState,
   saveState,
 } from './ratchet.mjs';
+import { buildRunManifest, writeRunManifest } from './run-manifest.mjs';
 import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
 import { E2E_REPORT, UNIT_REPORT, gatesFor, resolveToolchain } from './toolchains/index.mjs';
 
@@ -1761,6 +1762,48 @@ export function builderSystemPrompt(cwd) {
 }
 
 /**
+ * This plugin's own version, read from the manifest that Claude Code's loader keys its
+ * install cache on — so a manifest recording 0.16.0 is evidence the 0.16.0 build ran, which
+ * is exactly the confusion CLAUDE.md's "Releasing" section exists to prevent.
+ *
+ * @returns {string}
+ */
+export function pluginVersion() {
+  const manifest = fileURLToPath(new URL('../.claude-plugin/plugin.json', import.meta.url));
+  return JSON.parse(readFileSync(manifest, 'utf8')).version;
+}
+
+/** The binaries whose versions are worth recording, and how to ask each one. */
+const VERSION_PROBES = [
+  { tool: 'node', argv: ['node', '--version'] },
+  { tool: 'npm', argv: ['npm', '--version'] },
+  { tool: 'git', argv: ['git', '--version'] },
+  { tool: 'claude', argv: ['claude', '--version'] },
+];
+
+/**
+ * What the tools on this machine call themselves.
+ *
+ * A probe that fails contributes no key. Recording `"unknown"` would put a string in the
+ * manifest that reads like a version and is not one; an absent key says plainly that nobody
+ * managed to ask.
+ *
+ * @param {import('./plugins.mjs').Runner} run
+ * @param {string} cwd
+ * @returns {Record<string, string>}
+ */
+export function toolVersions(run, cwd) {
+  /** @type {Record<string, string>} */
+  const versions = {};
+  for (const probe of VERSION_PROBES) {
+    const result = run(probe.argv[0], probe.argv.slice(1), { cwd });
+    const text = (result.stdout || '').trim();
+    if (result.ok && text !== '') versions[probe.tool] = text.split('\n')[0];
+  }
+  return versions;
+}
+
+/**
  * Every id the reviewer must return an entry for: the PRD's own numbering plus the five
  * DoD lines (DESIGN.md §4).
  *
@@ -2049,6 +2092,38 @@ export function main(argv, io = {}) {
   for (const skip of toolchainGates.skipped) {
     write(verbatim(`gate ${skip.name} not run: ${skip.reason}`));
   }
+
+  // ---- The run manifest (DESIGN.md §7.1) ---------------------------------
+  // Written once, here, because this is the first moment every field exists: the toolchain is
+  // resolved and the architect has declared. Nothing reads it back — see run-manifest.mjs for
+  // why that absence is the point rather than an omission.
+  const resolvedToolchain = resolveToolchain(cwd);
+  const capabilityRecord = resolveCapabilities({ root: cwd, declared: declaredCapabilities });
+  writeRunManifest(
+    dareDir,
+    buildRunManifest({
+      startedAt: new Date().toISOString(),
+      startCommit: shell('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim(),
+      pluginName: 'dare-to-be-stupid',
+      pluginVersion: pluginVersion(),
+      config,
+      models: {
+        builder: config.builderModel,
+        reviewer: config.reviewerModel,
+        design: config.designModel,
+        prd: config.prdModel,
+        style: config.styleModel,
+        lesson: config.lessonModel,
+      },
+      toolchain: {
+        name: resolvedToolchain.toolchain.name,
+        detected: resolvedToolchain.detected,
+        evidence: resolvedToolchain.evidence,
+      },
+      capabilities: capabilityRecord,
+      tools: toolVersions(shell, cwd),
+    }),
+  );
 
   /**
    * Every gate, named for the brief, so a builder is never surprised by one.

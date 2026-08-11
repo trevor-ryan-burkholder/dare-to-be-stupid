@@ -170,6 +170,7 @@ describe('every file the plugin depends on is present', () => {
     'scripts/plugins.mjs',
     'scripts/capabilities.mjs',
     'scripts/gate-policy.mjs',
+    'scripts/run-manifest.mjs',
     'scripts/style.mjs',
     'scripts/brief.mjs',
     'scripts/lessons.mjs',
@@ -215,6 +216,7 @@ describe('the plugin ships no runtime dependencies', () => {
       'scripts/plugins.mjs',
       'scripts/capabilities.mjs',
       'scripts/gate-policy.mjs',
+      'scripts/run-manifest.mjs',
       'scripts/style.mjs',
       'hooks/guard.mjs',
     ]) {

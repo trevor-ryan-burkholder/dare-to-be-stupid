@@ -666,6 +666,8 @@ dare-to-be-stupid/
 │   ├── health-probe.mjs          # starts the app and asks /health (§4 line 4)
 │   ├── plugins.mjs               # quality-plugin auto-install
 │   ├── capabilities.mjs          # what this project is, declared or detected (§3.7)
+│   ├── gate-policy.mjs           # which gates apply to which capabilities (§4.2)
+│   ├── run-manifest.mjs          # .dare/run.json — what this run was (§7.1)
 │   └── init.js                   # scaffolds .dare/config.json, refuses risky remotes
 ├── hooks/
 │   ├── hooks.json                # PreToolUse on Bash
@@ -679,6 +681,48 @@ dare-to-be-stupid/
 ├── output-styles/junkion.md
 └── test/fixtures/                # real vitest + playwright reporter output
 ```
+
+### 7.1 `.dare/run.json` — what this run was
+
+A run can end four hours later on a machine nobody is watching, and the first question
+afterwards is always some version of *what was this, exactly*. Reconstructing that from a
+transcript is guesswork; reconstructing it from the working tree is worse, because the run
+changed the working tree.
+
+Written once, after the design phase — the first moment every field exists:
+
+```json
+{
+  "version": 1,
+  "startedAt": "2026-08-11T04:00:00.000Z",
+  "startCommit": "abc1234…",
+  "plugin": { "name": "dare-to-be-stupid", "version": "0.17.0" },
+  "configHash": "sha256:…",
+  "models": { "builder": "claude-sonnet-5", "reviewer": "claude-opus-5", … },
+  "toolchain": { "name": "node", "detected": true, "evidence": "file package.json" },
+  "capabilities": { "declared": ["api"], "detected": ["api", "persistent-storage"], "resolved": […] },
+  "tools": { "node": "v22.12.0", "npm": "10.9.0", "git": "git version 2.43.0", "claude": "2.1.226" }
+}
+```
+
+**It records; it does not decide.** Nothing in the codebase reads it back, and a test greps
+`scripts/` to keep it that way — the strongest available guarantee that a manifest's contents
+cannot influence a run is that no code path can consult them. Failing to *write* one may fail a
+run, because an artifact the operator was promised and did not get is a real fault; what is
+*in* it decides nothing.
+
+**No secrets.** The configuration is recorded as a hash, not embedded. Today `.dare/config.json`
+holds only models, counts and booleans, so embedding would be harmless; hashing stays harmless
+after someone adds a field that is not, and still answers the question worth asking — was this
+the same configuration as that run?
+
+**Nothing is inferred.** Every value is passed in, and a missing one throws rather than
+defaulting. A manifest that quietly says `"unknown"` is worse than no manifest: it looks like
+evidence. A version probe that fails contributes no key at all, so an absent `claude` entry
+means nobody managed to ask, not that there is no Claude.
+
+It needed no new guard rule. §6's protection is positional, so a builder cannot rewrite the
+record of what it is.
 
 **Install (one time, from any Claude Code session):**
 
