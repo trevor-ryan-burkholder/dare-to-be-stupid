@@ -660,7 +660,7 @@ C5 and F4, and both are prompts rather than architecture.
 > in the general sections, which already gesture at them under "Clean up only your own mess"
 > and "Do not gold-plate either."
 
-## F2. PRD right-sizing — **OPEN**
+## F2. PRD right-sizing — **DONE (0.23.0)**
 
 `templates/prd-author.md` constrains total scope but has no per-requirement size constraint,
 and an oversized requirement surfaces as mysterious stalling rather than as a legible failure.
@@ -670,6 +670,17 @@ and an oversized requirement surfaces as mysterious stalling rather than as a le
 
 Pairs with C4 — F2 checks the input at authoring time, C4 at spawn time. No conflict with
 anything in the template today.
+
+**Landed 0.23.0** as "One requirement is one iteration's work", with both halves of the
+example pair the item gives, mirroring the testable/untestable pair already in that template.
+
+The argument was grounded in the repository rather than in taste, which the item did not ask
+for but which is what makes the rule enforceable: **the reviewer returns exactly one verdict
+object per id**, so a requirement covering twelve behaviours fails as one opaque `fail` and the
+run cannot learn which of the twelve was missing. That is also the operational test the
+template now gives the author — "can you name the observation that proves it false in one
+sentence" — which reuses the falsifiability rule sitting two sections above it rather than
+introducing a second, unrelated notion of size.
 
 ## F3. Goal transformation — **DROP as written; reduce to a phrasing note**
 

@@ -234,6 +234,27 @@ describe('the prd-author template', () => {
   it('keeps implementation choices out of the PRD', () => {
     assert.equal(PRD_AUTHOR.includes('No implementation choices'), true);
   });
+
+  it('constrains the size of one requirement, not only the size of the whole scope', () => {
+    // The template already said "prefer the smallest thing that is genuinely useful", which
+    // bounds the document. Nothing bounded a single id, and an oversized one surfaces as
+    // mysterious stalling rather than as a legible failure.
+    assert.equal(PRD_AUTHOR.includes("One requirement is one iteration's work"), true);
+  });
+
+  it('shows a right-sized requirement beside an oversized one', () => {
+    // Both halves, for the same reason the testable/untestable pair exists above it: a rule
+    // with only good examples does not tell the author where the line is.
+    assert.equal(PRD_AUTHOR.includes('Add authentication.'), true, 'loses the too-big example');
+    assert.equal(PRD_AUTHOR.includes('Too big'), true, 'never labels the counter-example');
+  });
+
+  it('ties oversizing to the one-verdict-per-id contract rather than to taste', () => {
+    // This is why the rule is load-bearing here specifically: the reviewer returns exactly
+    // one verdict object per id, so a requirement covering twelve behaviours fails as one
+    // opaque `fail` and the run cannot learn which of the twelve was missing.
+    assert.equal(PRD_AUTHOR.includes('one verdict object per id'), true);
+  });
 });
 
 describe('the architect template', () => {

@@ -32,6 +32,35 @@ PRD-2.1  The admin area should be secure and follow best practices.
 
 The second one cannot fail. That makes it worthless to both readers.
 
+## One requirement is one iteration's work
+
+Size each requirement so a single builder could finish it in one sitting. This is not a style
+preference — an oversized requirement is the failure that is hardest to diagnose from outside,
+because it does not announce itself. The builder does not fail it; it half-does it, the gates
+report the same mixture of red every iteration, the stall counter climbs, and the run ends
+without anyone being able to say which requirement was impossible.
+
+Right-sized:
+
+```
+PRD-1.3  Adding a link returns its short code, and requesting that code redirects to the
+         original URL with a 301.
+PRD-4.2  The link list has a status filter with options all, active and expired.
+```
+
+Too big — split each of these into the requirements it is hiding:
+
+```
+PRD-1.3  Add authentication.
+PRD-4.2  Build the admin dashboard.
+PRD-6.1  Refactor the API.
+```
+
+The test is whether you can name the observation that proves it false in one sentence. "Add
+authentication" has a dozen such observations and is therefore a dozen requirements, and the
+auditor returns **one** verdict object per id — so a requirement covering twelve behaviours
+fails as a single opaque `fail` with no way to tell which of the twelve was missing.
+
 ## Say what happens when it goes wrong
 
 For each feature, at least one requirement about the failure path: invalid input, missing

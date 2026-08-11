@@ -408,6 +408,18 @@ practice than the example tests they replace, is a claim from `BORROWED.md` R6 t
 tested. It is a template change: the only evidence that could exist is a generated test suite,
 and none has been generated since the section was written.
 
+## F2 — per-requirement right-sizing in the PRD author (0.23.0)
+
+**Verified.** Three tests: the section survives, both halves of the example pair survive
+(a rule with only good examples does not tell the author where the line is), and the
+justification is tied to the `one verdict object per id` contract rather than to taste.
+
+**Not verified.** No PRD has been authored since. Whether a model actually splits "add
+authentication" into a dozen ids when told to, or merely renumbers, is exactly the kind of
+claim a template change cannot settle from inside the test suite. The signal to look for on a
+dogfood run is a PRD whose requirement count is much higher than earlier runs produced — and
+if it is not, the rule needs a harder constraint than a paragraph.
+
 ---
 
 ## Fixed here, and worth knowing about
