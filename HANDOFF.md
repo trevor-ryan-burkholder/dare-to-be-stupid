@@ -128,10 +128,10 @@ application that ignores `PORT`.
 # Planned work — making the harness stack-agnostic
 
 Specified on 11 August 2026. The `.dare/**` integrity item from the same plan was implemented
-in 0.10.0. On 11 August 2026 **item 1 was implemented in 0.11.0 and 0.12.0, and item 6 in
-0.13.0** — see below. Items 2, 3, 4, 5, 7, 8 and 9 are **not implemented**. What follows is
-scoped against the code as it stands, with the seams located, so it can be picked up without
-re-deriving them.
+in 0.10.0. On 11 August 2026 **items 1, 6 and 3 were implemented** — item 1 in 0.11.0 and
+0.12.0, item 6 in 0.13.0, item 3 in 0.14.0; see below. Items 2, 4, 5, 7, 8 and 9 are **not
+implemented**. What follows is scoped against the code as it stands, with the seams located,
+so it can be picked up without re-deriving them.
 
 ## Blocker to resolve first
 
@@ -154,12 +154,10 @@ Read these before designing anything; several are smaller than they look.
   with `commandGates` about what a unit test is — it accepts `node --test`, which the unit
   gate cannot collect. Any adapter work must reconcile the two or the contradiction survives
   the refactor.
-- **Test-report normalisation already exists.** `scripts/ratchet.mjs` has `detectRunner`,
-  `parseReport` and `collapseByWorstStatus`, and already yields normalised `{ id, status }`
-  records; `ReportFormatError` is thrown on every unrecognised shape. A reporter registry is
-  therefore an **extraction** of that logic into `scripts/reporters/`, not a new subsystem.
-  The `Runner` typedef is `'vitest' | 'playwright'` and is the thing to widen. Do not rebuild
-  what is there, and do not weaken the throwing behaviour to accommodate a new format.
+- ~~**Test-report normalisation already exists.**~~ Extracted by item 3. `detectRunner`,
+  `parseReport` and `collapseByWorstStatus` now live in `scripts/reporters/index.mjs`, and the
+  `Runner` union there is still the thing to widen. Do not weaken the throwing behaviour to
+  accommodate a new format.
 - ~~**Capability detection has a nucleus.**~~ Closed by item 1. `hasFrontend` now lives in
   `scripts/capabilities.mjs` as the `web-ui` detector, with its behaviour and its tests
   unchanged.
@@ -187,10 +185,18 @@ Read these before designing anything; several are smaller than they look.
    test-report production. Non-applicable operations must be represented explicitly — a
    toolchain whose compiler subsumes typechecking should say so, not return a fake pass.
    Preserve current Node behaviour exactly; this step should be provably behaviour-neutral.
-3. **Reporter registry.** Move `ratchet.mjs`'s parsing into `scripts/reporters/`, one module
-   per format. Keep fail-closed on missing, malformed, unidentifiable and unexpectedly-empty
-   reports. The zero-tests case is not hypothetical: it is what both live runs on 10 August
-   produced, and the ratchet correctly refused to advance on it.
+3. ~~**Reporter registry.**~~ **Done — 0.14.0.** `scripts/reporters/` now holds `shared.mjs`
+   (id shape, status normalisation, `ReportFormatError`), one module per format, and
+   `index.mjs` as the registry. Behaviour-neutral: every existing extraction test passed
+   unmodified. Adding a runner is a new module, one push onto `REPORTERS`, one widened union,
+   and nothing in `ratchet.mjs`. Two things worth knowing:
+   - **`extractTestIds` stayed on the ratchet**, and that is the boundary: reporters answer
+     "what tests does this report contain", the ratchet answers "which statuses count". Mixing
+     them is how `flaky` would end up admitted.
+   - **New tests assert the registry's own invariants**, not just parsing — unique names, a
+     complete contract per entry, and disjoint detectors. The last one exists so that if a
+     future format is a superset of another, first-match-wins becomes a decision someone makes
+     on purpose rather than inherits.
 4. **.NET adapter and TRX normalisation.** Subject to the blocker above.
 5. **Capability-driven gates.** An explicit, inspectable capability-to-gate table, not a rules
    engine. Document why each universal gate is universal — build, unit tests and dependency

@@ -12,13 +12,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
+import { extractTestIds } from '../scripts/ratchet.mjs';
 import {
+  REPORTERS,
   ReportFormatError,
   collapseByWorstStatus,
   detectRunner,
-  extractTestIds,
   parseReport,
-} from '../scripts/ratchet.mjs';
+} from '../scripts/reporters/index.mjs';
 
 const FIXTURE_DIR = new URL('./fixtures/reporters/', import.meta.url);
 
@@ -370,4 +371,64 @@ describe('detectRunner', () => {
       assert.equal(detectRunner(input), expected);
     });
   }
+
+  it('does not mistake an array for a report', () => {
+    // `typeof [] === 'object'`, so an array reaches the reporters unless it is rejected here.
+    assert.equal(detectRunner([]), null);
+    assert.equal(detectRunner([{ numTotalTests: 0, testResults: [] }]), null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The registry itself
+// ---------------------------------------------------------------------------
+
+describe('the reporter registry', () => {
+  it('holds exactly the formats this build claims to read', () => {
+    assert.deepEqual(
+      REPORTERS.map((reporter) => reporter.name),
+      ['vitest', 'playwright'],
+    );
+  });
+
+  it('gives every reporter the whole contract, so a half-written one cannot register', () => {
+    for (const reporter of REPORTERS) {
+      assert.equal(typeof reporter.name, 'string');
+      assert.equal(typeof reporter.detect, 'function');
+      assert.equal(typeof reporter.parse, 'function');
+    }
+  });
+
+  it('registers no two reporters under one name', () => {
+    // `parseReport` resolves a detected name back to a reporter by `find`, so a duplicate
+    // name would silently route one format's reports into the other's parser.
+    const names = REPORTERS.map((reporter) => reporter.name);
+    assert.equal(new Set(names).size, names.length);
+  });
+
+  it('keeps the detectors disjoint, so detection order cannot change an answer', () => {
+    // First-match-wins is deliberate, but nothing today should depend on the order. If a
+    // future format is a superset of another, this fails and the ordering becomes a decision
+    // someone has to make on purpose rather than inherit.
+    /** @type {Record<string, unknown>[]} */
+    const reports = [
+      { numTotalTests: 0, testResults: [] },
+      { suites: [], config: { rootDir: '/repo' } },
+    ];
+    for (const report of reports) {
+      const matched = REPORTERS.filter((reporter) => reporter.detect(report)).map((reporter) => reporter.name);
+      assert.equal(matched.length, 1, `${JSON.stringify(report)} matched ${matched.join(', ')}`);
+    }
+  });
+
+  it('names every known reporter when it can identify none of them', () => {
+    // The operator reading this abort is trying to work out which runner to configure.
+    assert.throws(
+      () => parseReport({ unrecognised: true }, { rootDir: '/repo' }),
+      (error) =>
+        error instanceof ReportFormatError &&
+        error.message.includes('vitest') &&
+        error.message.includes('playwright'),
+    );
+  });
 });

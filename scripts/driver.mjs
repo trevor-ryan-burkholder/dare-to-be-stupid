@@ -48,13 +48,13 @@ import {
 } from './lessons.mjs';
 import { installQualityPlugins } from './plugins.mjs';
 import { applyWinner, createWorktrees, parseNumstat, removeWorktrees, selectWinner, shouldRace } from './race.mjs';
+import { parseReport } from './reporters/index.mjs';
 import {
   evaluateIteration,
   extractTestIds,
   formatBlooperRecord,
   hardReset,
   loadState,
-  parseReport,
   saveState,
 } from './ratchet.mjs';
 import { banner, render, stamp, styleMode, verbatim } from './style.mjs';

@@ -568,6 +568,11 @@ dare-to-be-stupid/
 ├── scripts/
 │   ├── driver.mjs                # the loop. node, no deps.
 │   ├── ratchet.mjs               # ratchet + extractTestIds (unit-tested first)
+│   ├── reporters/                # one module per test-report format (§11)
+│   │   ├── index.mjs             # the registry: detect, dispatch, collapse
+│   │   ├── shared.mjs            # id shape, status normalisation, ReportFormatError
+│   │   ├── vitest.mjs
+│   │   └── playwright.mjs
 │   ├── brief.mjs                 # compiles the per-iteration Build Brief (§8.1)
 │   ├── lessons.mjs               # sparse evidence-derived lesson memory (§13.8)
 │   ├── history.mjs               # conditional git-history context (§8.2)
@@ -760,6 +765,29 @@ Playwright JSON reporters; if a reporter format differs, the ratchet sees fewer 
 quietly stops protecting anything. Build it with fixture tests: feed real reporter output
 from both, assert the ID set is non-empty and stable across runs. Do not trust a long run
 until that's verified.
+
+**The registry.** Detection and the per-format parsers live in `scripts/reporters/`, one
+module per format, behind a three-field contract: `{ name, detect, parse }`. Adding a runner
+is a new module, one push onto `REPORTERS`, and one widened union — and crucially it does not
+touch `ratchet.mjs`, which owns the termination guarantee and is a bad place to be doing
+exploratory work on an unfamiliar JSON shape.
+
+The split of responsibility is the load-bearing part, so it is stated plainly:
+
+| question | answered by |
+|---|---|
+| what format is this, and what tests does it contain | `reporters/` |
+| what shape is a test id | `reporters/shared.mjs`, once, for all formats |
+| which statuses count as evidence | `ratchet.mjs` (`extractTestIds`; `flaky` does not count) |
+| may the ratchet advance on this | `ratchet.mjs` (an empty set never advances) |
+
+Four behaviours must survive any widening, and each has a test. **Unidentifiable throws** —
+never an empty id set, which reads exactly like a green run. **Malformed throws**, naming what
+was wrong. **An unknown status throws**, naming the value, because mapping it to `passed`
+would admit it to the ratchet and mapping it to `failed` would fire a hard reset on a word
+nobody has read. **Empty does not throw** — "no test files" is a real state, and refusing to
+advance on it belongs to the ratchet, not to a parser. That last one is not theoretical: it is
+what both live runs on 10 August 2026 produced, and every component behaved correctly.
 
 ---
 
