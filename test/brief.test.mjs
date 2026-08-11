@@ -268,15 +268,33 @@ describe('writeBrief', () => {
 });
 
 describe('per-toolchain guidance in the brief', () => {
-  it('renders the fragment under a heading naming the toolchain', () => {
+  it('renders the fragment verbatim, letting it own its heading', () => {
     const brief = compileBrief({
       iteration: 1,
       chaos: 1,
       objective: GATES_OBJECTIVE,
       toolchain: { name: 'dotnet', guidance: '## Building this with .NET\n\nAdd it to the solution.' },
     });
-    assert.equal(brief.includes('## Building this with dotnet'), true);
+    assert.equal(brief.includes('## Building this with .NET'), true);
     assert.equal(brief.includes('Add it to the solution.'), true);
+  });
+
+  it('does not add a heading of its own on top of the fragment’s', () => {
+    // The first dogfood run produced exactly this in iter-001.md:
+    //
+    //     ## Building this with node
+    //
+    //     ## Building this with Node
+    //
+    // Two headings, one section. No test saw it because both halves were individually
+    // correct — the renderer added a heading and the fragment already had one.
+    const brief = compileBrief({
+      iteration: 1,
+      chaos: 1,
+      objective: GATES_OBJECTIVE,
+      toolchain: { name: 'node', guidance: '## Building this with Node\n\nPick a module system.' },
+    });
+    assert.equal((brief.match(/^## Building this with /gm) ?? []).length, 1);
   });
 
   it('says so when there is no fragment, rather than omitting the section', () => {

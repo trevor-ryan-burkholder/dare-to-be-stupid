@@ -735,7 +735,7 @@ run writes anything. `DESIGN.md` §7.2. Four decisions:
 > The idea stands; the stated reason does not. Say what is actually lost between runs before
 > designing where to put it.
 
-## C3. Live integration verification — **DONE (0.18.0)** / .NET line **BLOCKED**
+## C3. Live integration verification — **DONE (0.18.0); coverage extended through 0.32.0**
 
 Three tiers, separately runnable: `npm test`, `npm run test:integration`, `npm run test:live`.
 Tier 3 fails when unarmed rather than skipping. `DESIGN.md` §11.1, `CLAUDE.md` "Test gates",
@@ -743,8 +743,17 @@ Tier 3 fails when unarmed rather than skipping. `DESIGN.md` §11.1, `CLAUDE.md` 
 allowed-tools, dangerous mode, hook behaviour, worktree race lifecycle, generated-app health
 probe.
 
-The .NET command check is blocked with B3. **A9's builder output contract is a new tier-3
-candidate** — add it when A9 lands.
+**The .NET line is no longer blocked.** B3 (0.32.0) verified every command against `dotnet
+8.0.423` on a scaffolded solution, in both directions — the audit exiting 1 on a vulnerable
+package and 0 once it was removed. That is the live check this item asked for, performed at the
+adapter rather than in tier 3, and it found what no structural test could: `dotnet list package
+--vulnerable` reports a High advisory and exits 0.
+
+**A9's output contract has a tier-3 test that has never run.**
+`test/live/assumptions-contract.live.test.mjs` exists as of 0.30.0 and is armed only by
+`DARE_LIVE=1`, which spends money. Until it runs, that contract is asserted and unverified —
+by this repository's own rule, the state most likely to be mistaken for coverage. Run it before
+D2, not after.
 
 ## C4. Context budget check — **DONE (0.20.0)**
 

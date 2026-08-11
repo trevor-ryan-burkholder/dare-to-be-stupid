@@ -292,6 +292,135 @@ Prefer extraction to rewriting. Prefer several committable states to one large c
 
 ---
 
+# Dogfood run — 11 August 2026, case D (deliberate rejection)
+
+The first dogfood run this project has performed since 10 August, and the first ever against a
+budget an operator set deliberately. Throwaway repository, PRD written to contain one genuinely
+hard requirement (`PRD-2.1`, a real text-layer PDF export under 200 kB) among easy ones, so
+that **success means the run does not ship**.
+
+Plugin verified at `0.34.0` / `1ff1ac3` in `installed_plugins.json` before starting, with the
+cache confirmed to physically contain `trx.mjs` and `dotnet.mjs`. That check is not ceremony:
+the loader is keyed by version and a stale copy is indistinguishable from a wrong fix.
+
+## The finding: `tokenCeiling` does not count Phase 0 or Phase 1
+
+**This is a defect in a safety limit, and it was found in the first twelve minutes.**
+
+```
+design: returned after 737s, 2965864 tokens
+...
+100 PERCENT OF OUR BROADCAST DAY REMAINS. STAY TUNED.
+```
+
+The design child spent **2,965,864 tokens against a 2,000,000 ceiling**, and the airtime counter
+reported the full budget remaining. It is not a rendering fault. The structure is:
+
+| line | what | charged? |
+|---|---|---|
+| `driver.mjs:2349` | `runChild` — PRD authoring (Phase 0) | **no** |
+| `driver.mjs:2375` | `runChild` — design (Phase 1) | **no** |
+| `driver.mjs:1045` | `charge()` — the entire budget accounting | inside `driveRun` |
+| `driver.mjs:2701` | `driveRun({…})` is finally called | — |
+
+Both pre-loop phases run in `main`, before `driveRun` exists, and check only `result.ok`.
+`driveRun` then begins its own accounting at `spentTokens: 0` with the **full** ceiling
+available again.
+
+**This file's own claim was false.** It said: *"Every child's spend is now charged and tested
+the moment it returns, at all six sites, which bounds the overshoot to one child."* That is true
+of the six sites inside `driveRun` and untrue of the two outside it — and the design phase is the
+single most expensive child in the pipeline, so the uncounted half is the expensive half.
+
+Consequence for an operator: a run configured for 2M tokens can spend 2M **plus** an entire PRD
+and design phase, plus the documented one-child overshoot. Observed here as roughly 5M against a
+stated 2M. `DESIGN.md` §3.5's warning to "budget for the ceiling plus one expensive child" is
+therefore also understated.
+
+Not yet fixed. The fix is not simply moving the call sites: Phase 0 and Phase 1 must run before
+the loop, so either the ceiling check moves out of `driveRun` into a value threaded through both,
+or `driveRun` is handed the spend already incurred. The second is smaller and keeps one accounting
+path.
+
+**Nothing about this required the run to finish**, which is worth noting on its own: the most
+valuable result of the session's first dogfood arrived twelve minutes in, from reading two log
+lines against the code.
+
+## The second finding: one child can be ten times the ceiling
+
+```
+builder: returned after 1435s, 20223215 tokens
+BUDGET: token ceiling reached: 20223215 of 2000000
+iterations: 0  tokens: 20223215  cost: $9.4345  passing: 0
+```
+
+**A single builder child spent 20.2 million tokens against a 2 million ceiling.** The check
+itself worked exactly as designed — `charge()` fired the moment the child returned and ended the
+run — so the mechanism this file describes is confirmed working *at the sites it covers*. What
+is not confirmed is the conclusion drawn from it.
+
+This file said: *"Budget for the ceiling plus one expensive child."* That reads as a modest
+allowance. Measured, "one expensive child" was **10× the entire ceiling**, and there is no
+mechanism that could have stopped it: nothing prices a child before running it, and a `claude -p`
+call has no token limit the driver can set. For small ceilings `tokenCeiling` is therefore not a
+budget at all — it is a *stop signal that fires after the fact*, and the smaller the ceiling the
+less it means.
+
+The honest statement to replace it with: **a run can cost the PRD phase, plus the design phase,
+plus the ceiling, plus one unbounded child.** An operator setting 2M should expect the
+possibility of 20M+.
+
+## What the run did establish, live, for the first time
+
+| thing | evidence |
+|---|---|
+| preflight | 9 checks passed; failed correctly on `danger-acknowledged` until `--yes` |
+| `.dare/run.json` (§7.1) | written complete — plugin `0.34.0`, real tool versions, **no `"unknown"` anywhere** |
+| capability declaration (§3.7) | architect declared `api, persistent-storage`; run aborted-free |
+| capability-driven gates (§4.2) | `e2e` skipped with its full written reason, on a project with no browser |
+| toolchain resolution (§3.8) | `node (file package.json)` |
+| **C4 prompt measurement (§3.9)** | design 5,314 chars; builder 16,050 chars — the first real figures this project has ever had |
+| **F1 chaos-1 text** | reached the builder verbatim in `iter-001.md` |
+| **B6 guidance** | rendered — and carried a duplicate heading, see below |
+| guard hook | denied this session's own Bash containing the slash command, unscripted |
+
+The builder produced a plausible application — 10 source files, **6 test files**, and a
+`package.json` whose `lint`, `build` and `typecheck` scripts run real work rather than `true`.
+It was building `src/pdf/render-titles.js`, i.e. genuinely attempting `PRD-2.1`, when the budget
+ended the run.
+
+## The third finding: B6's guidance rendered a duplicate heading
+
+`iter-001.md` contained:
+
+```
+## Building this with node
+
+## Building this with Node
+```
+
+`brief.mjs` added a heading *and* the fragment supplied its own. **No test caught it because
+both halves were individually correct.** Fixed at 0.35.0, with a regression test asserting
+exactly one `## Building this with` heading. This is the smallest finding here and the best
+argument for the exercise: it is invisible to unit tests by construction, and obvious in one
+glance at a real artifact.
+
+## What the run did NOT establish
+
+**Case D's actual question is still unanswered.** The run died in iteration 1 on budget, so the
+gates never ran, the ratchet never advanced (`passing: 0`), and **the cold panel was never
+called**. Whether review is genuinely fail-closed against a stubbed `PRD-2.1` remains exactly as
+unproven as it was on 10 August — for a new reason, but unproven.
+
+Still never observed: any gate executing, any test id entering the ratchet, a hard reset, a
+reviewer verdict, a pin, an assumptions block, the mutation gate, `.dare/runs/NNN/` archiving.
+
+**To answer case D, the budget defect has to be fixed first.** With Phase 0 and Phase 1
+uncounted and a single builder capable of 20M tokens, no ceiling an operator sets is
+meaningful, and every further scenario risks the same death before the interesting part.
+
+---
+
 # Brief items — what was actually verified
 
 `BRIEF.md` is the work list and carries the statuses. This section carries the *evidence*, in

@@ -1,6 +1,6 @@
 {
   "name": "dare-to-be-stupid",
-  "version": "0.34.0",
+  "version": "0.35.0",
   "description": "One command hands a PRD to an autonomous loop that designs, builds, gates, reviews and ships until it passes an enterprise definition of done, or the budget dies. Pre-production only.",
   "author": {
     "name": "Trevor Ryan Burkholder"

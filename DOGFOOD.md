@@ -1,6 +1,14 @@
-# Dogfood runs — prepared, not performed
+# Dogfood runs — case D performed 11 August 2026; the rest prepared
 
-`BRIEF.md` D2 and `HANDOFF.md` item 9. **Nothing in this file has been run.** It was written so
+`BRIEF.md` D2 and `HANDOFF.md` item 9.
+
+> **Case D was run on 11 August 2026 and ended `BUDGET` in iteration 1.** It found three
+> defects — the token ceiling not counting Phase 0 or Phase 1, a single builder child spending
+> 10× the ceiling, and a duplicate heading in the toolchain guidance. **It did not answer case
+> D's own question**, because the panel was never reached. Full record in `HANDOFF.md`. Fix the
+> budget accounting before running anything else here, or every scenario will die the same way.
+
+**Nothing else in this file has been run.** It was written so
 that an operator with an hour and a budget can execute it without re-deriving anything, which is
 what the brief asks for when Claude usage cannot be consumed: *"prepare reproducible dogfood
 scripts and document exact commands, expected states and evidence to collect. Do not claim

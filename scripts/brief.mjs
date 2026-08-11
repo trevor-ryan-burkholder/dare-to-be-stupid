@@ -232,19 +232,25 @@ export function compileBrief(input) {
   }
 
   if (input.toolchain !== undefined && input.toolchain !== null) {
-    lines.push('', `## Building this with ${input.toolchain.name}`, '');
     if (input.toolchain.guidance === '') {
       // Announced rather than omitted, for the same reason a skipped gate is. A brief that
       // silently carries guidance for one toolchain and not another reads, to the next
-      // reader, as a toolchain that needed none.
+      // reader, as a toolchain that needed none. This branch supplies the heading, because
+      // there is no fragment to supply one.
       lines.push(
+        '',
+        `## Building this with ${input.toolchain.name}`,
+        '',
         `There is no guidance fragment for the ${input.toolchain.name} toolchain, so this brief carries none.`,
         'That is a gap in the plugin rather than a statement that this stack has no idioms worth knowing.',
       );
     } else {
-      // Rendered verbatim. The fragment owns its own headings, and rewriting it here would
-      // mean two places deciding what the builder reads about its stack.
-      lines.push(input.toolchain.guidance.trim());
+      // Rendered verbatim, heading and all. The fragment owns its own headings — and the
+      // first dogfood run proved why that has to mean *only* the fragment: this branch used
+      // to add one too, so `iter-001.md` carried "## Building this with node" immediately
+      // followed by the fragment's own "## Building this with Node". Two headings, one
+      // section, and no test saw it because both halves were individually correct.
+      lines.push('', input.toolchain.guidance.trim());
     }
   }
 
