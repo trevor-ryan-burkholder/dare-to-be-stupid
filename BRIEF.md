@@ -701,7 +701,7 @@ introducing a second, unrelated notion of size.
 > `prd-author.md` already teaches this by example. Strengthening the existing text is the whole
 > of the available win.
 
-## F4. Condition lessons on circumstances — `templates/lesson-extractor.md` — **OPEN**
+## F4. Condition lessons on circumstances — `templates/lesson-extractor.md` — **DONE (0.24.0)**
 
 From `BORROWED.md` R10. `HANDOFF.md` records the lesson store's usefulness as unproven in a way
 the tests cannot reach, and names the failure exactly: read `.dare/lessons.json` after a real run
@@ -718,6 +718,27 @@ recognise the same situation. A trigger that matches everything is the same defe
 trigger, and is harder to see because it passes validation.
 
 Template change only. `lessons.mjs` needs no change; its validation already fails closed.
+
+**Landed 0.24.0** as "A trigger is a condition, not a summary". `lessons.mjs` was indeed not
+touched, as predicted.
+
+The template already said triggers must be words that *literally appear* on recurrence, so the
+gap was narrower than the item implies — what was missing was the **direction of the question**
+and a way to check the answer. Both are now explicit:
+
+- **The direction.** Not "what did we learn", which is already written in `lesson` and is what
+  produces a keyword-shaped restatement of it. Instead: *what would I have to be looking at to
+  need this?* Two worked pairs show the same lesson yielding a summary trigger and a condition
+  trigger, so the difference is visible rather than asserted.
+- **The check.** Test each trigger against the evidence you were handed — does the word occur
+  in a test id, a file path or the error output? A trigger that does not match the failure it
+  was extracted *from* cannot match that failure's recurrence. If none survive, return `null`.
+
+The reason this is worth a paragraph rather than a sentence is stated in the template itself:
+`validateLesson` rejects a lesson with **no** trigger outright, but a lesson with a trigger
+matching **everything** passes validation and is then injected into every later brief. It is
+the one failure in the lesson store that no code can fail closed on, which is exactly why it
+had to be moved into the prompt.
 
 ---
 

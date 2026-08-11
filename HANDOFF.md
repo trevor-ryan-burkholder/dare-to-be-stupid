@@ -420,6 +420,21 @@ claim a template change cannot settle from inside the test suite. The signal to 
 dogfood run is a PRD whose requirement count is much higher than earlier runs produced — and
 if it is not, the rule needs a harder constraint than a paragraph.
 
+## F4 — lesson triggers as conditions (0.24.0)
+
+**Verified.** Four tests hold the new section: the reframed question, the self-check against
+the supplied evidence, the statement that a vague trigger is worse than none *because it passes
+validation*, and both columns of the worked example pair. `scripts/lessons.mjs` was not
+touched, as the item predicted — its validation already fails closed on the half it can see.
+
+**Not verified, and this is the item that most needs a real run.** This file's whole purpose is
+the thing `HANDOFF.md` has recorded as unprovable by the test suite: whether the store fills
+with conditions or with generalities. The instruction to test each trigger against the supplied
+evidence is now in the prompt; nothing has checked whether a model *does* it. The procedure is
+unchanged and still the right one — **read `.dare/lessons.json` after the first real run, and
+delete it if it has filled with generalities.** What is new is that there is now a specific
+thing to look at: whether the trigger words appear verbatim in the failure the lesson came from.
+
 ---
 
 ## Fixed here, and worth knowing about

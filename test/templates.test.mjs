@@ -327,6 +327,37 @@ describe('the lesson-extractor template and the lesson parser agree', () => {
     assert.equal(LESSON_EXTRACTOR.includes('Useless triggers'), true);
   });
 
+  it('asks for the circumstances rather than a restatement of the lesson', () => {
+    // The store's usefulness is unproven in a way the tests cannot reach, and the failure
+    // mode is named: a store full of generalities. Whether the extractor fills `trigger`
+    // with conditions or with keyword-shaped restatements is where that is decided.
+    assert.equal(LESSON_EXTRACTOR.includes('A trigger is a condition, not a summary'), true);
+    assert.equal(LESSON_EXTRACTOR.includes('what would I have to be looking at to need this?'), true);
+  });
+
+  it('gives the extractor a check it can run against the evidence it was handed', () => {
+    // The instruction that makes this actionable rather than aspirational: a trigger that
+    // does not match the failure it was extracted *from* cannot match the recurrence.
+    assert.equal(LESSON_EXTRACTOR.includes('actually occurs in it'), true);
+    assert.equal(LESSON_EXTRACTOR.includes('will not match that failure'), true);
+  });
+
+  it('says a vague trigger is worse than none, because validation cannot catch it', () => {
+    // `validateLesson` rejects a lesson with no trigger outright. A lesson with a trigger
+    // matching everything passes, and is then injected into every later brief — so this is
+    // the one failure in the lesson store that no code can fail closed on.
+    assert.equal(LESSON_EXTRACTOR.includes('same defect as having no trigger at all'), true);
+    assert.equal(LESSON_EXTRACTOR.includes('passes validation'), true);
+  });
+
+  it('pairs every trigger example with the useless version of the same lesson', () => {
+    // Both columns, for the reason the PRD author shows a testable requirement beside an
+    // untestable one: the difference is the teaching, and one column alone is a slogan.
+    assert.equal(LESSON_EXTRACTOR.includes('a summary trigger (useless)'), true);
+    assert.equal(LESSON_EXTRACTOR.includes('a condition trigger (useful)'), true);
+    assert.equal(LESSON_EXTRACTOR.includes('no test suite found'), true, 'lost the error-text trigger example');
+  });
+
   it('does not ask what the builder learned', () => {
     // The whole design of this memory is that lessons come from evidence, never from
     // self-report. A model asked what it learned will always answer.

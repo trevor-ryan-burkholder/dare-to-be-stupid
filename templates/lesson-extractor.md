@@ -53,6 +53,34 @@ appear* when this problem recurs — a library name, a filename, an API, an erro
 
 `scope` is one or two words for the area: `authentication`, `e2e`, `build`, `database`.
 
+### A trigger is a condition, not a summary
+
+This is the part that decides whether the store is worth keeping. Do not describe the lesson
+again in keyword form. Describe **the circumstances a later iteration would find itself in**
+when this problem is about to happen again: what was true of the tree, what the objective was,
+and what the gate output said.
+
+Ask the question in that direction. Not *what did we learn* — you already wrote that in
+`lesson`. Ask: **what would I have to be looking at to need this?**
+
+| the lesson says | a summary trigger (useless) | a condition trigger (useful) |
+|---|---|---|
+| storageState captured against a booting server has no session cookie | `["lesson", "auth", "timing"]` | `["storagestate", "playwright", "econnrefused", "beforeall"]` |
+| `--outputFile` resolves against the config root | `["vitest", "reporting", "paths"]` | `["--outputfile", "no test suite found", "vitest.config"]` |
+
+The difference is that the right-hand column contains strings that will **appear in the text
+of the next failure**. The left-hand column contains strings that describe this one.
+
+**Then check your own work, because this is cheap and the failure is invisible otherwise.**
+Look at the evidence you were handed and ask whether each trigger word actually occurs in it —
+in a test id, a file path, or the error output. A trigger that does not match the failure it
+was extracted *from* will not match that failure's recurrence either. Drop it.
+
+If none of your triggers survive that check, return `null`. **A trigger that matches
+everything is the same defect as having no trigger at all, and it is worse, because a lesson
+with no trigger is rejected outright while a lesson with a vague one passes validation and
+gets injected into every later brief for the rest of the run.**
+
 ---
 
 ## Output
