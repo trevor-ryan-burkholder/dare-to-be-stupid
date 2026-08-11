@@ -58,6 +58,7 @@ import {
   saveState,
 } from './ratchet.mjs';
 import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
+import { E2E_REPORT, UNIT_REPORT, gatesFor, resolveToolchain } from './toolchains/index.mjs';
 
 /** @typedef {import('./config.mjs').DareConfig} DareConfig */
 /** @typedef {'SHIPPED' | 'STALLED' | 'BUDGET' | 'ABORTED'} TerminalState */
@@ -1323,31 +1324,51 @@ export function ensureDareIgnored(cwd) {
 // Phase 3 gate definitions (DESIGN.md §2, §4)
 // ===========================================================================
 
-/** Where the driver expects each runner to leave its JSON report. */
-export const UNIT_REPORT = 'test-report.json';
-export const E2E_REPORT = 'e2e-report.json';
+/** Where the RED evidence lives. The runner report paths belong to the toolchain (§3.8). */
 export const RED_EVIDENCE = 'red-evidence.json';
 
 /**
  * The gates that are just an exit code.
  *
- * The unit gate writes its reporter output where the ratchet will look for it, because a
- * run whose tests passed but produced no machine-readable report gives the ratchet nothing
- * to hold — and the ratchet is what makes the loop terminate.
+ * The commands themselves come from the resolved toolchain (§3.8) rather than being written
+ * here, so that teaching the loop a second stack is a new adapter and not an edit to the
+ * driver. The unit gate writes its reporter output where the ratchet will look for it,
+ * because a run whose tests passed but produced no machine-readable report gives the ratchet
+ * nothing to hold — and the ratchet is what makes the loop terminate.
  *
- * @param {string} dareDir
+ * A toolchain that declares an operation not-applicable produces no gate for it. That is the
+ * one sanctioned way a gate can be absent, it requires a stated reason, and the reason is
+ * surfaced by {@link gateSummary} rather than being swallowed.
+ *
+ * @param {string} root the tree being gated
+ * @param {string} dareDir where that tree's reports are written
  * @returns {Gate[]}
  */
-export function commandGates(dareDir) {
-  const unitOut = path.join(dareDir, UNIT_REPORT);
-  return [
-    { name: 'build', command: ['npm', 'run', 'build'], required: true },
-    { name: 'lint', command: ['npm', 'run', 'lint'], required: true },
-    { name: 'types', command: ['npm', 'run', 'typecheck'], required: true },
-    { name: 'unit', command: ['npx', 'vitest', 'run', '--reporter=json', `--outputFile=${unitOut}`], required: true },
-    { name: 'e2e', command: ['npx', 'playwright', 'test'], required: true },
-    { name: 'security-audit', command: ['npm', 'audit', '--audit-level=high'], required: true },
-  ];
+export function commandGates(root, dareDir) {
+  return gatesFor(resolveToolchain(root).toolchain, { root, dareDir }).gates;
+}
+
+/**
+ * Every gate a toolchain will run, and every operation it has declined, with reasons.
+ *
+ * Two lists rather than one because they are read for different purposes: the gates go to the
+ * builder as work it must satisfy, and the skips go to the operator as claims to check. A
+ * skip that never reaches either audience is a silent one.
+ *
+ * @param {string} root
+ * @param {string} dareDir
+ * @returns {{ toolchain: string, detected: boolean, evidence: string, gates: Gate[], skipped: { name: string, reason: string }[] }}
+ */
+export function gateSummary(root, dareDir) {
+  const resolved = resolveToolchain(root);
+  const { gates, skipped } = gatesFor(resolved.toolchain, { root, dareDir });
+  return {
+    toolchain: resolved.toolchain.name,
+    detected: resolved.detected,
+    evidence: resolved.evidence,
+    gates,
+    skipped,
+  };
 }
 
 /**
@@ -1397,31 +1418,18 @@ function anySourceMatches(dir, depth, predicate) {
 }
 
 /**
- * The validation commands DoD line 3 requires a CI workflow to actually run.
- *
- * Matching is on the command text of `run:` steps. It is regex over YAML rather than a
- * parsed document because parsing YAML would mean a runtime dependency, and the question
- * being asked is narrow enough to answer without one: does any step in any workflow invoke
- * this class of command. A workflow that calls a script which calls the real command will
- * read as missing, which errs toward failing a gate — the correct direction.
- *
- * @type {{ name: string, pattern: RegExp }[]}
- */
-const CI_REQUIRED_COMMANDS = [
-  { name: 'build', pattern: /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?build\b/ },
-  { name: 'lint', pattern: /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?lint\b|\beslint\b/ },
-  { name: 'types', pattern: /\btypecheck\b|\btype-check\b|\btsc\b/ },
-  { name: 'unit', pattern: /\bvitest\b|\bjest\b|node\s+--test\b|\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b/ },
-  { name: 'e2e', pattern: /\bplaywright\b|\bcypress\b|\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test:)?e2e\b/ },
-];
-
-/**
  * Does this repository have CI that runs the validation set, or only a file that says CI?
  *
  * The presence check this replaces passed on an empty workflow. That is not a hypothetical:
  * a builder under pressure to satisfy a gate named `ci` will write the smallest file that
  * makes the gate stop complaining, and the smallest file that satisfies "a YAML file exists
  * under .github/workflows" runs nothing at all.
+ *
+ * Which commands count comes from the resolved toolchain (§3.8), and that is a fix rather
+ * than a tidy-up. The list used to live here and accepted `node --test` for the unit step
+ * while the unit *gate* ran `npx vitest run` — so a workflow could satisfy CI with a runner
+ * the gate cannot collect from. One source now, and a test asserting each pattern matches its
+ * own operation's command.
  *
  * @param {string} cwd
  * @returns {{ workflows: string[], covered: string[], missing: string[] }}
@@ -1446,8 +1454,9 @@ export function inspectCiWorkflows(cwd) {
   }
   const text = steps.join('\n');
 
-  const covered = CI_REQUIRED_COMMANDS.filter((command) => command.pattern.test(text)).map((c) => c.name);
-  const missing = CI_REQUIRED_COMMANDS.filter((command) => !covered.includes(command.name)).map((c) => c.name);
+  const required = resolveToolchain(cwd).toolchain.ci;
+  const covered = required.filter((entry) => entry.pattern.test(text)).map((entry) => entry.operation);
+  const missing = required.filter((entry) => !covered.includes(entry.operation)).map((entry) => entry.operation);
   return { workflows, covered, missing };
 }
 
@@ -1472,18 +1481,15 @@ export function findHealthPath(cwd) {
 /**
  * The command that starts this application, or null when it declares none.
  *
+ * Asked of the toolchain (§3.8), because "how do I start this" has no answer that is true of
+ * every stack — and a health probe pointed at the wrong start command reports a dead service
+ * that is merely unstarted.
+ *
  * @param {string} cwd
  * @returns {string | null}
  */
 export function startCommand(cwd) {
-  const manifest = path.join(cwd, 'package.json');
-  if (!existsSync(manifest)) return null;
-  try {
-    const scripts = JSON.parse(readFileSync(manifest, 'utf8')).scripts ?? {};
-    return typeof scripts.start === 'string' && scripts.start.trim() !== '' ? 'npm start' : null;
-  } catch {
-    return null;
-  }
+  return resolveToolchain(cwd).toolchain.startCommand(cwd);
 }
 
 /** Where the health probe lives, resolved against this file so it works from any cwd. */
@@ -2035,9 +2041,18 @@ export function main(argv, io = {}) {
   const unitReport = path.join(dareDir, UNIT_REPORT);
   const e2eReport = path.join(dareDir, E2E_REPORT);
 
+  const toolchainGates = gateSummary(cwd, dareDir);
+  write(verbatim(`toolchain: ${toolchainGates.toolchain} (${toolchainGates.evidence})`));
+  // A declined operation is announced rather than merely omitted. A gate list that quietly
+  // shrinks reads exactly like one that was always that short (DESIGN.md §3.8).
+  for (const skip of toolchainGates.skipped) {
+    write(verbatim(`gate ${skip.name} not run: ${skip.reason}`));
+  }
+
   /** Every gate, named for the brief, so a builder is never surprised by one. */
   const gateNames = [
-    ...commandGates(dareDir).map((gate) => `${gate.name}: ${gate.command.join(' ')}`),
+    ...toolchainGates.gates.map((gate) => `${gate.name}: ${gate.command.join(' ')}`),
+    ...toolchainGates.skipped.map((skip) => `${skip.name}: not run - ${skip.reason}`),
     ...provisioning.gates.map(
       (gate) =>
         `quality:${gate.plugin}: ${gate.command.join(' ')}${gate.frontendOnly ? ' (armed once this repo renders a UI)' : ''}`,
@@ -2067,7 +2082,7 @@ export function main(argv, io = {}) {
     // PRD and nothing else, so the answer was always "no frontend" and the design gate never
     // armed on a greenfield build (DESIGN.md §5.1).
     const treeGates = [
-      ...commandGates(treeDare),
+      ...commandGates(dir, treeDare),
       ...provisioning.gates
         .filter((gate) => !gate.frontendOnly || hasFrontend(dir))
         .map((gate) => ({ name: `quality:${gate.plugin}`, command: gate.command, required: true })),

@@ -285,8 +285,57 @@ positionally. That matters here specifically: a builder able to edit this file c
 away the capability whose gate it cannot pass, and the run would ship having never checked it.
 
 The resolved set is handed to each iteration's Build Brief (§8.1) so the builder knows what it
-is building. It does not yet choose gates; that is the capability-to-gate table, which waits on
-the toolchain adapter.
+is building. It does not yet choose gates; that is the capability-to-gate table, which sits on
+top of §3.8 and is not built.
+
+---
+
+## 3.8 Toolchains — *how* to build it
+
+§3.7 says what the project is. This says how to operate on it. The two are independent: an
+`api` can be Node or .NET, and a `cli` can be either.
+
+Everything the loop knew about building used to be six npm and npx command lines inside
+`driver.mjs`, plus a second and quietly different set of assumptions inside CI inspection. A
+toolchain is that seam, given a contract:
+
+| operation | Node |
+|---|---|
+| `detect` | `package.json` present |
+| `restore` | `npm ci` |
+| `build` | `npm run build` |
+| `lint` | `npm run lint` |
+| `types` | `npm run typecheck` |
+| `unit` | `npx vitest run --reporter=json --outputFile=…` |
+| `e2e` | `npx playwright test` |
+| `security-audit` | `npm audit --audit-level=high` |
+| `startCommand` | `npm start`, when the manifest declares one |
+| `ci` | which operations a workflow must be seen to run |
+
+Six of these become Phase-3 gates, in that order. `restore` is in the contract but is **not**
+gated — a toolchain that cannot express "restore dependencies" cannot describe .NET or Rust at
+all, but running `npm ci` before every iteration would delete `node_modules` and add minutes
+to each one.
+
+**A missing step is stated, not faked.** An operation is either a command or an explicit
+`notApplicable(reason)`. A toolchain whose compiler subsumes typechecking says exactly that; it
+may not return `true`, and it may not return an empty command, because both are
+indistinguishable from a step that ran and passed. A declined operation is **reported** — to
+the operator on stdout and to the builder in the brief — because a gate list that silently
+shrinks from six entries to four reads exactly like one that always had four.
+
+**CI comes from the same table as the gates, and that is a bug fix.** The old
+`CI_REQUIRED_COMMANDS` accepted `node --test` and `jest` for the unit step while the unit gate
+ran `npx vitest run --reporter=json`. A project could therefore satisfy the `ci` gate with a
+suite the ratchet would never see one id from — which is precisely what both live runs on
+10 August 2026 did. A test now asserts that each CI pattern matches the command string its own
+operation produces, so the two cannot drift apart again without failing.
+
+**Detection falls back rather than refusing.** A greenfield repository has no `package.json` on
+iteration 1, so detection is honestly empty at exactly the moment the gates are first
+assembled; refusing to choose would abort every greenfield run. Node is the default because it
+is the only implementation. When a second one lands that stops being obvious, and the answer is
+§3.7's: the architect declares it and detection confirms.
 
 ---
 
@@ -573,6 +622,10 @@ dare-to-be-stupid/
 │   │   ├── shared.mjs            # id shape, status normalisation, ReportFormatError
 │   │   ├── vitest.mjs
 │   │   └── playwright.mjs
+│   ├── toolchains/               # one module per stack: how to build it (§3.8)
+│   │   ├── index.mjs             # the registry: detect, resolve, gates
+│   │   ├── shared.mjs            # Operation — a command, or a reasoned refusal
+│   │   └── node.mjs
 │   ├── brief.mjs                 # compiles the per-iteration Build Brief (§8.1)
 │   ├── lessons.mjs               # sparse evidence-derived lesson memory (§13.8)
 │   ├── history.mjs               # conditional git-history context (§8.2)

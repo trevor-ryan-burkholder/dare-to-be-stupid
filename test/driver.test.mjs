@@ -1758,14 +1758,38 @@ describe('requiredIdsFor', () => {
 describe('commandGates', () => {
   it('covers every deterministic gate DESIGN.md phase 3 names', () => {
     assert.deepStrictEqual(
-      commandGates('/repo/.dare').map((gate) => gate.name),
+      commandGates('/repo', '/repo/.dare').map((gate) => gate.name),
       ['build', 'lint', 'types', 'unit', 'e2e', 'security-audit'],
     );
   });
 
   it('points the unit reporter at the file the ratchet reads', () => {
-    const unit = commandGates('/repo/.dare').find((gate) => gate.name === 'unit');
-    assert.equal(unit?.command.includes('--outputFile=/repo/.dare/test-report.json'), true);
+    const unit = commandGates('/repo', '/repo/.dare').find((gate) => gate.name === 'unit');
+    assert.equal(unit?.command.includes(`--outputFile=${path.join('/repo/.dare', 'test-report.json')}`), true);
+  });
+
+  it('produces the exact commands the extraction was supposed to preserve', () => {
+    // The whole safety argument for extracting a toolchain interface is that the first
+    // implementation through it behaves identically to the six lines it replaced. Asserting
+    // the argv, not just the names, is what makes that checkable rather than asserted.
+    assert.deepStrictEqual(
+      commandGates('/repo', '/repo/.dare').map((gate) => gate.command),
+      [
+        ['npm', 'run', 'build'],
+        ['npm', 'run', 'lint'],
+        ['npm', 'run', 'typecheck'],
+        ['npx', 'vitest', 'run', '--reporter=json', `--outputFile=${path.join('/repo/.dare', 'test-report.json')}`],
+        ['npx', 'playwright', 'test'],
+        ['npm', 'audit', '--audit-level=high'],
+      ],
+    );
+  });
+
+  it('marks every gate required, because none of them is advisory', () => {
+    assert.equal(
+      commandGates('/repo', '/repo/.dare').every((gate) => gate.required === true),
+      true,
+    );
   });
 });
 
@@ -1882,6 +1906,27 @@ describe('staticGates', () => {
     assert.deepStrictEqual(inspected.workflows, ['ci.yml']);
     assert.deepStrictEqual(inspected.covered, ['build', 'lint', 'types', 'unit', 'e2e']);
     assert.deepStrictEqual(inspected.missing, []);
+  });
+
+  it('refuses a workflow whose unit step is a runner the unit gate cannot collect', () => {
+    // The contradiction this closes, in full. `CI_REQUIRED_COMMANDS` accepted `node --test`
+    // while the unit gate ran `npx vitest run --reporter=json`, so a project could satisfy
+    // the ci gate with a suite the ratchet would never see a single id from. That is not
+    // hypothetical: both live runs on 10 August 2026 wrote correct `node:test` suites and
+    // the gate reported zero tests. Now CI and the gate come from one toolchain table.
+    const dir = repoWith({
+      '.github/workflows/ci.yml': [
+        'steps:',
+        '  - run: npm run build',
+        '  - run: npm run lint',
+        '  - run: npm run typecheck',
+        '  - run: node --test',
+        '  - run: npx playwright test',
+      ].join('\n'),
+    });
+    const inspected = inspectCiWorkflows(dir);
+    assert.deepStrictEqual(inspected.missing, ['unit']);
+    assert.equal(staticGates(dir).find((gate) => gate.name === 'ci')?.ok, false);
   });
 
   it('finds the start command only when the package really declares one', () => {

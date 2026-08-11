@@ -128,10 +128,14 @@ application that ignores `PORT`.
 # Planned work — making the harness stack-agnostic
 
 Specified on 11 August 2026. The `.dare/**` integrity item from the same plan was implemented
-in 0.10.0. On 11 August 2026 **items 1, 6 and 3 were implemented** — item 1 in 0.11.0 and
-0.12.0, item 6 in 0.13.0, item 3 in 0.14.0; see below. Items 2, 4, 5, 7, 8 and 9 are **not
-implemented**. What follows is scoped against the code as it stands, with the seams located,
-so it can be picked up without re-deriving them.
+in 0.10.0. On 11 August 2026 **items 1, 6, 3 and 2 were implemented** — item 1 in 0.11.0 and
+0.12.0, item 6 in 0.13.0, item 3 in 0.14.0, item 2 in 0.15.0; see below. Items 4, 5, 7, 8 and 9
+are **not implemented**. What follows is scoped against the code as it stands, with the seams
+located, so it can be picked up without re-deriving them.
+
+**Item 5 is now unblocked** and is the obvious next one: its only dependency was item 2, and
+both halves it needs — the capability set (§3.7) and the toolchain's gate list (§3.8) — exist
+and are tested. Item 4 remains blocked on the `dotnet` SDK.
 
 ## Blocker to resolve first
 
@@ -145,15 +149,9 @@ not let unverified command strings acquire the appearance of tested ones.
 
 Read these before designing anything; several are smaller than they look.
 
-- **Gate commands are one function.** `commandGates(dareDir)` in `scripts/driver.mjs` returns
-  the six shell gates, and every one is npm or npx: `npm run build`, `npm run lint`,
-  `npm run typecheck`, `npx vitest run --reporter=json`, `npx playwright test`,
-  `npm audit --audit-level=high`. This is the whole extraction point for a toolchain adapter.
-- **A second Node assumption lives in CI inspection.** `CI_REQUIRED_COMMANDS` in
-  `scripts/driver.mjs` matches workflow steps with npm/pnpm/yarn/bun regexes. It disagrees
-  with `commandGates` about what a unit test is — it accepts `node --test`, which the unit
-  gate cannot collect. Any adapter work must reconcile the two or the contradiction survives
-  the refactor.
+- ~~**Gate commands are one function.**~~ Extracted by item 2 into `scripts/toolchains/`.
+- ~~**A second Node assumption lives in CI inspection.**~~ Reconciled by item 2. Both now come
+  from the resolved toolchain, and a test holds them together.
 - ~~**Test-report normalisation already exists.**~~ Extracted by item 3. `detectRunner`,
   `parseReport` and `collapseByWorstStatus` now live in `scripts/reporters/index.mjs`, and the
   `Runner` union there is still the thing to widen. Do not weaken the throwing behaviour to
@@ -180,11 +178,22 @@ Read these before designing anything; several are smaller than they look.
      that has not been written yet is still nothing to look at.
    - **The manifest does not choose gates yet.** It reaches the Build Brief and nothing else.
      The capability-to-gate table is item 5, and it waits on item 2.
-2. **Toolchain adapter interface.** Extract `commandGates` behind a contract covering detect,
-   restore, build, lint, static/type check, unit, e2e, dependency audit, start command and
-   test-report production. Non-applicable operations must be represented explicitly — a
-   toolchain whose compiler subsumes typechecking should say so, not return a fake pass.
-   Preserve current Node behaviour exactly; this step should be provably behaviour-neutral.
+2. ~~**Toolchain adapter interface.**~~ **Done — 0.15.0.** `scripts/toolchains/`, with the Node
+   adapter reproducing the six commands exactly; a test asserts the full argv, not just the
+   names, which is what makes "behaviour-neutral" checkable. `DESIGN.md` §3.8. Four decisions:
+   - **`restore` is in the contract but is not a gate.** `npm ci` deletes `node_modules`; running
+     it every iteration would add minutes and change behaviour. The slot exists because a
+     toolchain that cannot express it cannot describe .NET or Rust.
+   - **The CI contradiction is closed structurally, not once.** `CI_REQUIRED_COMMANDS` is gone;
+     each toolchain declares its own patterns, and a test asserts every pattern matches the
+     command string its own operation produces. `node --test`, `jest`, `npm test` and `cypress`
+     no longer satisfy CI, which is stricter — deliberately, since that leniency is exactly
+     what let the 10 August runs look CI-clean while collecting zero test ids.
+   - **Detection falls back to Node rather than refusing.** Iteration 1 has no `package.json`.
+     When a second toolchain lands, that default stops being obvious and should become an
+     architect declaration confirmed by detection, exactly as capabilities did.
+   - **`commandGates` now takes `(root, dareDir)`.** It needed the root to resolve a toolchain,
+     and deriving it as `dirname(dareDir)` would have been true today and quietly wrong later.
 3. ~~**Reporter registry.**~~ **Done — 0.14.0.** `scripts/reporters/` now holds `shared.mjs`
    (id shape, status normalisation, `ReportFormatError`), one module per format, and
    `index.mjs` as the registry. Behaviour-neutral: every existing extraction test passed
