@@ -847,9 +847,16 @@ The constraints are the design:
   driver's state, so what counts as a regression is never a candidate's to decide.
 - **No vote.** A candidate is viable only if every gate passed *and* nothing regressed —
   a candidate that regressed a protected test is disqualified, not ranked. Ties break on
-  smallest diff, then candidate order. Both are properties of the work rather than opinions
-  about it, so a deterministic winner always exists and **no cold chooser is needed or
-  used**.
+  **lines changed, then files changed, then candidate order** — additions plus deletions from
+  `git diff --numstat`. Every key is a property of the work rather than an opinion about it,
+  so a deterministic winner always exists and **no cold chooser is needed or used**.
+
+  Lines first is a correction, not a refinement. Through v0.12.0 the sort key was file count
+  while this paragraph said "diff size", so a one-file 1500-line rewrite beat a three-file
+  15-line surgical fix — precisely inverting what the tie-break exists to prefer. File count
+  survives as the second key because, at equal churn, the change that touched fewer places is
+  the more contained one. Binary files count as a changed file with zero changed lines, which
+  is the one case this measure understates; it is recorded rather than papered over.
 - **Cleanup on every path out**, including the failing ones and the ones that throw. A
   leaked worktree is not cosmetic: `git worktree add` refuses a directory it already knows
   about, so one abandoned race breaks every later race, and the error names a directory

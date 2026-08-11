@@ -76,6 +76,12 @@ machine state to `.gitignore`, authored or accepted a PRD, wrote design document
 `docs/`, committed each phase, and the builder produced source and tests. Neither run
 shipped, and the reason is recorded below — but the pipeline itself is no longer theoretical.
 
+**`parseNumstat` agrees with git's own arithmetic.** Run against this repository's own
+`git diff --numstat HEAD~1 HEAD`, it returned 13 files and 554 lines; `git diff --shortstat`
+independently reported "13 files changed, 531 insertions(+), 23 deletions(-)". Small, but it
+is the difference between a parser tested against text someone typed and one tested against
+the program that produces it — which is the lesson recorded at the bottom of this file.
+
 **The unit gate only collects vitest, and that used to be unsaid.** Both runs independently
 built correct `node:test` suites, declared `"test": "node --test"`, and drew
 `No test suite found in file …` from `npx vitest run --reporter=json` — a report of zero
@@ -108,7 +114,9 @@ conversion is ever done for other reasons, a real tick becomes available for fre
 **A real race.** `race.enabled` is `false` by default, and the mechanism has only been
 exercised against temporary repositories: real worktrees, real cleanup and real `--ff-only`
 merges, but never a real builder inside one. Turn it on knowingly against a throwaway
-repository first, and check `git worktree list` is clean afterwards.
+repository first, and check `git worktree list` is clean afterwards. The candidate measure
+changed in 0.13.0, and `parseNumstat` was checked against real output rather than only
+fixtures — see "Verified live" above.
 
 **A real health probe.** `scripts/health-probe.mjs` is tested against a hand-written server
 that answers, one that 404s, one that never answers and one that will not start. It has not
@@ -120,9 +128,10 @@ application that ignores `PORT`.
 # Planned work — making the harness stack-agnostic
 
 Specified on 11 August 2026. The `.dare/**` integrity item from the same plan was implemented
-in 0.10.0, and **item 1 was implemented on 11 August 2026, in 0.11.0 and 0.12.0** — see below.
-Items 2–9 are **not implemented**. What follows is scoped against the code as it stands, with
-the seams located, so it can be picked up without re-deriving them.
+in 0.10.0. On 11 August 2026 **item 1 was implemented in 0.11.0 and 0.12.0, and item 6 in
+0.13.0** — see below. Items 2, 3, 4, 5, 7, 8 and 9 are **not implemented**. What follows is
+scoped against the code as it stands, with the seams located, so it can be picked up without
+re-deriving them.
 
 ## Blocker to resolve first
 
@@ -186,12 +195,13 @@ Read these before designing anything; several are smaller than they look.
 5. **Capability-driven gates.** An explicit, inspectable capability-to-gate table, not a rules
    engine. Document why each universal gate is universal — build, unit tests and dependency
    audit apply to everything — and why each conditional one is conditional.
-6. **Race candidate selection.** `race.mjs` sorts viable candidates by
-   `a.filesChanged - b.filesChanged || a.index - b.index`. Its own docstring says ties "break
-   on diff size", but diff size is implemented as file count, so a 1-file 1500-line rewrite
-   beats a 3-file 15-line surgical fix. Replace with additions + deletions from
-   `git diff --numstat`, keeping file count as the next tie-break and candidate index as the
-   stable last resort. Deterministic evidence only; no model judgement.
+6. ~~**Race candidate selection.**~~ **Done — 0.13.0.** Ties now break on lines changed, then
+   files changed, then candidate index, measured by a new `parseNumstat` over
+   `git diff --numstat`. Still deterministic; no model judgement anywhere near it. One thing
+   the plan did not call: a binary file counts as a changed file with zero changed lines, so
+   this measure understates a large asset swap. That is recorded in `DESIGN.md` §13.6 and in
+   a test rather than papered over, because inventing a line count for a blob would be worse
+   than admitting there is not one.
 7. **Run manifest.** A driver-owned `.dare/run.json` recording start time, start commit, plugin
    version, config hash, claude version, models, toolchain, capabilities and tool versions. No
    secrets. Informational: a malformed or uncreatable manifest may fail a run, but its contents

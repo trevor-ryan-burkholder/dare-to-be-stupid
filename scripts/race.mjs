@@ -14,10 +14,10 @@
  *   - **The budget wins.** If the remaining allowance will not cover `n` builders with room
  *     to spare, the race is refused and the ordinary path continues. A run that dies
  *     mid-race has spent `n` times as much to reach the same place.
- *   - **No vote.** The winner is chosen by gate results; ties break on diff size and then
- *     candidate order. There is nothing here for a model to adjudicate, and asking one to
- *     choose between candidates the gates could not separate would be adding judgement
- *     exactly where determinism was available.
+ *   - **No vote.** The winner is chosen by gate results; ties break on lines changed, then
+ *     files changed, then candidate order. There is nothing here for a model to adjudicate,
+ *     and asking one to choose between candidates the gates could not separate would be
+ *     adding judgement exactly where determinism was available.
  *   - **The driver keeps the ratchet.** Candidates work in their own worktrees, where
  *     `.dare/` is untracked and therefore absent. No candidate can read or advance the
  *     ratchet; only the main driver does, and only once a winner has been merged.
@@ -34,7 +34,7 @@ import path from 'node:path';
 /**
  * @typedef {{
  *   index: number, dir: string, commit: string | null,
- *   gates: GateResult[], regressions: string[], filesChanged: number
+ *   gates: GateResult[], regressions: string[], filesChanged: number, linesChanged: number
  * }} Candidate
  */
 
@@ -122,17 +122,58 @@ export function selectWinner(candidates) {
     return { winner: viable[0], reason: `candidate ${viable[0].index} was the only viable one`, viable: 1 };
   }
 
-  // The gates could not separate them, so the tie-break is the smallest change that
-  // achieved it, then candidate order. Both are properties of the work rather than opinions
+  // The gates could not separate them, so the tie-break is the smallest change that achieved
+  // it, then candidate order. Every key is a property of the work rather than an opinion
   // about it, which is what keeps a model out of this decision.
-  const sorted = [...viable].sort((a, b) => a.filesChanged - b.filesChanged || a.index - b.index);
+  //
+  // Lines first, files second. This used to be files only, while the documentation above
+  // claimed "diff size" — so a one-file 1500-line rewrite beat a three-file 15-line surgical
+  // fix, which is the opposite of what the tie-break exists to prefer. File count survives as
+  // the second key because it still says something: given equal churn, the change that
+  // touched fewer places is the more contained one.
+  const sorted = [...viable].sort(
+    (a, b) => a.linesChanged - b.linesChanged || a.filesChanged - b.filesChanged || a.index - b.index,
+  );
   return {
     winner: sorted[0],
     reason:
       `${viable.length} candidates passed every gate; candidate ${sorted[0].index} won on the smallest diff ` +
-      `(${sorted[0].filesChanged} file(s) changed)`,
+      `(${sorted[0].linesChanged} line(s) across ${sorted[0].filesChanged} file(s))`,
     viable: viable.length,
   };
+}
+
+/**
+ * Measure a candidate's diff from `git diff --numstat`.
+ *
+ * Numstat rather than `--shortstat` because it is one record per file in a fixed
+ * tab-separated shape, so both keys come from one call and neither is a regex over prose.
+ *
+ * Binary files report `-` for both counts. They are counted as a changed *file* with zero
+ * changed *lines*, which is the one place this measure understates: a candidate that swapped a
+ * large binary asset reads as cheaper than one that edited ten lines. That is accepted rather
+ * than papered over — these are builds of source, the case is rare, and inventing a line count
+ * for a blob would be worse than recording that there is not one.
+ *
+ * @param {string} stdout
+ * @returns {{ filesChanged: number, linesChanged: number }}
+ */
+export function parseNumstat(stdout) {
+  let filesChanged = 0;
+  let linesChanged = 0;
+  for (const raw of stdout.split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    if (line.trim() === '') continue;
+    filesChanged += 1;
+    const match = line.match(/^(\d+|-)\t(\d+|-)\t/);
+    // A line that does not match contributes its file and no lines. It cannot be dropped
+    // entirely: an unmeasured file that vanishes from the count makes a candidate look smaller
+    // than it is, which is exactly the bug this function was written to fix.
+    if (match === null) continue;
+    if (match[1] !== '-') linesChanged += Number(match[1]);
+    if (match[2] !== '-') linesChanged += Number(match[2]);
+  }
+  return { filesChanged, linesChanged };
 }
 
 /**

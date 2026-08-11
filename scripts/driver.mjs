@@ -47,7 +47,7 @@ import {
   selectLessons,
 } from './lessons.mjs';
 import { installQualityPlugins } from './plugins.mjs';
-import { applyWinner, createWorktrees, removeWorktrees, selectWinner, shouldRace } from './race.mjs';
+import { applyWinner, createWorktrees, parseNumstat, removeWorktrees, selectWinner, shouldRace } from './race.mjs';
 import {
   evaluateIteration,
   extractTestIds,
@@ -2172,7 +2172,14 @@ export function main(argv, io = {}) {
         tokens += built.tokens;
         costUsd += built.costUsd;
         if (!built.ok) {
-          candidates.push({ ...worktree, commit: null, gates: [], regressions: [], filesChanged: 0 });
+          candidates.push({
+            ...worktree,
+            commit: null,
+            gates: [],
+            regressions: [],
+            filesChanged: 0,
+            linesChanged: 0,
+          });
           continue;
         }
 
@@ -2187,9 +2194,7 @@ export function main(argv, io = {}) {
           commit: commit === base ? null : commit,
           gates: gated.results,
           regressions: ratchetPassing.filter((id) => !gated.passing.has(id)),
-          filesChanged: shell('git', ['diff', '--name-only', `${base}..HEAD`], { cwd: worktree.dir })
-            .stdout.split('\n')
-            .filter(Boolean).length,
+          ...parseNumstat(shell('git', ['diff', '--numstat', `${base}..HEAD`], { cwd: worktree.dir }).stdout),
         });
       }
 

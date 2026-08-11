@@ -20,6 +20,7 @@ import { defaultConfig } from '../scripts/config.mjs';
 import {
   applyWinner,
   createWorktrees,
+  parseNumstat,
   removeWorktrees,
   selectWinner,
   shouldRace,
@@ -162,6 +163,7 @@ describe('selectWinner', () => {
     gates: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }],
     regressions: [],
     filesChanged: 3,
+    linesChanged: 30,
     ...overrides,
   });
 
@@ -192,18 +194,79 @@ describe('selectWinner', () => {
   });
 
   it('breaks a tie on the smallest diff, with no model involved', () => {
-    const outcome = selectWinner([candidate(1, { filesChanged: 9 }), candidate(2, { filesChanged: 2 })]);
+    const outcome = selectWinner([candidate(1, { linesChanged: 900 }), candidate(2, { linesChanged: 20 })]);
     assert.equal(outcome.winner?.index, 2);
     assert.equal(outcome.reason.includes('smallest diff'), true);
+    assert.equal(outcome.reason.includes('20 line(s)'), true);
+  });
+
+  it('prefers a small change spread over several files to a rewrite of one', () => {
+    // The bug this replaces: the sort key was file count while the documentation said diff
+    // size, so a one-file 1500-line rewrite beat a three-file 15-line surgical fix — the
+    // opposite of what the tie-break exists to prefer.
+    const rewrite = candidate(1, { filesChanged: 1, linesChanged: 1500 });
+    const surgical = candidate(2, { filesChanged: 3, linesChanged: 15 });
+    assert.equal(selectWinner([rewrite, surgical]).winner?.index, 2);
+    // Order of arrival must not decide it either.
+    assert.equal(selectWinner([surgical, rewrite]).winner?.index, 2);
+  });
+
+  it('falls back to file count when the churn is identical', () => {
+    // Equal lines, so the more contained change wins: fewer places touched to achieve the
+    // same result is the only remaining evidence of restraint.
+    const outcome = selectWinner([
+      candidate(1, { filesChanged: 9, linesChanged: 40 }),
+      candidate(2, { filesChanged: 2, linesChanged: 40 }),
+    ]);
+    assert.equal(outcome.winner?.index, 2);
   });
 
   it('breaks a remaining tie on candidate order, so the result is reproducible', () => {
-    const outcome = selectWinner([candidate(3, { filesChanged: 2 }), candidate(1, { filesChanged: 2 })]);
+    const outcome = selectWinner([
+      candidate(3, { filesChanged: 2, linesChanged: 40 }),
+      candidate(1, { filesChanged: 2, linesChanged: 40 }),
+    ]);
     assert.equal(outcome.winner?.index, 1);
   });
 
   it('returns nothing for an empty field', () => {
     assert.equal(selectWinner([]).winner, null);
+  });
+});
+
+describe('parseNumstat', () => {
+  it('sums additions and deletions across files', () => {
+    const stdout = ['12\t3\tsrc/a.ts', '0\t40\tsrc/b.ts', '5\t5\ttest/a.test.ts'].join('\n');
+    assert.deepEqual(parseNumstat(stdout), { filesChanged: 3, linesChanged: 65 });
+  });
+
+  it('reads an empty diff as no change at all', () => {
+    assert.deepEqual(parseNumstat(''), { filesChanged: 0, linesChanged: 0 });
+    assert.deepEqual(parseNumstat('\n\n'), { filesChanged: 0, linesChanged: 0 });
+  });
+
+  it('ignores the trailing newline git always emits', () => {
+    assert.deepEqual(parseNumstat('1\t1\tsrc/a.ts\n'), { filesChanged: 1, linesChanged: 2 });
+  });
+
+  it('counts a binary file as a changed file with no measurable lines', () => {
+    // The one place this measure understates, and it is recorded rather than hidden: a
+    // candidate that swapped a large asset reads as cheaper than one that edited ten lines.
+    assert.deepEqual(parseNumstat('-\t-\tassets/logo.png'), { filesChanged: 1, linesChanged: 0 });
+  });
+
+  it('still counts a file whose counts it cannot read', () => {
+    // Dropping the line entirely would make the candidate look smaller than it is, which is
+    // the exact failure mode the lines-first tie-break was introduced to fix.
+    assert.deepEqual(parseNumstat('garbage without tabs'), { filesChanged: 1, linesChanged: 0 });
+  });
+
+  it('handles a rename, whose path contains an arrow', () => {
+    assert.deepEqual(parseNumstat('3\t1\tsrc/{old.ts => new.ts}'), { filesChanged: 1, linesChanged: 4 });
+  });
+
+  it('tolerates carriage returns, because contributors are on Windows', () => {
+    assert.deepEqual(parseNumstat('12\t3\tsrc/a.ts\r\n0\t2\tsrc/b.ts\r\n'), { filesChanged: 2, linesChanged: 17 });
   });
 });
 

@@ -1,6 +1,6 @@
 {
   "name": "dare-to-be-stupid",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "description": "A Claude Code plugin: /dare hands a PRD to an autonomous loop that designs, builds, gates, reviews and ships until it passes an enterprise definition of done, or the budget dies.",
