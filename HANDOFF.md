@@ -370,6 +370,31 @@ in the Build Brief is capped, so the plausible growth vector is raw gate output 
 `detail`, and nobody has watched that happen. The `childStartLine` figure across iterations is
 the evidence to collect.
 
+## A6 — truthiness-only assertions fail a gate dare runs (0.21.0)
+
+**Verified.** 31 new tests in `test/integrity.test.mjs`, following this repository's rule that
+every deny is paired with a benign neighbour. Denied: all five matchers, the negated
+`not.toBeNull()`, single-argument `assert(x)` and `assert.ok(x)`, and a nested call read as one
+argument. Allowed and asserted allowed: `toBe`, `toEqual`, `assert.equal`, `assert.deepEqual`,
+`assert.match`, a two-argument `assert(x, message)`, a Playwright matcher the gate has never
+heard of, `toHaveLength`, a helper merely *named* `myassert`, an argument-less `assert()`, and
+a comment mentioning the forbidden matcher. `integrityGate` is asserted end to end: a
+repository fails on `toBeTruthy()` and the same repository passes once the assertion names a
+value.
+
+**Not verified.** No generated application has been scanned. Every fixture is a string this
+session wrote, which means the false-positive analysis is *reasoned*, not *observed* — the
+file-classification heuristic (`*.test.*`, `*.spec.*`, and the five test directory names) has
+never met a real project's layout. A project putting tests beside source under a different
+convention gets no coverage from this gate and will not be told so, which is the silent half
+worth watching for. The first dogfood run is what would show it.
+
+**A known and deliberate gap.** The check reads only test files, so a builder that moves a weak
+assertion into a helper under `src/` escapes it entirely. That is accepted: scanning
+application source would fail correct repositories for defensive `assert(config)` calls, and
+this module's whole philosophy is that a false positive costs a full iteration on a correct
+repository while a false negative costs nothing that the reviewer was not already covering.
+
 ---
 
 ## Fixed here, and worth knowing about

@@ -14,12 +14,15 @@ import { describe, it } from 'node:test';
 
 import {
   GATE_SCRIPTS,
+  blankComments,
   inspectIntegrity,
   integrityGate,
   isNoOpScript,
   looseTsconfigs,
   nocheckedFiles,
   readGateScripts,
+  truthinessAssertions,
+  weakAssertions,
 } from '../scripts/integrity.mjs';
 
 /**
@@ -177,7 +180,138 @@ describe('inspectIntegrity', () => {
   });
 });
 
+describe('weakAssertions', () => {
+  // The DoD's most load-bearing claim is "tests assert real values, not truthiness", and
+  // until now the only thing enforcing it was a reviewer reading the tests — an LLM
+  // judgement costing a full iteration each time it fired. This is the deterministic half.
+
+  const denied = [
+    ["expect(user.role).toBeTruthy();", 'toBeTruthy()'],
+    ["expect(x).toBeFalsy();", 'toBeFalsy()'],
+    ["expect(result).toBeDefined();", 'toBeDefined()'],
+    ["expect(result).toBeUndefined();", 'toBeUndefined()'],
+    ["expect(found).toBeNull();", 'toBeNull()'],
+    ["expect(found).not.toBeNull();", 'not.toBeNull()'],
+    ["expect( ids ).toBeTruthy(  );", 'toBeTruthy(  )'],
+  ];
+  for (const [source, snippet] of denied) {
+    it(`flags ${snippet}`, () => {
+      assert.deepEqual(weakAssertions(source), [{ line: 1, snippet }]);
+    });
+  }
+
+  it('flags a single-argument assert and assert.ok', () => {
+    assert.deepEqual(weakAssertions('assert(user.role);'), [{ line: 1, snippet: 'assert(user.role)' }]);
+    assert.deepEqual(weakAssertions('assert.ok(found);'), [{ line: 1, snippet: 'assert.ok(found)' }]);
+  });
+
+  it('reads a nested call as one argument rather than giving up on it', () => {
+    // `assert(list.includes(x))` is the common real shape. A regex that stopped at the first
+    // ")" would miss it, which is the difference between a check that works and one that
+    // only fires on the examples in its own documentation.
+    assert.deepEqual(weakAssertions('assert(list.includes(x));'), [
+      { line: 1, snippet: 'assert(list.includes(x))' },
+    ]);
+  });
+
+  it('reports the line each one is on', () => {
+    const source = 'const a = 1;\nexpect(a).toBe(1);\n\nexpect(a).toBeTruthy();\n';
+    assert.deepEqual(weakAssertions(source), [{ line: 4, snippet: 'toBeTruthy()' }]);
+  });
+
+  it('sorts by line, so a report reads in file order', () => {
+    const source = 'expect(b).toBeNull();\nassert(a);\n';
+    assert.deepEqual(
+      weakAssertions(source).map((weak) => weak.line),
+      [1, 2],
+    );
+  });
+
+  const allowed = [
+    ["expect(user.role).toBe('admin');", 'the matcher that names the expected value'],
+    ['expect(ids).toEqual(new Set([1, 2]));', 'a deep equality on a real value'],
+    ["assert.equal(user.role, 'admin');", 'assert.equal, which carries an expectation'],
+    ['assert.deepEqual(ids, [1, 2]);', 'assert.deepEqual'],
+    ["assert(a, 'a must be set');", 'a two-argument assert, which the item deliberately excludes'],
+    ['await expect(page.locator(".x")).toBeVisible();', 'a Playwright matcher this gate never heard of'],
+    ['expect(x).toHaveLength(3);', 'a matcher outside the list'],
+    ['myassert(x);', 'a helper whose name merely ends in assert'],
+    ['assert.match(text, /ok/);', 'assert.match'],
+    ['assert();', 'an argument-less assert, which asserts nothing about anything'],
+  ];
+  for (const [source, what] of allowed) {
+    it(`leaves alone ${what}`, () => {
+      assert.deepEqual(weakAssertions(source), []);
+    });
+  }
+
+  it('ignores a comment that merely mentions the forbidden matcher', () => {
+    // The most irritating possible false positive: correct code, failed for describing the
+    // rule it obeys. Every file explaining this gate would fail this gate.
+    const source = '// never write expect(x).toBeTruthy() here\nexpect(x).toBe(1);\n';
+    assert.deepEqual(weakAssertions(source), []);
+  });
+
+  it('ignores a block comment mentioning it, and still counts lines correctly', () => {
+    const source = '/**\n * Not toBeTruthy().\n */\nexpect(x).toBeNull();\n';
+    assert.deepEqual(weakAssertions(source), [{ line: 4, snippet: 'toBeNull()' }]);
+  });
+});
+
+describe('blankComments', () => {
+  it('keeps every newline, so line numbers survive', () => {
+    const source = '/* a\nb\nc */\nx';
+    assert.equal(blankComments(source).split('\n').length, source.split('\n').length);
+  });
+
+  it('does not eat a url inside a string, which is not a comment', () => {
+    assert.equal(blankComments("const u = 'https://example.com/x';").includes('example.com'), true);
+  });
+});
+
+describe('truthinessAssertions', () => {
+  it('finds them in a *.test.js file and reports path, line and snippet', () => {
+    const dir = repo({ files: { 'src/app.test.js': 'expect(a).toBeTruthy();\n' } });
+    assert.deepEqual(truthinessAssertions(dir), ['src/app.test.js:1 - toBeTruthy()']);
+  });
+
+  it('finds them in a test directory whatever the file is called', () => {
+    const dir = repo({ files: { 'test/helpers.mjs': 'assert(value);\n' } });
+    assert.deepEqual(truthinessAssertions(dir), ['test/helpers.mjs:1 - assert(value)']);
+  });
+
+  it('leaves application source alone', () => {
+    // `assert(x)` in application code is a runtime invariant check and none of this gate's
+    // business. Flagging it would fail a correct repository for defensive programming.
+    const dir = repo({ files: { 'src/app.js': 'assert(config);\nexpect(x).toBeTruthy();\n' } });
+    assert.deepEqual(truthinessAssertions(dir), []);
+  });
+
+  it('does not walk node_modules', () => {
+    const dir = repo({ files: { 'node_modules/dep/a.test.js': 'expect(a).toBeTruthy();\n' } });
+    assert.deepEqual(truthinessAssertions(dir), []);
+  });
+
+  it('says nothing about a repository with no tests yet', () => {
+    // Iteration 1 of a greenfield build. Reporting a finding here would fail the run for the
+    // absence of something nobody has written, which the ratchet already handles by refusing
+    // to advance on an empty id set.
+    assert.deepEqual(truthinessAssertions(repo()), []);
+  });
+});
+
 describe('integrityGate', () => {
+  it('fails a repository whose tests only prove something was returned', () => {
+    const result = integrityGate(repo({ files: { 'a.test.js': 'expect(user.role).toBeTruthy();\n' } }));
+    assert.equal(result.ok, false);
+    assert.equal(result.detail, 'a.test.js:1 - toBeTruthy() asserts existence, not a value');
+  });
+
+  it('passes the same repository once the assertion names a value', () => {
+    const result = integrityGate(repo({ files: { 'a.test.js': "expect(user.role).toBe('admin');\n" } }));
+    assert.equal(result.ok, true);
+  });
+
   it('reports a named, failing gate with its evidence', () => {
     const result = integrityGate(repo({ pkg: { scripts: { test: ':' } } }));
     assert.equal(result.name, 'gate-integrity');

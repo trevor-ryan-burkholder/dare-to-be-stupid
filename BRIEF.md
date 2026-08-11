@@ -264,7 +264,7 @@ A5, A3 and RED evidence are complementary, not redundant: RED proves a test fail
 mutation proves it is sensitive to the code, the oracle proves it was not written to fit the
 implementation.
 
-## A6. Assertion quality, in `integrity.mjs` — **DECIDED 11 August 2026: not a lint rule**
+## A6. Assertion quality, in `integrity.mjs` — **DONE (0.21.0)**
 
 Ban truthiness-only assertions in generated code. Enforces the existing `CLAUDE.md` standard
 deterministically and instantly, and pairs with A5: this catches the lazy shape, mutation catches
@@ -289,6 +289,26 @@ unfamiliar assertion helper must not fail a correct repository.
 
 Zero dependencies, consistent with hard constraint 1. **Rename the item wherever it is
 referenced** — it is not a lint rule, and calling it one is what produced the delivery problem.
+
+**Landed 0.21.0.** `weakAssertions`, `blankComments` and `truthinessAssertions` in
+`integrity.mjs`; `DESIGN.md` §4. 31 new tests, every deny paired with a benign neighbour.
+
+Three scoping decisions the item did not make, each of which is a false-positive class closed:
+
+- **Comments are blanked before matching, newlines preserved.** Otherwise the gate fails any
+  file *describing* the rule — including `CLAUDE.md`-adjacent test files and this repository's
+  own — which is the most irritating possible false positive: correct code, failed for
+  obeying the rule out loud.
+- **Application source is not scanned.** `assert(config)` outside a test is a runtime
+  invariant, not a claim about a result. Only `*.test.*` / `*.spec.*` files and files inside
+  `test`, `tests`, `__tests__`, `spec` or `e2e` directories are read.
+- **The argument list is parsed with balanced parentheses, not a regex.** `assert(a, b)` is
+  two arguments and left alone as specified; `assert(list.includes(x))` is one and is caught.
+  A regex stopping at the first `)` would have missed the commonest real shape, which is the
+  difference between a check that works and one that fires only on its own examples.
+
+`.not.toBeNull()` is included with the bare form. It asserts existence rather than a value,
+which is the property the item is about, and it is equally unambiguous.
 
 ## A7. Property-based tests in the builder contract — **OPEN**
 

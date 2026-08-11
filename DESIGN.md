@@ -415,6 +415,21 @@ deleted test but not a hollowed-out linter.
 stays allowed: it is a narrow claim that fails loudly when it stops being true, which is the
 opposite of a whole-file suppression.
 
+It also fails on **truthiness-only assertions in test files** — `toBeTruthy`, `toBeFalsy`,
+`toBeDefined`, `toBeUndefined` and `toBeNull` as the whole assertion, and single-argument
+`assert(x)` / `assert.ok(x)`. This is the deterministic form of the DoD's most load-bearing
+claim, which was otherwise enforced only by a reviewer *reading* the tests, at the cost of a
+full iteration each time it fired.
+
+It belongs here rather than in an ESLint rule for the reason this whole check exists: a rule
+shipped into the project's linter is a rule the project's linter can be configured not to run,
+so the check would be negotiable by the thing it constrains. Three things keep it from
+punishing a correct repository — comments are blanked before matching, so a file *describing*
+the rule does not fail it; a two-argument `assert(x, message)` is left alone, since the item
+names the single-argument form specifically; and **application source is not scanned at all**,
+because `assert(config)` outside a test is a runtime invariant rather than a claim about a
+result.
+
 It **denies the known cheat rather than allowlisting the known tool**, and that asymmetry is
 deliberate. An allowlist of linters reads as stricter and behaves worse: the first time a
 builder reaches for a real tool that is not on it, the gate fails a correct repository and
