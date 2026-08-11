@@ -646,7 +646,7 @@ Three things the item did not anticipate:
 > project does not have yet — which is the exact failure mode `gate-policy.mjs`'s own header
 > says the table exists to prevent. The original brief listed this as tidying and it is not.
 
-## B6. Per-toolchain builder guidance — **OPEN**
+## B6. Per-toolchain builder guidance — **DONE (0.34.0)**
 
 Adapters carry *commands*; nothing carries *idioms*, and a .NET builder needs different ones
 than a Node builder — project layout, naming, test conventions, common build failures. A small
@@ -655,6 +655,30 @@ Explicit files, no framework, no new personas, no per-language reviewer agents.
 
 Blocked in practice behind B3: there is only one toolchain to write guidance for today, and a
 one-entry table is not yet a seam.
+
+**Unblocked by B3 and landed 0.34.0.** `templates/toolchain-node.md` and
+`templates/toolchain-dotnet.md`, selected by *detected* toolchain, rendered into the Build
+Brief. `DESIGN.md` §8.4. 9 tests. No framework, no personas, no per-language reviewer.
+
+Three decisions the item did not specify:
+
+- **The brief, not the system prompt.** Guidance is about the objective's stack rather than the
+  builder's standing contract, and the brief is **archived** — so what a builder was told about
+  its toolchain is recoverable when a run ends badly. `frontend-direction.md` goes in the system
+  prompt because it is a standing instruction; this is not.
+- **A missing fragment is announced.** The brief says *"There is no guidance fragment for the
+  rust toolchain… that is a gap in the plugin rather than a statement that this stack has no
+  idioms worth knowing."* Silence would read to the next person as a stack that needed none. A
+  second test requires a fragment for every registered toolchain, so the gap is a decision
+  rather than a drift.
+- **The fragments must not restate the contract.** A test asserts neither contains
+  "Do not satisfice" or "RED before GREEN". A second voice arguing with the first would grow
+  every time either changed.
+
+The content is drawn from what actually went wrong while verifying B3 against a real SDK: a
+test project missing from the `.sln` collects **zero tests**, and a missing project reference
+surfaces as `CS0246`, which names neither the reference nor the cause. Neither is inferable
+from `dotnet test`.
 
 ---
 

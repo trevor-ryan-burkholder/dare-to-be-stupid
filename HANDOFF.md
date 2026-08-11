@@ -714,6 +714,30 @@ protecting anything:
 - **No .NET run has ever driven `driveRun`.** The reporter has never been fed by a live gate.
 - `junit.mjs` is still not written. Nothing has needed it.
 
+## B6 — per-toolchain guidance (0.34.0)
+
+**Verified.** Nine tests. Two matter more than the rest: one requires a fragment for **every**
+registered toolchain, so adding a third adapter without guidance fails the suite rather than
+silently shipping a builder that was told nothing; and one asserts the fragments do **not**
+restate the builder's contract, because a second voice arguing with the first would grow every
+time either changed.
+
+The content is not invented. It is what actually went wrong while verifying B3 against a real
+SDK — a test project missing from the `.sln` collects zero tests, and a missing project
+reference surfaces as `CS0246`, which names neither the reference nor the cause. The Node
+fragment carries the equivalent: the unit gate collects with vitest and not `npm test`, which
+is the fault that killed both live runs on 10 August.
+
+**Not verified — and this item is the least verifiable thing in the brief.** Whether guidance
+changes what a builder produces cannot be established from inside the test suite. The tests
+prove the fragment is *selected*, *rendered* and *archived*; they cannot prove it is *read*, or
+that reading it prevents the failure it describes. That needs two dogfood runs on the same PRD
+with and without the fragment, which is beyond what D2 currently plans.
+
+Also unverified: the fragments were written against a scaffolded solution and a scaffolded
+Node app. Neither has met a real generated project, so the layout advice ("src/, tests/, one
+.sln at the root") is convention rather than observation.
+
 ---
 
 ## Fixed here, and worth knowing about

@@ -18,7 +18,8 @@ import { describe, it } from 'node:test';
 
 import { parseAssumptions } from '../scripts/assumptions.mjs';
 import { CAPABILITY_ORDER, parseCapabilityDeclaration } from '../scripts/capabilities.mjs';
-import { parseReviewerReport } from '../scripts/driver.mjs';
+import { parseReviewerReport, toolchainGuidance } from '../scripts/driver.mjs';
+import { TOOLCHAINS } from '../scripts/toolchains/index.mjs';
 import { parseLessonExtraction } from '../scripts/lessons.mjs';
 
 const TEMPLATE_DIR = new URL('../templates/', import.meta.url);
@@ -460,4 +461,52 @@ describe('every template', () => {
       }
     });
   }
+});
+
+describe('the toolchain guidance fragments', () => {
+  // B6. One fragment per toolchain, selected by detection. No framework, no personas — the
+  // seam only became real when a second toolchain landed.
+
+  it('exists for every registered toolchain', () => {
+    // The check that makes this a seam rather than two files. A toolchain added without a
+    // fragment still runs — the brief announces the gap — but this fails, so the gap is a
+    // decision somebody makes rather than one they drift into.
+    for (const toolchain of TOOLCHAINS) {
+      assert.equal(
+        toolchainGuidance(toolchain.name).length > 0,
+        true,
+        `no templates/toolchain-${toolchain.name}.md for the ${toolchain.name} toolchain`,
+      );
+    }
+  });
+
+  it('returns empty for a toolchain nobody has written one for', () => {
+    assert.equal(toolchainGuidance('cobol'), '');
+  });
+
+  it('tells a .NET builder the two things that silently produce zero tests', () => {
+    const dotnet = toolchainGuidance('dotnet');
+    // Both were hit while verifying the adapter against a real SDK: a test project missing
+    // from the solution collects nothing, and one missing a project reference fails with
+    // CS0246, which names neither the reference nor the cause.
+    assert.equal(dotnet.includes('dotnet sln add'), true);
+    assert.equal(dotnet.includes('dotnet add'), true);
+    assert.equal(dotnet.includes('CS0246'), true);
+  });
+
+  it('tells a Node builder that the unit gate collects with vitest and not npm test', () => {
+    // The fault that killed both live runs on 10 August: a correct node:test suite, a green
+    // `npm test`, and a gate reporting zero tests.
+    assert.equal(toolchainGuidance('node').includes('collects with vitest'), true);
+  });
+
+  it('describes idioms rather than repeating the standing contract', () => {
+    // "No new personas, no framework." A fragment that restated the builder's contract would
+    // be a second voice arguing with the first, and would grow every time either changed.
+    for (const toolchain of TOOLCHAINS) {
+      const guidance = toolchainGuidance(toolchain.name);
+      assert.equal(guidance.includes('Do not satisfice'), false, `${toolchain.name} restates the contract`);
+      assert.equal(guidance.includes('RED before GREEN'), false, `${toolchain.name} restates the contract`);
+    }
+  });
 });

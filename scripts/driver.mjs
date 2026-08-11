@@ -828,6 +828,7 @@ export function appendBlooper(dareDir, event) {
  *   race?: (objective: import('./brief.mjs').Objective, iteration: number) => RaceOutcome,
  *   history?: (findings: string[]) => import('./brief.mjs').HistoryNote[],
  *   capabilities?: () => string[],
+ *   toolchainGuidance?: () => { name: string, guidance: string } | undefined,
  *   changedFiles?: () => string[],
  *   readSource?: (file: string) => string | null,
  *   securityEscalation?: (pin: import('./pins.mjs').SecurityPin) => ClaudeResult,
@@ -1090,6 +1091,7 @@ export function driveRun(options) {
       // gate's arming is: detection answers about the tree as it is now, and the tree changes
       // under it. The declared half is stable; the detected half is not.
       capabilities: effects.capabilities?.() ?? [],
+      toolchain: effects.toolchainGuidance?.(),
     });
     writeBrief(dareDir, iterationNumber, brief);
 
@@ -2042,6 +2044,30 @@ export function builderSystemPrompt(cwd) {
 }
 
 /**
+ * The guidance fragment for a toolchain, or an empty string when none is written.
+ *
+ * Empty rather than throwing, and the brief *announces* the emptiness rather than omitting the
+ * section: a brief that silently carries guidance for one toolchain and not another reads, to
+ * the next person, as a stack that had no idioms worth knowing. Same argument as a skipped
+ * gate (§3.8) — the absence has to be visible to be judged.
+ *
+ * Unlike `builderSystemPrompt`, this rides in the **Build Brief** rather than the system
+ * prompt, because it is about the objective's stack rather than about the builder's standing
+ * contract — and because the brief is archived, so what a builder was told about its toolchain
+ * is recoverable afterwards.
+ *
+ * @param {string} name the resolved toolchain's name
+ * @returns {string}
+ */
+export function toolchainGuidance(name) {
+  try {
+    return template(`toolchain-${name}.md`);
+  } catch {
+    return '';
+  }
+}
+
+/**
  * This plugin's own version, read from the manifest that Claude Code's loader keys its
  * install cache on — so a manifest recording 0.16.0 is evidence the 0.16.0 build ran, which
  * is exactly the confusion CLAUDE.md's "Releasing" section exists to prevent.
@@ -2798,6 +2824,12 @@ export function main(argv, io = {}) {
         }),
       race: runRace,
       capabilities: runCapabilities,
+      // Selected by *detected* toolchain rather than by anything declared, so the guidance
+      // matches the commands the gates will actually run.
+      toolchainGuidance: () => {
+        const name = resolveToolchain(cwd).toolchain.name;
+        return { name, guidance: toolchainGuidance(name) };
+      },
       history: (findings) => historyContext({ cwd, run: shell, findings, greenfield }),
       changedFiles,
       gates: () => {

@@ -266,3 +266,47 @@ describe('writeBrief', () => {
     assert.equal(briefFileName(7, 2), 'iter-007-candidate-02.md');
   });
 });
+
+describe('per-toolchain guidance in the brief', () => {
+  it('renders the fragment under a heading naming the toolchain', () => {
+    const brief = compileBrief({
+      iteration: 1,
+      chaos: 1,
+      objective: GATES_OBJECTIVE,
+      toolchain: { name: 'dotnet', guidance: '## Building this with .NET\n\nAdd it to the solution.' },
+    });
+    assert.equal(brief.includes('## Building this with dotnet'), true);
+    assert.equal(brief.includes('Add it to the solution.'), true);
+  });
+
+  it('says so when there is no fragment, rather than omitting the section', () => {
+    // A brief that silently carries guidance for one toolchain and not another reads, to the
+    // next person, as a stack that had no idioms worth knowing. Same argument as a skipped
+    // gate: the absence has to be visible to be judged.
+    const brief = compileBrief({
+      iteration: 1,
+      chaos: 1,
+      objective: GATES_OBJECTIVE,
+      toolchain: { name: 'rust', guidance: '' },
+    });
+    assert.equal(brief.includes('There is no guidance fragment for the rust toolchain'), true);
+    assert.equal(brief.includes('a gap in the plugin'), true);
+  });
+
+  it('carries no such section at all when no toolchain was supplied', () => {
+    const brief = compileBrief({ iteration: 1, chaos: 1, objective: GATES_OBJECTIVE });
+    assert.equal(brief.includes('Building this with'), false);
+  });
+
+  it('stays deterministic with guidance attached', () => {
+    // The brief's load-bearing property: same state, same bytes. A fragment read from disk is
+    // the first input to it that lives outside the run's own state, so it is worth asserting.
+    const input = /** @type {import('../scripts/brief.mjs').BriefInput} */ ({
+      iteration: 3,
+      chaos: 2,
+      objective: GATES_OBJECTIVE,
+      toolchain: { name: 'node', guidance: 'Pick a module system.' },
+    });
+    assert.equal(compileBrief(input), compileBrief(input));
+  });
+});

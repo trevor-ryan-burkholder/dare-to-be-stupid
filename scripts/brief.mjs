@@ -50,6 +50,7 @@ import path from 'node:path';
  *   history?: HistoryNote[],
  *   gates?: string[],
  *   capabilities?: string[],
+ *   toolchain?: { name: string, guidance: string },
  *   raceCandidate?: { index: number, of: number } | null
  * }} BriefInput
  */
@@ -228,6 +229,23 @@ export function compileBrief(input) {
       '',
       ...capabilities.map((capability) => `- ${capability}`),
     );
+  }
+
+  if (input.toolchain !== undefined && input.toolchain !== null) {
+    lines.push('', `## Building this with ${input.toolchain.name}`, '');
+    if (input.toolchain.guidance === '') {
+      // Announced rather than omitted, for the same reason a skipped gate is. A brief that
+      // silently carries guidance for one toolchain and not another reads, to the next
+      // reader, as a toolchain that needed none.
+      lines.push(
+        `There is no guidance fragment for the ${input.toolchain.name} toolchain, so this brief carries none.`,
+        'That is a gap in the plugin rather than a statement that this stack has no idioms worth knowing.',
+      );
+    } else {
+      // Rendered verbatim. The fragment owns its own headings, and rewriting it here would
+      // mean two places deciding what the builder reads about its stack.
+      lines.push(input.toolchain.guidance.trim());
+    }
   }
 
   if ((input.gates ?? []).length > 0) {

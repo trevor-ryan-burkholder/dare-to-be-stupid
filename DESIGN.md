@@ -1145,6 +1145,31 @@ already defaults to fail, and a corrupt hint file must not kill a healthy run.
 **This is a new output contract owned by another binary's behaviour, so it needs a tier-3 check**
 (§11.1). `test/live/assumptions-contract.live.test.mjs` is written and **has never been run**.
 
+### 8.4 Per-toolchain guidance — idioms, not commands
+
+§3.8's adapters carry *commands*. Nothing carried *idioms*, and the two are different knowledge:
+a .NET builder needs to know that a test project missing from the `.sln` collects **zero tests**
+and that a missing project reference surfaces as `CS0246` — neither of which is inferable from
+`dotnet test`.
+
+One fragment per toolchain under `templates/toolchain-<name>.md`, selected by the **detected**
+toolchain so the guidance matches the commands the gates will actually run, and rendered into
+the Build Brief rather than the system prompt. The brief is the right home for two reasons: it
+is about the objective's stack rather than the builder's standing contract, and it is
+**archived**, so what a builder was told about its toolchain is recoverable afterwards.
+
+Explicit files, no framework, no new personas, no per-language reviewer. The fragments describe
+idioms and deliberately do not restate the builder's contract — a second voice arguing with the
+first would grow every time either changed, and a test asserts they do not.
+
+**A missing fragment is announced, not omitted.** A brief that silently carries guidance for one
+toolchain and not another reads, to the next person, as a stack that had no idioms worth
+knowing. Same argument as a skipped gate. A separate test requires a fragment for every
+registered toolchain, so the gap is a decision somebody makes rather than one they drift into.
+
+This item was blocked behind §3.8's second adapter — not by effort, but because a one-entry
+table is not a seam.
+
 ### 8.2 Git history — only where the code has any
 
 A builder changing code it did not write is in a different position from one writing a file

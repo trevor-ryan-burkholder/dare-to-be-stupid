@@ -193,6 +193,8 @@ describe('every file the plugin depends on is present', () => {
     'templates/builder-system.md',
     'templates/reviewer-system.md',
     'templates/lesson-extractor.md',
+    'templates/toolchain-node.md',
+    'templates/toolchain-dotnet.md',
   ];
   for (const relative of required) {
     it(`${relative} exists`, () => {
