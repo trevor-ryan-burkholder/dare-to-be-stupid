@@ -26,11 +26,39 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 /** Driver-owned. Protected by the `.dare/**` invariant (§6) with no rule of its own. */
 export const RUN_MANIFEST = 'run.json';
+
+/** Where a finished run's artifacts are moved when the next one starts. */
+export const RUN_ARCHIVE_DIR = 'runs';
+
+/**
+ * What belongs to one run, and is therefore destroyed by the next one.
+ *
+ * Establishing this list was the whole of the work, because the two accounts previously
+ * written down were both wrong. `.dare` state is **not** replaced per run — `state.json` is
+ * loaded and carried forward, which is how the ratchet survives a run boundary, and
+ * `lessons.json`, `red-evidence.json` and `bloopers.log` all persist deliberately. But the
+ * briefs do **not** merely accumulate either. Iteration numbering lives in `progress`, which
+ * the driver initialises to zero in memory at the top of every run, so a second run writes
+ * `briefs/iter-001.md` **over** the first run's. They collide, one file at a time, and the
+ * loss is silent because the replacement looks exactly like the original.
+ *
+ * So this list is short and every entry earned its place:
+ *
+ * - `run.json` — overwritten wholesale, and it is the only record of what a run *was*.
+ * - `briefs/` — collides by number, per above. The archived brief is the only record of what
+ *   the builder was actually asked on the iteration a run went wrong.
+ * - `reality-check.md` — overwritten, and it is the reasoning behind an `ABORTED`.
+ *
+ * Deliberately absent: the unit and e2e reports. Those are rewritten every *iteration*, so
+ * they are already transient within a run, and archiving the last one would preserve an
+ * arbitrary moment while implying it was the run's.
+ */
+const PER_RUN_ARTIFACTS = [RUN_MANIFEST, 'briefs', 'reality-check.md'];
 
 /** The manifest's own schema version, bumped when a field's meaning changes. */
 const MANIFEST_VERSION = 1;
@@ -204,4 +232,73 @@ export function writeRunManifest(dareDir, manifest) {
     throw new RunManifestError(`${file} could not be written: ${/** @type {Error} */ (error).message}`);
   }
   return file;
+}
+
+/**
+ * The next free archive slot under `.dare/runs/`.
+ *
+ * Numbered rather than timestamped, for the reason nothing else in this module reads a clock:
+ * an integer is derived from what is on disk, needs no argument, and sorts correctly when
+ * printed. `001` also survives a machine whose clock moved, which a timestamped directory
+ * quietly does not.
+ *
+ * Existing names that are not three-digit numbers are ignored rather than errored on. An
+ * operator who renamed an archive to `runs/the-one-that-shipped` has done something
+ * reasonable, and refusing to start a run over it would be this module deciding how somebody
+ * organises their own evidence.
+ *
+ * @param {string} archiveRoot
+ * @returns {string} a three-digit slot name
+ */
+function nextArchiveSlot(archiveRoot) {
+  /** @type {string[]} */
+  let existing;
+  try {
+    existing = readdirSync(archiveRoot);
+  } catch {
+    return '001';
+  }
+  const used = existing.map((name) => (/^\d{3}$/.test(name) ? Number(name) : 0));
+  return String(Math.max(0, ...used) + 1).padStart(3, '0');
+}
+
+/**
+ * Move the previous run's artifacts into `.dare/runs/NNN/` before this one starts.
+ *
+ * **It moves; it never reads.** The no-reader guarantee above is about a manifest's *contents*
+ * influencing a run, and `renameSync` does not open the file. Nothing here parses, inspects or
+ * branches on anything inside what it archives — which is also why archiving lives in this
+ * module rather than beside the driver's other startup work: the property is easier to keep
+ * true where the reason for it is written down.
+ *
+ * Called once, before anything of this run's is written. A missing artifact is skipped rather
+ * than invented, so a first run archives nothing and says so by returning null, and a run that
+ * died before its design phase leaves only what it managed to produce.
+ *
+ * Failure to archive **fails the run**, on the same argument §7.1 makes about failing to write
+ * a manifest: the alternative is destroying the previous run's evidence and continuing, which
+ * is the outcome archiving exists to prevent.
+ *
+ * @param {string} dareDir
+ * @returns {string | null} the archive directory, or null when there was nothing to archive
+ * @throws {RunManifestError}
+ */
+export function archivePreviousRun(dareDir) {
+  const present = PER_RUN_ARTIFACTS.filter((name) => existsSync(path.join(dareDir, name)));
+  if (present.length === 0) return null;
+
+  const archiveRoot = path.join(dareDir, RUN_ARCHIVE_DIR);
+  try {
+    mkdirSync(archiveRoot, { recursive: true });
+    const target = path.join(archiveRoot, nextArchiveSlot(archiveRoot));
+    mkdirSync(target, { recursive: true });
+    for (const name of present) renameSync(path.join(dareDir, name), path.join(target, name));
+    return target;
+  } catch (error) {
+    throw new RunManifestError(
+      `the previous run's artifacts could not be archived under ${archiveRoot}: ` +
+        `${/** @type {Error} */ (error).message}. Refusing to continue, because starting would ` +
+        'overwrite them.',
+    );
+  }
 }

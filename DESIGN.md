@@ -851,6 +851,47 @@ means nobody managed to ask, not that there is no Claude.
 It needed no new guard rule. §6's protection is positional, so a builder cannot rewrite the
 record of what it is.
 
+### 7.2 `.dare/runs/NNN/` — the previous run, kept
+
+A manifest that only ever describes the *current* run is current rather than forensic. Before
+this run writes anything of its own, the previous run's artifacts are moved to
+`.dare/runs/NNN/`.
+
+**What is actually lost between runs was the whole of this work, because the two accounts
+previously written down were both wrong.** `.dare` state is *not* replaced per run:
+`state.json` is loaded and carried forward — that is how the ratchet survives a run boundary —
+and `lessons.json`, `red-evidence.json` and `bloopers.log` all persist deliberately. But the
+briefs do not merely *accumulate* either. **Iteration numbering restarts at 1 on every run**,
+because it lives in the driver's in-memory `progress` rather than in `state.json`. So a second
+run writes `briefs/iter-001.md` over the first run's, then `iter-002.md` over the next, and the
+loss is silent: the replacement looks exactly like the original.
+
+Three artifacts are archived, and each earned its place:
+
+| artifact | why |
+|---|---|
+| `run.json` | overwritten wholesale, and the only record of what a run *was* |
+| `briefs/` | collides by number, per above; the only record of what the builder was actually asked on the iteration a run went wrong |
+| `reality-check.md` | overwritten, and it is the reasoning behind an `ABORTED` |
+
+The unit and e2e reports are deliberately **not** archived. They are rewritten every
+*iteration*, so they are already transient within a run, and keeping the last one would
+preserve an arbitrary moment while implying it was the run's.
+
+**Numbered, not timestamped.** An integer is derived from what is on disk, needs no clock —
+which this module does not have and should not acquire — sorts correctly when printed, and
+survives a machine whose clock moved. Slots are allocated from the highest existing number
+rather than from a count, so deleting `runs/001` cannot make a later run land on top of `002`.
+A directory an operator renamed is ignored rather than errored on; organising your own evidence
+is not a fault.
+
+**Archiving moves; it never reads.** §7.1's no-reader guarantee is about a manifest's
+*contents* influencing a run, and `renameSync` does not open the file. Failure to archive
+**fails the run**, on the same argument: the alternative is destroying the previous run's
+evidence and continuing, which is the outcome archiving exists to prevent.
+
+It needs no new guard rule. §6 is positional, so `.dare/runs/` is protected the day it appears.
+
 **Install (one time, from any Claude Code session):**
 
 ```

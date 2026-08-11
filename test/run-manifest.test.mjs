@@ -9,15 +9,17 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, describe, it } from 'node:test';
 
 import {
+  RUN_ARCHIVE_DIR,
   RUN_MANIFEST,
   RunManifestError,
+  archivePreviousRun,
   buildRunManifest,
   configHash,
   writeRunManifest,
@@ -211,5 +213,111 @@ describe('the manifest decides nothing', () => {
         `${path.basename(file)} appears to read the run manifest; it is a record, not an input`,
       );
     }
+  });
+});
+
+describe('archivePreviousRun', () => {
+  // The item that produced this said ".dare state is currently replaced per run", and its own
+  // correction said briefs "accumulate". Both are wrong, and the tests below encode what is
+  // actually true, because that was the whole of the work.
+
+  /**
+   * @param {Record<string, string>} files
+   * @returns {string} a .dare directory
+   */
+  function dareWith(files) {
+    const dareDir = makeDareDir();
+    for (const [relative, contents] of Object.entries(files)) {
+      const full = path.join(dareDir, ...relative.split('/'));
+      mkdirSync(path.dirname(full), { recursive: true });
+      writeFileSync(full, contents, 'utf8');
+    }
+    return dareDir;
+  }
+
+  it('archives nothing, and says so, when there is no previous run', () => {
+    // A first run must not create an empty `runs/001`, which would read as a run that
+    // produced nothing rather than as a run that never happened.
+    const dareDir = makeDareDir();
+    mkdirSync(dareDir, { recursive: true });
+    assert.equal(archivePreviousRun(dareDir), null);
+    assert.deepEqual(readdirSync(dareDir), []);
+  });
+
+  it('moves the manifest, the briefs and the reality check into runs/001', () => {
+    const dareDir = dareWith({
+      'run.json': '{"version":1}',
+      'briefs/iter-001.md': 'first brief',
+      'reality-check.md': 'unbuildable because',
+    });
+    const target = archivePreviousRun(dareDir);
+    assert.equal(target, path.join(dareDir, RUN_ARCHIVE_DIR, '001'));
+    assert.deepEqual(readdirSync(/** @type {string} */ (target)).sort(), [
+      'briefs',
+      'reality-check.md',
+      'run.json',
+    ]);
+    assert.equal(readFileSync(path.join(/** @type {string} */ (target), 'briefs', 'iter-001.md'), 'utf8'), 'first brief');
+  });
+
+  it('leaves the artifacts that are deliberately carried across runs', () => {
+    // state.json is how the ratchet survives a run boundary; archiving it would silently
+    // reset the monotonic guarantee, which is the worst possible outcome for this feature.
+    const dareDir = dareWith({
+      'run.json': '{"version":1}',
+      'state.json': '{"version":1,"iteration":4,"passing":["a::b"],"lastGoodCommit":null}',
+      'lessons.json': '{"version":1,"lessons":[]}',
+      'red-evidence.json': '{"version":1,"red":[]}',
+      'bloopers.log': 'iteration 3\n',
+      'config.json': '{}',
+    });
+    archivePreviousRun(dareDir);
+    for (const kept of ['state.json', 'lessons.json', 'red-evidence.json', 'bloopers.log', 'config.json']) {
+      assert.equal(existsSync(path.join(dareDir, kept)), true, `${kept} was archived and must not be`);
+    }
+  });
+
+  it('removes the originals, so the next run cannot write over them', () => {
+    const dareDir = dareWith({ 'run.json': '{"version":1}', 'briefs/iter-001.md': 'first' });
+    archivePreviousRun(dareDir);
+    assert.equal(existsSync(path.join(dareDir, 'run.json')), false);
+    assert.equal(existsSync(path.join(dareDir, 'briefs')), false);
+  });
+
+  it('keeps a third run from overwriting the first two', () => {
+    // The collision this exists to stop. Iteration numbering restarts at 1 each run, so
+    // without archiving every run writes briefs/iter-001.md over the last one's.
+    const dareDir = makeDareDir();
+    for (const body of ['run one', 'run two', 'run three']) {
+      mkdirSync(path.join(dareDir, 'briefs'), { recursive: true });
+      writeFileSync(path.join(dareDir, 'briefs', 'iter-001.md'), body, 'utf8');
+      archivePreviousRun(dareDir);
+    }
+    const archives = readdirSync(path.join(dareDir, RUN_ARCHIVE_DIR)).sort();
+    assert.deepEqual(archives, ['001', '002', '003']);
+    const read = (/** @type {string} */ slot) =>
+      readFileSync(path.join(dareDir, RUN_ARCHIVE_DIR, slot, 'briefs', 'iter-001.md'), 'utf8');
+    assert.deepEqual([read('001'), read('002'), read('003')], ['run one', 'run two', 'run three']);
+  });
+
+  it('archives only what the dead run managed to produce', () => {
+    // A run that died before its design phase has no manifest. Inventing the missing entries
+    // would put empty files in an archive that reads as evidence.
+    const dareDir = dareWith({ 'briefs/iter-001.md': 'only this' });
+    const target = archivePreviousRun(dareDir);
+    assert.deepEqual(readdirSync(/** @type {string} */ (target)), ['briefs']);
+  });
+
+  it('ignores an archive directory an operator renamed, rather than refusing to start', () => {
+    const dareDir = dareWith({ 'run.json': '{"version":1}' });
+    mkdirSync(path.join(dareDir, RUN_ARCHIVE_DIR, 'the-one-that-shipped'), { recursive: true });
+    assert.equal(archivePreviousRun(dareDir), path.join(dareDir, RUN_ARCHIVE_DIR, '001'));
+  });
+
+  it('numbers from the highest existing slot, not from the count', () => {
+    // Deleting runs/001 must not make the next run reuse 002's number and land on top of it.
+    const dareDir = dareWith({ 'run.json': '{"version":1}' });
+    mkdirSync(path.join(dareDir, RUN_ARCHIVE_DIR, '007'), { recursive: true });
+    assert.equal(archivePreviousRun(dareDir), path.join(dareDir, RUN_ARCHIVE_DIR, '008'));
   });
 });

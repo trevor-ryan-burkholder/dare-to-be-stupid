@@ -501,7 +501,7 @@ changed, then candidate index — the original brief's ordering, verbatim. A bin
 as a changed file with zero changed lines, recorded in `DESIGN.md` §13.6 and in a test rather
 than papered over. `HANDOFF.md` item 6.
 
-## C2. Run manifest — **DONE (0.17.0)** / per-run archiving — **OPEN**
+## C2. Run manifest — **DONE (0.17.0)** / per-run archiving — **DONE (0.28.0)**
 
 `scripts/run-manifest.mjs` writes `.dare/run.json` once after the design phase. There is
 deliberately no reader function and a test greps `scripts/` for one, so no code path can
@@ -509,6 +509,35 @@ consult the contents. `DESIGN.md` §7.1, `HANDOFF.md` item 7.
 
 Archiving prior runs is still worth doing — it is what makes the manifest forensic rather than
 merely current.
+
+**Landed 0.28.0 — and the correction below is itself wrong, which is the finding.**
+
+The item forbade designing this before saying what is actually lost. Saying it took reading
+`driver.mjs:866`, and the answer contradicts both accounts on this page.
+
+**`progress` is initialised to `{ iteration: 0, … }` in memory at the top of every run.** It is
+never loaded from `state.json`. So `iterationNumber` restarts at 1 each run, and
+`writeBrief(dareDir, 1, …)` writes `.dare/briefs/iter-001.md` **over the previous run's**.
+Briefs do not accumulate across runs; **they collide, one file at a time**, and the loss is
+silent because the replacement looks exactly like the original. The original brief's claim
+("state is replaced per run") is false, and the correction's replacement for it ("briefs
+accumulate under `.dare/briefs/`") is also false. What is carried forward is `state.json`,
+`lessons.json`, `red-evidence.json` and `bloopers.log`. What is destroyed is `run.json`,
+`reality-check.md`, and the briefs.
+
+`archivePreviousRun` in `run-manifest.mjs` moves those three to `.dare/runs/NNN/` before this
+run writes anything. `DESIGN.md` §7.2. Four decisions:
+
+- **Numbered, not timestamped** — no clock in that module, sorts correctly, survives a machine
+  whose clock moved. Slots come from the highest existing number rather than a count, so
+  deleting `runs/001` cannot make a later run land on `002`.
+- **It moves, it never reads.** `renameSync` does not open the file, so §7.1's no-reader
+  guarantee is intact — which is also why the function lives in that module, where the reason
+  is written down and the no-reader test already excludes it.
+- **Failure to archive fails the run**, on §7.1's own argument: the alternative is destroying
+  the previous run's evidence and continuing.
+- **The test reports are not archived.** They are rewritten every *iteration*, so keeping the
+  last one preserves an arbitrary moment while implying it was the run's.
 
 > **Correction.** The original justified it with "`.dare` state is currently replaced per run."
 > That is false. `state.json` is loaded and carried forward — it is how the ratchet survives a

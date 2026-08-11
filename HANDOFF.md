@@ -482,6 +482,30 @@ that file. If it has been quietly including capability-shaped prose all along, t
 not see it: they constrain the *instruction* and the *readers*, not the artifact. Read a
 generated `PRODUCT.md` on the first dogfood run.
 
+## C2-archiving — the previous run is kept (0.28.0)
+
+**A real defect was found, not just a feature added.** Iteration numbering lives in the
+driver's in-memory `progress`, initialised to zero at the top of every run, and never read from
+`state.json`. So every run wrote `.dare/briefs/iter-001.md` over the last run's, then
+`iter-002.md`, and so on. Briefs were being destroyed one file at a time, silently, because the
+replacement looked exactly like the original. Both written accounts of this — "state is
+replaced per run" and "briefs accumulate" — were wrong in opposite directions.
+
+**Verified.** Nine tests. The one that matters simulates three consecutive runs each writing
+`briefs/iter-001.md`, and asserts all three bodies are recoverable afterwards from `runs/001`,
+`runs/002` and `runs/003` — that is the collision, reproduced and then shown fixed. Others
+assert the carried-forward artifacts (`state.json`, `lessons.json`, `red-evidence.json`,
+`bloopers.log`, `config.json`) are **not** archived, since archiving `state.json` would
+silently reset the ratchet; that a first run creates no empty `runs/001`; that slots come from
+the highest existing number so deleting one cannot cause an overwrite; and that a directory an
+operator renamed is ignored rather than fatal.
+
+**Not verified.** No real run has archived anything — every fixture is a temp directory this
+session built. In particular the driver-side wiring (`archivePreviousRun` called once in `main`
+before `ensureDareIgnored`'s successor lines) is covered only by the unit tests of the function
+itself, not by an end-to-end run, so *when* it fires has not been observed. Two runs in
+succession against a throwaway repository would settle it and cost nothing but time.
+
 ---
 
 ## Fixed here, and worth knowing about

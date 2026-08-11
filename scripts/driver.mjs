@@ -59,7 +59,7 @@ import {
   loadState,
   saveState,
 } from './ratchet.mjs';
-import { buildRunManifest, writeRunManifest } from './run-manifest.mjs';
+import { archivePreviousRun, buildRunManifest, writeRunManifest } from './run-manifest.mjs';
 import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
 import { E2E_REPORT, UNIT_REPORT, gatesFor, resolveToolchain } from './toolchains/index.mjs';
 
@@ -1996,6 +1996,19 @@ export function main(argv, io = {}) {
 
   // Before anything is written, so the very first commit cannot stage machine state.
   if (ensureDareIgnored(cwd)) write(verbatim('added dare machine state to .gitignore'));
+
+  // Before this run writes any artifact of its own, because the collision it prevents is
+  // silent: iteration numbering restarts at 1 every run, so `briefs/iter-001.md` would be
+  // overwritten by a replacement that looks exactly like the original (DESIGN.md §7.2).
+  try {
+    const archived = archivePreviousRun(dareDir);
+    if (archived !== null) write(verbatim(`archived the previous run to ${path.relative(cwd, archived)}`));
+  } catch (error) {
+    // Continuing here would destroy the evidence archiving exists to keep, which is a worse
+    // outcome than not starting.
+    write(verbatim(/** @type {Error} */ (error).message));
+    return 1;
+  }
 
   /**
    * Commit what a phase produced.
