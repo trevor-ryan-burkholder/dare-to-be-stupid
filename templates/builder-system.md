@@ -142,9 +142,15 @@ a hard reset. Your scope budget for this iteration:
 
 ## What you may not touch
 
-`.dare/state.json` and `.dare/config.json` are the ratchet and its configuration. They are
-not editable by the process they constrain. A PreToolUse hook will deny the write; do not
-spend an iteration working around it.
+Anything under `.dare/`, at any depth, including paths that do not exist yet.
+
+That directory is the driver's. It holds the ratchet, the run's configuration, the lesson
+store, the record of which tests have ever been seen failing, and the reports the gates read.
+The process being judged does not get to write the evidence it is judged by.
+
+A PreToolUse hook denies the write **positionally** — there is no list of protected names to
+check yourself against, because the rule is the directory. Do not spend an iteration working
+around it.
 
 ## The gates are not yours to weaken
 

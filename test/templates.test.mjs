@@ -153,7 +153,7 @@ describe('the builder template', () => {
     ['RED before GREEN', 'the red-evidence rule'],
     ['toBeTruthy', 'a concrete example of an assertion that proves nothing'],
     ['route handler', 'where guards belong'],
-    ['.dare/state.json', 'the files it may not touch'],
+    ['Anything under `.dare/`, at any depth', 'what it may not touch, stated positionally'],
     ['npx vitest run --reporter=json', 'the runner the unit gate collects with'],
     ['npx playwright test', 'the runner the e2e gate collects with'],
     ['invisible to the ratchet', 'what a suite the gates cannot collect is worth'],
@@ -187,6 +187,15 @@ describe('the builder template', () => {
     for (const level of ['chaos 1', 'chaos 2', 'chaos 3']) {
       assert.equal(BUILDER.includes(level), true, `builder template never explains ${level}`);
     }
+  });
+
+  it('names no protected file, because the rule the hook enforces is the directory', () => {
+    // The template used to say `.dare/state.json` and `.dare/config.json`, which has been
+    // wrong since 0.10.0 made the guard positional. A builder told a shorter list than the
+    // hook enforces spends an iteration finding out, and every artifact invented after the
+    // list was written defaults to looking writable.
+    assert.deepEqual(BUILDER.match(/`\.dare\/[\w-]+\.json`/g), null);
+    assert.equal(BUILDER.includes('positionally'), true, 'never says how the rule is enforced');
   });
 });
 

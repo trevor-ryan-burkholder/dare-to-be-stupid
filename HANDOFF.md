@@ -288,6 +288,34 @@ Prefer extraction to rewriting. Prefer several committable states to one large c
 
 ---
 
+# Brief items — what was actually verified
+
+`BRIEF.md` is the work list and carries the statuses. This section carries the *evidence*, in
+the same shape as the rest of this file: what ran, and what did not.
+
+Every entry below was gated with `npm run lint && npm run typecheck && npm test` before it was
+committed, and `npm run release-check` after the version bump. Where an item says something is
+unverified, that is not a hedge — it is the thing to test next.
+
+## A1a — the protected-state rule, stated positionally (0.19.0)
+
+**Verified.** `templates/builder-system.md` and `scripts/brief.mjs` both state the rule as the
+directory rather than as a list of names. Three unit tests hold it: the compiled brief and the
+builder template each assert that no `` `.dare/<name>.json` `` literal appears at all, so
+re-introducing an enumeration fails the suite rather than merely reading oddly; and one test
+pairs the rendered brief against `isProtectedStatePath` from the hook itself, showing that
+`.dare/red-evidence.json` is named nowhere in the wording and denied anyway. That is the tie
+worth having — the documented rule and the enforced rule are now the same rule, and a test
+fails if they drift apart.
+
+**Not verified.** No live builder child has read the new wording. The claim the item rests on —
+that the weaker rule cost an iteration the first time a builder tried something the guard denied
+— was never measured and is not measurable retrospectively; both real runs died in iteration 1.
+The tests assert the presence and absence of *substrings*, which is a proxy for a model
+understanding the rule, not evidence of it. A dogfood run is what would settle it.
+
+---
+
 ## Fixed here, and worth knowing about
 
 **Every phase except `builder` was dead, and no test could see it.** `--allowedTools` is

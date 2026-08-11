@@ -191,8 +191,9 @@ export function compileBrief(input) {
     '',
     '- Do not touch code unrelated to the objective above. Every unrelated change is regression',
     '  surface, and a regression costs a full iteration plus a hard reset.',
-    '- Do not edit `.dare/state.json`, `.dare/config.json` or `.dare/lessons.json`. They are driver',
-    '  state, and a PreToolUse hook denies the write.',
+    '- Do not write anything under `.dare/`, at any depth, including paths that do not exist yet.',
+    '  That directory is driver-owned - the ratchet, the evidence and the reports the gates read -',
+    '  and a PreToolUse hook denies the write positionally rather than by name.',
     '- Do not declare the work finished. Something else decides that.',
   );
 
