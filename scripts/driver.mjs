@@ -27,6 +27,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { appendAssumptions, parseAssumptions, readAssumptions, renderAssumptions } from './assumptions.mjs';
 import { compileBrief, writeBrief } from './brief.mjs';
 import {
   hasFrontend,
@@ -1115,6 +1116,37 @@ export function driveRun(options) {
       // to know which of the two it was, and the failure is the more specific answer.
       if (!built.ok) return landCleanly(built, iterationNumber, 'builder');
       if (exhausted) return finish('BUDGET', ceilingReason());
+
+      // ---- Phase 2c: the assumptions log (DESIGN.md §8.3) ---------------
+      // A second output contract on the builder's only return channel. Unparseable output is
+      // a failure rather than an absence here as everywhere else: a block that will not parse
+      // is not evidence that nothing was assumed.
+      const declared = parseAssumptions(built.text);
+      if (declared.malformed !== '') {
+        effects.log(`builder assumptions block rejected: ${declared.malformed}`);
+        objective = {
+          kind: 'review',
+          headline: 'Your assumptions block could not be read. Emit valid json, or emit none at all.',
+          reason:
+            `the builder emitted an assumptions block that could not be parsed on iteration ${iterationNumber} ` +
+            `(${declared.malformed}). An unreadable block is not evidence that nothing was assumed, so the ` +
+            'iteration cannot be judged on it',
+          findings: [declared.malformed],
+        };
+        // The ratchet count is the previous one, because this fails before any test report is
+        // read. Reporting zero here would look like a run that lost every passing test.
+        closeIteration(iterationNumber, ['assumptions:malformed'], 0, loadState(dareDir).passing.length);
+        continue;
+      }
+      if (declared.discarded > 0) {
+        // Announced rather than dropped quietly. A log that silently sheds entries reads
+        // exactly like a log nothing was written to.
+        effects.log(`discarded ${declared.discarded} assumption(s) that cited nothing or assumed nothing`);
+      }
+      if (declared.assumptions.length > 0) {
+        appendAssumptions(dareDir, iterationNumber, declared.assumptions);
+        effects.log(`recorded ${declared.assumptions.length} assumption(s) for the audit`);
+      }
     }
 
     // ---- Phase 3: gates -------------------------------------------------
@@ -2618,6 +2650,8 @@ export function main(argv, io = {}) {
           cwd,
           env,
         }),
+      // Re-read per call rather than captured once, because the builder appends to it between
+      // iterations and a stale copy would show the panel an older run's reasoning.
       review: (reviewer, ids) =>
         runChild({
           prompt: [
@@ -2630,6 +2664,24 @@ export function main(argv, io = {}) {
             ...ids.map((id) => `- ${id}`),
             '',
             'Read PRD.md, the documents under docs/, and the repository. Then return your report.',
+            // Supplied, not sealed (§6.1). The log is driver-owned and the builder cannot write
+            // it; what it buys the reviewer is the ability to check "you assumed X, the PRD says
+            // Y", which is a defect no amount of reading the code would surface.
+            ...(() => {
+              /** @type {string} */
+              let rendered;
+              try {
+                rendered = renderAssumptions(readAssumptions(dareDir).entries);
+              } catch (error) {
+                // Degrades like the lesson store, not like the ratchet. This is context for a
+                // reviewer whose verdict already defaults to fail, so losing it costs
+                // information rather than correctness, and a corrupt hint file must not kill a
+                // healthy run.
+                write(verbatim(`assumptions log unreadable, continuing without it: ${/** @type {Error} */ (error).message}`));
+                rendered = '';
+              }
+              return rendered === '' ? [] : ['', rendered];
+            })(),
           ].join('\n'),
           model: config.reviewerModel,
           systemPrompt: template('reviewer-system.md'),

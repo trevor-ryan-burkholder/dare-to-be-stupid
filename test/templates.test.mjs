@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
+import { parseAssumptions } from '../scripts/assumptions.mjs';
 import { CAPABILITY_ORDER, parseCapabilityDeclaration } from '../scripts/capabilities.mjs';
 import { parseReviewerReport } from '../scripts/driver.mjs';
 import { parseLessonExtraction } from '../scripts/lessons.mjs';
@@ -174,6 +175,35 @@ describe('the builder template', () => {
 
   it('warns that deleting pre-existing dead code can trip the ratchet', () => {
     assert.equal(BUILDER.includes('already in the ratchet'), true);
+  });
+
+  it('gives the assumptions contract a shape the parser accepts', () => {
+    // The template's own example is the contract. If the parser would reject it, every
+    // obedient builder fails its iteration on the block it was told to emit.
+    const example = jsonBlocks(BUILDER).find((candidate) => candidate.includes('"assumptions"'));
+    assert.notEqual(example, undefined, 'the builder template has no assumptions example');
+    const parsed = parseAssumptions(`\`\`\`json\n${example}\`\`\``);
+    assert.equal(parsed.malformed, '');
+    assert.equal(parsed.assumptions.length, 1);
+    assert.equal(parsed.discarded, 0, 'the documented example would be discarded by its own bar');
+  });
+
+  it('states the citation bar and what happens without it', () => {
+    // Matched short because the sentence wraps in the template; the rule is the phrase, not
+    // the line breaks a formatter happens to choose.
+    assert.equal(BUILDER.includes('An assumption citing nothing is'), true);
+    assert.equal(BUILDER.includes('discarded'), true);
+  });
+
+  it('separates declaring an ambiguity from assessing the work', () => {
+    // Without this the section argues with "do not declare completion" three headings above
+    // it, and a builder resolves the contradiction by picking one — probably silence.
+    assert.equal(BUILDER.includes('declaring an ambiguity is not an assessment'), true);
+  });
+
+  it('tells the builder that emitting nothing is the common case', () => {
+    // The failure mode that reaches the reviewer: a model that answers because it was asked.
+    assert.equal(BUILDER.includes('Emit no block at all if nothing was ambiguous'), true);
   });
 
   it('does not tell an unattended builder to stop and ask', () => {

@@ -1026,6 +1026,48 @@ The archived briefs are debugging artifacts. When a run ends badly the first que
 what the builder was actually asked for on the iteration it went wrong, and reconstructing
 that from what it did is guesswork. A raced iteration archives one brief per candidate.
 
+### 8.3 The assumptions log — what the builder decided that nobody asked it to
+
+Karpathy's first principle: models make wrong assumptions on your behalf and run along with
+them without checking. The stated remedy — ask for clarification — is incompatible with an
+unattended loop; there is nobody to ask, and a builder that stalls waiting burns the stall
+limit. The translation that works is that the builder may not resolve an ambiguity *silently*.
+It records the interpretation, and the record is handed to the **reviewer**, who can check "you
+assumed X; the PRD says Y". An unstated assumption is a thing that defaults to pass.
+
+It travels on the builder's only return channel: one fenced json block alongside its one or two
+lines, parsed by `scripts/assumptions.mjs` and appended by the driver to
+`.dare/assumptions.json`. The builder never writes the file — §6 denies it positionally — which
+is what stops this becoming a channel a builder can use to brief its own auditor unsupervised.
+
+**The citation bar is the whole design.** `lessons.mjs` already records the failure this shares:
+a model asked what it assumed will always answer, and a store of confident generalities is worse
+than an empty one. It is worse here than there, because this store reaches the component whose
+starved context is the reason the architecture exists. So every entry names the PRD id or brief
+line that was ambiguous, and **an assumption citing nothing is discarded, not recorded** — a
+citation is the only thing that makes an assumption checkable, because the reviewer's next move
+is to read the thing cited and see whether it says what the builder thought.
+
+Three outcomes, and they differ on purpose:
+
+| the builder emits | what happens | why |
+|---|---|---|
+| no block | nothing; the run continues | the common case. Requiring one guarantees filler on every iteration with nothing to say |
+| a malformed block | **the iteration fails** | unparseable output is a failure here as everywhere; a block that will not parse is not evidence nothing was assumed |
+| an uncited entry | discarded, and the discard is **counted and reported** | a log that silently sheds entries reads exactly like a log nothing was written to |
+
+**On the template conflict.** §8's "do not declare completion" exists to stop the builder
+*assessing its own work*. Declaring an ambiguity is not an assessment — it is a fact about the
+specification, not a claim about the code — and `builder-system.md` states that distinction
+rather than adding a second instruction that argues with the first.
+
+The log degrades like the lesson store rather than like the ratchet: unreadable means the panel
+runs without it and a warning is printed, because this is context for a reviewer whose verdict
+already defaults to fail, and a corrupt hint file must not kill a healthy run.
+
+**This is a new output contract owned by another binary's behaviour, so it needs a tier-3 check**
+(§11.1). `test/live/assumptions-contract.live.test.mjs` is written and **has never been run**.
+
 ### 8.2 Git history — only where the code has any
 
 A builder changing code it did not write is in a different position from one writing a file

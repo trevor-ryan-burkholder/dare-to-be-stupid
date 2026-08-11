@@ -393,7 +393,7 @@ while the measurement is a refused item away.
 re-litigated until its evidence changes" is **not met**. The line "an unresolvable evidence
 target fails rather than carries" **is** met.
 
-## A9. An assumptions log — **OPEN — REVISED**
+## A9. An assumptions log — **DONE (0.30.0); its tier-3 check written and not run**
 
 Where the PRD or Build Brief is ambiguous, the builder may not silently pick an interpretation.
 It must record the assumption to a driver-owned, append-only log, which is then supplied to the
@@ -428,6 +428,37 @@ own work**. Declaring an ambiguity is not an assessment. State that distinction 
 `builder-system.md` rather than adding a second instruction that argues with the first.
 
 A new output contract whose behaviour another binary owns, so it needs a **tier-3 live check**.
+
+**Landed 0.30.0.** `scripts/assumptions.mjs`, `.dare/assumptions.json`, a new section in
+`builder-system.md`, the log rendered into every reviewer prompt, `DESIGN.md` §8.3. 41 tests.
+
+The correction was right about the shape and the cost. Three things it did not specify:
+
+- **An uncited entry is discarded and the discard is *counted and announced*.** "Discarded, not
+  recorded" alone would have made the log shed entries silently, which reads exactly like a log
+  nothing was written to — the same defect the Build Brief's caps exist to avoid.
+- **A malformed block fails the iteration *before* the panel is called.** A test asserts the
+  reviewer is called **zero** times on such an iteration: the driver already knows it cannot
+  trust that output, and paying for a cold read on it spends the most expensive call in the
+  loop on a known-bad input.
+- **The example in the template is fed through the real parser**, as `reviewer-system.md`'s
+  already is. Otherwise every obedient builder fails its iteration on the exact block it was
+  told to emit.
+
+The template conflict was resolved as directed — the distinction between declaring an ambiguity
+and assessing the work is stated in `builder-system.md` itself, and a test holds it, so a later
+reader does not resolve the apparent contradiction by picking one.
+
+**The tier-3 check is written and has not been run.** `test/live/assumptions-contract.live.test.mjs`
+covers the two failure modes tier 1 cannot see: a builder emitting prose instead of json, and a
+builder emitting a block on *every* iteration because being asked implies an expectation. The
+second is the one that matters, since it fills the reviewer's context with generalities. Exact
+command, ready to run:
+
+    DARE_LIVE=1 npm run test:live
+
+Expect a few cents. If the block appears where nothing was ambiguous, the fix is the template,
+not the parser.
 
 ---
 

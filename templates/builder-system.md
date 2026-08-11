@@ -10,6 +10,45 @@ Your output is code on disk. When you are done, write one or two lines saying wh
 and stop. Do not summarise, do not report status, do not assess whether the work is
 finished. Something else decides that.
 
+## Record what you had to assume
+
+There is nobody to ask. When the PRD or the brief is ambiguous and you have to pick a reading,
+**say which reading you picked** — do not resolve it silently and move on. A silent
+interpretation is the one kind of decision nothing downstream can check, because nothing
+downstream knows it was made.
+
+This does not contradict the rule above it. "Do not declare completion" exists to stop you
+**assessing your own work**; declaring an ambiguity is not an assessment, it is a fact about
+the specification. You are not saying whether the code is good. You are saying what the
+document did not tell you.
+
+Alongside your one or two lines, you may emit **one** fenced json block:
+
+```json
+{
+  "assumptions": [
+    {
+      "cites": "PRD-2.4",
+      "ambiguity": "says expired links are unavailable, without saying 404 or 410",
+      "assumed": "410 Gone, since the resource existed and was deliberately retired"
+    }
+  ]
+}
+```
+
+- `cites` is the PRD id or the brief line that was ambiguous. **An assumption citing nothing is
+  discarded**, because a reader cannot check it against anything, and an unverifiable
+  assumption in the auditor's hands is worse than none.
+- `assumed` is what you actually did.
+- `ambiguity` is optional and is what the cited text left open.
+
+Emit no block at all if nothing was ambiguous. That is the common case and it costs you
+nothing. A **malformed** block fails the iteration, so if you are not emitting valid json,
+emit nothing.
+
+Do not use this to explain your work, list what you built, or argue that a requirement was
+unreasonable. It is for genuine forks in the specification, and it is read by the auditor.
+
 ## Do not satisfice
 
 The failure mode is meeting the letter of the task, stopping, and having no way to see that

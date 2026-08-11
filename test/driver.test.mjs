@@ -20,6 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
+import { readAssumptions } from '../scripts/assumptions.mjs';
 import { pinSecurityElement, quarantinePin, readPins, writePins } from '../scripts/pins.mjs';
 import { defaultConfig } from '../scripts/config.mjs';
 import {
@@ -1134,6 +1135,94 @@ describe('driveRun', () => {
     });
     return { outcome, dareDir, root };
   }
+
+  describe('the builder assumptions contract', () => {
+    // A9. A second output contract on the builder's only return channel, so the failure modes
+    // are the parser's: an absence must not read as a failure, and a failure must not read as
+    // an absence.
+
+    /** @param {string} text what the builder's final message says */
+    function runWithBuilderSaying(text) {
+      const root = makeTempDir();
+      const dareDir = path.join(root, '.dare');
+      const outcome = driveRun({
+        config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
+        dareDir,
+        rootDir: root,
+        requiredIds: ['PRD-1.1'],
+        task: 'build the thing',
+        effects: effectsWith({
+          build: () => ({ ok: true, text, costUsd: 0.01, tokens: 100, raw: '' }),
+          readTestReports: () => [
+            {
+              numTotalTests: 1,
+              testResults: [
+                { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+              ],
+            },
+          ],
+        }),
+      });
+      return { outcome, dareDir };
+    }
+
+    it('records a cited assumption where the reviewer will see it', () => {
+      const { dareDir } = runWithBuilderSaying(
+        'Added the handler.\n\n```json\n' +
+          JSON.stringify({ assumptions: [{ cites: 'PRD-2.4', assumed: '410 Gone' }] }) +
+          '\n```\n',
+      );
+      assert.deepEqual(readAssumptions(dareDir).entries, [
+        { iteration: 1, cites: 'PRD-2.4', ambiguity: '', assumed: '410 Gone' },
+      ]);
+    });
+
+    it('discards an uncited assumption instead of recording it', () => {
+      // The citation bar, end to end. An unverifiable assumption in the auditor's hands is
+      // worse than no assumption, because it costs a cold read and cannot be checked.
+      const { dareDir } = runWithBuilderSaying(
+        'Added the handler.\n\n```json\n' + JSON.stringify({ assumptions: [{ assumed: 'probably json' }] }) + '\n```\n',
+      );
+      assert.deepEqual(readAssumptions(dareDir).entries, []);
+    });
+
+    it('ships normally when the builder says nothing about assumptions', () => {
+      // The common case, and the benign neighbour: a contract that punished silence would
+      // fail every iteration that had nothing ambiguous to report.
+      const { outcome, dareDir } = runWithBuilderSaying('Added the handler.');
+      assert.equal(outcome.state, 'SHIPPED');
+      assert.deepEqual(readAssumptions(dareDir).entries, []);
+    });
+
+    it('fails the iteration on a malformed block rather than treating it as silence', () => {
+      // Unparseable output is a failure everywhere else here and is one here. A block that
+      // will not parse is not evidence that nothing was assumed.
+      const { outcome } = runWithBuilderSaying('Added it.\n\n```json\n{"assumptions": [ }\n```\n');
+      assert.notEqual(outcome.state, 'SHIPPED');
+    });
+
+    it('never calls a reviewer on an iteration whose assumptions block was malformed', () => {
+      // The iteration failed before it was judgeable. Paying for a panel on it would spend a
+      // cold read on output the driver already knows it cannot trust.
+      const root = makeTempDir();
+      let reviewed = 0;
+      driveRun({
+        config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
+        dareDir: path.join(root, '.dare'),
+        rootDir: root,
+        requiredIds: ['PRD-1.1'],
+        task: 'build the thing',
+        effects: effectsWith({
+          build: () => ({ ok: true, text: '```json\n{"assumptions": [ }\n```', costUsd: 0, tokens: 1, raw: '' }),
+          review: () => {
+            reviewed += 1;
+            return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
+          },
+        }),
+      });
+      assert.equal(reviewed, 0);
+    });
+  });
 
   describe('pinned security elements gate the run', () => {
     // The DoD lines this exists to satisfy: a removed guard is caught as a regression, an

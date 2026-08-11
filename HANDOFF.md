@@ -549,6 +549,42 @@ requirement is not re-litigated until its evidence changes" is therefore not met
 - **No run has exercised a `removed` verdict end to end**, so the security hard-reset path has
   never fired outside a unit test.
 
+## A9 — the assumptions log (0.30.0)
+
+**Verified at tier 1.** 41 tests. The parser's three outcomes are each asserted: an absent block
+is not a failure, a malformed block is, and an uncited entry is discarded and *counted*. Five
+driver-level tests carry it end to end — a cited assumption reaches `.dare/assumptions.json`, an
+uncited one does not, a builder that says nothing about assumptions still ships, a malformed
+block stops the iteration, and **the reviewer is called zero times on that iteration**. The
+template's own example is fed through the real parser, so an obedient builder cannot fail its
+iteration on the block it was told to emit.
+
+**Not verified, and this is a tier-3 gap by the repository's own rule.** This is a new output
+contract whose behaviour another binary owns — the precise category that produced the argv
+defect, where `claudeArgs` was unit-tested, correct, and wrong about what the other program did
+with it. **No live child has ever emitted an assumptions block.** Every string the parser has
+seen was written by this session.
+
+`test/live/assumptions-contract.live.test.mjs` is written and **has never been run**. It covers
+the two things tier 1 structurally cannot:
+
+1. whether a real builder emits json at all where the template asked for it, and
+2. whether it emits a block on **every** iteration because being asked implies an expectation.
+
+The second is the more dangerous, and it is `lessons.mjs`'s named failure arriving by a new
+door — except this store reaches the reviewer. Run:
+
+```
+DARE_LIVE=1 npm run test:live
+```
+
+Expect a few cents and under a minute. If a block appears where nothing was ambiguous, the fix
+is the template, not the parser.
+
+**Also unverified:** whether a reviewer handed the log actually uses it — that is, whether "you
+assumed X, the PRD says Y" ever appears as a finding. That needs a run reaching the panel with
+a non-empty log, which is a dogfood scenario rather than a live test.
+
 ---
 
 ## Fixed here, and worth knowing about
