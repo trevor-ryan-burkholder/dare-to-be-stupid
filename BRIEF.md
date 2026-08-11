@@ -188,7 +188,7 @@ on a guess. Do D2 first; then this is a considered addition with a baseline to c
 Ordered after the dogfood runs, and still dependent on B2's new operation. Section E's cap of one
 new persona is spent here and nowhere else.
 
-## A4. Safety monotonicity — pinned security elements — **OPEN — REVISED**
+## A4. Safety monotonicity — pinned security elements — **DONE (0.29.0)**
 
 From `BORROWED.md` (SCAFFOLD-CEGIS, arXiv 2603.08520): security degrades *gradually across
 iterations* through spec drift; 43.7% of ten-round chains ended more vulnerable than baseline;
@@ -233,6 +233,28 @@ resolve, and it is the whole difference between this and a threshold that drifts
 
 The builder cannot reach any of it: the reviewer is a separate cold child, and the state is
 driver-owned under A1.
+
+**Landed 0.29.0 in full**, mechanism and wiring. `scripts/pins.mjs`, `.dare/pins.json`, a new
+`security-escalation` phase in `PHASE_PERMISSIONS`, `DESIGN.md` §4.3. 47 unit tests on the
+mechanism plus 8 on the driver wiring.
+
+Four decisions the item left open:
+
+- **Identity is the whitespace-normalised snippet, searched across the whole file** rather than
+  at the recorded line. A guard that moved down eighty lines, was reindented or re-wrapped
+  verifies for free — which is what makes running the check every iteration affordable, and
+  what stops a prettier pass costing a hard reset. A rename or a flipped comparison still
+  breaks the match, deliberately: those are edits to the guard, and a normaliser clever enough
+  to see through them would see through its removal too.
+- **The cheap check may never answer "removed".** It returns `present` or `ambiguous` only,
+  because it genuinely cannot distinguish a deleted guard from a rewritten one. Only the
+  scoped reviewer decides, which is what keeps "the authority that pins is the authority that
+  unpins" true in code rather than in prose.
+- **Fail-closed is `unknown`, not `removed`.** An unparseable escalation quarantines. Treating
+  it as a removal would hard-reset the tree over a parsing failure and hand the builder an
+  unsatisfiable objective — and quarantine is not a pass, so nothing ships over it either.
+- **A run with pins it cannot re-verify aborts** rather than carrying them forward unchecked,
+  because an unverified pin reports the same clean pass as a verified one.
 
 ## A5. Mutation testing — **OPEN — REVISED**
 
@@ -327,7 +349,7 @@ gate. And **"where there is no invariant, do not invent one"**, without which th
 reads as "always write properties"; a property over a domain with no invariant is an example
 test with extra machinery, and the ratchet then makes it permanent.
 
-## A8. Requirement-level monotonicity — **OPEN — REVISED**
+## A8. Requirement-level monotonicity — **PARTLY DONE (0.29.0); the carry optimisation deferred**
 
 Once a cold reviewer passes a requirement with evidence, record it keyed to that evidence
 location. Re-review only when the evidenced file changes; otherwise carry the prior cold pass
@@ -351,6 +373,25 @@ exactly what this must not become.
 > review *becomes* the dominant cost on a long run, but that is a prediction, not a measurement,
 > and it should be labelled as one until a run demonstrates it. **Consider ordering A8 after
 > the D2 dogfood runs, which are what would produce the baseline.**
+
+**Partly landed 0.29.0, and the split is deliberate — say so loudly rather than claiming A8.**
+
+*Built and tested:* the shared pinning mechanism (built alongside A4 as instructed), the store,
+`pinRequirement`, `verifyRequirementPin` with its three answers, invalidation on any change to
+the evidenced file, and **the fail-closed half — a requirement whose evidence target no longer
+resolves overrides the panel's verdict downward to `fail`**, which is the only direction a pin
+is ever permitted to move a verdict.
+
+*Not built:* asking the panel only about un-carried ids. That is the saving, and it is the half
+this item's own correction says to order after the dogfood runs. Three reasons, all from the
+correction: the cost premise was false, no run has reached the panel twice so there is no
+baseline, and "review becomes the dominant cost on a long run" is a prediction. Wiring an
+unmeasured optimisation into the one phase that decides whether a run ships is the wrong trade
+while the measurement is a refused item away.
+
+**Consequence for the definition of done:** the line "a cold-reviewer-passed requirement is not
+re-litigated until its evidence changes" is **not met**. The line "an unresolvable evidence
+target fails rather than carries" **is** met.
 
 ## A9. An assumptions log — **OPEN — REVISED**
 

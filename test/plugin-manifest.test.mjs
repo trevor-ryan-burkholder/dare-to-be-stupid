@@ -176,6 +176,7 @@ describe('every file the plugin depends on is present', () => {
     'scripts/capabilities.mjs',
     'scripts/gate-policy.mjs',
     'scripts/context-budget.mjs',
+    'scripts/pins.mjs',
     'scripts/run-manifest.mjs',
     'scripts/style.mjs',
     'scripts/brief.mjs',

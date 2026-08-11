@@ -480,6 +480,70 @@ Output contract:
 }
 ```
 
+### 4.3 Pins — the second and third monotonic properties
+
+The ratchet is monotonic on **test ids**. That closes oscillation on the one property the loop
+can measure for free, and says nothing about two others that degrade just as quietly.
+`scripts/pins.mjs` is the same mechanism pointed at both, and `.dare/pins.json` is driver-owned.
+
+**Security elements (A4).** SCAFFOLD-CEGIS (arXiv 2603.08520) reports that security degrades
+*gradually across iterations* through specification drift — 43.7% of ten-round chains ended
+more vulnerable than baseline — and that adding a static SAST gate made it **worse**, 12.5% to
+20.8%, because static rules cannot see removed defensive logic or weakened exception handling.
+Dare had exactly the shape they measured: `npm audit` plus a security auditor, per iteration,
+with no memory. When the security reviewer passes an id with `file:line` evidence, that line is
+pinned as a defensive element.
+
+**Requirements (A8).** A requirement a cold reviewer passed with `file:line` evidence is pinned
+to that file, so a later panel can tell whether the ground it was passed on has moved.
+
+Same shape, opposite failure directions, and that difference is the design:
+
+| | fingerprint | when it stops matching |
+|---|---|---|
+| security element | the **snippet**, whitespace-normalised | escalate; may become a regression |
+| requirement | the whole **file** | unpin, and re-establish from scratch |
+
+**Why a security pin escalates instead of resetting.** Re-verification is a substring search
+over code the builder may reformat at any chaos level above 1. "Ambiguity is a fail" converts a
+formatter run into a hard reset plus a regression objective the builder **cannot satisfy** — it
+is told to restore something that was never removed, and under monotonicity a false pin is
+unremovable. That is not a strict design; it is a run that cannot terminate.
+
+So the authority that pins is the authority that unpins. The cheap check runs every iteration
+and finds a guard that merely moved or was reindented, for free. Only when it fails does one
+`security-escalation` child, scoped to that single element, choose between three answers:
+
+- **removed** → regression. Hard reset, regression objective, nothing else proceeds.
+- **moved** → re-pin at the new location. No reset.
+- **cannot tell** → quarantine: recorded, surfaced, excluded from further re-verification.
+
+Fail-closed here is **`unknown`, not `removed`**. An unparseable escalation is not evidence a
+guard was deleted, and treating it as one would destroy the tree over a parsing failure.
+
+**Quarantine is not a pass, and one line of code is what makes that true.** A run may not reach
+`SHIPPED` while any element is quarantined. That converts dropped protection from something a
+run absorbs silently into something it has to resolve, and it is the whole difference between
+this and a threshold that drifts.
+
+**Why a requirement pin is fail-closed in the other direction.** A carried pass is a review that
+did not happen, so invalidation is eager: any change to the evidenced file unpins, ambiguity
+unpins rather than carries, and an evidence target that no longer resolves **fails** — the panel
+verdict is overridden downward, which is the only direction a pin may ever move one. The Ralph
+design where the *builder* marks its own stories complete is what this must not become, and the
+distance is that nothing here is written by a builder: the store is driver-owned and §6 denies
+every write under `.dare` positionally.
+
+**A run with pins it cannot re-verify aborts.** Carrying them forward unchecked would report the
+same clean pass as a run that verified everything, which is §4's own rule about silent skips.
+
+> **Not yet built: carrying a pass to skip a reviewer call.** A8's saving — asking the panel
+> only about un-carried ids — is deliberately not wired. Its cost premise was found false
+> (Phase 5 sits behind `if (!gateOutcome.ok) continue`, so a failing iteration never pays for a
+> reviewer), no run has reached the panel twice, and there is therefore no baseline to measure
+> the saving against. The store, the invalidation and the fail-closed half are built; the
+> optimisation waits for a run that demonstrates review is the dominant cost.
+
 ### 4.1 Advisory findings — the one place a number is allowed
 
 Reviewers see real problems that no id covers: a module doing two jobs, an error path nobody

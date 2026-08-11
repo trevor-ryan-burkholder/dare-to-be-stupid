@@ -59,6 +59,20 @@ import {
   loadState,
   saveState,
 } from './ratchet.mjs';
+import {
+  normaliseSnippet,
+  parseEvidence,
+  parseSecurityEscalation,
+  pinRequirement,
+  pinSecurityElement,
+  quarantinePin,
+  readPins,
+  repinSecurityElement,
+  shippingBlockers,
+  verifyRequirementPin,
+  verifySecurityPin,
+  writePins,
+} from './pins.mjs';
 import { archivePreviousRun, buildRunManifest, writeRunManifest } from './run-manifest.mjs';
 import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
 import { E2E_REPORT, UNIT_REPORT, gatesFor, resolveToolchain } from './toolchains/index.mjs';
@@ -713,6 +727,10 @@ export const PHASE_PERMISSIONS = {
   // Reads the evidence it was handed and answers with a sentence or with null. It has no
   // reason to write, and lesson memory is driver-owned precisely so that it cannot.
   'lesson-extractor': { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep'] },
+  // One question about one pinned defensive element: was it removed, was it moved, or can you
+  // not tell. Read-only for the same reason every reviewer is — it reports, it does not fix,
+  // and a child that could restore the guard itself would be judging its own repair.
+  'security-escalation': { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep'] },
 };
 
 /**
@@ -809,6 +827,8 @@ export function appendBlooper(dareDir, event) {
  *   history?: (findings: string[]) => import('./brief.mjs').HistoryNote[],
  *   capabilities?: () => string[],
  *   changedFiles?: () => string[],
+ *   readSource?: (file: string) => string | null,
+ *   securityEscalation?: (pin: import('./pins.mjs').SecurityPin) => ClaudeResult,
  *   gates: () => { ok: boolean, results: GateResult[] },
  *   readTestReports: () => unknown[],
  *   commit: (message: string) => string,
@@ -864,6 +884,11 @@ export function driveRun(options) {
 
   /** @type {RunProgress} */
   let progress = { iteration: 0, spentTokens: 0, stalledIterations: 0, bestGateScore: 0, bestPassingCount: 0 };
+
+  // Read once and carried, like the ratchet state. An unreadable pin store throws out of
+  // `driveRun` rather than degrading to no pins: continuing would silently discard every
+  // recorded guard and every carried pass, and the run would look healthier for the loss.
+  const pins = readPins(dareDir);
   let costUsd = 0;
   let builderTokens = 0;
   let builderRuns = 0;
@@ -1176,6 +1201,76 @@ export function driveRun(options) {
       continue;
     }
 
+    // ---- Phase 4b: pinned security elements (DESIGN.md §4.3) ------------
+    // The ratchet is monotonic on test ids and blind to defensive logic, which SCAFFOLD-CEGIS
+    // measures degrading gradually across iterations. This is the same mechanism pointed at
+    // that property. The cheap check runs every iteration; only an ambiguous answer costs a
+    // scoped reviewer call, and only a reviewer may say "removed".
+    if (pins.security.length > 0) {
+      if (effects.readSource === undefined || effects.securityEscalation === undefined) {
+        // Pins exist and nothing can check them. Continuing would carry every recorded guard
+        // forward unverified, which is the silent loss of protection this exists to prevent.
+        return finish('ABORTED', 'security elements are pinned but this run cannot re-verify them');
+      }
+      const readSource = effects.readSource;
+      const escalate = effects.securityEscalation;
+      /** @type {string[]} */
+      const removedElements = [];
+      let pinsChanged = false;
+
+      for (const [index, pin] of pins.security.entries()) {
+        if (verifySecurityPin(pin, readSource) === 'present') continue;
+        effects.log(`pinned security element ${pin.id} at ${pin.evidence} did not re-verify; asking`);
+        const call = escalate(pin);
+        const exhausted = charge(call);
+        const verdict = call.ok
+          ? parseSecurityEscalation(call.text)
+          : { finding: /** @type {const} */ ('unknown'), evidence: null, snippet: '', detail: `the escalation failed: ${call.raw}` };
+
+        if (verdict.finding === 'removed') {
+          removedElements.push(`${pin.id} at ${pin.evidence}`);
+        } else if (verdict.finding === 'moved') {
+          pins.security[index] = repinSecurityElement(pin, {
+            evidence: verdict.evidence ?? pin.evidence,
+            snippet: verdict.snippet,
+            iteration: iterationNumber,
+          });
+          pinsChanged = true;
+          effects.log(`pinned security element ${pin.id} moved to ${verdict.evidence}; re-pinned`);
+        } else {
+          pins.security[index] = quarantinePin(pin, verdict.detail);
+          pinsChanged = true;
+          // Surfaced rather than absorbed. A quarantined element blocks SHIPPED below, so the
+          // run has to resolve it rather than carrying an unknown quietly to the end.
+          effects.log(`pinned security element ${pin.id} quarantined: ${verdict.detail}`);
+        }
+        if (exhausted) {
+          if (pinsChanged) writePins(dareDir, pins);
+          return finish('BUDGET', ceilingReason());
+        }
+      }
+      if (pinsChanged) writePins(dareDir, pins);
+
+      if (removedElements.length > 0) {
+        // The same path as a dropped test id, and deliberately so: this is a regression in a
+        // property the run had already established.
+        const target = loadState(dareDir).lastGoodCommit;
+        if (target !== null) hardReset({ cwd: rootDir, commit: target });
+        effects.log(`security regression: ${removedElements.join(', ')}`);
+        objective = {
+          kind: 'regression',
+          headline: 'Restore the defensive code listed below. Change nothing else.',
+          reason:
+            `a cold security reviewer confirmed ${removedElements.length} previously verified defensive ` +
+            'element(s) were removed. Security is monotonic here for the same reason tests are: it degrades ' +
+            'gradually across iterations and no single iteration looks wrong',
+          regressions: removedElements,
+        };
+        closeIteration(iterationNumber, removedElements, score, passing.size);
+        continue;
+      }
+    }
+
     // ---- Phase 5: review ------------------------------------------------
     // Each member is asked only about the ids it owns, and must return every one of them.
     /** @type {ReviewerReport[]} */
@@ -1196,6 +1291,73 @@ export function driveRun(options) {
     }
     const panel = combinePanel(reports, { requireUnanimous: config.requireUnanimous, requiredIds });
 
+    // ---- Phase 5b: record what this panel established (DESIGN.md §4.3) --
+    // Only passes with a real file:line are pinned, which is not an extra rule — the parser
+    // has already flipped any pass whose evidence is missing or shapeless.
+    if (effects.readSource !== undefined) {
+      const readSource = effects.readSource;
+      let pinsChanged = false;
+
+      // A8's fail-closed half. A requirement whose evidence target has vanished fails, whatever
+      // the panel just said: the pass was granted because something was at that path.
+      /** @type {string[]} */
+      const lostEvidence = [];
+      for (const pin of pins.requirements) {
+        if (verifyRequirementPin(pin, readSource) === 'fail') lostEvidence.push(`${pin.id} (${pin.evidence})`);
+      }
+      // Anything whose evidence merely changed is dropped rather than carried, so the next
+      // panel re-establishes it from scratch. Ambiguity unpins; it never carries.
+      const stillValid = pins.requirements.filter((pin) => verifyRequirementPin(pin, readSource) === 'carry');
+      if (stillValid.length !== pins.requirements.length) {
+        pins.requirements = stillValid;
+        pinsChanged = true;
+      }
+
+      for (const report of reports) {
+        for (const entry of report.requirements) {
+          if (entry.status !== 'pass' || entry.evidence === null) continue;
+          const contents = readSource(parseEvidence(entry.evidence).file);
+          if (contents === null) continue;
+          const isSecurity = panelPlan.assignments.some(
+            (assignment) => assignment.reviewer === 'security' && assignment.ids.includes(entry.id),
+          );
+          if (isSecurity) {
+            const line = contents.split('\n')[parseEvidence(entry.evidence).line - 1] ?? '';
+            if (normaliseSnippet(line).length === 0) continue;
+            if (pins.security.some((pin) => pin.id === entry.id && pin.evidence === entry.evidence)) continue;
+            pins.security.push(
+              pinSecurityElement({
+                id: entry.id,
+                evidence: entry.evidence,
+                snippet: line,
+                iteration: iterationNumber,
+              }),
+            );
+          } else {
+            if (pins.requirements.some((pin) => pin.id === entry.id)) continue;
+            pins.requirements.push(
+              pinRequirement({ id: entry.id, evidence: entry.evidence, contents, iteration: iterationNumber }),
+            );
+          }
+          pinsChanged = true;
+        }
+      }
+      if (pinsChanged) writePins(dareDir, pins);
+
+      if (lostEvidence.length > 0) {
+        // Not a reset and not a pass. The panel's own verdict is overridden downward, which is
+        // the only direction a pin is ever allowed to move a verdict.
+        effects.log(`evidence lost for ${lostEvidence.length} previously passed requirement(s)`);
+        panel.verdict = 'fail';
+        panel.failing = [
+          ...panel.failing,
+          ...lostEvidence.map(
+            (entry) => `${entry}: the file this requirement was passed on no longer exists, so the pass cannot stand`,
+          ),
+        ];
+      }
+    }
+
     // ---- Phase 6: ship, or bank the progress and hand the findings back ---
     const commit = effects.commit(
       panel.verdict === 'pass'
@@ -1204,6 +1366,25 @@ export function driveRun(options) {
     );
     const advanced = evaluateIteration(state, passing, { commit });
     if (advanced.action === 'advance') saveState(dareDir, advanced.state);
+
+    // Quarantine is not free, and this is the whole of what makes that true rather than a
+    // slogan. A quarantined element is protection the run knows it has lost track of, and
+    // shipping over it is the run absorbing dropped security silently (DESIGN.md §4.3).
+    const blockers = shippingBlockers(pins);
+    if (panel.verdict === 'pass' && blockers.length > 0) {
+      effects.log(`cannot ship: ${blockers.length} quarantined security element(s)`);
+      objective = {
+        kind: 'review',
+        headline: 'Restore or replace the quarantined defensive code below, so it can be verified again.',
+        reason:
+          `the panel passed, but ${blockers.length} pinned security element(s) are quarantined: a cold reviewer ` +
+          'could not tell whether they were removed or moved. A quarantined element is a recorded loss of ' +
+          'protection, and a run may not ship while one stands',
+        findings: blockers,
+      };
+      closeIteration(iterationNumber, blockers, score, passing.size);
+      continue;
+    }
 
     if (panel.verdict === 'pass') {
       effects.event?.({ kind: 'ship', iteration: iterationNumber });
@@ -2385,6 +2566,55 @@ export function main(argv, io = {}) {
           model: config.builderModel,
           systemPrompt: builderSystemPrompt(cwd),
           phase: 'builder',
+          cwd,
+          env,
+        }),
+      // Reads one file from the tree for pin re-verification. Returns null rather than
+      // throwing on a missing file, because "the file is gone" is an answer the caller has a
+      // rule for and an exception is not.
+      readSource: (file) => {
+        try {
+          return readFileSync(path.join(cwd, file), 'utf8');
+        } catch {
+          return null;
+        }
+      },
+      // One cold child, one element, three possible answers and nothing else. Scoped this
+      // tightly because the alternative to asking is a hard reset on a formatter run, and
+      // because a broad question here would re-audit the repository at panel prices every
+      // time somebody reindented a file.
+      securityEscalation: (pin) =>
+        runChild({
+          prompt: [
+            'A defensive element in this repository was verified by an earlier security audit and can no',
+            'longer be found where it was. Decide which of three things happened. Nothing else is being',
+            'asked of you, and you must not repair anything.',
+            '',
+            `Recorded location: ${pin.evidence}`,
+            'Recorded code, with whitespace collapsed:',
+            '',
+            '    ' + pin.snippet,
+            '',
+            'Search the repository for this protection — not for this text. It may have been renamed,',
+            'extracted into a helper, moved behind a decorator or replaced by an equivalent guard, and any',
+            'of those still count as present.',
+            '',
+            'Answer with one fenced json block and nothing else:',
+            '',
+            '```json',
+            '{ "finding": "removed" | "moved" | "unknown", "evidence": "path/file.ts:LINE", "snippet": "the line",',
+            '  "detail": "one sentence of why" }',
+            '```',
+            '',
+            '- "removed" means the protection is gone and nothing equivalent replaced it. Say this only if',
+            '  you looked and are confident; it will reset the working tree.',
+            '- "moved" means you found it, and then `evidence` and `snippet` are required.',
+            '- "unknown" means you could not tell. This is a legitimate answer and is not a failure. It is',
+            '  recorded as a loss of protection and blocks the run from shipping, which is the correct',
+            '  outcome for something nobody can establish.',
+          ].join('\n'),
+          model: config.reviewerModel,
+          phase: 'security-escalation',
           cwd,
           env,
         }),

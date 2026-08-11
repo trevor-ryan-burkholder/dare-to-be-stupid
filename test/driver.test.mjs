@@ -20,6 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
+import { pinSecurityElement, quarantinePin, readPins, writePins } from '../scripts/pins.mjs';
 import { defaultConfig } from '../scripts/config.mjs';
 import {
   DriverError,
@@ -1133,6 +1134,142 @@ describe('driveRun', () => {
     });
     return { outcome, dareDir, root };
   }
+
+  describe('pinned security elements gate the run', () => {
+    // The DoD lines this exists to satisfy: a removed guard is caught as a regression, an
+    // ambiguous one escalates instead of resetting, and a quarantined one blocks SHIPPED.
+
+    const GUARD = 'if (session.role !== "admin") return res.status(403).end();';
+
+    /**
+     * @param {import('../scripts/pins.mjs').PinStore} pins
+     * @param {Partial<import('../scripts/driver.mjs').Effects>} overrides
+     */
+    function runWithPins(pins, overrides) {
+      const root = makeTempDir();
+      const dareDir = path.join(root, '.dare');
+      writePins(dareDir, pins);
+      const outcome = driveRun({
+        config: { ...defaultConfig(), maxIterations: 2, stallLimit: 3, reviewers: ['correctness'] },
+        dareDir,
+        rootDir: root,
+        requiredIds: ['PRD-1.1'],
+        task: 'build the thing',
+        // A report with one passing test, so the ratchet advances and the run actually
+        // reaches the pin phase. The default harness reports zero ids, which the ratchet
+        // correctly rejects before anything below Phase 4 runs.
+        effects: effectsWith({
+          readTestReports: () => [
+            {
+              numTotalTests: 1,
+              testResults: [
+                { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+              ],
+            },
+          ],
+          ...overrides,
+        }),
+      });
+      return { outcome, dareDir };
+    }
+
+    /** @param {string} finding */
+    const escalationSaying = (finding, extra = {}) => ({
+      ok: true,
+      costUsd: 0.5,
+      tokens: 900,
+      raw: '',
+      text: '```json\n' + JSON.stringify({ finding, detail: 'because', ...extra }) + '\n```',
+    });
+
+    const activePin = () =>
+      pinSecurityElement({ id: 'DoD-2-security', evidence: 'src/a.ts:1', snippet: GUARD, iteration: 1 });
+
+    it('does not ship while an element is quarantined, even on a unanimous panel', () => {
+      // Without this, quarantine is a word. With it, a recorded loss of protection is
+      // something the run has to resolve rather than absorb.
+      const pins = { version: 1, security: [quarantinePin(activePin(), 'could not tell')], requirements: [] };
+      const { outcome } = runWithPins(pins, { readSource: () => GUARD, securityEscalation: () => escalationSaying('unknown') });
+      assert.notEqual(outcome.state, 'SHIPPED');
+    });
+
+    it('ships once the quarantined element is gone from the store', () => {
+      // The benign neighbour. A block that never lifts is a stall, not a gate.
+      const pins = { version: 1, security: [activePin()], requirements: [] };
+      const { outcome } = runWithPins(pins, { readSource: () => GUARD, securityEscalation: () => escalationSaying('unknown') });
+      assert.equal(outcome.state, 'SHIPPED');
+    });
+
+    it('never asks a reviewer while the cheap check still finds the guard', () => {
+      // The economic argument. Re-verification runs every iteration; escalation is the
+      // exception, not the routine.
+      let asked = 0;
+      const pins = { version: 1, security: [activePin()], requirements: [] };
+      runWithPins(pins, {
+        readSource: () => `some other code\n${GUARD}\n`,
+        securityEscalation: () => {
+          asked += 1;
+          return escalationSaying('unknown');
+        },
+      });
+      assert.equal(asked, 0);
+    });
+
+    it('escalates rather than resetting when the guard cannot be found', () => {
+      let asked = 0;
+      const pins = { version: 1, security: [activePin()], requirements: [] };
+      runWithPins(pins, {
+        readSource: () => 'the guard is gone\n',
+        securityEscalation: () => {
+          asked += 1;
+          return escalationSaying('unknown');
+        },
+      });
+      assert.equal(asked, 1);
+    });
+
+    it('re-pins at the new location when the reviewer says it moved, and does not ship-block', () => {
+      const pins = { version: 1, security: [activePin()], requirements: [] };
+      const { outcome, dareDir } = runWithPins(pins, {
+        readSource: (/** @type {string} */ file) => (file === 'src/moved.ts' ? GUARD : 'gone'),
+        securityEscalation: () => escalationSaying('moved', { evidence: 'src/moved.ts:3', snippet: GUARD }),
+      });
+      assert.equal(readPins(dareDir).security[0].file, 'src/moved.ts');
+      assert.equal(readPins(dareDir).security[0].status, 'active');
+      assert.equal(outcome.state, 'SHIPPED');
+    });
+
+    it('quarantines, and records why, when the reviewer cannot tell', () => {
+      const pins = { version: 1, security: [activePin()], requirements: [] };
+      const { dareDir } = runWithPins(pins, {
+        readSource: () => 'gone',
+        securityEscalation: () => escalationSaying('unknown'),
+      });
+      const stored = readPins(dareDir).security[0];
+      assert.equal(stored.status, 'quarantined');
+      assert.equal(stored.reason, 'because');
+    });
+
+    it('treats an unparseable escalation as unknown, never as a removal', () => {
+      // Fail-closed here is quarantine, not a hard reset. An unreadable answer is not
+      // evidence a guard was deleted, and resetting on one hands the builder an objective
+      // it cannot satisfy.
+      const pins = { version: 1, security: [activePin()], requirements: [] };
+      const { dareDir } = runWithPins(pins, {
+        readSource: () => 'gone',
+        securityEscalation: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: 'I am not sure, sorry.' }),
+      });
+      assert.equal(readPins(dareDir).security[0].status, 'quarantined');
+    });
+
+    it('aborts rather than carrying pins forward unverified when nothing can read the tree', () => {
+      // A run that cannot re-verify its pins is a run with no security monotonicity at all.
+      // Continuing would report the same clean pass as a run that checked everything.
+      const pins = { version: 1, security: [activePin()], requirements: [] };
+      const { outcome } = runWithPins(pins, {});
+      assert.equal(outcome.state, 'ABORTED');
+    });
+  });
 
   /** A report where one test passes, so the ratchet has something to hold. */
   const ONE_PASSING = {

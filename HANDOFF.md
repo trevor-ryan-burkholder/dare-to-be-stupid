@@ -506,6 +506,49 @@ before `ensureDareIgnored`'s successor lines) is covered only by the unit tests 
 itself, not by an end-to-end run, so *when* it fires has not been observed. Two runs in
 succession against a throwaway repository would settle it and cost nothing but time.
 
+## A4 + A8 — pinned security elements and pinned requirements (0.29.0)
+
+**A4 verified, mechanism and wiring.** `scripts/pins.mjs` plus a `security-escalation` phase.
+47 unit tests on the mechanism and 8 on the driver. The wiring tests are the ones that matter,
+because they assert behaviour a unit test of the module cannot: a quarantined element makes a
+run with a **unanimous panel** not ship; the same run ships once nothing is quarantined (the
+benign neighbour — a block that never lifts is a stall, not a gate); the reviewer is asked
+**zero** times while the cheap check still finds the guard; a `moved` verdict re-pins to the
+new file and does not block; an unparseable escalation quarantines rather than resetting; and a
+run holding pins with no way to read the tree **aborts** rather than carrying them forward.
+
+Finding worth recording: the first version of those tests all failed, because the default test
+harness reports zero test ids, the ratchet correctly rejects that, and Phase 4b is below the
+ratchet. Every component behaved as designed — which is the same shape as the 10 August runs,
+and a reminder that "the code never ran" and "the code failed" look identical from a red tick.
+
+**A8 partly built, and the split is deliberate.** Built: the shared mechanism, the store,
+invalidation on any change to the evidenced file, and the fail-closed half — a requirement whose
+evidence target no longer resolves overrides the panel's verdict *downward*. Not built: asking
+the panel only about un-carried ids. That is the saving, and A8's own correction says to order
+it after the dogfood runs — the cost premise was false, no run has reached the panel twice, and
+"review becomes the dominant cost" is a prediction. **The DoD line "a cold-reviewer-passed
+requirement is not re-litigated until its evidence changes" is therefore not met.**
+
+**Not verified, and there is a lot of it.**
+
+- **No pin has ever been created by a real reviewer.** Every pin in every test was constructed
+  by the test. Whether a security reviewer's `file:line` evidence actually points at a line
+  containing the guard — rather than at a function signature, a route declaration or a blank
+  line — is the assumption the whole of A4 rests on, and it is untested. If evidence commonly
+  points at a declaration rather than a check, pins will be weak but not wrong; if it points at
+  blank lines, `pinSecurityElement` refuses and A4 silently protects nothing.
+- **The escalation child has never run.** Its prompt and its JSON contract are unexercised
+  against a live `claude -p`. By this repository's own rule that is a tier-3 candidate, and it
+  is a strong one: the argv defect lived in exactly this gap.
+- **The default panel yields at most one security pin.** `ownership.security` is
+  `['DoD-2-security']`, one id, one `file:line`. Pinning one guard per run is thin protection
+  against a paper describing gradual erosion across ten rounds. A richer contract — the
+  reviewer listing several defensive elements — is the obvious extension and is a reviewer
+  output-contract change, so it needs the same tier-3 treatment as A9.
+- **No run has exercised a `removed` verdict end to end**, so the security hard-reset path has
+  never fired outside a unit test.
+
 ---
 
 ## Fixed here, and worth knowing about
