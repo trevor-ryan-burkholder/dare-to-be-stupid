@@ -546,7 +546,7 @@ the full argv, not just the operation names, which is what made "behaviour-neutr
 > a suite the driver runs with its own config, not the project's. Nothing else in the brief
 > needs it; A3 cannot work without it.
 
-## B3. First-class .NET support — **BLOCKED**
+## B3. First-class .NET support — **DONE (0.32.0)**
 
 `dotnet` is absent from this machine, re-checked 11 August 2026. `HANDOFF.md` warns
 specifically that the toolchain registry now makes a wrong adapter **easy to add and green** —
@@ -559,6 +559,37 @@ its definition of done. Those cannot both hold here.
 **Do one of two things, and say which:** install an SDK first, or write the adapter with every
 command explicitly marked unverified, record that in `HANDOFF.md`, and leave it out of the
 definition of done. Do not let unverified command strings acquire the appearance of tested ones.
+
+**The first: an SDK was installed.** dotnet 8.0.423, SDK 8.0.423, runtimes 8.0.29, at
+`/usr/bin/dotnet`. **Every command in `scripts/toolchains/dotnet.mjs` was executed against it
+before it was written down**, on a scaffolded solution with a class library and an xunit test
+project. `DESIGN.md` §3.8 and the new §3.8.1. 18 tests on top of the contract tests, which
+applied to the adapter automatically the moment it joined `TOOLCHAINS` — exactly as
+`HANDOFF.md` item 2 predicted.
+
+**Two commands would have been wrong, and only running them said so.**
+
+- **`dotnet list package --vulnerable` cannot fail.** Given `System.Net.Http 4.3.0` it printed a
+  **High** advisory (`GHSA-7jgj-8wvc-jh57`) and **exited 0**. As the `security-audit` gate it
+  would have reported a clean pass on every vulnerable .NET project forever. This is §4.4's
+  Stryker finding reached independently through a different tool — which says the class is
+  common, and that **any new adapter's audit step should be assumed guilty until seen to exit
+  non-zero.** What works: `dotnet restore --force -warnaserror:NU1901,NU1902,NU1903,NU1904`,
+  verified exit 1 with `error NU1903` and exit 0 once the package was removed.
+- **The near-miss is the more instructive half.** The first attempt used
+  `-p:WarningsAsErrors=NU1901,…`, which MSBuild rejects with `MSB1006` — **and that rejection
+  also exits 1.** It was briefly read as the audit firing. What caught it was running the
+  *clean* project and getting a failure there too. A deny case alone proves nothing.
+
+Three operations are declined by name rather than guessed: `types` (the compiler subsumes it),
+`e2e` (the SDK ships no browser runner) and `mutation` (Stryker.NET is a separate tool, not
+installed, **not verified — so not written**).
+
+**One thing is now ambiguous and was not before.** `detectToolchain` returns the first match, so
+a repository with both a `package.json` and a `.csproj` — a .NET service with a JS frontend, a
+common shape — resolves to **node**, and nothing says so out loud. §3.8 predicted this exact
+moment and named the fix: the architect declares the toolchain and detection confirms, as
+capabilities already do. **That declaration is not built.** It is the residual of this item.
 
 ## B4. Normalised test reporter registry — **DONE for Node (0.14.0) / OPEN for .NET**
 

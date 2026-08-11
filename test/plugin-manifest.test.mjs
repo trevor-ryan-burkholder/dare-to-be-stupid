@@ -169,6 +169,7 @@ describe('every file the plugin depends on is present', () => {
     'scripts/toolchains/index.mjs',
     'scripts/toolchains/shared.mjs',
     'scripts/toolchains/node.mjs',
+    'scripts/toolchains/dotnet.mjs',
     'scripts/config.mjs',
     'scripts/preflight.mjs',
     'scripts/security-scan.mjs',

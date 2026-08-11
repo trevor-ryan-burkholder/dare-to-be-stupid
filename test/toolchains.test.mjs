@@ -27,6 +27,7 @@ import {
   gatesFor,
   resolveToolchain,
 } from '../scripts/toolchains/index.mjs';
+import { TRX_REPORT, dotnetToolchain } from '../scripts/toolchains/dotnet.mjs';
 import { MUTATION_CONFIG, MUTATION_CONFIG_CONTENTS, nodeToolchain } from '../scripts/toolchains/node.mjs';
 import { command, notApplicable } from '../scripts/toolchains/shared.mjs';
 
@@ -366,5 +367,144 @@ describe('the conditional second pass', () => {
     );
     assert.equal(gates[0].command.includes(path.join('/repo/.dare', MUTATION_CONFIG)), true);
     assert.equal(MUTATION_CONFIG_CONTENTS.thresholds.break, 100);
+  });
+});
+
+describe('the dotnet toolchain', () => {
+  /**
+   * @param {Record<string, string>} files
+   * @returns {string} a throwaway repository root
+   */
+  function repo(files) {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-dotnet-'));
+    temporaryDirs.push(dir);
+    for (const [relative, contents] of Object.entries(files)) {
+      const full = path.join(dir, ...relative.split('/'));
+      mkdirSync(path.dirname(full), { recursive: true });
+      writeFileSync(full, contents, 'utf8');
+    }
+    return dir;
+  }
+
+  const LIBRARY = '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup></PropertyGroup></Project>';
+  const EXECUTABLE = '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup></Project>';
+
+  describe('detection', () => {
+    it('finds a solution at the root and names it as evidence', () => {
+      assert.equal(dotnetToolchain.detect(repo({ 'Probe.sln': '' })), 'file Probe.sln');
+    });
+
+    it('prefers the solution over a project, since that is what the commands operate on', () => {
+      const dir = repo({ 'Probe.sln': '', 'src/Probe.Lib/Probe.Lib.csproj': LIBRARY });
+      assert.equal(dotnetToolchain.detect(dir), 'file Probe.sln');
+    });
+
+    it('finds a project nested at the conventional depth', () => {
+      const dir = repo({ 'src/Probe.Lib/Probe.Lib.csproj': LIBRARY });
+      assert.equal(dotnetToolchain.detect(dir), 'file src/Probe.Lib/Probe.Lib.csproj');
+    });
+
+    it('does not read build output as a project', () => {
+      // bin/ and obj/ are full of generated csproj-adjacent debris on a built tree.
+      const dir = repo({ 'bin/Debug/Leftover.csproj': LIBRARY, 'obj/Other.csproj': LIBRARY });
+      assert.equal(dotnetToolchain.detect(dir), null);
+    });
+
+    it('finds nothing in a repository that is not .NET', () => {
+      assert.equal(dotnetToolchain.detect(repo({ 'package.json': '{}' })), null);
+    });
+  });
+
+  describe('the security-audit command', () => {
+    // This test exists to stop the command being "simplified" back to the obvious one. The
+    // obvious one is wrong and only running it says so.
+    const operation = dotnetToolchain.operations['security-audit']({ root: '/repo', dareDir: '/repo/.dare' });
+    const audit = operation.kind === 'command' ? operation.command : [];
+
+    it('is the audit-promoting restore, verified to exit 1 on a known advisory', () => {
+      assert.equal(operation.kind, 'command');
+      assert.deepEqual(audit, [
+        'dotnet',
+        'restore',
+        '--force',
+        '-warnaserror:NU1901,NU1902,NU1903,NU1904',
+      ]);
+    });
+
+    it('is NOT `dotnet list package --vulnerable`, which exits 0 on a High advisory', () => {
+      // Measured, not assumed: that command reported System.Net.Http 4.3.0 as High severity
+      // (GHSA-7jgj-8wvc-jh57) and exited 0. A gate that cannot set a non-zero exit code is a
+      // log line, and wiring it here would report a clean pass on every vulnerable project.
+      assert.equal(audit.includes('list'), false);
+      assert.equal(audit.includes('--vulnerable'), false);
+    });
+
+    it('uses -warnaserror rather than the -p: form, which MSBuild rejects', () => {
+      // `-p:WarningsAsErrors=NU1901,NU1902` fails with MSB1006 and *also* exits 1, which reads
+      // exactly like the audit firing. That misreading happened once here.
+      assert.equal(
+        audit.some((/** @type {string} */ part) => part.startsWith('-p:')),
+        false,
+      );
+    });
+  });
+
+  describe('the operations it declines', () => {
+    /** @param {'types' | 'e2e' | 'mutation'} name */
+    const declined = (name) => dotnetToolchain.operations[name]({ root: '/repo', dareDir: '/repo/.dare' });
+
+    it('declines typecheck, because the compiler subsumes it', () => {
+      const types = declined('types');
+      assert.equal(types.kind, 'not-applicable');
+      assert.equal(types.reason.includes('no separate typecheck step'), true);
+    });
+
+    it('declines e2e, because the SDK ships no browser runner', () => {
+      assert.equal(declined('e2e').kind, 'not-applicable');
+    });
+
+    it('declines mutation rather than guessing Stryker.NET’s command line', () => {
+      // The whole discipline of this adapter in one assertion: an unverified command is worse
+      // than a declared gap, because a declared gap is reported to the operator and to the
+      // builder while a wrong command reads as a gate that ran.
+      const mutation = declined('mutation');
+      assert.equal(mutation.kind, 'not-applicable');
+      assert.equal(mutation.reason.includes('not been verified'), true);
+    });
+
+    it('never returns an empty command for anything it declines', () => {
+      // `true`, `[]` and an empty string all exit 0 and read as a pass. shared.mjs refuses
+      // them, and this asserts the adapter never tries.
+      for (const name of /** @type {const} */ (['types', 'e2e', 'mutation'])) {
+        assert.equal(Object.hasOwn(declined(name), 'command'), false, `${name} returned a command`);
+      }
+    });
+  });
+
+  it('writes its unit report where the ratchet will look for it', () => {
+    const unit = dotnetToolchain.operations.unit({ root: '/repo', dareDir: '/repo/.dare' });
+    assert.equal(unit.kind, 'command');
+    assert.deepEqual(unit.kind === 'command' ? unit.command : [], [
+      'dotnet',
+      'test',
+      '--logger',
+      `trx;LogFileName=${TRX_REPORT}`,
+      '--results-directory',
+      '/repo/.dare',
+    ]);
+  });
+
+  describe('startCommand', () => {
+    it('names the executable project when there is one', () => {
+      const dir = repo({ 'Probe.sln': '', 'src/Probe.App/Probe.App.csproj': EXECUTABLE });
+      assert.equal(dotnetToolchain.startCommand(dir), 'dotnet run --project src/Probe.App');
+    });
+
+    it('returns null for a repository of libraries, rather than a command that would fail', () => {
+      // Nothing declares how to start it, so there is nothing to ask. The observability gate
+      // then passes on its static finding and says it did not probe (§4).
+      const dir = repo({ 'Probe.sln': '', 'src/Probe.Lib/Probe.Lib.csproj': LIBRARY });
+      assert.equal(dotnetToolchain.startCommand(dir), null);
+    });
   });
 });

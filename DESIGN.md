@@ -307,13 +307,13 @@ Everything the loop knew about building used to be six npm and npx command lines
 `driver.mjs`, plus a second and quietly different set of assumptions inside CI inspection. A
 toolchain is that seam, given a contract:
 
-| operation | Node |
-|---|---|
-| `detect` | `package.json` present |
-| `restore` | `npm ci` |
-| `build` | `npm run build` |
-| `lint` | `npm run lint` |
-| `types` | `npm run typecheck` |
+| operation | Node | .NET |
+|---|---|---|
+| `detect` | `package.json` present | a `.sln` or `.csproj`, bounded depth |
+| `restore` | `npm ci` | `dotnet restore` |
+| `build` | `npm run build` | `dotnet build` |
+| `lint` | `npm run lint` | `dotnet format --verify-no-changes` |
+| `types` | `npm run typecheck` | **not applicable** — the compiler subsumes it |
 | `unit` | `npx vitest run --reporter=json --outputFile=…` |
 | `e2e` | `npx playwright test` |
 | `security-audit` | `npm audit --audit-level=high` |
@@ -339,6 +339,33 @@ ran `npx vitest run --reporter=json`. A project could therefore satisfy the `ci`
 suite the ratchet would never see one id from — which is precisely what both live runs on
 10 August 2026 did. A test now asserts that each CI pattern matches the command string its own
 operation produces, so the two cannot drift apart again without failing.
+
+### 3.8.1 What running the commands changed, and why it had to be running them
+
+`HANDOFF.md` carried a warning for two versions: *the registry makes a wrong adapter easy to
+add and green — every structural test passes on argv nobody has ever run.* The .NET adapter was
+written against a real SDK (8.0.423) for that reason, and two of the commands it would
+otherwise have shipped are wrong.
+
+**`dotnet list package --vulnerable` cannot fail.** Given `System.Net.Http 4.3.0` it printed a
+**High** severity advisory — `GHSA-7jgj-8wvc-jh57` — and **exited 0**. Gates read exit codes, so
+that command is a log line rather than a gate, and wired as `security-audit` it would have
+reported a clean pass on every vulnerable .NET project forever. This is precisely §4.4's Stryker
+finding — *the tool reports the problem and does not fail on it* — reached independently by a
+different tool, which suggests the class is common rather than a coincidence and that **any new
+adapter's audit step should be assumed guilty until it has been seen to exit non-zero.**
+
+What works is NuGet's audit promoted to an error on the command line, so the project cannot opt
+out: `dotnet restore --force -warnaserror:NU1901,NU1902,NU1903,NU1904`. Verified **both**
+directions — exit 1 with `error NU1903` on the vulnerable project, exit 0 once it was removed.
+
+**And the near-miss is worth recording, because it is the more instructive half.** The first
+attempt used `-p:WarningsAsErrors=NU1901,NU1902,…`, which MSBuild rejects with
+`MSB1006: Property is not valid` — **and that rejection also exits 1.** It was briefly read as
+the audit working. What caught it was running the *clean* project through the same command and
+getting a failure there too. A deny case alone proves nothing; the benign neighbour is what
+distinguishes a gate from a command that always fails, which is why this repository pairs them
+everywhere.
 
 **Detection falls back rather than refusing.** A greenfield repository has no `package.json` on
 iteration 1, so detection is honestly empty at exactly the moment the gates are first

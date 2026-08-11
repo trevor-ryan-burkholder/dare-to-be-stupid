@@ -26,6 +26,7 @@
  * operation produces — so the two cannot disagree by construction rather than by vigilance.
  */
 
+import { dotnetToolchain } from './dotnet.mjs';
 import { E2E_REPORT, UNIT_REPORT, nodeToolchain } from './node.mjs';
 import { ToolchainError } from './shared.mjs';
 
@@ -87,10 +88,27 @@ export const CONDITIONAL_GATE_OPERATIONS = ['mutation'];
 export { E2E_REPORT, ToolchainError, UNIT_REPORT };
 
 /**
- * Every toolchain this build can drive, in detection order.
+ * Every toolchain this build can drive, **in detection order**, and the order is now
+ * load-bearing in a way it was not while there was only one entry.
+ *
+ * `detectToolchain` returns the first match, so a repository holding both a `package.json` and
+ * a `.csproj` resolves to node. That is the common shape of a .NET service with a JavaScript
+ * frontend, and resolving it to node is a **guess**, not a finding — the two detectors are not
+ * disjoint and neither is wrong on its own evidence.
+ *
+ * §3.8 predicted this exact moment: *"Node is the default because it is the only
+ * implementation. When a second one lands that stops being obvious, and the answer is §3.7's:
+ * the architect declares it and detection confirms."* **That declaration is not built.** Until
+ * it is, a mixed repository is driven by the node toolchain and nothing says so out loud,
+ * which is the one silent thing in this module.
+ *
+ * Node stays first regardless, because reversing the order would trade a rare wrong answer for
+ * a common one: far more repositories carry an incidental `package.json` than carry an
+ * incidental `.csproj`.
+ *
  * @type {Toolchain[]}
  */
-export const TOOLCHAINS = [nodeToolchain];
+export const TOOLCHAINS = [nodeToolchain, dotnetToolchain];
 
 /**
  * The toolchain used when detection finds nothing.

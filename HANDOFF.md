@@ -631,6 +631,51 @@ and **not consulting git at all** in that case, and returning empty when git fai
   one, but mutation makes it louder: a narrowed test config raises the surviving-mutant count
   rather than lowering it, so the failure is at least in the safe direction.
 
+## B3 — the .NET adapter, and the blocker that lifted (0.32.0)
+
+**The blocker is gone.** `dotnet 8.0.423` was installed on 11 August 2026. Every earlier note
+in this file saying "dotnet is not installed" is now historical.
+
+**Verified by execution, not by reading.** This file warned for two versions that the registry
+makes a wrong adapter *easy to add and green*, because the contract tests check that an
+operation returns a command and not that the command does anything. So the adapter was written
+against a scaffolded solution — class library plus xunit test project — and every command was
+run first. **Two would have been wrong.**
+
+1. **`dotnet list package --vulnerable` cannot fail.** Given `System.Net.Http 4.3.0` it printed
+   a High advisory (`GHSA-7jgj-8wvc-jh57`) and **exited 0**. As `security-audit` it would have
+   passed every vulnerable .NET project forever. Replaced with
+   `dotnet restore --force -warnaserror:NU1901,NU1902,NU1903,NU1904`, verified exit 1 with
+   `error NU1903` and exit 0 once the package was removed.
+2. **A near-miss worth more than the fix.** The first attempt used `-p:WarningsAsErrors=NU1901,…`,
+   which MSBuild rejects with `MSB1006: Property is not valid` — **and that rejection also exits
+   1**. It was briefly recorded here as working. What caught it was running the *clean* project
+   through the same command and getting a failure there too.
+
+**The generalisable finding:** this is the same shape as §4.4's Stryker threshold — a tool that
+reports the problem and does not fail on it — found independently in a different ecosystem
+within an hour. Treat it as the default rather than the exception. **Any new adapter's audit
+step should be assumed unable to fail until it has been seen to exit non-zero on a real
+finding, and its benign neighbour seen to exit zero.**
+
+Also verified: `dotnet build` exit 0; `dotnet format --verify-no-changes` exit 0 clean and
+**exit 2** on damaged whitespace; `dotnet test --logger trx` exit 0 with 2 passed 1 skipped and
+exit 1 with a failure; `dotnet run --project` exit 0 on a console project.
+
+Declined by name rather than guessed: `types` (the compiler subsumes it), `e2e` (no browser
+runner in the SDK), `mutation` (Stryker.NET is a separate tool, not installed, **not verified,
+therefore not written**).
+
+**New ambiguity, and it is the residual of this item.** `detectToolchain` returns the first
+match and node is first, so a repository holding both a `package.json` and a `.csproj` — a .NET
+service with a JavaScript frontend, a common shape — resolves to **node**, and nothing says so.
+`DESIGN.md` §3.8 predicted this exact moment and named the fix: the architect declares the
+toolchain and detection confirms, as capabilities already do. **That is not built.**
+
+**Not verified.** No dogfood run against a .NET project (D2 case C, still refused — it spends
+money and wants an operator). The adapter has never driven a real `driveRun`. `dotnet format`
+requires source it can parse, and its behaviour on a repository mid-build is unknown.
+
 ---
 
 ## Fixed here, and worth knowing about
