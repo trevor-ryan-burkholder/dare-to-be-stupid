@@ -117,6 +117,98 @@ application that ignores `PORT`.
 
 ---
 
+# Planned work — making the harness stack-agnostic
+
+Specified on 11 August 2026 and **not implemented**, except where marked. The `.dare/**`
+integrity item from the same plan *was* implemented, in 0.10.0. What follows is scoped
+against the code as it stands at that version, with the seams located, so it can be picked up
+without re-deriving them. Nothing here is started; do not read any of it as done.
+
+## Blocker to resolve first
+
+**`dotnet` is not installed on the development machine.** No SDK, no runtime. A .NET adapter
+can be written and contract-tested against injected runners, but its command syntax cannot be
+verified locally, and a .NET dogfood run is impossible. Either install an SDK before starting
+that item, or write it with every command explicitly marked unverified and say so here. Do
+not let unverified command strings acquire the appearance of tested ones.
+
+## The seams, located
+
+Read these before designing anything; several are smaller than they look.
+
+- **Gate commands are one function.** `commandGates(dareDir)` in `scripts/driver.mjs` returns
+  the six shell gates, and every one is npm or npx: `npm run build`, `npm run lint`,
+  `npm run typecheck`, `npx vitest run --reporter=json`, `npx playwright test`,
+  `npm audit --audit-level=high`. This is the whole extraction point for a toolchain adapter.
+- **A second Node assumption lives in CI inspection.** `CI_REQUIRED_COMMANDS` in
+  `scripts/driver.mjs` matches workflow steps with npm/pnpm/yarn/bun regexes. It disagrees
+  with `commandGates` about what a unit test is — it accepts `node --test`, which the unit
+  gate cannot collect. Any adapter work must reconcile the two or the contradiction survives
+  the refactor.
+- **Test-report normalisation already exists.** `scripts/ratchet.mjs` has `detectRunner`,
+  `parseReport` and `collapseByWorstStatus`, and already yields normalised `{ id, status }`
+  records; `ReportFormatError` is thrown on every unrecognised shape. A reporter registry is
+  therefore an **extraction** of that logic into `scripts/reporters/`, not a new subsystem.
+  The `Runner` typedef is `'vitest' | 'playwright'` and is the thing to widen. Do not rebuild
+  what is there, and do not weaken the throwing behaviour to accommodate a new format.
+- **Capability detection has a nucleus.** `hasFrontend(root)` in `scripts/plugins.mjs` decides
+  UI-ness from `index.html` or a known frontend dependency. It is the only capability concept
+  in the codebase, it is detection-only, and it cannot answer for a greenfield repo where
+  nothing is scaffolded yet — which is the exact gap the declared-or-detected model closes.
+- **Web assumptions beyond the gates.** `startCommand` reads `package.json` and returns
+  `npm start`; `playwrightConfigPresent` and the Playwright provisioning path key off
+  `playwright.config.*` and the `.dare/playwright-installed` marker; the observability and
+  health gates assume an HTTP service. A library or CLI target should not be asked for any of
+  them.
+
+## Items, in dependency order
+
+1. **Project capability manifest.** Declared by the architect phase, verified or augmented by
+   runtime detection, combined as *declared OR detected* so a greenfield repo gets correct
+   first-iteration guidance before any framework exists. Keep the vocabulary small: `web-ui`,
+   `api`, `network-service`, `cli`, `desktop-ui`, `library`, `persistent-storage`,
+   `background-worker`, `realtime`, `authentication`. Absorb `hasFrontend`. An unknown
+   capability must be an error rather than a shrug — `validateConfig` in `scripts/config.mjs`
+   already sets that precedent and explains why.
+2. **Toolchain adapter interface.** Extract `commandGates` behind a contract covering detect,
+   restore, build, lint, static/type check, unit, e2e, dependency audit, start command and
+   test-report production. Non-applicable operations must be represented explicitly — a
+   toolchain whose compiler subsumes typechecking should say so, not return a fake pass.
+   Preserve current Node behaviour exactly; this step should be provably behaviour-neutral.
+3. **Reporter registry.** Move `ratchet.mjs`'s parsing into `scripts/reporters/`, one module
+   per format. Keep fail-closed on missing, malformed, unidentifiable and unexpectedly-empty
+   reports. The zero-tests case is not hypothetical: it is what both live runs on 10 August
+   produced, and the ratchet correctly refused to advance on it.
+4. **.NET adapter and TRX normalisation.** Subject to the blocker above.
+5. **Capability-driven gates.** An explicit, inspectable capability-to-gate table, not a rules
+   engine. Document why each universal gate is universal — build, unit tests and dependency
+   audit apply to everything — and why each conditional one is conditional.
+6. **Race candidate selection.** `race.mjs` sorts viable candidates by
+   `a.filesChanged - b.filesChanged || a.index - b.index`. Its own docstring says ties "break
+   on diff size", but diff size is implemented as file count, so a 1-file 1500-line rewrite
+   beats a 3-file 15-line surgical fix. Replace with additions + deletions from
+   `git diff --numstat`, keeping file count as the next tie-break and candidate index as the
+   stable last resort. Deterministic evidence only; no model judgement.
+7. **Run manifest.** A driver-owned `.dare/run.json` recording start time, start commit, plugin
+   version, config hash, claude version, models, toolchain, capabilities and tool versions. No
+   secrets. Informational: a malformed or uncreatable manifest may fail a run, but its contents
+   must never decide one. It is protected automatically by the 0.10.0 invariant.
+8. **Integration-test layer.** Three tiers, documented and separately runnable: deterministic
+   unit tests; local integration tests needing real binaries but no paid API; live tests that
+   spend money. The argv bug recorded above is the reason — `claudeArgs` was unit-tested, and
+   the defect lived in another program's parsing of the array it built.
+9. **Dogfood runs.** A web/API app, a Node app with persistence, a .NET service, a deliberate
+   rejection scenario and a deliberate regression scenario. The last two are the valuable ones,
+   and neither has ever been exercised end to end.
+
+## Constraints carried from the same plan
+
+Do not add reviewers, memory systems, planning agents, orchestration frameworks, vector
+databases, MCP dependencies for core execution, or another framework layered over this one.
+Prefer extraction to rewriting. Prefer several committable states to one large change.
+
+---
+
 ## Fixed here, and worth knowing about
 
 **Every phase except `builder` was dead, and no test could see it.** `--allowedTools` is
