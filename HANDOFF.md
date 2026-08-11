@@ -147,7 +147,11 @@ something other than effort.**
   against; the registry tests will pass on argv nobody has ever run.
 - **Item 9 (dogfood runs)** — spends real money and wants an operator awake to watch it. The
   two valuable scenarios are still the deliberate rejection and the deliberate regression, and
-  neither has ever been exercised end to end.
+  neither has ever been exercised end to end. **`DOGFOOD.md` now carries every scenario as an
+  executable script with exact commands, expected terminal states and the evidence to collect.**
+  It was written on 11 August 2026 and **not run**; the session that wrote it was not permitted
+  to spend. Run `DARE_LIVE=1 npm run test:live` first — a few cents against a four-hour run, and
+  a broken output contract found there is found sixty seconds in rather than four hours in.
 
 Everything else below is recorded for the same reason it always was: so the next session does
 not re-derive it.

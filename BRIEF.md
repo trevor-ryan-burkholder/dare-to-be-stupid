@@ -748,6 +748,16 @@ If Claude usage cannot be consumed here, prepare reproducible dogfood scripts an
 exact commands, expected states and evidence to collect. **Do not claim end-to-end validation
 occurred unless it did.**
 
+**Prepared 11 August 2026 in `DOGFOOD.md`, and NOT RUN. No end-to-end validation occurred.**
+Cases A, B, D, E and F each carry a shell script, the exact command, the terminal state that
+counts as success, and the `.dare/` artifacts to collect. Case C stays blocked with B3. Five
+artifacts worth watching did not exist when this item was written — prompt size per child,
+`pins.json`, `assumptions.json`, the mutation gate and `runs/NNN/` — and each is listed with why
+it is unproven.
+
+One expected failure is documented rather than left to be discovered: **the mutation gate will
+fail on any project without `@stryker-mutator/vitest-runner`, because nothing provisions it.**
+
 ---
 
 # E. Preserve — **unchanged, and consistent with the repository**

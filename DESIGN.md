@@ -903,7 +903,10 @@ dare-to-be-stupid/
 │   ├── plugins.mjs               # quality-plugin auto-install
 │   ├── capabilities.mjs          # what this project is, declared or detected (§3.7)
 │   ├── gate-policy.mjs           # which gates apply to which capabilities (§4.2)
-│   ├── run-manifest.mjs          # .dare/run.json — what this run was (§7.1)
+│   ├── context-budget.mjs        # measures a prompt before the child is spawned (§3.9)
+│   ├── pins.mjs                  # pinned security elements and requirements (§4.3)
+│   ├── assumptions.mjs           # what the builder had to assume (§8.3)
+│   ├── run-manifest.mjs          # .dare/run.json, and archiving the last run (§7.1, §7.2)
 │   └── init.js                   # scaffolds .dare/config.json, refuses risky remotes
 ├── hooks/
 │   ├── hooks.json                # PreToolUse on Bash

@@ -53,6 +53,23 @@ These are the load-bearing properties. A change that breaks one is wrong even if
   inform gate results, ratchet state, or reviewer JSON. `DARE_STYLE=plain` must fully
   bypass it.
 - **No nesting.** `dare` never spawns `dare`. Enforced at the driver *and* the guard hook.
+- **Monotonic means three properties now, not one.** Test ids (the ratchet), security elements
+  and cold-passed requirements (`scripts/pins.mjs`, `DESIGN.md` §4.3). Each has a different
+  escape from a false pin, and **the escape is the load-bearing half**: a security pin escalates
+  to a scoped reviewer rather than resetting, because a false pin under monotonicity is
+  unremovable and turns a formatter run into an objective the builder cannot satisfy. If you
+  add a fourth monotonic property, design its escape before its enforcement.
+- **Quarantine is not a pass.** A quarantined security element blocks `SHIPPED`. Anything that
+  lets a run ship over recorded lost protection has removed the only thing making the word mean
+  something.
+- **Say which of the two you mean** (`DESIGN.md` §6.1). **driver-owned** is a guarantee the
+  guard hook enforces. **not supplied** is a discipline about what the driver hands over. Never
+  write the second as though it were the first — the cold reviewer's starvation is a discipline,
+  and a reader who mistakes it for a wall will build on it.
+- **The two degradations this repo is worst at seeing are silent ones.** A prompt that grows
+  until the builder is quietly worse (§3.9) and a defensive guard that disappears one iteration
+  at a time (§4.3). Both are now measured. Neither would ever have reported a failure, which is
+  exactly why they were invisible.
 
 ---
 
