@@ -110,6 +110,16 @@ describe('the guard hook registration', () => {
       assert.equal(entry.matcher.split('|').includes(tool), true, `matcher does not cover ${tool}`);
     }
   });
+
+  it('does not match the read-only tools, which is what keeps .dare readable', () => {
+    // The invariant is "a run may read .dare but may not write it". The reading half is not
+    // enforced by any branch in guard.mjs — it is enforced here, by the hook never firing on
+    // a read at all. Adding Read to this matcher would silently turn the guard from a write
+    // barrier into a blackout, so the exclusion is asserted rather than assumed.
+    for (const tool of ['Read', 'Glob', 'Grep']) {
+      assert.equal(entry.matcher.split('|').includes(tool), false, `matcher should not cover ${tool}`);
+    }
+  });
 });
 
 describe('the /dare command', () => {

@@ -6,11 +6,11 @@
  * of permission mode, which makes this the only reliable place to put a limit.
  *
  * Blocked categories, and nothing else:
- *   1. protected-state — anything touching `.dare/state.json`, `.dare/config.json` or
- *      `.dare/lessons.json`, **while inside a run**. A run does not edit what constrains
- *      it. Outside a run there is no constrained process, and the operator may edit their
- *      own configuration from wherever they like — including from inside Claude Code,
- *      which is the only place some of them work. See {@link insideRun}.
+ *   1. protected-state — any mutation of any path under `.dare/`, **while inside a run**.
+ *      A run does not write the state or evidence it is judged by. Outside a run there is
+ *      no constrained process, and the operator may edit their own configuration from
+ *      wherever they like — including from inside Claude Code, which is the only place some
+ *      of them work. See {@link insideRun}.
  *   2. git-history    — `git push --force`, `rebase`, `filter-branch`, `reflog expire`.
  *      Recovery stays possible.
  *   3. rm-recursive   — recursive `rm` outside the temp directory.
@@ -28,8 +28,13 @@
  * stamping an "allow" over it. Exit code is 0 either way.
  *
  * Scope assumptions, recorded rather than guessed at silently:
- *   - DESIGN.md §6 says "blocks exactly" those file names, so `.dare/bloopers.log` and the
- *     rest of `.dare/` stay writable despite §13.2's parenthetical. §6 is the normative list.
+ *   - The protected set is the whole `.dare/` tree, not an enumerated list of basenames.
+ *     Enumeration left `red-evidence.json` writable, and that file is what makes
+ *     RED-before-GREEN mean anything: a builder that can write it can manufacture the proof
+ *     that its own test was once failing.
+ *   - Reads are not blocked, because `hooks.json` matches only the mutating tools. Bash is
+ *     the exception and is refused outright: a shell cannot be split into reads and writes
+ *     without a whitelist that fails open.
  *   - `--force-with-lease` / `--force-if-includes` are treated as `--force`: same category.
  *   - Recursive `rm` is blocked with or without `-f`; `-r` alone is equally destructive.
  *   - A malformed payload is a deny, not an allow. A guard that fails open on a broken
@@ -66,23 +71,21 @@ function deny(rule, reason) {
 const PATH_KEY_RE = /(^|_)path$|Path$/;
 
 /**
- * Basenames that are off limits when they sit directly inside a `.dare` directory.
+ * A `.dare` path component on its own. The whole runtime directory is protected.
  *
- * `lessons.json` joined `state.json` and `config.json` when lesson memory arrived. It is
- * the same argument in a different coat: a builder that can edit the memory it is handed is
- * not constrained by it, and a store the builder can write is one it can use to tell the
- * next iteration whatever it likes.
+ * This used to be an enumerated list of three basenames — `state.json`, `config.json`,
+ * `lessons.json`. Enumeration was the bug, and `red-evidence.json` is the proof of it: that
+ * file records which tests were ever observed failing, and RED-before-GREEN is the rule
+ * stopping a builder claiming credit for a test that has only ever been green. A builder
+ * able to write it can mint the evidence used to judge it. Nor was it alone — the archived
+ * Build Briefs are the only record of what was actually asked for, and the test reports are
+ * what the ratchet reads to decide whether anything regressed. Neither was on the list, and
+ * every future driver-owned artifact would have had to be remembered onto it.
+ *
+ * The rule is now positional rather than nominal: anything under a `.dare` directory is
+ * state or evidence owned by the driver, and the process being judged does not write it.
  */
-const PROTECTED_BASENAMES = new Set(['state.json', 'config.json', 'lessons.json']);
-
-/** A protected `.dare` file, either separator, not part of a longer name. */
-const PROTECTED_LITERAL_RE = /(^|[^\w.-])\.dare[\\/](state|config|lessons)\.json(?![\w.-])/;
-
-/** A `.dare` path component on its own. */
 const DARE_DIR_RE = /(^|[^\w.-])\.dare(?![\w.-])/;
-
-/** A bare protected basename, used only in combination with DARE_DIR_RE. */
-const PROTECTED_BASENAME_RE = /(^|[^\w.-])(state|config|lessons)\.json(?![\w.-])/;
 
 /** The `/dare` slash command as a standalone word. */
 const SLASH_DARE_RE = /(^|\s)\/dare(\s|$)/;
@@ -302,7 +305,15 @@ function commandName(segment) {
 }
 
 /**
- * Does this path point at `.dare/state.json` or `.dare/config.json`?
+ * Does this path land anywhere inside a `.dare` directory?
+ *
+ * Resolved first, so `..` cannot walk into one and a relative path is judged against the
+ * working directory the tool call actually ran in. Depth is not bounded: `.dare/briefs/
+ * iter-004.md` and `.dare/reports/unit.json` are as protected as `.dare/state.json`, and a
+ * directory the driver has not invented yet is protected on the day it appears.
+ *
+ * Matching is on whole path segments, so a sibling named `.dare-notes` is untouched.
+ *
  * @param {string} candidate
  * @param {string} cwd
  * @returns {boolean}
@@ -310,8 +321,7 @@ function commandName(segment) {
 export function isProtectedStatePath(candidate, cwd) {
   if (candidate.length === 0) return false;
   const resolved = path.resolve(cwd, candidate);
-  if (!PROTECTED_BASENAMES.has(path.basename(resolved))) return false;
-  return path.basename(path.dirname(resolved)) === '.dare';
+  return resolved.split(/[\\/]/).includes('.dare');
 }
 
 /**
@@ -351,28 +361,36 @@ export function insideRun(env) {
 }
 
 const PROTECTED_REASON =
-  'references .dare/state.json, .dare/config.json or .dare/lessons.json. A run does not edit the ratchet, ' +
-  'the configuration or the lesson store that constrain it (DESIGN.md §6).';
+  'references the .dare runtime directory. It holds the ratchet, the configuration, the RED evidence, the ' +
+  'archived briefs and the test reports — the state and evidence a run is judged by, which the run does not ' +
+  'write (DESIGN.md §6). Read them with the Read tool, which is not hooked.';
 
 /**
+ * Refuse a shell command that touches the runtime directory at all.
+ *
+ * A shell is not statically analysable into reads and writes, and every attempt to try is a
+ * whitelist that fails open on the case nobody thought of — `cp`, `tee`, `sed -i`, `>`,
+ * `mv`, a heredoc, `python -c`. So the whole directory is off limits from Bash inside a run,
+ * reads included, and the collateral is deliberate: the Read tool is not matched by
+ * `hooks.json`, so reading `.dare` remains possible by the route that cannot also write it.
+ *
+ * The builder does not need the shell route regardless. Its brief arrives in the prompt,
+ * not from disk.
+ *
  * @param {string} command
  * @param {Token[][]} segments
  * @returns {Decision}
  */
 function checkProtectedState(command, segments) {
-  if (PROTECTED_LITERAL_RE.test(command)) {
+  if (DARE_DIR_RE.test(command)) {
     return deny('protected-state', `Command ${PROTECTED_REASON}`);
   }
   for (const segment of segments) {
     for (const token of segment) {
-      if (PROTECTED_LITERAL_RE.test(token.value)) {
+      if (DARE_DIR_RE.test(token.value)) {
         return deny('protected-state', `Command ${PROTECTED_REASON}`);
       }
     }
-  }
-  // `cd .dare && echo {} > state.json` never spells the protected path out in full.
-  if (DARE_DIR_RE.test(command) && PROTECTED_BASENAME_RE.test(command)) {
-    return deny('protected-state', `Command ${PROTECTED_REASON}`);
   }
   return ALLOW;
 }
@@ -609,7 +627,8 @@ function checkToolPaths(toolInput, cwd) {
     if (isProtectedStatePath(value, cwd)) {
       return deny(
         'protected-state',
-        `${value} is run state. A run does not edit what constrains it (DESIGN.md §6).`,
+        `${value} is inside the .dare runtime directory. A run does not write the state or evidence it is ` +
+          'judged by (DESIGN.md §6). Reading it is fine; the Read tool is not hooked.',
       );
     }
   }

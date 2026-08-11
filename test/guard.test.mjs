@@ -222,16 +222,16 @@ describe('protected-state is scoped to a run, not to the plugin being installed'
 });
 
 describe('allowed: protected-state neighbours', () => {
+  // The protected set is positional — inside a `.dare` directory — so the neighbours that
+  // matter are names that merely resemble one. Blocking these would make the guard a
+  // nuisance; blocking nothing would make it decorative.
   const allowed = [
     ['cat package.json', 'an unrelated json file'],
     ['cat tsconfig.json', 'a name that merely ends in config.json'],
-    ['ls .dare', 'listing the dare directory'],
-    ['cat .dare/bloopers.log', 'the blooper reel, which the driver owns (DESIGN.md §13.2)'],
-    ['cat .dare/briefs/iter-004.md', 'an archived build brief, which is a debugging artifact'],
     ['cat lessons.json', 'a lessons file that is not inside .dare'],
-    ['ls .dare && cat tsconfig.json', 'the dare directory and a config-suffixed name together'],
     ["echo '{}' > src/state.json", 'an application file that happens to be called state.json'],
-    ['git add .dare/bloopers.log', 'staging the blooper reel'],
+    ['cat .darerc', 'a dotfile whose name only starts with .dare'],
+    ['npm run dare-report', 'a script name containing dare'],
   ];
   for (const [command, label] of allowed) {
     it(`allows ${label}: ${command}`, () => {
@@ -242,9 +242,9 @@ describe('allowed: protected-state neighbours', () => {
   const allowedWrites = [
     ['pretooluse-write.json', 'file_path', 'src/state.json'],
     ['pretooluse-write.json', 'file_path', 'docs/config.json'],
-    ['pretooluse-write.json', 'file_path', '.dare/bloopers.log'],
     ['pretooluse-write.json', 'file_path', '.darerc'],
     ['pretooluse-write.json', 'file_path', 'vendor/mydare/state.json'],
+    ['pretooluse-write.json', 'file_path', 'docs/.dare-notes/state.json'],
     ['pretooluse-edit.json', 'file_path', 'src/index.mjs'],
   ];
   for (const [fixture, key, filePath] of allowedWrites) {
@@ -258,6 +258,98 @@ describe('allowed: protected-state neighbours', () => {
     event.tool_input = { file_path: 'docs/ratchet.md', content: 'The ratchet lives in .dare/state.json.\n' };
     assertAllowed(event);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Category 1, widened — the whole .dare tree, not an enumerated list
+// ---------------------------------------------------------------------------
+
+describe('blocked: every mutation under .dare/', () => {
+  // The enumerated list this replaced covered state.json, config.json and lessons.json.
+  // Everything else the driver owns was writable by the process it was meant to constrain.
+  const deniedWrites = [
+    ['.dare/state.json', 'the ratchet itself'],
+    ['.dare/config.json', 'the configuration'],
+    ['.dare/lessons.json', 'the lesson store'],
+    ['.dare/red-evidence.json', 'the RED evidence'],
+    ['.dare/test-report.json', 'the report the ratchet reads'],
+    ['.dare/e2e-report.json', 'the browser report'],
+    ['.dare/briefs/iter-004.md', 'an archived build brief, nested a directory deep'],
+    ['.dare/bloopers.log', 'the blooper reel'],
+    ['.dare/run.json', 'a driver-owned artifact that did not exist when the list was written'],
+    ['.dare/state.json.bak', 'a backup beside the ratchet'],
+    ['./.dare/state.json', 'a path with a leading dot segment'],
+    ['src/../.dare/state.json', 'a path that walks back into the directory'],
+  ];
+  for (const [filePath, label] of deniedWrites) {
+    it(`denies writing ${label}: ${filePath}`, () => {
+      assertDenied(pathEvent('pretooluse-write.json', 'file_path', filePath), 'protected-state');
+    });
+  }
+
+  for (const [fixture, key] of [
+    ['pretooluse-edit.json', 'file_path'],
+    ['pretooluse-notebook-edit.json', 'notebook_path'],
+  ]) {
+    it(`denies ${fixture} against .dare/red-evidence.json`, () => {
+      assertDenied(pathEvent(fixture, key, '.dare/red-evidence.json'), 'protected-state');
+    });
+  }
+
+  const deniedCommands = [
+    ['ls .dare', 'listing it'],
+    ['cat .dare/bloopers.log', 'reading through the shell, which cannot be told from writing'],
+    ['rm .dare/red-evidence.json', 'deleting evidence'],
+    ['mv .dare/state.json /tmp/x', 'moving the ratchet out of the way'],
+    ['cp /tmp/forged.json .dare/red-evidence.json', 'copying a forgery over it'],
+    ["sed -i 's/a/b/' .dare/state.json", 'editing in place'],
+    ['echo "{}" | tee .dare/red-evidence.json', 'writing through a pipe'],
+    ['cd .dare && echo {} > red-evidence.json', 'never spelling the full path'],
+    ['git add .dare/bloopers.log', 'staging it'],
+    ['ls .dare && cat tsconfig.json', 'hiding it in a chain'],
+    ['bash -c "rm .dare/state.json"', 'wrapping it in a shell'],
+  ];
+  for (const [command, label] of deniedCommands) {
+    it(`denies ${label}: ${command}`, () => {
+      assertDenied(bashEvent(command), 'protected-state');
+    });
+  }
+
+  it('leaves the whole tree alone outside a run, since the operator owns their repository', () => {
+    // The scoping rule is unchanged by the widening: this is a limit on the run, not on the
+    // person who owns the files. HANDOFF.md tells an operator to delete a useless lesson
+    // store, and that instruction has to remain possible from inside Claude Code.
+    assertAllowed(pathEvent('pretooluse-write.json', 'file_path', '.dare/red-evidence.json'), OPERATOR);
+    assertAllowed(bashEvent('rm .dare/lessons.json'), OPERATOR);
+  });
+});
+
+describe('RED evidence cannot be forged by the process it judges', () => {
+  // The regression this exists for: `.dare/red-evidence.json` records which tests were ever
+  // observed failing. RED-before-GREEN says a test with no red history does not count toward
+  // the ratchet. A builder that can write this file can award itself that history, and the
+  // rule stops meaning anything — silently, because the forged file parses.
+  const forgeries = [
+    ['pretooluse-write.json', 'file_path', '.dare/red-evidence.json'],
+    ['pretooluse-edit.json', 'file_path', '.dare/red-evidence.json'],
+    ['pretooluse-write.json', 'file_path', './.dare/red-evidence.json'],
+    ['pretooluse-write.json', 'file_path', 'src/../.dare/red-evidence.json'],
+  ];
+  for (const [fixture, key, filePath] of forgeries) {
+    it(`refuses ${fixture} -> ${filePath}`, () => {
+      assertDenied(pathEvent(fixture, key, filePath), 'protected-state');
+    });
+  }
+
+  for (const command of [
+    'echo \'{"seenFailing":["test/a.test.js::works"]}\' > .dare/red-evidence.json',
+    'cat forged.json > .dare/red-evidence.json',
+    'python3 -c "open(\'.dare/red-evidence.json\',\'w\').write(\'{}\')"',
+  ]) {
+    it(`refuses the shell route: ${command.slice(0, 48)}`, () => {
+      assertDenied(bashEvent(command), 'protected-state');
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -451,12 +543,13 @@ describe('blocked: malformed-payload', () => {
 // ---------------------------------------------------------------------------
 
 describe('deny reasons', () => {
-  it('names the ratchet for protected state', () => {
+  it('names the runtime directory, and points at the route that still works', () => {
     const result = evaluate(bashEvent('cat .dare/state.json'), { env: IN_RUN });
     assert.equal(
       result.decision === 'deny' ? result.reason : '',
-      'Command references .dare/state.json, .dare/config.json or .dare/lessons.json. A run does not edit the ' +
-        'ratchet, the configuration or the lesson store that constrain it (DESIGN.md §6).',
+      'Command references the .dare runtime directory. It holds the ratchet, the configuration, the RED ' +
+        'evidence, the archived briefs and the test reports — the state and evidence a run is judged by, which ' +
+        'the run does not write (DESIGN.md §6). Read them with the Read tool, which is not hooked.',
     );
   });
 
@@ -506,11 +599,18 @@ describe('isProtectedStatePath', () => {
     ['./.dare/state.json', true],
     ['src/../.dare/state.json', true],
     [`${FIXTURE_CWD}/.dare/config.json`, true],
-    ['.dare/bloopers.log', false],
-    ['.dare/state.json.bak', false],
+    // Everything under the directory, at any depth, including names not yet invented.
+    ['.dare/bloopers.log', true],
+    ['.dare/red-evidence.json', true],
+    ['.dare/state.json.bak', true],
+    ['.dare/briefs/iter-004.md', true],
+    ['.dare/reports/nested/deep/unit.json', true],
+    ['.dare', true],
+    // Names that only resemble one. Matching is on whole segments.
     ['mydare/state.json', false],
     ['state.json', false],
     ['docs/.dare-notes/state.json', false],
+    ['.darerc', false],
     ['', false],
   ];
   for (const [candidate, expected] of cases) {

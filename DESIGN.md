@@ -413,13 +413,33 @@ hooks fire **regardless** of permission mode, which makes them the only reliable
 put a limit when everything else is off.
 
 `hooks/guard.mjs` reads the PreToolUse payload as JSON on stdin and blocks exactly:
-1. Writes to `.dare/state.json`, `.dare/config.json` or `.dare/lessons.json` **from inside a
-   run** — the ratchet, its configuration and the lesson store are not editable by the
-   process they constrain. A builder that can rewrite the memory it is handed is not
-   constrained by it: it could store itself any instruction it liked and receive that back
-   as evidence next iteration. The rest of `.dare/` — the blooper reel, the archived
-   briefs — stays readable and writable; the driver owns those, and nothing reads them back
-   as a decision.
+1. Mutation of **any path under `.dare/`** from inside a run. Reads are untouched. The
+   directory holds the state and the evidence a run is judged by, and the process being
+   judged does not write either. A builder that can rewrite the memory it is handed is not
+   constrained by it; a builder that can rewrite the *evidence* is not judged at all.
+
+   This clause used to name three files — `state.json`, `config.json`, `lessons.json` — and
+   said of the remainder that "the driver owns those, and nothing reads them back as a
+   decision". That was false when it was written. `.dare/red-evidence.json` is the record of
+   which tests have ever been seen failing, and RED-before-GREEN says a test with no red
+   history does not count toward the ratchet — so a builder able to write that file can mint
+   its own proof and take credit for a test that was never red. `.dare/test-report.json` is
+   what the ratchet parses to decide whether anything regressed. The archived briefs are the
+   only record of what was actually asked for. Every one of them is read back as a decision.
+
+   The rule is therefore positional rather than nominal: inside `.dare/` is driver-owned, at
+   any depth, including artifacts that do not exist yet. Enumeration was the defect — each
+   new artifact silently defaulted to writable until someone remembered to list it.
+
+   Reads stay available because `hooks/hooks.json` matches only the mutating tools, so the
+   hook never fires on `Read`. Bash is the exception and is refused outright, reads included:
+   a shell cannot be separated into reads and writes without a whitelist that fails open on
+   the first `tee`, `sed -i` or heredoc nobody thought of. The builder does not need the
+   shell route regardless — its brief arrives in the prompt, not from disk.
+
+   The driver's own writes are unaffected, and not by exemption: the driver writes `.dare/`
+   with `node:fs` in its own process, never through a Claude tool, so no PreToolUse hook ever
+   sees them.
 
    "Inside a run" is `DARE_RUNNING` in the hook's own environment. The driver stamps it on
    every `claude -p` child it spawns, and PreToolUse hooks inherit the environment of the
