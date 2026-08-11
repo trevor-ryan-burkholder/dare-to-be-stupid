@@ -413,6 +413,23 @@ No fact appears in both. Strip anything capability-shaped out of `PRODUCT.md` an
 decides pass or fail may read `PRODUCT.md`** — otherwise it becomes a second, prose-shaped source
 of gate truth that no test covers and no vocabulary constrains.
 
+**B1-residual landed 0.27.0.** Two findings and one real deliverable.
+
+- **There was nothing to strip.** `architect.md`'s `PRODUCT.md` row already read "users, mode,
+  brand voice, anti-references" and named no capability, no stack and no gate. The overlap the
+  item anticipated had never been written. It is now *asserted* rather than merely true: a test
+  extracts that row and checks it against `CAPABILITY_ORDER`, so the drift is caught the day
+  someone adds "and say whether it has a web UI".
+- **Nothing in `scripts/` reads `PRODUCT.md` either** — verified by grep before writing
+  anything, and now held by a test that walks the whole tree, in the same shape and for the
+  same reason as §7.1's no-reader test for the run manifest. That test *is* the deliverable:
+  the rule was previously unstated and unenforced, and a rule of the form "nothing may read
+  this" is exactly the kind that is true until the first time it quietly is not.
+- The rule itself is written into `DESIGN.md` §5.1 with the argument that makes it more than
+  tidiness: `parseCapabilityDeclaration` refuses a word outside the ten, and prose refuses
+  nothing. A gate reading `PRODUCT.md` would be a second source of gate truth in the one format
+  no validation can constrain.
+
 ## B2. Toolchain adapter abstraction — **DONE (0.15.0)**
 
 `scripts/toolchains/{index,node,shared}.mjs`. The driver no longer knows `npm run build`,

@@ -629,6 +629,18 @@ commands, a 58/59-rule "AI slop" detector). It plugs into `dare` in three places
 - impeccable reads **`PRODUCT.md`** for context on every command. Phase 0 already produces
   the PRD, so Phase 1 also emits a short `PRODUCT.md` (users, mode, brand voice,
   anti-references) so impeccable designs with real context instead of defaults.
+
+**`PRODUCT.md` and `.dare/capabilities.json` are split by question, not by file, and nothing
+that decides pass or fail may read `PRODUCT.md`.** The manifest owns what the software *does*:
+a closed vocabulary, driver-owned, machine-read, and it arms gates (§3.7, §4.2). `PRODUCT.md`
+owns who it is *for* and how it should feel — users, mode, brand voice, anti-references. It is
+prose, it is impeccable's, and it lives in the target repository. No fact appears in both.
+
+The read rule is what keeps that from eroding. A gate consulting `PRODUCT.md` would make it a
+second source of gate truth in a format **no vocabulary constrains and no test covers**:
+`parseCapabilityDeclaration` refuses a word outside the ten, and prose refuses nothing. A
+test walks `scripts/` and asserts no shipped module so much as names the file — the same
+guarantee, and the same argument, as §7.1's no-reader rule for the run manifest.
 - `/impeccable document` writes **`DESIGN.md`** (Google Stitch format) as the portable
   visual system. Phase 1 runs it so the design system is captured and becomes a reviewer
   input for DoD line 5.

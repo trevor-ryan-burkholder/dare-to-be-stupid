@@ -21,7 +21,7 @@ At the repository root:
 | file | contains |
 |---|---|
 | `CLAUDE.md` | the project's own conventions: test gates in the order they run, slice rules, what must never be done here |
-| `PRODUCT.md` | short: users, mode, brand voice, anti-references — the design tooling reads this on every command, and without it designs from defaults |
+| `PRODUCT.md` | short: users, mode, brand voice, anti-references — the design tooling reads this on every command, and without it designs from defaults. Who it is **for**, never what it **does**: no capabilities, no stack, no gates. Those are declared below, where a closed vocabulary can check them |
 
 ## Declare what this project is
 

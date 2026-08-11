@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { after, describe, it } from 'node:test';
 
 import {
@@ -564,4 +565,52 @@ describe('the capability manifest on disk', () => {
       assert.throws(() => readDeclaredCapabilities(dareDir), CapabilityError);
     });
   }
+});
+
+describe('PRODUCT.md and the capability manifest do not overlap', () => {
+  // The split is by question, not by file. `.dare/capabilities.json` owns what the software
+  // *does* — a closed vocabulary, driver-owned, machine-read, and it arms gates. `PRODUCT.md`
+  // owns who it is *for* and how it should feel: prose, impeccable's, living in the target
+  // repository. No fact appears in both, and the rule that keeps it that way is that nothing
+  // deciding pass or fail may read PRODUCT.md.
+
+  it('is never read by any shipped script', () => {
+    // Same shape and same argument as the run manifest's no-reader test. A prose file that
+    // could decide a gate would be a second source of gate truth, in a format no vocabulary
+    // constrains and no test covers. The strongest guarantee is that no code path can consult
+    // it, and that is a property of the tree rather than of any one module.
+    const scripts = fileURLToPath(new URL('../scripts/', import.meta.url));
+    /**
+     * @param {string} dir
+     * @returns {string[]}
+     */
+    const walk = (dir) =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) return walk(full);
+        return entry.name.endsWith('.mjs') ? [full] : [];
+      });
+
+    for (const file of walk(scripts)) {
+      const source = readFileSync(file, 'utf8');
+      assert.equal(
+        /['"]PRODUCT\.md['"]/.test(source),
+        false,
+        `${path.basename(file)} references PRODUCT.md; nothing that decides pass or fail may read it`,
+      );
+    }
+  });
+
+  it('keeps the capability vocabulary out of the architect’s PRODUCT.md instruction', () => {
+    // The reverse direction of the same rule. If the architect were told to write capabilities
+    // into PRODUCT.md, the two would drift and the prose copy would be the one nobody
+    // validates — `parseCapabilityDeclaration` refuses an out-of-vocabulary word, and prose
+    // refuses nothing.
+    const architect = readFileSync(fileURLToPath(new URL('../templates/architect.md', import.meta.url)), 'utf8');
+    const productRow = architect.split('\n').find((line) => line.includes('`PRODUCT.md`')) ?? '';
+    assert.notEqual(productRow, '', 'the architect no longer asks for PRODUCT.md at all');
+    for (const capability of CAPABILITY_ORDER) {
+      assert.equal(productRow.includes(capability), false, `the PRODUCT.md instruction names ${capability}`);
+    }
+  });
 });

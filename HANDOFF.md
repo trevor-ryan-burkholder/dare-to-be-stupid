@@ -464,6 +464,24 @@ neither was examined for phrasing. This may be a no-op that documents a correct 
 That is an acceptable outcome for a paragraph, and it is stated here rather than claimed as an
 improvement.
 
+## B1-residual — PRODUCT.md owns audience, capabilities.json owns shape (0.27.0)
+
+**Verified, and mostly found already correct.** Nothing in `scripts/` referenced `PRODUCT.md` —
+checked by grep before anything was written — and `architect.md`'s instruction for the file
+already named no capability. The overlap the item anticipated had never been created.
+
+What landed is the *enforcement* of a rule that was true and unstated. A test walks the whole
+`scripts/` tree and fails if any shipped module so much as names `PRODUCT.md`, in the same shape
+and for the same reason as the run manifest's no-reader test. A second test extracts the
+architect's `PRODUCT.md` row and asserts it contains none of the ten capability names, so drift
+in the other direction is caught too.
+
+**Not verified.** No `PRODUCT.md` has ever been generated and read back — Phase 1 has produced
+design documents on two runs, but nobody has inspected what the architect actually wrote into
+that file. If it has been quietly including capability-shaped prose all along, these tests do
+not see it: they constrain the *instruction* and the *readers*, not the artifact. Read a
+generated `PRODUCT.md` on the first dogfood run.
+
 ---
 
 ## Fixed here, and worth knowing about
