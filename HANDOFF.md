@@ -314,6 +314,33 @@ that the weaker rule cost an iteration the first time a builder tried something 
 The tests assert the presence and absence of *substrings*, which is a proxy for a model
 understanding the rule, not evidence of it. A dogfood run is what would settle it.
 
+## A2 — driver-owned and not supplied (docs only, at 0.19.0)
+
+**Verified — and mostly found already built.** Both properties A2 asked to have tested were
+already tested before the item was read. `test/guard.test.mjs` proves a driver-owned path is
+denied to a run, allowed to an operator, and that names merely resembling one are untouched.
+`test/plugin-manifest.test.mjs` proves the hook matcher excludes the read-only tools, which is
+the whole of what keeps `.dare` readable — the reading half is enforced by the hook never firing,
+not by any branch in `guard.mjs`. `Task` was added to that exclusion list, since a subagent reads
+files and stopping at `Read`/`Glob`/`Grep` is the enumeration the item argues against.
+
+**What was actually missing was the writing.** `DESIGN.md` used "driver-owned" seven times and
+defined it nowhere, and had no word at all for the weaker thing. §6.1 now defines both, says why
+there is no third classification called *sealed*, and states the threat model that makes the
+absence tolerable: these defences are aimed at satisficing, not at an adversary, and against
+satisficing an artifact the builder was never handed is sufficient.
+
+**One finding that was not on the item's list.** §1.1 said the reviewer "does not receive the
+build log, iteration history, or any hint that an agent wrote the code" in a voice that reads as
+enforced. It is not enforced. A read-only reviewer child working in a repository that contains
+`.dare/briefs/iter-003.md` can open it; nothing stops it. That is now labelled *not supplied*,
+with the note that the framing is what does the work.
+
+**Not verified.** Nobody has checked whether a cold reviewer ever *does* read `.dare/briefs/`.
+It would be visible in a transcript and no transcript has been examined for it, because no run
+has reached the panel more than once. If a dogfood run shows a reviewer reading the briefs, the
+cold-review invariant is weaker than §1.1 has ever claimed and this is where to look first.
+
 ---
 
 ## Fixed here, and worth knowing about

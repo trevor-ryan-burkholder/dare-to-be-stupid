@@ -39,6 +39,14 @@ that an agent wrote the code. Framing is adversarial: *find where this fails*, n
 done*. Verdict defaults to `fail`. A requirement passes only with `file:line` evidence.
 Unparseable output is a fail. Nothing defaults to pass, ever.
 
+**That starvation is *not supplied*, not sealed — a discipline, not a barrier (§6.1).** The
+driver does not hand over the build log, the iteration history or the archived briefs. It does
+not prevent a reviewer from finding them: a read-only child working in a repository that
+contains `.dare/briefs/iter-003.md` can open it. What does the work is the framing, not a
+wall — a process never told it is auditing an agent has no reason to go looking for one. This
+is written down because a reader who mistakes it for an enforced boundary will build on it,
+and it will not hold the weight.
+
 **The panel is heterogeneous, not N identical reads** (borrowed from ECC's specialized
 reviewers). Instead of three generalists re-reading the whole repo, the panel is split by
 DoD line — a **security auditor** (negative-case auth, secrets, injection), a
@@ -636,6 +644,57 @@ put a limit when everything else is off.
 
 Everything else is allowed. Emits `permissionDecision: "deny"` with a reason; exit 0 either
 way. **That restraint is the plugin.**
+
+### 6.1 Two classifications, and the difference between them
+
+The design has exactly two things it can say about an artifact, and they are not the same
+kind of statement. Confusing them is how a discipline gets described as a guarantee and then
+relied on as one.
+
+| classification | what it means | what backs it |
+|---|---|---|
+| **driver-owned** | the driver writes it; a child may not | `hooks/guard.mjs`, positionally, tested |
+| **not supplied** | the driver does not put it in any prompt, brief or context | a discipline in the driver's own code |
+
+**driver-owned is a guarantee.** It is enforced by a PreToolUse hook that fires regardless of
+permission mode, it covers `.dare/` at any depth including artifacts that do not exist yet, and
+three properties are asserted rather than assumed: a run is denied the write, an operator is
+allowed it, and a neighbour that merely resembles the name is untouched.
+
+**not supplied is not a barrier, and must never be written as one.** It reduces what the builder
+is *handed*. It does not make anything unreadable.
+
+**There is deliberately no third classification called *sealed*.** Read-protection was specified,
+examined against the code, and abandoned. Two reasons, either sufficient alone:
+
+- **The builder executes arbitrary code.** It runs `--dangerously-skip-permissions` and it writes
+  the test suite. A `readFileSync` inside a test file is read at *runtime*, and PreToolUse hooks
+  fire on tool calls — not on what the code a builder wrote goes on to do. There is no hook
+  position that sees it.
+- **The read surface cannot be enumerated.** Write-protection became sound when it stopped naming
+  basenames and started matching position. Read-protection cannot make that move, because the
+  thing being enumerated is `hooks/hooks.json`'s matcher — `Read`, `Glob`, `Grep`, `Task`, and
+  whatever file-reading tool a builder is handed next. Anything unmatched is simply allowed. That
+  is §6's enumeration bug in a place where the positional fix is unavailable.
+
+**What that actually costs is smaller than it sounds, and the reason is the threat model.** Every
+defence in this document is aimed at a model taking the cheapest path to green — satisficing —
+not at an adversary. Against satisficing, an artifact the builder was never handed is entirely
+sufficient: it cannot build to a test it has not been shown. Against a builder that deliberately
+dumps a file through a gate-failure `detail` and reads it back in the next iteration's brief, it
+is worth nothing — and that is a two-iteration manoeuvre, visible in the diff, that a cold
+reviewer reads.
+
+So the rule for this document and for every prompt the loop compiles: **say which of the two you
+mean.** No current artifact needs to be unreadable. `.dare/red-evidence.json` is dangerous to
+write and harmless to read — knowing which ids have red history lets a builder forge nothing.
+
+Both halves are already asserted, and were before this section named them. `test/guard.test.mjs`
+covers the guarantee — denied to a run, allowed to an operator, benign neighbours untouched — and
+`test/plugin-manifest.test.mjs` covers the read route staying open, by asserting the matcher
+excludes the read-only tools. That second test is the one that matters most here: adding `Read`
+to the matcher would silently convert a write barrier into a blackout, and a blackout would look
+like a seal without being one.
 
 ---
 

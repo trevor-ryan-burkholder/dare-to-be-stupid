@@ -97,7 +97,7 @@ fails rather than merely reading oddly; and one test pairs the brief against
 `isProtectedStatePath`, showing `.dare/red-evidence.json` is absent from the wording and denied
 anyway. The wording is now a *description* of the enforced rule rather than a second, weaker rule.
 
-## A2. Classify `.dare` artifacts — **DECIDED 11 August 2026: no read-sealing**
+## A2. Classify `.dare` artifacts — **DONE (docs only, at 0.19.0)**
 
 The original asked for `readable` and `sealed`, where sealed meant unreadable by any child marked
 `DARE_RUNNING`. **Sealing reads is not achievable. The item is replaced, not deferred.**
@@ -131,6 +131,25 @@ claim it does.
 
 Test what is actually claimed: a driver-owned path denied on write to a child, permitted to an
 operator, and a benign neighbour allowed. **Tier 1 — this is a rename plus a written reason.**
+
+**Landed — documentation only, no version bump; no shipped file changed.**
+
+Three findings, and only the third was work:
+
+1. **`DESIGN.md` never said "sealed".** There was no vocabulary to replace — only one missing.
+   `driver-owned` appeared seven times and was defined nowhere. New §6.1 defines both terms,
+   tabulates what backs each, and records why there is no third class.
+2. **Both tests A2 asks for already existed.** `test/guard.test.mjs:196–202` proves a
+   driver-owned path denied to a run and allowed to an operator; `describe('allowed:
+   protected-state neighbours')` proves the benign neighbour; and
+   `test/plugin-manifest.test.mjs:114–122` already proved the read route stays open. Not
+   rebuilt. `Task` was added to that exclusion list, because A2's own argument names it as a
+   read route and stopping at `Read`/`Glob`/`Grep` is the enumeration the item warns about.
+3. **§1.1 was claiming a discipline as a fact.** "It does **not** receive the build log,
+   iteration history, or any hint that an agent wrote the code" reads as enforced and is not: a
+   read-only reviewer in a repository containing `.dare/briefs/iter-003.md` can open it. Now
+   labelled *not supplied* with the framing argument that actually carries the weight. This is
+   the highest-value application of the new vocabulary and it was not on the item's list.
 
 ## A3. Held-out oracle — **DEFERRED. Sequencing, not impossibility. See `BORROWED.md` R13**
 

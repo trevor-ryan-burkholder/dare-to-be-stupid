@@ -116,7 +116,12 @@ describe('the guard hook registration', () => {
     // enforced by any branch in guard.mjs — it is enforced here, by the hook never firing on
     // a read at all. Adding Read to this matcher would silently turn the guard from a write
     // barrier into a blackout, so the exclusion is asserted rather than assumed.
-    for (const tool of ['Read', 'Glob', 'Grep']) {
+    //
+    // Task is in this list for the reason DESIGN.md §6.1 gives for abandoning read-sealing:
+    // the read surface cannot be enumerated. A subagent reads files, so hooking Read and
+    // stopping there would look like a seal and not be one. The classification is
+    // "not supplied", which is a discipline; nothing here pretends otherwise.
+    for (const tool of ['Read', 'Glob', 'Grep', 'Task']) {
       assert.equal(entry.matcher.split('|').includes(tool), false, `matcher should not cover ${tool}`);
     }
   });
