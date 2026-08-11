@@ -152,13 +152,18 @@ something other than effort.**
 Everything else below is recorded for the same reason it always was: so the next session does
 not re-derive it.
 
-## Blocker to resolve first
+## Blocker, still standing
 
-**`dotnet` is not installed on the development machine.** No SDK, no runtime. A .NET adapter
-can be written and contract-tested against injected runners, but its command syntax cannot be
-verified locally, and a .NET dogfood run is impossible. Either install an SDK before starting
-that item, or write it with every command explicitly marked unverified and say so here. Do
-not let unverified command strings acquire the appearance of tested ones.
+**`dotnet` is not installed on the development machine.** No SDK, no runtime; re-checked on
+11 August 2026. A .NET adapter can be written and contract-tested against injected runners —
+and as of 0.15.0 the contract tests would apply to it the moment it joins `TOOLCHAINS` — but
+its command syntax cannot be verified locally, and a .NET dogfood run is impossible.
+
+That gap is now *more* dangerous than when it was written, not less, because the registry makes
+a wrong adapter easy to add and green. Every structural test would pass on argv nobody has ever
+run. Either install an SDK before starting that item, or write it with every command explicitly
+marked unverified and say so here. Do not let unverified command strings acquire the appearance
+of tested ones.
 
 ## The seams, located
 
@@ -174,11 +179,14 @@ Read these before designing anything; several are smaller than they look.
 - ~~**Capability detection has a nucleus.**~~ Closed by item 1. `hasFrontend` now lives in
   `scripts/capabilities.mjs` as the `web-ui` detector, with its behaviour and its tests
   unchanged.
-- **Web assumptions beyond the gates.** `startCommand` reads `package.json` and returns
-  `npm start`; `playwrightConfigPresent` and the Playwright provisioning path key off
-  `playwright.config.*` and the `.dare/playwright-installed` marker; the observability and
-  health gates assume an HTTP service. A library or CLI target should not be asked for any of
-  them.
+- **Web assumptions beyond the gates — mostly closed, one left.** `startCommand` is now the
+  toolchain's (item 2), and the observability gate no longer fires at a CLI or a library
+  (item 5). What survives is the **Playwright provisioning path**:
+  `playwrightConfigPresent` and `ensurePlaywrightBrowsers` still key off `playwright.config.*`
+  and the `.dare/playwright-installed` marker, both of which are Node-specific and neither of
+  which passes through the toolchain. It is harmless today — provisioning is a no-op until
+  there is a config to provision for — but a second toolchain with a different e2e runner will
+  find it, and it belongs behind an operation on the adapter.
 
 ## Items, in dependency order
 
@@ -191,8 +199,8 @@ Read these before designing anything; several are smaller than they look.
    - **The design-slop gate still keys off detection, not the manifest.** §5.1's carve-out asks
      "is there something to inspect", which is a question about the tree. A declared `web-ui`
      that has not been written yet is still nothing to look at.
-   - **The manifest does not choose gates yet.** It reaches the Build Brief and nothing else.
-     The capability-to-gate table is item 5, and it waits on item 2.
+   - **The manifest reached the Build Brief first and the gates later.** As shipped in 0.12.0
+     it decided nothing; item 5 (0.16.0) is what made it load-bearing.
 2. ~~**Toolchain adapter interface.**~~ **Done — 0.15.0.** `scripts/toolchains/`, with the Node
    adapter reproducing the six commands exactly; a test asserts the full argv, not just the
    names, which is what makes "behaviour-neutral" checkable. `DESIGN.md` §3.8. Four decisions:
@@ -263,6 +271,14 @@ Read these before designing anything; several are smaller than they look.
 9. **Dogfood runs.** A web/API app, a Node app with persistence, a .NET service, a deliberate
    rejection scenario and a deliberate regression scenario. The last two are the valuable ones,
    and neither has ever been exercised end to end.
+
+   Two things changed underneath this item on 11 August 2026 and should shape how it is run.
+   A CLI or library target can now actually finish (item 5) — before, the e2e gate failed it
+   forever — so the scenario set need not all be web. And `.dare/run.json` (item 7) means each
+   dogfood run leaves a record of exactly what it was, which is the difference between five
+   runs and five comparable runs. Give the regression scenario enough budget to reach a second
+   iteration; both earlier attempts died in the first one with `passing: 0`, so the ratchet was
+   never reached at all.
 
 ## Constraints carried from the same plan
 
