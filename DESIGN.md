@@ -1110,6 +1110,10 @@ to zero. Its reasoning is written to `.dare/reality-check.md`.
 `chaos` 1–3 (env `DARE_CHAOS` overrides), fed into the builder prompt as a per-iteration
 scope budget:
 - **1 — surgical:** touch only files required by the current task; smallest viable diff.
+  Every changed line must trace directly to the objective, adjacent code and comments and
+  formatting are not the builder's to improve, and existing style is matched even where the
+  builder would do it differently. That detail lives at level 1 rather than above the list,
+  because stating it unconditionally would make levels 2 and 3 dead configuration.
 - **2 — normal:** related refactors allowed within the current slice.
 - **3 — feral:** free rein to restructure. Higher blast radius, more regressions, more
   hard resets — more airtime spent, funnier bloopers. Use knowingly.

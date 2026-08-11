@@ -638,7 +638,7 @@ C5 and F4, and both are prompts rather than architecture.
 
 # F. Template changes
 
-## F1. Surgical-change discipline — **OPEN — REVISED**
+## F1. Surgical-change discipline — **DONE (0.25.0)**
 
 - every changed line must trace directly to the current objective
 - do not "improve" adjacent code, comments, or formatting
@@ -659,6 +659,27 @@ C5 and F4, and both are prompts rather than architecture.
 > The last two bullets — orphan cleanup and simplicity-first — are chaos-independent and can go
 > in the general sections, which already gesture at them under "Clean up only your own mess"
 > and "Do not gold-plate either."
+
+**Landed 0.25.0, split exactly as the correction directs.** The dial was sharpened, not
+retired.
+
+- The first three bullets are now **inside the chaos-1 entry**, and a test asserts they appear
+  *before* the chaos-2 entry — so a later edit that promotes them to unconditional text fails
+  rather than merely reading wrong. Two more tests assert chaos 2 and 3 stay permissive, which
+  is what keeps the dial a dial.
+- The two chaos-independent bullets went to the general sections as directed: "If 200 lines
+  could be 50, write 50" under *Do not gold-plate either*, and *say so in your closing lines
+  and leave it* under *Clean up only your own mess* — the "mention it" half the template had
+  been missing entirely.
+- **`brief.mjs`'s `chaosLine(1)` was sharpened too**, which the item did not mention. That
+  string is what the builder reads closest to the work, every iteration; leaving it as
+  "smallest viable diff" while the system prompt carried the real rule would have reproduced
+  the A1a defect in a new place. A test asserts chaos 2 does *not* carry the chaos-1 sentence.
+
+One paragraph was added that the item did not ask for: a note that only level 1 is surgical and
+that at 2 and 3 the bullets are advice. Without it a builder at chaos 3, reading three
+imperative bullets, has to guess which of two adjacent paragraphs wins — which is the
+self-arguing template the correction warns about, arriving by a different route.
 
 ## F2. PRD right-sizing — **DONE (0.23.0)**
 

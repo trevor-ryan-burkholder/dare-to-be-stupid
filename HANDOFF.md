@@ -435,6 +435,21 @@ unchanged and still the right one — **read `.dare/lessons.json` after the firs
 delete it if it has filled with generalities.** What is new is that there is now a specific
 thing to look at: whether the trigger words appear verbatim in the failure the lesson came from.
 
+## F1 — surgical discipline at chaos 1 (0.25.0)
+
+**Verified.** Three template tests and two brief tests. The important one is positional rather
+than textual: it asserts the surgical rule appears *before* the chaos-2 entry, so a later edit
+promoting it to unconditional text fails the suite instead of merely reading wrong. The others
+assert chaos 2 and 3 stay permissive, that the two chaos-independent bullets landed in the
+general sections rather than on the dial, and that `chaosLine(2)` does not carry the chaos-1
+sentence.
+
+**Not verified.** Whether tighter chaos-1 wording actually narrows a builder's diff is
+unmeasured and unmeasurable from here — it needs two runs at the same chaos level with the same
+PRD, before and after. `BORROWED.md` R2 also claims this sharpens the race's line-churn metric
+by making candidates more distinguishable; racing has never been run with a live builder, so
+that remains a prediction.
+
 ---
 
 ## Fixed here, and worth knowing about

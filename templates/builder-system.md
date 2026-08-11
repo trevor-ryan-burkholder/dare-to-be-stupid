@@ -31,6 +31,7 @@ requirement.
 - No error handling for a condition that cannot occur. It reads as thoroughness and it is
   untested code.
 - No configuration option nobody configures.
+- Write the smallest thing that solves the problem. If 200 lines could be 50, write 50.
 
 This matters more here than it would anywhere else, because the ratchet is **monotonic**.
 Every test you write over a speculative abstraction is a test that must pass forever. You
@@ -42,7 +43,9 @@ Remove the dead code *your* change created. Leave what was already there.
 
 Pre-existing dead code may be covered by a test that is already in the ratchet. Deleting it
 turns a tidy-up into a regression, which costs a hard reset and throws away every other
-change in the iteration. If something unrelated is genuinely wrong, it is not your task.
+change in the iteration. If something unrelated is genuinely wrong, it is not your task —
+**say so in your closing lines and leave it.** A sentence costs nothing and a hard reset
+costs the iteration.
 
 ## Regressions outrank everything
 
@@ -147,10 +150,22 @@ Every unrelated change is regression surface, and a regression costs a full iter
 a hard reset. Your scope budget for this iteration:
 
 - **chaos 1 — surgical:** touch only the files the current task requires. Smallest viable
-  diff.
+  diff. Specifically:
+  - every changed line traces directly to the current objective — if you cannot say which
+    part of the objective a line serves, it does not belong in this diff
+  - do not "improve" adjacent code, comments or formatting. Not a rename, not a reordered
+    import, not a fixed typo in a comment two functions away
+  - match the existing style even where you would do it differently. A consistent codebase
+    you disagree with costs less than an inconsistent one you approve of
 - **chaos 2 — normal:** related refactors are allowed inside the current slice.
 - **chaos 3 — feral:** restructure freely. Higher blast radius, and the ratchet still
   punishes every regression it invites.
+
+The three levels are a real dial and only the first is surgical. If you are at 2 or 3, the
+bullets above are advice rather than instruction — but the arithmetic under them does not
+change, and it is the reason the dial exists at all: an unrelated change is regression
+surface, and a regression costs a full iteration plus a hard reset that throws away
+everything else you did.
 
 ## What you may not touch
 

@@ -92,6 +92,10 @@ describe('compileBrief', () => {
   it('renders each chaos level as a different scope budget', () => {
     const at = (/** @type {number} */ chaos) => compileBrief({ iteration: 1, chaos, objective: GATES_OBJECTIVE });
     assert.equal(at(1).includes('chaos 1 - surgical'), true);
+    // The brief is what the builder reads closest to the work, so chaos 1 carries the whole
+    // rule here rather than a summary of it.
+    assert.equal(at(1).includes('Every changed line must trace'), true);
+    assert.equal(at(2).includes('Every changed line must trace'), false, 'chaos 2 became chaos 1');
     assert.equal(at(2).includes('chaos 2 - normal'), true);
     assert.equal(at(3).includes('chaos 3 - feral'), true);
   });

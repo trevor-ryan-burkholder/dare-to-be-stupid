@@ -82,7 +82,12 @@ function capped(items, cap) {
  * @returns {string}
  */
 function chaosLine(chaos) {
-  if (chaos <= 1) return 'chaos 1 - surgical. Touch only the files this objective requires. Smallest viable diff.';
+  if (chaos <= 1) {
+    return (
+      'chaos 1 - surgical. Touch only the files this objective requires. Every changed line must trace ' +
+      'directly to it, and adjacent code, comments and formatting are not yours to improve this iteration.'
+    );
+  }
   if (chaos === 2) return 'chaos 2 - normal. Related refactors are allowed inside the current slice, and nowhere else.';
   return 'chaos 3 - feral. Restructure freely. The ratchet still punishes every regression this invites.';
 }

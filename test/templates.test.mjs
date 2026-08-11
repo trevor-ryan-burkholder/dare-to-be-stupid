@@ -191,6 +191,29 @@ describe('the builder template', () => {
     }
   });
 
+  it('states surgical discipline as the chaos-1 text, not as an unconditional rule', () => {
+    // Landing "every changed line must trace to the objective" unconditionally would make
+    // chaos 2 and 3 dead configuration, or produce a template arguing with itself two
+    // paragraphs apart. The rule sharpens a level that already exists.
+    const surgical = BUILDER.indexOf('every changed line traces directly to the current objective');
+    const normal = BUILDER.indexOf('chaos 2 — normal');
+    assert.equal(surgical > 0, true, 'the surgical rule is missing');
+    assert.equal(surgical < normal, true, 'the surgical rule is not inside the chaos-1 bullet');
+  });
+
+  it('keeps chaos 2 and 3 permissive, so the dial still turns', () => {
+    assert.equal(BUILDER.includes('related refactors are allowed inside the current slice'), true);
+    assert.equal(BUILDER.includes('restructure freely'), true);
+    assert.equal(BUILDER.includes('only the first is surgical'), true);
+  });
+
+  it('puts the chaos-independent halves in the general sections, not on the dial', () => {
+    // Orphan cleanup and simplicity-first hold at every chaos level, so stating them as
+    // chaos-1 text would be wrong in the other direction.
+    assert.equal(BUILDER.includes('If 200 lines could be 50, write 50.'), true);
+    assert.equal(BUILDER.includes('say so in your closing lines and leave it'), true);
+  });
+
   it('asks for properties without naming a library to get them from', () => {
     // "Do not build a framework" is the whole scope of the item. Naming fast-check here
     // would make a build depend on a package the plugin does not install and cannot gate.
