@@ -258,6 +258,21 @@ describe('the prd-author template', () => {
     assert.equal(PRD_AUTHOR.includes('No implementation choices'), true);
   });
 
+  it('notes that an observable outcome arrives pre-shaped for RED evidence', () => {
+    assert.equal(PRD_AUTHOR.includes('observable'), true);
+    assert.equal(PRD_AUTHOR.includes('failing before the code that makes it pass'), true);
+  });
+
+  it('refuses to turn requirements into builder instructions', () => {
+    // The reduced form of F3. Applied literally the original would rewrite
+    // "an unauthenticated request receives 401" into "write tests for invalid inputs, then
+    // make them pass" — an instruction, not an observation an auditor can falsify. That
+    // degrades the reviewer's checklist into a task list, which is the Ralph hole this
+    // architecture exists to avoid.
+    assert.equal(PRD_AUTHOR.includes('Do not rewrite them into instructions'), true);
+    assert.equal(PRD_AUTHOR.includes("auditor's checklist rather than the builder's"), true);
+  });
+
   it('constrains the size of one requirement, not only the size of the whole scope', () => {
     // The template already said "prefer the smallest thing that is genuinely useful", which
     // bounds the document. Nothing bounded a single id, and an oversized one surfaces as

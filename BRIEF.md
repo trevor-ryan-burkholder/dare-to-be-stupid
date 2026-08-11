@@ -703,7 +703,7 @@ template now gives the author — "can you name the observation that proves it f
 sentence" — which reuses the falsifiability rule sitting two sections above it rather than
 introducing a second, unrelated notion of size.
 
-## F3. Goal transformation — **DROP as written; reduce to a phrasing note**
+## F3. Goal transformation — **DROPPED as written; reduced form DONE (0.26.0)**
 
 > **Reason.** `prd-author.md` requires "no implementation choices" and "no requirement that
 > cannot be observed from outside the program," and the requirement ids **are** the panel's
@@ -721,6 +721,18 @@ introducing a second, unrelated notion of size.
 > arrives pre-shaped for the RED mechanism, because the test that proves it false is obvious.
 > `prd-author.md` already teaches this by example. Strengthening the existing text is the whole
 > of the available win.
+
+**Landed 0.26.0 as the salvageable half and nothing more.** Two short paragraphs appended to the
+existing testable/untestable example, where they strengthen text that was already there rather
+than opening a new section that could drift toward the dropped version.
+
+The second paragraph is the guard, and it is the reason this is worth committing at all: it says
+in the template itself that outcomes are **not** to be rewritten into instructions, quoting the
+exact transformation the original item proposed, and states that the ids are the auditor's
+checklist rather than the builder's to-do list. A later reader who encounters F3's original
+wording now finds the refusal already written down beside the rule, instead of re-deriving it.
+
+Two tests, one per paragraph.
 
 ## F4. Condition lessons on circumstances — `templates/lesson-extractor.md` — **DONE (0.24.0)**
 

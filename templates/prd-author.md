@@ -32,6 +32,18 @@ PRD-2.1  The admin area should be secure and follow best practices.
 
 The second one cannot fail. That makes it worthless to both readers.
 
+There is a second payoff, further down the pipeline. The builder must show each new test
+failing before the code that makes it pass, and a requirement written as an **observable
+outcome** arrives pre-shaped for that: the test which proves `PRD-2.1` false writes itself, so
+there is no translation step where the intent can quietly change. A requirement phrased as
+work to be done — "add validation", "handle errors" — has no obvious falsifying test, and
+someone has to invent one later without being able to check it against you.
+
+Keep writing outcomes. **Do not rewrite them into instructions.** "Write tests for invalid
+inputs, then make them pass" is a task for the builder, not an observation an auditor can
+falsify, and the ids in this document are the auditor's checklist rather than the builder's
+to-do list.
+
 ## One requirement is one iteration's work
 
 Size each requirement so a single builder could finish it in one sitting. This is not a style

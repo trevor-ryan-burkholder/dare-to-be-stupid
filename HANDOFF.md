@@ -450,6 +450,20 @@ PRD, before and after. `BORROWED.md` R2 also claims this sharpens the race's lin
 by making candidates more distinguishable; racing has never been run with a live builder, so
 that remains a prediction.
 
+## F3-reduced — the observable-outcome note (0.26.0)
+
+**Verified.** Two tests, one per paragraph: that the RED connection is stated, and that the
+refusal to rewrite requirements into builder instructions is stated in the template itself.
+The second is the one worth having — it records the rejected transformation *beside the rule*,
+so a later reader meeting F3's original wording finds the refusal already written down rather
+than re-deriving it.
+
+**Not verified.** Whether requirements were already being phrased this way, and therefore
+whether the note changes anything at all, is unknown: only two PRDs have ever been authored and
+neither was examined for phrasing. This may be a no-op that documents a correct existing habit.
+That is an acceptable outcome for a paragraph, and it is stated here rather than claimed as an
+improvement.
+
 ---
 
 ## Fixed here, and worth knowing about
