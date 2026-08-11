@@ -188,6 +188,18 @@ it.
 up to `maxIterations` is the dominant spend; `tokenCeiling` is the backstop that ends a run
 `BUDGET` before it runs away.
 
+**`tokenCeiling` is a stop signal, not a cap, and the difference is larger than it sounds.**
+Every child's spend is charged the moment it returns — including Phase 0 and Phase 1, which run
+before the loop and are threaded in as `alreadySpent` (they were uncounted until v0.35.0, so a
+run could spend an entire PRD and design phase *and then* the whole ceiling). But nothing can
+price a child *before* running it, and `claude -p` accepts no token limit the driver could pass.
+So the guarantee is: **the ceiling, plus one unbounded child.**
+
+Measured on 11 August 2026: a single builder child returned **20,223,215 tokens against a
+2,000,000 ceiling**. The check fired correctly and ended the run immediately. An operator
+setting a small ceiling should read it as "stop after this is exceeded", not as "do not exceed
+this", and should expect a single child to be able to overshoot by an order of magnitude.
+
 ---
 
 ## 3.6 Agent-config security scan (borrowed from ECC's AgentShield)

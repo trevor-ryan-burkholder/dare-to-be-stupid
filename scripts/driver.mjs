@@ -870,8 +870,15 @@ export function appendBlooper(dareDir, event) {
  *   requiredIds: string[],
  *   task: string,
  *   gateNames?: string[],
+ *   alreadySpent?: { tokens: number, costUsd: number },
  *   effects: Effects,
  * }} options
+ *
+ * `alreadySpent` carries what Phase 0 and Phase 1 cost, because they run before this function
+ * exists and their spend is otherwise invisible to it. Without it the ceiling restarts at zero
+ * when the loop begins, and a run configured for 2M tokens can spend the PRD phase, the design
+ * phase, and then 2M more. Observed: a design child spent 2,965,864 tokens against a 2,000,000
+ * ceiling while the airtime counter reported the full budget remaining.
  * @returns {RunOutcome}
  */
 export function driveRun(options) {
@@ -885,14 +892,23 @@ export function driveRun(options) {
     ownership: config.ownership,
   });
 
+  // Seeded from what the pre-loop phases already spent, not from zero. `shouldContinue` runs
+  // before the first builder, so a ceiling already exhausted by Phase 0 and Phase 1 ends the
+  // run here rather than buying a whole extra budget's worth of iterations.
   /** @type {RunProgress} */
-  let progress = { iteration: 0, spentTokens: 0, stalledIterations: 0, bestGateScore: 0, bestPassingCount: 0 };
+  let progress = {
+    iteration: 0,
+    spentTokens: options.alreadySpent?.tokens ?? 0,
+    stalledIterations: 0,
+    bestGateScore: 0,
+    bestPassingCount: 0,
+  };
 
   // Read once and carried, like the ratchet state. An unreadable pin store throws out of
   // `driveRun` rather than degrading to no pins: continuing would silently discard every
   // recorded guard and every carried pass, and the run would look healthier for the loss.
   const pins = readPins(dareDir);
-  let costUsd = 0;
+  let costUsd = options.alreadySpent?.costUsd ?? 0;
   let builderTokens = 0;
   let builderRuns = 0;
 
@@ -2292,6 +2308,34 @@ export function main(argv, io = {}) {
   }
   const { input, confirmPrd } = parseDriverArgs(argv);
 
+  // What Phase 0 and Phase 1 cost. These run before `driveRun` exists, so without carrying
+  // them the ceiling silently restarts at zero when the loop begins — the defect the first
+  // dogfood run exposed, where a design child spent 2,965,864 tokens against a 2,000,000
+  // ceiling and the airtime counter reported the full budget remaining.
+  const preLoop = { tokens: 0, costUsd: 0 };
+
+  /**
+   * Charge a pre-loop child and say whether the ceiling is now exhausted.
+   *
+   * Checked between the two phases as well as after them, so the overshoot here is bounded to
+   * one child exactly as it is inside the loop. Nothing can price a child before running it,
+   * so one child past the line is the best available guarantee — see §3.5.
+   *
+   * @param {ClaudeResult} result
+   * @returns {boolean}
+   */
+  const chargePreLoop = (result) => {
+    preLoop.tokens += result.tokens;
+    preLoop.costUsd += result.costUsd;
+    return preLoop.tokens >= config.tokenCeiling;
+  };
+
+  /** @param {string} phase */
+  const preLoopBudgetEnd = (phase) => {
+    write(verbatim(`token ceiling reached during ${phase}: ${preLoop.tokens} of ${config.tokenCeiling}`));
+    write(stamp('BUDGET', { mode }));
+  };
+
   // Measured before the run commits anything of its own. A repository that was empty when
   // dare arrived never has history worth quoting back at a builder, however many commits
   // dare goes on to add — those are the builder's own work, restated (DESIGN.md §8.2).
@@ -2358,6 +2402,10 @@ export function main(argv, io = {}) {
       write(stamp('ABORTED', { mode }));
       return 1;
     }
+    if (chargePreLoop(authored)) {
+      preLoopBudgetEnd('PRD authoring');
+      return 1;
+    }
     if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
   }
 
@@ -2384,6 +2432,10 @@ export function main(argv, io = {}) {
     write(stamp('ABORTED', { mode }));
     return 1;
   }
+  // Charged, but not an early exit. If this blew the ceiling, `driveRun` ends the run BUDGET
+  // on its first `shouldContinue` — after the run manifest has been written, which is an
+  // artifact the operator was promised. One exit path, and the forensic record survives.
+  chargePreLoop(designed);
 
   // The architect is the only thing that can say what this project is, because at this moment
   // the repository holds a PRD and some design documents and no code — every detector answers
@@ -2704,6 +2756,7 @@ export function main(argv, io = {}) {
     rootDir: cwd,
     requiredIds,
     gateNames,
+    alreadySpent: preLoop,
     task: `Build what PRD.md specifies. Every gate listed below must pass from the first iteration, so a missing script is a failing gate rather than an excuse.`,
     effects: {
       build: (brief) =>

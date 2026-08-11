@@ -65,10 +65,22 @@ for.
 **The token ceiling stops at the first child past the line.** It was previously read only by
 `shouldContinue`, between iterations, so a single iteration could run arbitrarily far past
 the limit before anything looked — an observed run ended `2100900 of 1000000`. Every child's
-spend is now charged and tested the moment it returns, at all six sites, which bounds the
-overshoot to one child. It is still not a cap and `tokenCeiling` should not be read as one:
-nothing can price a child before running it. Budget for the ceiling plus one expensive
-child, not for the ceiling.
+spend is now charged and tested the moment it returns, which bounds the overshoot to one child.
+
+> **Corrected 11 August 2026 by the first case-D dogfood run. This paragraph was wrong twice.**
+>
+> It said "at all six sites". There were **eight** — the PRD and design phases run in `main`,
+> before `driveRun` exists, and were never charged at all. A design child spent 2,965,864 tokens
+> against a 2,000,000 ceiling while the airtime counter reported the full budget remaining.
+> Fixed at 0.35.0 via `alreadySpent`; both pre-loop phases are now charged, and checked between
+> each other.
+>
+> And "budget for the ceiling plus one expensive child" understated the overshoot badly enough
+> to mislead. Measured: **one builder child returned 20,223,215 tokens against a 2,000,000
+> ceiling** — 10×. The check fired correctly and ended the run at once, so the mechanism is
+> sound; the *expectation* it set was not. Read `tokenCeiling` as "stop once this is exceeded",
+> never as "do not exceed this", and expect a single child to overshoot by an order of
+> magnitude. `DESIGN.md` §3.5 now says this in those terms.
 
 **The loop has met reality.** On 10 August 2026, twice, against two throwaway repositories
 with different PRDs. Preflight passed ten checks and scaffolded config; the run added its
@@ -337,10 +349,20 @@ and design phase, plus the documented one-child overshoot. Observed here as roug
 stated 2M. `DESIGN.md` §3.5's warning to "budget for the ceiling plus one expensive child" is
 therefore also understated.
 
-Not yet fixed. The fix is not simply moving the call sites: Phase 0 and Phase 1 must run before
-the loop, so either the ceiling check moves out of `driveRun` into a value threaded through both,
-or `driveRun` is handed the spend already incurred. The second is smaller and keeps one accounting
-path.
+**Fixed at 0.35.0**, by the second route: `driveRun` takes `alreadySpent` and seeds `progress`
+and `costUsd` from it, so there is still exactly one accounting path. `main` charges each
+pre-loop child as it returns and **checks between the two phases**, so the overshoot there is
+bounded to one child exactly as it is inside the loop. A ceiling exhausted by the design phase is
+not an early return: `driveRun`'s own `shouldContinue` ends the run `BUDGET` on its first pass,
+*after* the run manifest is written, so the operator still gets the artifact they were promised.
+
+Six tests, and the two that matter are the ones asserting *which* limit fired rather than merely
+that the state was `BUDGET` — exhausting `maxIterations` is also `BUDGET`, so the broader
+assertion passed for the wrong reason on the first attempt and had to be tightened.
+
+The outcome now reports the real total, which is the half an operator actually reads: the closing
+`iterations: 0 tokens: … cost: …` line previously understated the bill by the most expensive
+child in the pipeline.
 
 **Nothing about this required the run to finish**, which is worth noting on its own: the most
 valuable result of the session's first dogfood arrived twelve minutes in, from reading two log
@@ -366,9 +388,12 @@ call has no token limit the driver can set. For small ceilings `tokenCeiling` is
 budget at all — it is a *stop signal that fires after the fact*, and the smaller the ceiling the
 less it means.
 
-The honest statement to replace it with: **a run can cost the PRD phase, plus the design phase,
-plus the ceiling, plus one unbounded child.** An operator setting 2M should expect the
-possibility of 20M+.
+The honest statement, now that Phase 0 and Phase 1 are counted: **a run can cost the ceiling plus
+one unbounded child, and that child can be an order of magnitude larger than the ceiling.** An
+operator setting 2M should expect the possibility of 20M+. This is not fixable by accounting —
+nothing prices a child before running it, and `claude -p` takes no token limit the driver could
+pass — so it is a property to be stated rather than a bug to be closed. `DESIGN.md` §3.5 now says
+so in those terms instead of "budget for the ceiling plus one expensive child".
 
 ## What the run did establish, live, for the first time
 

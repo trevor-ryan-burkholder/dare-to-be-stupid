@@ -1209,6 +1209,87 @@ describe('driveRun', () => {
     return { outcome, dareDir, root };
   }
 
+  describe('the budget counts what was spent before the loop started', () => {
+    // The defect the first dogfood run found. Phase 0 and Phase 1 run in `main`, before
+    // driveRun exists, so their spend was invisible to it: a design child spent 2,965,864
+    // tokens against a 2,000,000 ceiling and the loop then began its own accounting at zero
+    // with the full ceiling available again. The suite was green throughout.
+
+    /**
+     * @param {{ tokens: number, costUsd: number }} alreadySpent
+     * @param {Partial<import('../scripts/driver.mjs').Effects>} [overrides]
+     */
+    function runWithSpend(alreadySpent, overrides = {}) {
+      const root = makeTempDir();
+      let builders = 0;
+      const outcome = driveRun({
+        config: { ...defaultConfig(), maxIterations: 4, tokenCeiling: 2_000_000, reviewers: ['correctness'] },
+        dareDir: path.join(root, '.dare'),
+        rootDir: root,
+        requiredIds: ['PRD-1.1'],
+        task: 'build the thing',
+        alreadySpent,
+        effects: effectsWith({
+          build: () => {
+            builders += 1;
+            return { ok: true, text: '', costUsd: 0.01, tokens: 100, raw: '' };
+          },
+          ...overrides,
+        }),
+      });
+      return { outcome, builders };
+    }
+
+    it('ends BUDGET without spawning a builder when the pre-loop phases exhausted the ceiling', () => {
+      // The exact numbers from the run: 2,965,864 spent against a 2,000,000 ceiling.
+      const { outcome, builders } = runWithSpend({ tokens: 2_965_864, costUsd: 12.5 });
+      assert.equal(outcome.state, 'BUDGET');
+      assert.equal(builders, 0, 'a builder ran on a ceiling that was already exhausted');
+    });
+
+    it('names the real total in the reason, not the loop’s own subtotal', () => {
+      const { outcome } = runWithSpend({ tokens: 2_965_864, costUsd: 12.5 });
+      assert.equal(outcome.reason.includes('2965864'), true);
+      assert.equal(outcome.reason.includes('2000000'), true);
+    });
+
+    it('reports the pre-loop spend in the outcome, so the final line is honest', () => {
+      // `iterations: 0 tokens: … cost: …` is what an operator reads. Reporting only the
+      // loop's share understates the bill by the most expensive child in the pipeline.
+      const { outcome } = runWithSpend({ tokens: 2_965_864, costUsd: 12.5 });
+      assert.equal(outcome.spentTokens >= 2_965_864, true);
+      assert.equal(outcome.costUsd >= 12.5, true);
+    });
+
+    it('adds loop spend on top of it rather than replacing it', () => {
+      const { outcome } = runWithSpend({ tokens: 1000, costUsd: 1 });
+      assert.equal(outcome.spentTokens > 1000, true, 'the loop overwrote the pre-loop total');
+      assert.equal(outcome.costUsd > 1, true);
+    });
+
+    it('still runs normally when nothing was spent before the loop', () => {
+      // The benign neighbour. A budget that refuses every run is not a budget.
+      // Asserted on *which* limit fired, not merely on the state: exhausting maxIterations
+      // is also BUDGET, and a broader assertion would pass for the wrong reason.
+      const { outcome, builders } = runWithSpend({ tokens: 0, costUsd: 0 });
+      assert.equal(builders > 0, true);
+      assert.equal(outcome.reason.includes('token ceiling'), false, `stopped on tokens: ${outcome.reason}`);
+    });
+
+    it('treats an absent alreadySpent as zero, so existing callers are unaffected', () => {
+      const root = makeTempDir();
+      const outcome = driveRun({
+        config: { ...defaultConfig(), maxIterations: 1, reviewers: ['correctness'] },
+        dareDir: path.join(root, '.dare'),
+        rootDir: root,
+        requiredIds: ['PRD-1.1'],
+        task: 'build the thing',
+        effects: effectsWith({}),
+      });
+      assert.equal(outcome.reason.includes('token ceiling'), false, `stopped on tokens: ${outcome.reason}`);
+    });
+  });
+
   describe('the builder assumptions contract', () => {
     // A9. A second output contract on the builder's only return channel, so the failure modes
     // are the parser's: an absence must not read as a failure, and a failure must not read as
