@@ -111,38 +111,46 @@ before, and `<phase>: returned after Ns, N tokens` after. That converts nine and
 silent minutes from "possibly hung" into "expected, and here is what it cost". If the async
 conversion is ever done for other reasons, a real tick becomes available for free.
 
-**A real race.** `race.enabled` is `false` by default, and the mechanism has only been
-exercised against temporary repositories: real worktrees, real cleanup and real `--ff-only`
-merges, but never a real builder inside one. Turn it on knowingly against a throwaway
-repository first, and check `git worktree list` is clean afterwards. The candidate measure
-changed in 0.13.0, and `parseNumstat` was checked against real output rather than only
-fixtures — see "Verified live" above.
+**A real race — but only the builder half is left.** `race.enabled` is still `false` by
+default. As of 0.18.0 the git half is covered by tier 2 against real git: detached worktrees at
+the base commit, `worktree list` clean after removal, names reusable by a later race,
+`--ff-only` fast-forwarding, and `--ff-only` *refusing* a diverged commit rather than inventing
+a merge. `parseNumstat` is cross-checked against git's own `--shortstat`, including a real
+binary file.
 
-**A real health probe.** `scripts/health-probe.mjs` is tested against a hand-written server
-that answers, one that 404s, one that never answers and one that will not start. It has not
-been pointed at a generated application's `npm start`. The failure mode to watch for is an
-application that ignores `PORT`.
+What remains untested is a real builder inside a worktree — cost, duration, and whether a
+`claude -p` child behaves the same detached from a branch. Turn racing on knowingly against a
+throwaway repository first, and check `git worktree list` afterwards anyway.
+
+~~**A real health probe.**~~ **Closed on 11 August 2026 by tier 2.**
+`test/integration/health-probe.integration.test.mjs` points `probeHealth` at a real
+`npm start` — a shell running npm running a script running a server, then torn down again —
+and covers the named failure mode: an application that ignores `PORT` now fails the probe
+rather than hanging. It also proves the teardown, by probing the same app twice and requiring
+the second to succeed. What is still untested is a probe against an application this loop
+actually generated, rather than one written to be probed.
 
 ---
 
 # Planned work — making the harness stack-agnostic
 
 Specified on 11 August 2026. The `.dare/**` integrity item from the same plan was implemented
-in 0.10.0. On 11 August 2026 **items 1, 2, 3, 5, 6 and 7 were implemented** — item 1 in 0.11.0
-and 0.12.0, item 6 in 0.13.0, item 3 in 0.14.0, item 2 in 0.15.0, item 5 in 0.16.0, item 7 in
-0.17.0; see below. **Items 4, 8 and 9 remain.** What follows is scoped against the code as it
-stands, with the seams located, so it can be picked up without re-deriving them.
+in 0.10.0. On 11 August 2026 **items 1, 2, 3, 5, 6, 7 and 8 were implemented** — item 1 in
+0.11.0 and 0.12.0, item 6 in 0.13.0, item 3 in 0.14.0, item 2 in 0.15.0, item 5 in 0.16.0, item
+7 in 0.17.0, item 8 in 0.18.0; see below. **Items 4 and 9 remain, and both are blocked on
+something other than effort.**
 
-Of what is left, **item 8 is the one to do next, and its argument is now much stronger than
-when it was written.** Six items landed on 11 August on unit tests alone. Every one of them is
-green, and not one of them has been near a live `claude -p` child, a real worktree, or a real
-`npx vitest run`. The closing lesson of this file — that `claudeArgs` was unit-tested while the
-defect lived in another program's parsing of the array it built — now applies to six more
-components. The one live check that was possible without spending money was done and recorded
-(`parseNumstat` against real `git` output); the rest need the tiered harness item 8 describes.
+- **Item 4 (.NET adapter)** — `dotnet` is not installed on this machine, re-checked on
+  11 August 2026. The adapter interface (§3.8) is ready for it: write
+  `scripts/toolchains/dotnet.mjs`, push it onto `TOOLCHAINS`, and the existing contract tests
+  apply to it automatically. Do not write it without an SDK to verify the command syntax
+  against; the registry tests will pass on argv nobody has ever run.
+- **Item 9 (dogfood runs)** — spends real money and wants an operator awake to watch it. The
+  two valuable scenarios are still the deliberate rejection and the deliberate regression, and
+  neither has ever been exercised end to end.
 
-Item 4 is still blocked: `dotnet` is not installed, re-checked on 11 August 2026. Item 9 spends
-real money and wants an operator awake to watch it.
+Everything else below is recorded for the same reason it always was: so the next session does
+not re-derive it.
 
 ## Blocker to resolve first
 
@@ -242,10 +250,16 @@ Read these before designing anything; several are smaller than they look.
    - **It needed no new guard rule**, which is the 0.10.0 positional protection paying off
      exactly as predicted — `guard.test.mjs` had already listed `.dare/run.json` as a
      hypothetical, and the hypothetical came true without a code change.
-8. **Integration-test layer.** Three tiers, documented and separately runnable: deterministic
-   unit tests; local integration tests needing real binaries but no paid API; live tests that
-   spend money. The argv bug recorded above is the reason — `claudeArgs` was unit-tested, and
-   the defect lived in another program's parsing of the array it built.
+8. ~~**Integration-test layer.**~~ **Done — 0.18.0.** `npm test` (tier 1), `npm run
+   test:integration` (tier 2, real `git`/`node`/`npm`, no money), `npm run test:live` (tier 3,
+   spends money). `DESIGN.md` §11.1, `CLAUDE.md` "Test gates". Three notes:
+   - **Tier 2 earned itself on its first execution**, finding a `git` on this machine too old
+     for `--initial-branch`. That is precisely the class of fault a unit test cannot see.
+   - **Tier 3 fails when unarmed rather than skipping.** A green tick for a suite that made no
+     API call is a lie the reader takes for coverage, and this codebase does not get to refuse
+     silent passes everywhere else and then ship one in its own harness.
+   - **`npm test` no longer globs `test/**`.** It is `test/*.test.mjs`, so tiers 2 and 3 do not
+     ride along on the default command. A new unit test must go in `test/` directly.
 9. **Dogfood runs.** A web/API app, a Node app with persistence, a .NET service, a deliberate
    rejection scenario and a deliberate regression scenario. The last two are the valuable ones,
    and neither has ever been exercised end to end.

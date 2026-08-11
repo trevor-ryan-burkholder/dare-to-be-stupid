@@ -919,6 +919,33 @@ nobody has read. **Empty does not throw** — "no test files" is a real state, a
 advance on it belongs to the ratchet, not to a parser. That last one is not theoretical: it is
 what both live runs on 10 August 2026 produced, and every component behaved correctly.
 
+### 11.1 Three test tiers
+
+The weak point above is one instance of a general one, and the general one has a name in this
+repository's history: **`claudeArgs` was unit-tested and correct.** It built exactly the array
+it meant to. The defect lived in *another program's parsing* of that array — `--allowedTools`
+is variadic, the prompt followed it, and the CLI read the prompt as one more tool name. Every
+phase but `builder` was dead, and no run could ever ship. No assertion about the array would
+have caught it.
+
+So: **anything whose contract is owned by a different binary needs one live check, not more
+assertions.** Three tiers, separately runnable, each with an honest cost:
+
+| tier | command | needs | cost |
+|---|---|---|---|
+| 1 — unit | `npm test` | node only | free, seconds |
+| 2 — integration | `npm run test:integration` | real `git`, `node`, `npm` | free, seconds |
+| 3 — live | `npm run test:live` | a real `claude -p` | **real money** |
+
+Tier 2 covers the contracts owned by git and npm: worktree creation and removal, `--ff-only`
+merging, `--numstat` cross-checked against git's own `--shortstat`, and the health probe
+against an actual `npm start` — a shell running npm running a script running a server, then
+torn down again. It found something on its first execution: a `git` predating `--initial-branch`.
+
+Tier 3 is armed by `DARE_LIVE=1` and **fails without it** rather than skipping. A green tick
+for a suite that made no API call is a lie the reader will take for coverage, and this codebase
+does not get to refuse silent passes everywhere else and then ship one in its own harness.
+
 ---
 
 ## 12. Build order

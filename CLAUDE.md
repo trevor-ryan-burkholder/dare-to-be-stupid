@@ -64,8 +64,28 @@ output — dogfood them.
 ```
 npm run lint          # style + obvious errors
 npm run typecheck     # jsdoc/tsc-checkJs; we are not adding TypeScript
-npm test              # unit + fixture tests
+npm test              # tier 1: unit + fixture tests, no external binaries
 ```
+
+**Three tiers, and they are separately runnable on purpose** (`DESIGN.md` §11.1):
+
+| command | what it needs | when |
+|---|---|---|
+| `npm test` | nothing but node | every change |
+| `npm run test:integration` | real `git`, `node`, `npm`; no network, no API, no money | before any commit touching `race.mjs`, `health-probe.mjs`, the toolchains, or anything that shells out |
+| `npm run test:live` | a real `claude -p`, and **it spends money** | when changing `spawnClaude`, `claudeArgs`, envelope parsing, or a template's output contract |
+
+`npm run test:all` is tiers 1 and 2.
+
+The live tier is armed by `DARE_LIVE=1` and **fails without it** rather than skipping. That is
+deliberate: a green tick for a suite that made no API call is a lie the reader will take for
+coverage.
+
+The reason the tiers exist is the argv defect. `claudeArgs` was unit-tested and correct; the
+fault lived in another program's parsing of the array it built, and no assertion about that
+array could have found it. **Anything whose contract is owned by a different binary needs one
+live check, not more assertions.** Tier 2 earned this on its first run, by finding a `git` too
+old for `--initial-branch`.
 
 Rules:
 
