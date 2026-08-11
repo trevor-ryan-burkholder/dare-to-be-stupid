@@ -49,7 +49,9 @@ import {
   inspectCiWorkflows,
   observabilityGate,
   ownershipPlan,
+  changedSince,
   spawnClaude,
+  writeMutationConfig,
   startCommand,
   driveRun,
   extractJsonObject,
@@ -1072,6 +1074,77 @@ describe('spawnClaude checks the context budget before it spends anything', () =
     assert.equal(calls[0][0], 'claude');
     assert.equal(result.ok, true);
     assert.equal(result.text, 'done');
+  });
+});
+
+describe('changedSince', () => {
+  // The baseline choice is the load-bearing part of A5. Measured from the last
+  // ratchet-advancing commit rather than the last iteration, because a regression iteration
+  // changes only the repair — a diff against the previous iteration would hand a scoped gate
+  // an almost empty set and it would report a clean pass over nothing.
+
+  it('asks git for names changed since the ratchet-advancing commit', () => {
+    /** @type {string[][]} */
+    const calls = [];
+    const files = changedSince({
+      cwd: '/repo',
+      since: 'abc123',
+      run: (command, args) => {
+        calls.push([command, ...args]);
+        return { ok: true, status: 0, stdout: 'src/a.ts\nsrc/b.js\n', stderr: '' };
+      },
+    });
+    assert.deepEqual(calls, [['git', 'diff', '--name-only', 'abc123', '--']]);
+    assert.deepEqual(files, ['src/a.ts', 'src/b.js']);
+  });
+
+  it('returns nothing when there is no baseline, rather than the whole tree', () => {
+    // Iteration 1 has no ratchet-advancing commit. Returning everything would mutate an
+    // entire repository on the iteration least likely to benefit from it; the gate declines
+    // on an empty set with a stated reason instead, which is louder and more accurate.
+    let asked = 0;
+    const files = changedSince({
+      cwd: '/repo',
+      since: null,
+      run: () => {
+        asked += 1;
+        return { ok: true, status: 0, stdout: '', stderr: '' };
+      },
+    });
+    assert.deepEqual(files, []);
+    assert.equal(asked, 0, 'git was consulted with no baseline to consult it about');
+  });
+
+  it('returns nothing when git itself failed', () => {
+    // A failed diff is not evidence that nothing changed. It yields an empty list, the gate
+    // declines and says so, and no gate reports a pass over an unknown.
+    assert.deepEqual(
+      changedSince({ cwd: '/repo', since: 'abc', run: () => ({ ok: false, status: 128, stdout: '', stderr: 'bad' }) }),
+      [],
+    );
+  });
+
+  it('drops blank lines rather than passing an empty path to a mutator', () => {
+    assert.deepEqual(
+      changedSince({
+        cwd: '/repo',
+        since: 'abc',
+        run: () => ({ ok: true, status: 0, stdout: 'src/a.ts\n\n  \n', stderr: '' }),
+      }),
+      ['src/a.ts'],
+    );
+  });
+});
+
+describe('writeMutationConfig', () => {
+  it('writes a config carrying a breaking threshold the builder cannot reach', () => {
+    // Stryker has no --thresholds flag and thresholds.break defaults to null, so surviving
+    // mutants exit 0. The threshold therefore has to live in a file, and it has to be a file
+    // under .dare or the builder owns whether the gate can fail at all.
+    const dareDir = path.join(makeTempDir(), '.dare');
+    const file = writeMutationConfig(dareDir);
+    assert.equal(file, path.join(dareDir, 'stryker.config.json'));
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).thresholds.break, 100);
   });
 });
 

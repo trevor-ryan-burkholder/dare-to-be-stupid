@@ -19,6 +19,7 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import {
+  CONDITIONAL_GATE_OPERATIONS,
   GATE_OPERATIONS,
   TOOLCHAINS,
   ToolchainError,
@@ -26,7 +27,7 @@ import {
   gatesFor,
   resolveToolchain,
 } from '../scripts/toolchains/index.mjs';
-import { nodeToolchain } from '../scripts/toolchains/node.mjs';
+import { MUTATION_CONFIG, MUTATION_CONFIG_CONTENTS, nodeToolchain } from '../scripts/toolchains/node.mjs';
 import { command, notApplicable } from '../scripts/toolchains/shared.mjs';
 
 /** @type {string[]} */
@@ -267,5 +268,103 @@ describe('gatesFor', () => {
       () => gatesFor(/** @type {never} */ (incomplete), CONTEXT),
       (error) => error instanceof ToolchainError && error.message.includes('"e2e"'),
     );
+  });
+});
+
+describe('the conditional second pass', () => {
+  it('is exactly the mutation gate, asserted as a whole', () => {
+    // Each addition here is a gate that stops running on an iteration that failed anything
+    // else, which should be a decision somebody made on purpose rather than inherited.
+    assert.deepEqual(CONDITIONAL_GATE_OPERATIONS, ['mutation']);
+  });
+
+  it('is disjoint from the first pass, so nothing runs twice', () => {
+    for (const name of CONDITIONAL_GATE_OPERATIONS) {
+      assert.equal(GATE_OPERATIONS.includes(name), false, `${name} is in both passes`);
+    }
+  });
+
+  it('builds a mutation command scoped to the changed source', () => {
+    const { gates } = gatesFor(
+      nodeToolchain,
+      { root: '/repo', dareDir: '/repo/.dare', changedFiles: ['src/a.ts', 'src/b.js'] },
+      CONDITIONAL_GATE_OPERATIONS,
+    );
+    assert.equal(gates.length, 1);
+    assert.equal(gates[0].name, 'mutation');
+    // The whole argv, not just the operation name — that is what made "behaviour-neutral"
+    // checkable for the first pass and it is what makes this checkable here. Every element
+    // was executed against Stryker 9.6.1 before it was written down.
+    assert.deepEqual(gates[0].command, [
+      'npx',
+      '--yes',
+      '@stryker-mutator/core',
+      'run',
+      path.join('/repo/.dare', MUTATION_CONFIG),
+      '--testRunner',
+      'vitest',
+      '--mutate',
+      'src/a.ts,src/b.js',
+      '--reporters',
+      'clear-text',
+      '--logLevel',
+      'error',
+    ]);
+  });
+
+  it('never mutates the tests, which would mutate the oracle into a lie', () => {
+    const { gates, skipped } = gatesFor(
+      nodeToolchain,
+      {
+        root: '/repo',
+        dareDir: '/repo/.dare',
+        changedFiles: ['src/a.test.ts', 'test/helpers.js', 'e2e/login.spec.ts', '__tests__/x.js'],
+      },
+      CONDITIONAL_GATE_OPERATIONS,
+    );
+    assert.deepEqual(gates, []);
+    assert.equal(skipped.length, 1);
+    assert.equal(skipped[0].name, 'mutation');
+  });
+
+  it('ignores files no mutator understands', () => {
+    const { gates } = gatesFor(
+      nodeToolchain,
+      { root: '/repo', dareDir: '/repo/.dare', changedFiles: ['README.md', 'src/a.ts', 'assets/logo.png'] },
+      CONDITIONAL_GATE_OPERATIONS,
+    );
+    assert.equal(gates[0].command.includes('src/a.ts'), true);
+    assert.equal(gates[0].command.join(' ').includes('README.md'), false);
+  });
+
+  it('declines with a stated reason when nothing mutable changed', () => {
+    // Not a pass. Mutating an empty set exits 0 and reads exactly like a run in which every
+    // mutant died, which is the silent pass this codebase refuses everywhere else.
+    const { gates, skipped } = gatesFor(
+      nodeToolchain,
+      { root: '/repo', dareDir: '/repo/.dare', changedFiles: [] },
+      CONDITIONAL_GATE_OPERATIONS,
+    );
+    assert.deepEqual(gates, []);
+    assert.equal(skipped[0].reason.includes('nothing to mutate'), true);
+  });
+
+  it('declines when no changed-file list was supplied at all', () => {
+    const { skipped } = gatesFor(nodeToolchain, { root: '/repo', dareDir: '/repo/.dare' }, CONDITIONAL_GATE_OPERATIONS);
+    assert.equal(skipped.length, 1);
+  });
+
+  it('points the runner at a driver-owned config, not the project’s', () => {
+    // Stryker exposes no --thresholds flag and thresholds.break defaults to null, so a run
+    // with surviving mutants exits 0. Measured: a fixture with two survivors exited 0 with no
+    // config and 1 with this one. The failure condition therefore lives in a file, and it has
+    // to be a file under .dare or the builder owns whether the gate can fail.
+    const { gates } = gatesFor(
+      nodeToolchain,
+      { root: '/repo', dareDir: '/repo/.dare', changedFiles: ['src/a.ts'] },
+      CONDITIONAL_GATE_OPERATIONS,
+    );
+    assert.equal(gates[0].command.includes(path.join('/repo/.dare', MUTATION_CONFIG)), true);
+    assert.equal(MUTATION_CONFIG_CONTENTS.thresholds.break, 100);
   });
 });

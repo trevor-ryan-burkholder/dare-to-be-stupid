@@ -32,10 +32,18 @@ import { ToolchainError } from './shared.mjs';
 /** @typedef {import('./shared.mjs').Operation} Operation */
 
 /**
- * @typedef {'restore' | 'build' | 'lint' | 'types' | 'unit' | 'e2e' | 'security-audit'} OperationName
+ * @typedef {'restore' | 'build' | 'lint' | 'types' | 'unit' | 'e2e' | 'security-audit'
+ *   | 'mutation'} OperationName
  */
 
-/** @typedef {{ root: string, dareDir: string }} OperationContext */
+/**
+ * @typedef {{ root: string, dareDir: string, changedFiles?: string[] }} OperationContext
+ *
+ * `changedFiles` is measured against the last **ratchet-advancing** commit rather than the
+ * last iteration, and that is not a detail. A regression iteration changes nothing but the
+ * repair, so a diff against the previous iteration would hand a scoped gate an empty set and
+ * it would report a clean pass over nothing.
+ */
 
 /**
  * @typedef {{
@@ -58,6 +66,23 @@ import { ToolchainError } from './shared.mjs';
  * @type {OperationName[]}
  */
 export const GATE_OPERATIONS = ['build', 'lint', 'types', 'unit', 'e2e', 'security-audit'];
+
+/**
+ * Operations that run in a **second pass**, and only when every gate in the first one passed.
+ *
+ * This is the whole of the ordering change, and it exists because mutation testing does not
+ * fit the flat model. It is slow enough that running it beside `build` on an iteration that
+ * does not compile is waste, and its verdict is not monotonic the way the rest of Phase 3 is:
+ * surviving-mutant counts vary with which files changed, so two green iterations can disagree
+ * without either being wrong.
+ *
+ * A failure in the first pass therefore costs nothing extra. A conditional gate is still a
+ * gate — it fails the iteration exactly as any other does — it simply is not asked until
+ * asking is worth the time.
+ *
+ * @type {OperationName[]}
+ */
+export const CONDITIONAL_GATE_OPERATIONS = ['mutation'];
 
 export { E2E_REPORT, ToolchainError, UNIT_REPORT };
 
@@ -117,19 +142,20 @@ export function resolveToolchain(root) {
  *
  * @param {Toolchain} toolchain
  * @param {OperationContext} context
+ * @param {OperationName[]} [operations] which pass to build; defaults to the first
  * @returns {{
  *   gates: { name: string, command: string[], required: boolean }[],
  *   skipped: { name: string, reason: string }[]
  * }}
  * @throws {ToolchainError} when the toolchain does not implement a gate operation
  */
-export function gatesFor(toolchain, context) {
+export function gatesFor(toolchain, context, operations = GATE_OPERATIONS) {
   /** @type {{ name: string, command: string[], required: boolean }[]} */
   const gates = [];
   /** @type {{ name: string, reason: string }[]} */
   const skipped = [];
 
-  for (const name of GATE_OPERATIONS) {
+  for (const name of operations) {
     const produce = toolchain.operations[name];
     if (typeof produce !== 'function') {
       throw new ToolchainError(

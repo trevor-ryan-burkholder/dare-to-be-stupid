@@ -65,6 +65,13 @@ export const GATE_POLICY = {
     why: 'a test that has only ever been green is unproven whatever the project is',
   },
   integrity: { appliesTo: null, why: 'a gate is only worth running while its configuration still means something' },
+  mutation: {
+    appliesTo: null,
+    why:
+      'a test that passes whatever the code does is worthless to every shape of project. This one runs in the ' +
+      'conditional second pass rather than beside the others, which is a question of ordering rather than of ' +
+      'capability - see CONDITIONAL_GATE_OPERATIONS',
+  },
 
   // --- Conditional ---------------------------------------------------------
   e2e: {

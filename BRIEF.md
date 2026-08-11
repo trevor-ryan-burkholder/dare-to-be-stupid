@@ -256,7 +256,7 @@ Four decisions the item left open:
 - **A run with pins it cannot re-verify aborts** rather than carrying them forward unchecked,
   because an unverified pin reports the same clean pass as a verified one.
 
-## A5. Mutation testing — **OPEN — REVISED**
+## A5. Mutation testing — **DONE (0.31.0)**
 
 The most load-bearing DoD claim is "tests assert real values, not truthiness," currently
 enforced by a reviewer *reading* tests — an LLM judgment costing a full iteration when it
@@ -285,6 +285,39 @@ elsewhere. Surviving mutants on changed code fail the gate.
 A5, A3 and RED evidence are complementary, not redundant: RED proves a test failed once,
 mutation proves it is sensitive to the code, the oracle proves it was not written to fit the
 implementation.
+
+**Landed 0.31.0, and one finding changes the item.** `CONDITIONAL_GATE_OPERATIONS` in
+`toolchains/index.mjs`, a `mutation` operation on the Node adapter, `changedSince` and
+`writeMutationConfig` in the driver, `DESIGN.md` §4.4. 13 new tests.
+
+**The finding: "surviving mutants fail the gate" is not achievable through Stryker's CLI, and
+the item's plan would have shipped a gate that could never fail.** Verified against Stryker
+9.6.1 rather than assumed, because B3's lesson applies to any binary:
+
+- `stryker run --help` exposes `--dashboard.*` but **no `--thresholds.*` flag at all**.
+- `thresholds.break` defaults to `null`, which means a run with surviving mutants **exits 0**.
+- Measured on a fixture: two survivors, `--mutate src/add.js`, **exit 0**. The same fixture with
+  a config carrying `break: 100` exited **1**, naming the reason.
+
+So the gate's failure condition lives in a *file*. Had that been the project's `stryker.config`,
+**the builder would own whether the gate can ever fail** — which is defect 1 of A3, arriving
+through a different door. `stryker run` takes a config path positionally, so the driver writes
+`.dare/stryker.config.json` and passes it, and §6 puts it beyond the builder's reach.
+
+Everything else landed as decided. Two additions the item did not specify:
+
+- **Tests are excluded from `--mutate`.** A mutated test is an oracle turned into a lie.
+- **An empty changed-file set declines with a reason rather than running.** Mutating nothing
+  exits 0 and reads exactly like a run in which every mutant died.
+
+Every argv element was executed before it was written down: `run <configFile>`, `--testRunner`,
+`--mutate` with a comma-separated pair, `--reporters`, `--logLevel`.
+
+**Not verified: provisioning.** The command assumes `@stryker-mutator/vitest-runner` is present
+in the target project. Nothing installs it — unlike Playwright browsers, which have a
+provisioning path. On a project without it the gate fails on a missing plugin rather than on a
+defect, which is the `e2e`-forever-red failure B5 fixed for a different gate. **This is the
+first thing to fix before arming mutation on a real run.**
 
 ## A6. Assertion quality, in `integrity.mjs` — **DONE (0.21.0)**
 

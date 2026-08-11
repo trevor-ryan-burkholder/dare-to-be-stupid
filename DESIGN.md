@@ -317,6 +317,7 @@ toolchain is that seam, given a contract:
 | `unit` | `npx vitest run --reporter=json --outputFile=…` |
 | `e2e` | `npx playwright test` |
 | `security-audit` | `npm audit --audit-level=high` |
+| `mutation` | `npx --yes @stryker-mutator/core run .dare/stryker.config.json --testRunner vitest --mutate …` (§4.4) |
 | `startCommand` | `npm start`, when the manifest declares one |
 | `ci` | which operations a workflow must be seen to run |
 
@@ -599,6 +600,50 @@ entries to eight reads exactly like one that always had eight.
 Note what is *not* here: `quality:impeccable` keeps its own detection-based arming (§5.1),
 because it asks whether there is a UI to inspect right now, which is a question about the tree
 rather than about intent.
+
+### 4.4 The conditional second pass — mutation testing
+
+The most load-bearing DoD claim is "tests assert real values, not truthiness". §4 now enforces
+the lazy *shape* deterministically through `gate-integrity`, but a test can name a value and
+still be insensitive to the code. Mutation testing is the check that cannot be talked round:
+mutate the source, and a test that still passes was proving nothing.
+
+It does not fit the flat gate list, and forcing it in would have been the wrong shape twice
+over. It is slow, so running it beside `build` on an iteration that does not compile spends
+minutes to learn what `build` already said. And its verdict is **not monotonic** the way the
+rest of Phase 3 is — surviving-mutant counts vary with which files changed, so two green
+iterations can disagree without either being wrong.
+
+So there is a second pass, and that ordering is the whole of the change:
+
+- `GATE_OPERATIONS` runs exactly as before, and a failure there costs nothing extra.
+- `CONDITIONAL_GATE_OPERATIONS` runs **only if every gate in the first pass passed.**
+- A conditional gate is still a gate. It fails the iteration exactly as any other does; it is
+  simply not asked until asking is worth the time.
+- **Mutation results stay out of the ratchet.** It is a pass/fail gate producing no test ids.
+
+**The operation context gains the changed-file list**, so a gate can scope itself — and the
+baseline is the last **ratchet-advancing commit**, not the last iteration. That difference
+decides whether the scoping means anything: a regression iteration changes only the repair, so
+a diff against the previous iteration would hand the gate an almost-empty set and it would
+report a clean pass over nothing. With no baseline at all the list is empty, the operation
+declines with a stated reason, and nothing pretends to have checked.
+
+**The threshold is driver-owned, and finding out why was the work.** Stryker exposes
+`--dashboard.*` flags but **no `--thresholds.*` flag at all**, and `thresholds.break` defaults
+to `null` — so a run with surviving mutants exits **0**. Measured against Stryker 9.6.1 rather
+than read: a fixture with two survivors exited 0 with no config, and exited 1 with a config
+carrying `break: 100`, naming the reason. The failure condition of this gate therefore lives in
+a *file*, and had that file been the project's, **the builder would own whether the gate can
+ever fail** — which is the defect that deferred the held-out oracle (§A3). `stryker run` takes a
+config path positionally, so the driver writes `.dare/stryker.config.json` and passes it. §6
+denies the builder every write under `.dare`, positionally, so the threshold is out of reach.
+
+`break: 100` rather than a percentage, because the question is "did any mutant on the changed
+code survive" and not "is the score good enough". A percentage is a threshold, and thresholds
+drift — which §13 rejects by name.
+
+Tests are never mutated. A mutated test is an oracle turned into a lie.
 
 ---
 

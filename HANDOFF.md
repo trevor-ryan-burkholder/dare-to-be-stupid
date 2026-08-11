@@ -585,6 +585,48 @@ is the template, not the parser.
 assumed X, the PRD says Y" ever appears as a finding. That needs a run reaching the panel with
 a non-empty log, which is a dogfood scenario rather than a live test.
 
+## A5 — the conditional gate pass and mutation testing (0.31.0)
+
+**Verified structurally, and — unusually for this session — the external command was verified
+by running it.** B3's rule is that a registry makes a wrong adapter easy to add and green, so
+Stryker 9.6.1 was installed into a scratchpad fixture and driven before any argv was written
+down. What that produced was not a confirmation but a **correction**:
+
+- `stryker run --help` exposes `--dashboard.*` and **no `--thresholds.*` flag whatsoever**.
+- `thresholds.break` defaults to `null`. **A run with surviving mutants exits 0.**
+- Measured: a two-function fixture with two surviving mutants exited **0** with no config, and
+  exited **1** with `{"thresholds":{"break":100}}`, logging *"Final mutation score 66.67 under
+  breaking threshold 100"*. A second run with a comma-separated two-file `--mutate` exited 1
+  with three survivors.
+
+So the item as written — "surviving mutants on changed code fail the gate" — would have shipped
+a gate that could not fail, and the config that decides it would have been the builder's. The
+driver now writes `.dare/stryker.config.json` and passes it positionally; §6 keeps it out of
+reach. **That correction is the most valuable thing this item produced, and it came from
+running the binary rather than reading about it.**
+
+13 tests: the conditional list asserted as a whole and asserted disjoint from the first pass;
+the full argv; tests excluded from mutation; an empty changed set declining with a reason;
+`changedSince` measuring from the ratchet-advancing commit, returning empty with no baseline
+and **not consulting git at all** in that case, and returning empty when git fails.
+
+**Not verified, and one of these is blocking.**
+
+- **Provisioning is not wired, and this is the blocker.** The command assumes
+  `@stryker-mutator/vitest-runner` is installed in the target project. Nothing installs it.
+  Playwright browsers have `ensurePlaywrightBrowsers`; mutation has no equivalent. On a project
+  without the plugin the gate fails on a missing runner rather than on a defect — which is
+  exactly the `e2e`-forever-red failure that item 5 fixed for a different gate, reintroduced
+  here. **Fix this before arming mutation on a real run.**
+- **The second pass has never run in a real driver loop.** `gateTree`'s ordering is covered
+  only indirectly; no test drives a first pass to green and observes the second start.
+- **Cost is unmeasured.** Mutation testing on a real generated application could take longer
+  than every other gate combined, and nothing bounds it. The fixture here was two functions.
+- **The builder still owns `vitest.config`**, so it still decides which tests run and therefore
+  which mutants can be killed. That is the same pre-existing hole the unit gate has, not a new
+  one, but mutation makes it louder: a narrowed test config raises the surviving-mutant count
+  rather than lowering it, so the failure is at least in the safe direction.
+
 ---
 
 ## Fixed here, and worth knowing about

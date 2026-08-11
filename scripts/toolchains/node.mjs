@@ -18,13 +18,39 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { command } from './shared.mjs';
+import { command, notApplicable } from './shared.mjs';
 
 /** Where the unit runner is told to leave its machine-readable report. */
 export const UNIT_REPORT = 'test-report.json';
 
 /** Where the e2e runner's report is looked for. */
 export const E2E_REPORT = 'e2e-report.json';
+
+/**
+ * The mutation runner's configuration, written by the driver into `.dare/` and therefore
+ * beyond the builder's reach (§6).
+ *
+ * This file is not a convenience. Stryker exposes no `--thresholds.*` flag — verified against
+ * `stryker run --help` at 9.6.1, which exposes `--dashboard.*` but nothing for thresholds — and
+ * `thresholds.break` defaults to `null`, meaning **surviving mutants exit 0**. Measured: a
+ * fixture with two survivors exited 0 with no config, and exited 1 with this one. So the
+ * failure condition of the gate lives in a file, and if that file were the project's then the
+ * builder would own whether the gate can fail at all — which is the defect that deferred the
+ * held-out oracle. Passing a driver-owned config positionally to `stryker run` is what keeps
+ * the threshold out of the builder's hands.
+ */
+export const MUTATION_CONFIG = 'stryker.config.json';
+
+/**
+ * Its contents. `break: 100` because the gate's question is "did any mutant on the changed
+ * code survive", not "is the score good enough" — a percentage threshold is a threshold that
+ * can drift, which §13 rejects by name.
+ */
+export const MUTATION_CONFIG_CONTENTS = { thresholds: { high: 100, low: 100, break: 100 } };
+
+/** Files worth mutating: first-party source, never the tests that would be mutated into lies. */
+const MUTABLE_RE = /\.[cm]?[jt]sx?$/;
+const TEST_LIKE_RE = /(^|\/)(?:__tests__|test|tests|spec|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
 
 /** @type {import('./index.mjs').Toolchain} */
 export const nodeToolchain = {
@@ -53,6 +79,38 @@ export const nodeToolchain = {
       command(['npx', 'vitest', 'run', '--reporter=json', `--outputFile=${path.join(dareDir, UNIT_REPORT)}`]),
     e2e: () => command(['npx', 'playwright', 'test']),
     'security-audit': () => command(['npm', 'audit', '--audit-level=high']),
+
+    // Every element of this argv has been executed against Stryker 9.6.1 rather than read
+    // from documentation, which is the rule HANDOFF.md's argv defect bought: the flags are
+    // `run <configFile>`, `--testRunner`, `--mutate` (comma separated, verified with two
+    // files), `--reporters` and `--logLevel`.
+    /** @param {{ dareDir: string, changedFiles?: string[] }} context */
+    mutation: ({ dareDir, changedFiles }) => {
+      const mutable = (changedFiles ?? []).filter((file) => MUTABLE_RE.test(file) && !TEST_LIKE_RE.test(file));
+      if (mutable.length === 0) {
+        // Not a pass and not a skip of the gate — a statement that this iteration changed no
+        // mutable source. Mutating an empty set would exit 0 and read exactly like a run in
+        // which every mutant died.
+        return notApplicable(
+          'no first-party source changed since the last ratchet-advancing commit, so there is nothing to mutate',
+        );
+      }
+      return command([
+        'npx',
+        '--yes',
+        '@stryker-mutator/core',
+        'run',
+        path.join(dareDir, MUTATION_CONFIG),
+        '--testRunner',
+        'vitest',
+        '--mutate',
+        mutable.join(','),
+        '--reporters',
+        'clear-text',
+        '--logLevel',
+        'error',
+      ]);
+    },
   },
 
   /**

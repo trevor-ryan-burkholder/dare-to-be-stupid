@@ -76,7 +76,14 @@ import {
 } from './pins.mjs';
 import { archivePreviousRun, buildRunManifest, writeRunManifest } from './run-manifest.mjs';
 import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
-import { E2E_REPORT, UNIT_REPORT, gatesFor, resolveToolchain } from './toolchains/index.mjs';
+import { MUTATION_CONFIG, MUTATION_CONFIG_CONTENTS } from './toolchains/node.mjs';
+import {
+  CONDITIONAL_GATE_OPERATIONS,
+  E2E_REPORT,
+  UNIT_REPORT,
+  gatesFor,
+  resolveToolchain,
+} from './toolchains/index.mjs';
 
 /** @typedef {import('./config.mjs').DareConfig} DareConfig */
 /** @typedef {'SHIPPED' | 'STALLED' | 'BUDGET' | 'ABORTED'} TerminalState */
@@ -1565,6 +1572,71 @@ export function commandGates(root, dareDir) {
 }
 
 /**
+ * The second gate pass: gates that run only once every gate in the first pass has passed.
+ *
+ * The ordering is the whole of A5's change. Mutation testing is slow, and running it beside
+ * `build` on an iteration that does not compile spends minutes to learn nothing. Its verdict
+ * is also not monotonic the way the rest of Phase 3 is — surviving-mutant counts vary with
+ * which files changed — so it does not belong in the flat list where every entry is comparable.
+ *
+ * @param {string} root
+ * @param {string} dareDir
+ * @param {string[]} changedFiles measured from the last ratchet-advancing commit
+ * @returns {{ gates: Gate[], skipped: { name: string, reason: string }[] }}
+ */
+export function conditionalCommandGates(root, dareDir, changedFiles) {
+  return gatesFor(
+    resolveToolchain(root).toolchain,
+    { root, dareDir, changedFiles },
+    CONDITIONAL_GATE_OPERATIONS,
+  );
+}
+
+/**
+ * Files changed since the last commit the ratchet advanced on.
+ *
+ * Measured from there rather than from the previous iteration, and the difference decides
+ * whether a scoped gate means anything: a regression iteration changes only the repair, so a
+ * diff against the last iteration would hand the gate an almost empty set and it would report
+ * a clean pass over nothing. The ratchet-advancing commit is the last point the run agreed the
+ * code was good, which is the honest baseline for "what has this run put at risk since".
+ *
+ * A missing baseline yields an empty list rather than the whole tree. The gate that consumes
+ * it declines on an empty set with a stated reason, which is a louder and more accurate
+ * outcome than mutating an entire repository on iteration 1.
+ *
+ * @param {{ cwd: string, since: string | null, run?: typeof shell }} options
+ * @returns {string[]}
+ */
+export function changedSince(options) {
+  if (options.since === null) return [];
+  const run = options.run ?? shell;
+  const result = run('git', ['diff', '--name-only', options.since, '--'], { cwd: options.cwd });
+  if (!result.ok) return [];
+  return result.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+}
+
+/**
+ * Write the driver-owned mutation configuration.
+ *
+ * It lives under `.dare/` because the builder must not be able to weaken it, and it exists at
+ * all because Stryker has no `--thresholds.*` flag: `thresholds.break` defaults to null, and a
+ * run with surviving mutants then exits 0. Measured, not assumed — see `node.mjs`.
+ *
+ * @param {string} dareDir
+ * @returns {string} the path written
+ */
+export function writeMutationConfig(dareDir) {
+  mkdirSync(dareDir, { recursive: true });
+  const file = path.join(dareDir, MUTATION_CONFIG);
+  writeFileSync(file, `${JSON.stringify(MUTATION_CONFIG_CONTENTS, null, 2)}\n`, 'utf8');
+  return file;
+}
+
+/**
  * Every gate a toolchain will run, and every operation it has declined, with reasons.
  *
  * Two lists rather than one because they are read for different purposes: the gates go to the
@@ -2442,6 +2514,25 @@ export function main(argv, io = {}) {
     const browsers = ensurePlaywrightBrowsers({ cwd: dir, dareDir: treeDare, run: shell });
     if (browsers.installed) write(verbatim(browsers.detail));
     const commandResults = runGates(applicable.gates, { cwd: dir, run: shell });
+
+    // ---- the conditional second pass (DESIGN.md §4.4) -------------------
+    // Only when every gate in the first pass passed. A failure above costs nothing extra,
+    // which is the whole of the ordering change: mutation testing is slow, and running it on
+    // an iteration that does not compile spends minutes to learn what `build` already said.
+    if (commandResults.ok) {
+      const changedFiles = changedSince({ cwd: dir, since: loadState(dareDir).lastGoodCommit, run: shell });
+      writeMutationConfig(treeDare);
+      const second = conditionalCommandGates(dir, treeDare, changedFiles);
+      for (const skip of second.skipped) write(verbatim(`gate ${skip.name} declined: ${skip.reason}`));
+      const secondApplicable = applicableGates(second.gates, capabilities);
+      for (const skip of secondApplicable.skipped) {
+        write(verbatim(`gate ${skip.name} does not apply: ${skip.reason}`));
+      }
+      const secondResults = runGates(secondApplicable.gates, { cwd: dir, run: shell });
+      commandResults.results.push(...secondResults.results);
+      commandResults.ok = secondResults.ok;
+    }
+
     const previousPassing = loadState(dareDir).passing;
 
     /** @type {Set<string>} */
