@@ -251,7 +251,42 @@ Evidence is carried, not discarded: each detected capability maps to a short str
 a run manifest in a way that `web-ui: true` is not.
 
 `hasFrontend` survives as a thin wrapper over `web-ui` detection, because §5.1's design-slop
-carve-out is asked against the tree each iteration and predates any manifest.
+carve-out is asked against the tree each iteration and predates any manifest. That gate stays
+on *detection* rather than the manifest on purpose: it asks "is there something to inspect",
+which is a question about the tree, not about intent. A declared `web-ui` that has not been
+written yet is still nothing to look at.
+
+**How the declaration arrives.** The architect's final message ends with a fenced json block:
+
+```json
+{ "capabilities": ["api", "persistent-storage"] }
+```
+
+`parseCapabilityDeclaration` reads it — trying each fenced block last-to-first, so an echoed
+example never wins over the answer — and an unparseable, empty or out-of-vocabulary
+declaration **aborts the run**. Same rule as everywhere else: missing evidence is a failure,
+not a default.
+
+**Where it is kept.** `.dare/capabilities.json`, driver-owned:
+
+```json
+{
+  "declared": ["api", "persistent-storage"],
+  "detected": ["api"],
+  "capabilities": ["api", "persistent-storage"],
+  "evidence": { "api": "dependency express" }
+}
+```
+
+It is rewritten every iteration, because `detected` and `evidence` describe the tree as it is
+*now* and the builder changes the tree under them; `declared` is the only durable half. It
+needs no new guard rule — the §6 hook denies a run's own children any write under `.dare`,
+positionally. That matters here specifically: a builder able to edit this file could declare
+away the capability whose gate it cannot pass, and the run would ship having never checked it.
+
+The resolved set is handed to each iteration's Build Brief (§8.1) so the builder knows what it
+is building. It does not yet choose gates; that is the capability-to-gate table, which waits on
+the toolchain adapter.
 
 ---
 

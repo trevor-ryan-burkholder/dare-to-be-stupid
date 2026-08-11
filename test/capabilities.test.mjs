@@ -10,20 +10,24 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import {
   CAPABILITIES,
+  CAPABILITY_MANIFEST,
   CAPABILITY_ORDER,
   CapabilityError,
   UNDETECTABLE,
   detectCapabilities,
   hasFrontend,
+  parseCapabilityDeclaration,
+  readDeclaredCapabilities,
   resolveCapabilities,
   validateCapabilities,
+  writeCapabilityManifest,
 } from '../scripts/capabilities.mjs';
 
 /** @type {string[]} */
@@ -402,4 +406,162 @@ describe('resolveCapabilities', () => {
       CapabilityError,
     );
   });
+});
+
+describe('parseCapabilityDeclaration', () => {
+  it('reads a fenced json block at the end of a chatty message', () => {
+    const raw = [
+      'I wrote docs/architecture.md, docs/api-contract.md and docs/data-model.md.',
+      '',
+      'The service exposes HTTP endpoints and persists orders.',
+      '',
+      '```json',
+      '{ "capabilities": ["api", "persistent-storage"] }',
+      '```',
+    ].join('\n');
+    assert.deepEqual(parseCapabilityDeclaration(raw), ['api', 'persistent-storage']);
+  });
+
+  it('reads a bare json object with no fence', () => {
+    assert.deepEqual(parseCapabilityDeclaration('{"capabilities":["cli"]}'), ['cli']);
+  });
+
+  it('reads an unlabelled fence', () => {
+    assert.deepEqual(parseCapabilityDeclaration('```\n{"capabilities":["library"]}\n```'), ['library']);
+  });
+
+  it('takes the last fenced block, not an example echoed earlier', () => {
+    // The architect template shows an example block. A child that repeats the template back
+    // before answering would otherwise have its example parsed as its answer.
+    const raw = [
+      'The template asked for:',
+      '',
+      '```json',
+      '{ "capabilities": ["api", "persistent-storage"] }',
+      '```',
+      '',
+      'For this project the answer is:',
+      '',
+      '```json',
+      '{ "capabilities": ["cli"] }',
+      '```',
+    ].join('\n');
+    assert.deepEqual(parseCapabilityDeclaration(raw), ['cli']);
+  });
+
+  it('returns the canonical order, not the order declared', () => {
+    assert.deepEqual(parseCapabilityDeclaration('{"capabilities":["authentication","api","web-ui"]}'), [
+      'web-ui',
+      'api',
+      'authentication',
+    ]);
+  });
+
+  /** @type {[unknown, string][]} */
+  const refused = [
+    ['', 'an empty message'],
+    ['   \n  ', 'whitespace'],
+    [undefined, 'no message at all'],
+    [null, 'null'],
+    ['Design complete. Three documents written.', 'prose with no json'],
+    ['```json\n{ "capabilities": [] }\n```', 'an empty list'],
+    ['```json\n{ "components": ["api"] }\n```', 'json that answers a different question'],
+    ['```json\n["api"]\n```', 'a bare array'],
+    ['```json\n{ "capabilities": "api" }\n```', 'a string where a list belongs'],
+    ['```json\n{ "capabilities": ["api",\n```', 'json truncated mid-block'],
+  ];
+  for (const [raw, label] of refused) {
+    it(`refuses ${label}`, () => {
+      assert.throws(() => parseCapabilityDeclaration(raw), CapabilityError);
+    });
+  }
+
+  it('refuses a capability outside the vocabulary rather than reporting no declaration', () => {
+    // The distinction matters to whoever reads the abort line: "you named something that does
+    // not exist" is actionable, and "no declaration found" sends them looking for a fence that
+    // was right there.
+    assert.throws(
+      () => parseCapabilityDeclaration('```json\n{ "capabilities": ["api", "blockchain"] }\n```'),
+      (error) => error instanceof CapabilityError && error.message.includes('"blockchain"'),
+    );
+  });
+
+  it('names the fence contract when nothing parses, so the abort line is actionable', () => {
+    assert.throws(
+      () => parseCapabilityDeclaration('Design complete.'),
+      (error) =>
+        error instanceof CapabilityError &&
+        error.message.includes('capabilities') &&
+        error.message.includes('persistent-storage'),
+    );
+  });
+});
+
+describe('the capability manifest on disk', () => {
+  it('round-trips the declaration through .dare/capabilities.json', () => {
+    const dareDir = path.join(makeProject(), '.dare');
+    const resolved = resolveCapabilities({
+      root: makeProject({ 'package.json': '{"dependencies":{"express":"^4"}}\n' }),
+      declared: ['api', 'library'],
+    });
+    const file = writeCapabilityManifest(dareDir, resolved);
+    assert.equal(file, path.join(dareDir, CAPABILITY_MANIFEST));
+    assert.deepEqual(readDeclaredCapabilities(dareDir), ['api', 'library']);
+  });
+
+  it('records the detected half and its evidence, not only the union', () => {
+    // The evidence is the audit trail. A manifest that says `web-ui` without saying why turns
+    // a wrong detection into an unfalsifiable claim.
+    const dareDir = path.join(makeProject(), '.dare');
+    writeCapabilityManifest(
+      dareDir,
+      resolveCapabilities({
+        root: makeProject({ 'package.json': '{"dependencies":{"react":"^19"}}\n' }),
+        declared: ['cli'],
+      }),
+    );
+    const written = JSON.parse(readFileSync(path.join(dareDir, CAPABILITY_MANIFEST), 'utf8'));
+    assert.deepEqual(written, {
+      declared: ['cli'],
+      detected: ['web-ui'],
+      capabilities: ['web-ui', 'cli'],
+      evidence: { 'web-ui': 'dependency react' },
+    });
+  });
+
+  it('overwrites a previous manifest rather than accumulating one', () => {
+    const dareDir = path.join(makeProject(), '.dare');
+    writeCapabilityManifest(dareDir, resolveCapabilities({ root: makeProject(), declared: ['cli'] }));
+    writeCapabilityManifest(dareDir, resolveCapabilities({ root: makeProject(), declared: ['library'] }));
+    assert.deepEqual(readDeclaredCapabilities(dareDir), ['library']);
+  });
+
+  it('leaves no temporary file behind, because the write is atomic', () => {
+    const dareDir = path.join(makeProject(), '.dare');
+    writeCapabilityManifest(dareDir, resolveCapabilities({ root: makeProject(), declared: ['cli'] }));
+    assert.deepEqual(readdirSync(dareDir), [CAPABILITY_MANIFEST]);
+  });
+
+  /** @type {[string | null, string][]} */
+  const unreadable = [
+    [null, 'a missing file'],
+    ['{ not json', 'malformed json'],
+    ['["api"]', 'an array instead of an object'],
+    ['null', 'a literal null'],
+    ['{}', 'an object with no declared field'],
+    ['{"declared":"api"}', 'a declared field that is not a list'],
+    ['{"declared":["blockchain"]}', 'a declared field naming something unknown'],
+  ];
+  for (const [contents, label] of unreadable) {
+    it(`fails closed on ${label}`, () => {
+      // A run that has lost its declaration cannot decide which gates apply. Guessing here is
+      // exactly the silent skip DESIGN.md §4 forbids.
+      const dareDir = path.join(makeProject(), '.dare');
+      if (contents !== null) {
+        mkdirSync(dareDir, { recursive: true });
+        writeFileSync(path.join(dareDir, CAPABILITY_MANIFEST), contents, 'utf8');
+      }
+      assert.throws(() => readDeclaredCapabilities(dareDir), CapabilityError);
+    });
+  }
 });

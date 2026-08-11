@@ -49,6 +49,7 @@ import path from 'node:path';
  *   lessons?: BriefLesson[],
  *   history?: HistoryNote[],
  *   gates?: string[],
+ *   capabilities?: string[],
  *   raceCandidate?: { index: number, of: number } | null
  * }} BriefInput
  */
@@ -208,6 +209,19 @@ export function compileBrief(input) {
     if (protectedTests.length > PROTECTED_SAMPLE) {
       lines.push(`- ...and ${protectedTests.length - PROTECTED_SAMPLE} more held by the ratchet.`);
     }
+  }
+
+  const capabilities = [...(input.capabilities ?? [])];
+  if (capabilities.length > 0) {
+    lines.push(
+      '',
+      '## What this project is',
+      '',
+      'Declared by the architect and confirmed against the repository (DESIGN.md §3.7). This is what the',
+      'gates are chosen from, so build all of it and do not quietly build something else.',
+      '',
+      ...capabilities.map((capability) => `- ${capability}`),
+    );
   }
 
   if ((input.gates ?? []).length > 0) {

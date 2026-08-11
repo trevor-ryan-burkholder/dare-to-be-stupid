@@ -92,6 +92,23 @@ describe('compileBrief', () => {
     assert.equal(brief.indexOf('test/a.test.js::one') < brief.indexOf('test/b.test.js::two'), true);
   });
 
+  it('tells the builder what the project is, in the order it was given', () => {
+    const brief = compileBrief({
+      iteration: 1,
+      chaos: 1,
+      objective: GATES_OBJECTIVE,
+      capabilities: ['api', 'persistent-storage', 'authentication'],
+    });
+    assert.equal(brief.includes('## What this project is'), true);
+    assert.equal(brief.indexOf('- api') < brief.indexOf('- persistent-storage'), true);
+    assert.equal(brief.indexOf('- persistent-storage') < brief.indexOf('- authentication'), true);
+  });
+
+  it('omits the section entirely rather than printing an empty heading', () => {
+    const brief = compileBrief({ iteration: 1, chaos: 1, objective: GATES_OBJECTIVE, capabilities: [] });
+    assert.equal(brief.includes('What this project is'), false);
+  });
+
   it('is byte-identical for identical input', () => {
     const input = /** @type {import('../scripts/brief.mjs').BriefInput} */ ({
       iteration: 3,

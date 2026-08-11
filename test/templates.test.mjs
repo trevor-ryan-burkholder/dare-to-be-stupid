@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
+import { CAPABILITY_ORDER, parseCapabilityDeclaration } from '../scripts/capabilities.mjs';
 import { parseReviewerReport } from '../scripts/driver.mjs';
 import { parseLessonExtraction } from '../scripts/lessons.mjs';
 
@@ -222,6 +223,30 @@ describe('the architect template', () => {
 
   it('requires every PRD requirement to have a component responsible for it', () => {
     assert.equal(ARCHITECT.includes('PRD-3.2'), true, 'shows the mapping requirement concretely');
+  });
+
+  it('offers the whole capability vocabulary and nothing outside it', () => {
+    // The architect cannot declare a capability it was never shown, and a vocabulary that
+    // drifts between the template and the parser aborts every run at the design phase.
+    for (const capability of CAPABILITY_ORDER) {
+      assert.equal(ARCHITECT.includes(`\`${capability}\``), true, `architect template never offers ${capability}`);
+    }
+  });
+
+  it('says which direction to err in, because under-declaring silently skips a gate', () => {
+    assert.equal(ARCHITECT.includes('Under-declaring is the expensive mistake'), true);
+  });
+
+  it('embeds exactly one json example, and the parser accepts it', () => {
+    // The template's own example is the contract. If the parser would reject it, every
+    // obedient architect aborts the run.
+    const blocks = jsonBlocks(ARCHITECT);
+    assert.equal(blocks.length, 1);
+    assert.deepEqual(parseCapabilityDeclaration(blocks[0]), ['api', 'persistent-storage']);
+  });
+
+  it('says the example is an example, so it is replaced rather than copied', () => {
+    assert.equal(ARCHITECT.includes('Those two values are an example. Replace them.'), true);
   });
 });
 

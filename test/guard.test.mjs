@@ -276,6 +276,9 @@ describe('blocked: every mutation under .dare/', () => {
     ['.dare/e2e-report.json', 'the browser report'],
     ['.dare/briefs/iter-004.md', 'an archived build brief, nested a directory deep'],
     ['.dare/bloopers.log', 'the blooper reel'],
+    // A builder that could rewrite this could declare away the capability whose gate it
+    // cannot pass, and the run would ship having never checked it (DESIGN.md §3.7).
+    ['.dare/capabilities.json', 'the capability manifest'],
     ['.dare/run.json', 'a driver-owned artifact that did not exist when the list was written'],
     ['.dare/state.json.bak', 'a backup beside the ratchet'],
     ['./.dare/state.json', 'a path with a leading dot segment'],

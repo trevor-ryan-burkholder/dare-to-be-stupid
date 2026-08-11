@@ -1292,6 +1292,52 @@ describe('driveRun', () => {
     assert.equal(briefs[1].includes('### Failing gates'), true);
   });
 
+  it('re-asks what the project is on every iteration, and puts the answer in the brief', () => {
+    // Not resolved once and reused: the declared half is fixed for the run but the detected
+    // half describes the tree, and the builder changes the tree every iteration. A brief
+    // compiled from a stale answer would describe the project as it was before it existed.
+    /** @type {string[]} */
+    const briefs = [];
+    let asked = 0;
+    run(
+      {
+        readTestReports: () => [ONE_PASSING],
+        gates: () => ({ ok: false, results: [{ name: 'typecheck', ok: false, status: 1, detail: 'TS2339' }] }),
+        capabilities: () => {
+          asked += 1;
+          return asked === 1 ? ['api'] : ['api', 'persistent-storage'];
+        },
+        build: (brief) => {
+          briefs.push(brief);
+          return { ok: true, text: '', costUsd: 0, tokens: 1, raw: '' };
+        },
+      },
+      { maxIterations: 2 },
+    );
+    assert.equal(asked, 2);
+    assert.equal(briefs[0].includes('## What this project is'), true);
+    assert.equal(briefs[0].includes('- persistent-storage'), false);
+    assert.equal(briefs[1].includes('- persistent-storage'), true);
+  });
+
+  it('compiles a brief with no capability section when nothing supplies one', () => {
+    // `capabilities` is an optional effect. A driver assembled without it must still produce
+    // a brief rather than throwing on an absent function.
+    /** @type {string[]} */
+    const briefs = [];
+    run(
+      {
+        readTestReports: () => [ONE_PASSING],
+        build: (brief) => {
+          briefs.push(brief);
+          return { ok: true, text: '', costUsd: 0, tokens: 1, raw: '' };
+        },
+      },
+      { maxIterations: 1 },
+    );
+    assert.equal(briefs[0].includes('What this project is'), false);
+  });
+
   it('stops at the first child past the ceiling, rather than finishing the iteration', () => {
     // Observed: a run configured for 1000000 ended `2100900 of 1000000`, because the ceiling
     // was only read between iterations and a child's cost is unknown until it returns.

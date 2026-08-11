@@ -119,10 +119,10 @@ application that ignores `PORT`.
 
 # Planned work — making the harness stack-agnostic
 
-Specified on 11 August 2026 and **not implemented**, except where marked. The `.dare/**`
-integrity item from the same plan *was* implemented, in 0.10.0. What follows is scoped
-against the code as it stands at that version, with the seams located, so it can be picked up
-without re-deriving them. Nothing here is started; do not read any of it as done.
+Specified on 11 August 2026. The `.dare/**` integrity item from the same plan was implemented
+in 0.10.0, and **item 1 was implemented on 11 August 2026, in 0.11.0 and 0.12.0** — see below.
+Items 2–9 are **not implemented**. What follows is scoped against the code as it stands, with
+the seams located, so it can be picked up without re-deriving them.
 
 ## Blocker to resolve first
 
@@ -151,10 +151,9 @@ Read these before designing anything; several are smaller than they look.
   therefore an **extraction** of that logic into `scripts/reporters/`, not a new subsystem.
   The `Runner` typedef is `'vitest' | 'playwright'` and is the thing to widen. Do not rebuild
   what is there, and do not weaken the throwing behaviour to accommodate a new format.
-- **Capability detection has a nucleus.** `hasFrontend(root)` in `scripts/plugins.mjs` decides
-  UI-ness from `index.html` or a known frontend dependency. It is the only capability concept
-  in the codebase, it is detection-only, and it cannot answer for a greenfield repo where
-  nothing is scaffolded yet — which is the exact gap the declared-or-detected model closes.
+- ~~**Capability detection has a nucleus.**~~ Closed by item 1. `hasFrontend` now lives in
+  `scripts/capabilities.mjs` as the `web-ui` detector, with its behaviour and its tests
+  unchanged.
 - **Web assumptions beyond the gates.** `startCommand` reads `package.json` and returns
   `npm start`; `playwrightConfigPresent` and the Playwright provisioning path key off
   `playwright.config.*` and the `.dare/playwright-installed` marker; the observability and
@@ -163,13 +162,17 @@ Read these before designing anything; several are smaller than they look.
 
 ## Items, in dependency order
 
-1. **Project capability manifest.** Declared by the architect phase, verified or augmented by
-   runtime detection, combined as *declared OR detected* so a greenfield repo gets correct
-   first-iteration guidance before any framework exists. Keep the vocabulary small: `web-ui`,
-   `api`, `network-service`, `cli`, `desktop-ui`, `library`, `persistent-storage`,
-   `background-worker`, `realtime`, `authentication`. Absorb `hasFrontend`. An unknown
-   capability must be an error rather than a shrug — `validateConfig` in `scripts/config.mjs`
-   already sets that precedent and explains why.
+1. ~~**Project capability manifest.**~~ **Done — 0.11.0 (`scripts/capabilities.mjs`, vocabulary
+   and detection) and 0.12.0 (declaration, manifest, brief).** See `DESIGN.md` §3.7. Three
+   decisions taken while building it that the plan did not anticipate:
+   - **`library` has no detector, deliberately.** `main` and `exports` appear in nearly every
+     application manifest, so a detector firing on them reports a guess as evidence. The
+     absence is exported as `UNDETECTABLE` so the next reader does not "fix" the gap.
+   - **The design-slop gate still keys off detection, not the manifest.** §5.1's carve-out asks
+     "is there something to inspect", which is a question about the tree. A declared `web-ui`
+     that has not been written yet is still nothing to look at.
+   - **The manifest does not choose gates yet.** It reaches the Build Brief and nothing else.
+     The capability-to-gate table is item 5, and it waits on item 2.
 2. **Toolchain adapter interface.** Extract `commandGates` behind a contract covering detect,
    restore, build, lint, static/type check, unit, e2e, dependency audit, start command and
    test-report production. Non-applicable operations must be represented explicitly — a

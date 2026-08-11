@@ -23,6 +23,42 @@ At the repository root:
 | `CLAUDE.md` | the project's own conventions: test gates in the order they run, slice rules, what must never be done here |
 | `PRODUCT.md` | short: users, mode, brand voice, anti-references — the design tooling reads this on every command, and without it designs from defaults |
 
+## Declare what this project is
+
+The gates that run against every iteration depend on what is being built. A CLI has no health
+endpoint to answer; a library has no interface to inspect. Nothing can detect this yet — the
+repository currently holds a PRD and your design documents and no code at all — so you are the
+only source of it.
+
+Choose every capability that will be true of the finished product. Not what it might grow into
+later; what `PRD.md` requires.
+
+| capability | means |
+|---|---|
+| `web-ui` | renders an interface a person looks at in a browser |
+| `desktop-ui` | renders an interface in a native desktop window |
+| `cli` | is invoked as a command from a terminal |
+| `api` | answers requests over HTTP from other programs |
+| `network-service` | listens on a port for something other than plain HTTP requests |
+| `library` | is consumed as a dependency by other code rather than run on its own |
+| `persistent-storage` | keeps state that outlives the process |
+| `background-worker` | does work outside the request that asked for it |
+| `realtime` | pushes to connected clients rather than waiting to be asked |
+| `authentication` | decides who a caller is, or what they are allowed to do |
+
+Under-declaring is the expensive mistake. A capability you leave out disarms the gate that
+would have checked it, and the run ships having never looked. A capability you include that
+turns out marginal costs one extra gate.
+
+**End your final message with exactly this block, and nothing after it:**
+
+```json
+{ "capabilities": ["api", "persistent-storage"] }
+```
+
+Those two values are an example. Replace them. The list may not be empty, and any name outside
+the table above aborts the run.
+
 ## What makes this design good rather than plausible
 
 **Boundaries are the design.** Anyone can list components. The value is in saying what one

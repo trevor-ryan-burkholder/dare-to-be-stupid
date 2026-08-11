@@ -31,7 +31,7 @@
  * DESIGN.md §4 exists to prevent.
  */
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 /**
@@ -206,7 +206,7 @@ const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'cove
  * @param {string} root
  * @returns {{ dependencies: Record<string, unknown>, manifest: Record<string, unknown> } | null}
  */
-function readManifest(root) {
+function readPackageManifest(root) {
   const file = path.join(root, 'package.json');
   if (!existsSync(file)) return null;
   try {
@@ -285,7 +285,7 @@ function declaresBin(bin) {
 export function detectCapabilities(root) {
   /** @type {CapabilityEvidence} */
   const found = {};
-  const parsed = readManifest(root);
+  const parsed = readPackageManifest(root);
 
   for (const capability of CAPABILITY_ORDER) {
     const file = CAPABILITY_FILES[capability].find((relative) => existsSync(path.join(root, relative)));
@@ -385,4 +385,130 @@ export function resolveCapabilities(options) {
   }
 
   return { capabilities, declared, detected, evidence };
+}
+
+/**
+ * Read the architect's capability declaration out of its final message.
+ *
+ * Same shape of problem as `parseLessonExtraction`, and the same tactic: try the whole text,
+ * then each fenced block last-to-first, then the widest brace slice. Last-to-first matters
+ * because a template that shows an example block would otherwise have its example parsed
+ * instead of the architect's answer.
+ *
+ * Nothing here defaults to a pass. An unparseable declaration throws, because the alternative
+ * is a run that gates a project it never identified and reports the result as clean.
+ *
+ * @param {unknown} raw the child's final message
+ * @returns {Capability[]}
+ * @throws {CapabilityError}
+ */
+export function parseCapabilityDeclaration(raw) {
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    throw new CapabilityError('the design phase returned no text, so it declared no capabilities.');
+  }
+  const trimmed = raw.trim();
+
+  /** @type {string[]} */
+  const candidates = [];
+  const fenced = [...trimmed.matchAll(/```(?:json)?\s*\n([\s\S]*?)\n?```/g)].map((match) => match[1]);
+  candidates.push(...fenced.reverse());
+  candidates.push(trimmed);
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+
+  for (const candidate of candidates) {
+    /** @type {unknown} */
+    let parsed;
+    try {
+      parsed = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+    const record = /** @type {Record<string, unknown>} */ (parsed);
+    if (!('capabilities' in record)) continue;
+    // Membership errors escape rather than being skipped: a block that says `capabilities`
+    // and then names something outside the vocabulary is the architect answering wrongly, and
+    // silently moving on to the next candidate would hide that behind a generic "no
+    // declaration found".
+    const declared = validateCapabilities(record.capabilities, 'the declared capabilities');
+    if (declared.length === 0) {
+      throw new CapabilityError(
+        'the design phase declared an empty capability list. Every project is at least one of: ' +
+          `${CAPABILITY_ORDER.join(', ')}.`,
+      );
+    }
+    return declared;
+  }
+
+  throw new CapabilityError(
+    'the design phase returned no parseable capability declaration. It must end with a fenced json block ' +
+      'containing {"capabilities": [...]}, naming one or more of: ' +
+      `${CAPABILITY_ORDER.join(', ')}.`,
+  );
+}
+
+/** The driver's record of what this project is. Protected by the `.dare/**` invariant (§6). */
+export const CAPABILITY_MANIFEST = 'capabilities.json';
+
+/**
+ * Write `.dare/capabilities.json`.
+ *
+ * Driver-owned, because a child running under `DARE_RUNNING` is denied writes anywhere under
+ * `.dare` — which is what stops a builder from declaring away a gate it cannot pass.
+ *
+ * Rewritten every iteration, because `detected` and `evidence` describe the tree as it is now
+ * and the tree changes under them. `declared` is the only durable half.
+ *
+ * @param {string} dareDir
+ * @param {ResolvedCapabilities} resolved
+ * @returns {string} the path written
+ */
+export function writeCapabilityManifest(dareDir, resolved) {
+  mkdirSync(dareDir, { recursive: true });
+  const file = path.join(dareDir, CAPABILITY_MANIFEST);
+  const temporary = `${file}.tmp`;
+  const body = {
+    declared: resolved.declared,
+    detected: resolved.detected,
+    capabilities: resolved.capabilities,
+    evidence: resolved.evidence,
+  };
+  writeFileSync(temporary, `${JSON.stringify(body, null, 2)}\n`, 'utf8');
+  renameSync(temporary, file);
+  return file;
+}
+
+/**
+ * Read back what the architect declared.
+ *
+ * Fails closed on every unreadable state — missing file, unparseable JSON, a `declared` field
+ * that is not a valid capability list. A run that has lost its declaration cannot decide
+ * which gates apply, and guessing is the failure this whole module exists to prevent.
+ *
+ * @param {string} dareDir
+ * @returns {Capability[]}
+ * @throws {CapabilityError}
+ */
+export function readDeclaredCapabilities(dareDir) {
+  const file = path.join(dareDir, CAPABILITY_MANIFEST);
+  /** @type {string} */
+  let contents;
+  try {
+    contents = readFileSync(file, 'utf8');
+  } catch (error) {
+    throw new CapabilityError(`${file} could not be read: ${/** @type {Error} */ (error).message}`);
+  }
+  /** @type {unknown} */
+  let parsed;
+  try {
+    parsed = JSON.parse(contents);
+  } catch (error) {
+    throw new CapabilityError(`${file} is not valid JSON: ${/** @type {Error} */ (error).message}`);
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new CapabilityError(`${file} must contain an object; got ${JSON.stringify(parsed)}.`);
+  }
+  return validateCapabilities(/** @type {Record<string, unknown>} */ (parsed).declared, `${file} "declared"`);
 }

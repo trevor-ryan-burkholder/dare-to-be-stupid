@@ -28,7 +28,12 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { compileBrief, writeBrief } from './brief.mjs';
-import { hasFrontend } from './capabilities.mjs';
+import {
+  hasFrontend,
+  parseCapabilityDeclaration,
+  resolveCapabilities,
+  writeCapabilityManifest,
+} from './capabilities.mjs';
 import { loadConfig } from './config.mjs';
 import { hasMeaningfulHistory, historyContext } from './history.mjs';
 import { integrityGate } from './integrity.mjs';
@@ -798,6 +803,7 @@ export function appendBlooper(dareDir, event) {
  *   extractLesson?: (evidence: string) => ClaudeResult,
  *   race?: (objective: import('./brief.mjs').Objective, iteration: number) => RaceOutcome,
  *   history?: (findings: string[]) => import('./brief.mjs').HistoryNote[],
+ *   capabilities?: () => string[],
  *   changedFiles?: () => string[],
  *   gates: () => { ok: boolean, results: GateResult[] },
  *   readTestReports: () => unknown[],
@@ -1049,6 +1055,10 @@ export function driveRun(options) {
       lessons: relevant,
       history: effects.history?.(objective.findings ?? []) ?? [],
       gates: options.gateNames ?? [],
+      // Re-asked every iteration rather than resolved once, for the same reason the design
+      // gate's arming is: detection answers about the tree as it is now, and the tree changes
+      // under it. The declared half is stable; the detected half is not.
+      capabilities: effects.capabilities?.() ?? [],
     });
     writeBrief(dareDir, iterationNumber, brief);
 
@@ -1987,6 +1997,35 @@ export function main(argv, io = {}) {
     return 1;
   }
 
+  // The architect is the only thing that can say what this project is, because at this moment
+  // the repository holds a PRD and some design documents and no code — every detector answers
+  // "no" for an application nobody has written yet (DESIGN.md §3.7).
+  /** @type {import('./capabilities.mjs').Capability[]} */
+  let declaredCapabilities;
+  try {
+    declaredCapabilities = parseCapabilityDeclaration(designed.text);
+  } catch (error) {
+    write(verbatim(`design phase did not say what this project is: ${/** @type {Error} */ (error).message}`));
+    write(stamp('ABORTED', { mode }));
+    return 1;
+  }
+
+  /**
+   * The resolved capability set, recomputed and re-recorded on demand.
+   *
+   * Not cached: `declared` is fixed for the run, but `detected` describes the tree as it is
+   * right now and the builder changes the tree every iteration. The manifest is rewritten
+   * each time so `.dare/capabilities.json` is a current answer rather than a first one.
+   *
+   * @returns {string[]}
+   */
+  const runCapabilities = () => {
+    const resolved = resolveCapabilities({ root: cwd, declared: declaredCapabilities });
+    writeCapabilityManifest(dareDir, resolved);
+    return resolved.capabilities;
+  };
+  write(verbatim(`this project is: ${runCapabilities().join(', ')}`));
+
   const provisioning = installQualityPlugins({ cwd, plugins: config.qualityPlugins, runner: shell });
   for (const warning of provisioning.warnings) write(verbatim(warning));
 
@@ -2117,6 +2156,7 @@ export function main(argv, io = {}) {
           objective,
           protectedTests: ratchetPassing,
           gates: gateNames,
+          capabilities: runCapabilities(),
           raceCandidate: { index: worktree.index, of: created.worktrees.length },
         });
         writeBrief(dareDir, iteration, candidateBrief, worktree.index);
@@ -2225,6 +2265,7 @@ export function main(argv, io = {}) {
           env,
         }),
       race: runRace,
+      capabilities: runCapabilities,
       history: (findings) => historyContext({ cwd, run: shell, findings, greenfield }),
       changedFiles,
       gates: () => {
