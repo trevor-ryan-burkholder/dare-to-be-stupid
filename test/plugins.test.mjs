@@ -3,8 +3,9 @@
  *
  * The install and detect commands are driven through an injected runner that records what
  * it was asked to do, so the decisions under test — install or skip, abort or warn, gate
- * armed or not — are exercised without reaching the network. `hasFrontend` reads real
- * directory trees, because a wrong answer there silently disarms a definition-of-done gate.
+ * armed or not — are exercised without reaching the network.
+ *
+ * Frontend detection moved to `test/capabilities.test.mjs` along with the code.
  */
 
 import assert from 'node:assert/strict';
@@ -13,13 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
-import {
-  KNOWN_PLUGINS,
-  PluginInstallError,
-  hasFrontend,
-  installQualityPlugins,
-  resolvePlugin,
-} from '../scripts/plugins.mjs';
+import { KNOWN_PLUGINS, PluginInstallError, installQualityPlugins, resolvePlugin } from '../scripts/plugins.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -182,44 +177,5 @@ describe('resolvePlugin', () => {
   it('marks impeccable required and frontend-only', () => {
     assert.equal(KNOWN_PLUGINS.impeccable.required, true);
     assert.equal(KNOWN_PLUGINS.impeccable.frontendOnly, true);
-  });
-});
-
-describe('hasFrontend', () => {
-  /** @type {[Record<string, string>, string][]} */
-  const yes = [
-    [{ 'index.html': '<!doctype html>\n' }, 'an index.html'],
-    [{ 'package.json': '{"dependencies":{"react":"^19"}}\n' }, 'a react dependency'],
-    [{ 'package.json': '{"devDependencies":{"svelte":"^5"}}\n' }, 'a svelte dev dependency'],
-    [{ 'package.json': '{"dependencies":{"next":"^15"}}\n' }, 'a next dependency'],
-    [{ 'src/components/Button.tsx': 'export const Button = () => null;\n' }, 'a .tsx component'],
-    [{ 'app/Page.vue': '<template />\n' }, 'a .vue file'],
-  ];
-  for (const [files, label] of yes) {
-    it(`detects ${label}`, () => {
-      assert.equal(hasFrontend(makeProject(files)), true);
-    });
-  }
-
-  /** @type {[Record<string, string>, string][]} */
-  const no = [
-    [{ 'package.json': '{"dependencies":{"fastify":"^4"}}\n' }, 'an api server'],
-    [{ 'src/cli.ts': 'export const run = () => 0;\n' }, 'a typescript cli'],
-    [{ 'main.go': 'package main\n' }, 'a go program'],
-    [{}, 'an empty directory'],
-    [{ 'package.json': '{ not json\n' }, 'a malformed package.json with nothing else'],
-  ];
-  for (const [files, label] of no) {
-    it(`does not detect a frontend in ${label}`, () => {
-      assert.equal(hasFrontend(makeProject(files)), false);
-    });
-  }
-
-  it('ignores frontend files inside node_modules', () => {
-    assert.equal(hasFrontend(makeProject({ 'node_modules/react/index.js': 'x\n', 'src/a.ts': 'x\n' })), false);
-  });
-
-  it('ignores a built bundle in dist', () => {
-    assert.equal(hasFrontend(makeProject({ 'dist/index.html': '<!doctype html>\n', 'src/a.ts': 'x\n' })), false);
   });
 });

@@ -28,6 +28,7 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { compileBrief, writeBrief } from './brief.mjs';
+import { hasFrontend } from './capabilities.mjs';
 import { loadConfig } from './config.mjs';
 import { hasMeaningfulHistory, historyContext } from './history.mjs';
 import { integrityGate } from './integrity.mjs';
@@ -40,7 +41,7 @@ import {
   saveLessons,
   selectLessons,
 } from './lessons.mjs';
-import { hasFrontend, installQualityPlugins } from './plugins.mjs';
+import { installQualityPlugins } from './plugins.mjs';
 import { applyWinner, createWorktrees, removeWorktrees, selectWinner, shouldRace } from './race.mjs';
 import {
   evaluateIteration,

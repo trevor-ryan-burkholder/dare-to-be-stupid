@@ -198,6 +198,63 @@ otherwise unsupervised.
 
 ---
 
+## 3.7 Project capabilities — what this thing *is*
+
+Which gates apply depends on what is being built. A CLI has no health endpoint to answer, a
+library has no user interface to inspect, and a background worker has no HTTP surface. Until
+v0.11.0 the codebase had exactly one concept of this kind — `hasFrontend` — and it could only
+answer for a tree that already exists, which is the wrong question to ask on iteration 1 of a
+greenfield build.
+
+**Capabilities are declared or detected, and the two are unioned.** The architect phase
+declares what it is about to build; `detectCapabilities` verifies and augments that against
+the tree as it actually is. Either source alone is wrong: a declaration cannot see the React
+dependency a builder added on a whim, and detection cannot see the future.
+
+The vocabulary is closed, and small on purpose:
+
+| Capability | Means |
+|---|---|
+| `web-ui` | renders an interface a person looks at in a browser |
+| `desktop-ui` | renders an interface in a native desktop window |
+| `cli` | is invoked as a command from a terminal |
+| `api` | answers requests over HTTP from other programs |
+| `network-service` | listens on a port for something other than plain HTTP requests |
+| `library` | is consumed as a dependency by other code rather than run on its own |
+| `persistent-storage` | keeps state that outlives the process |
+| `background-worker` | does work outside the request that asked for it |
+| `realtime` | pushes to connected clients rather than waiting to be asked |
+| `authentication` | decides who a caller is, or what they are allowed to do |
+
+Four rules, each of which is load-bearing:
+
+1. **An unknown capability is an error, not a shrug.** Same precedent and same reason as
+   `validateConfig` (§10): a capability nobody recognises arms no gate, so the run would skip
+   whatever it was meant to check and report a clean pass anyway.
+2. **A detector exists only where the positive signal is unambiguous.** `library` therefore
+   has none — `main` and `exports` appear in nearly every application manifest ever written,
+   and a detector firing on them would be a guess wearing evidence's clothes. The absence is
+   recorded in an exported `UNDETECTABLE` table rather than left to be inferred from a gap.
+3. **Detection only ever adds.** Nothing removes a declared capability, because "I looked and
+   did not find it" and "it is not there" are the same sentence only when the detector is
+   complete, and none of them are.
+4. **An empty resolved set is an error.** It would arm no conditional gate at all, and a run
+   that checks nothing reports the same clean pass as a run that checks everything.
+
+Over-detection is the safe direction and under-detection is the dangerous one: an extra
+capability arms an extra gate, while a missing one skips one silently. Two knowing
+over-detections are accepted on that basis — `ws` and `socket.io` are read as
+`network-service` and `realtime` even though both have client-side uses.
+
+Evidence is carried, not discarded: each detected capability maps to a short string such as
+`dependency react` or `file prisma/schema.prisma`. `web-ui: dependency react` is auditable in
+a run manifest in a way that `web-ui: true` is not.
+
+`hasFrontend` survives as a thin wrapper over `web-ui` detection, because §5.1's design-slop
+carve-out is asked against the tree each iteration and predates any manifest.
+
+---
+
 ## 4. Definition of done — "enterprise production"
 
 The original operationalized DoD as *PRD requirements met*. The User's DoD is broader. A run
@@ -380,7 +437,8 @@ commands, a 58/59-rule "AI slop" detector). It plugs into `dare` in three places
   the gate was disarmed for the whole run — on a greenfield build, which is the primary use
   case. `installQualityPlugins` now *carries* `frontendOnly` and the driver re-evaluates it
   against the tree each iteration. The §5.1 carve-out below is unchanged; it is merely asked
-  at a moment when the answer can be true.
+  at a moment when the answer can be true. (`hasFrontend` itself now lives in
+  `capabilities.mjs` as the `web-ui` detector — §3.7.)
 - **As build-time guidance:** impeccable's Claude Code build installs **hooks + a
   subagent** that inspect each UI edit and feed findings back mid-build, plus commands the
   builder can invoke (`/impeccable polish`, `/impeccable audit`, `/impeccable distill`,
@@ -481,6 +539,7 @@ dare-to-be-stupid/
 │   ├── race.mjs                  # stalled-only worktree racing (§13.6)
 │   ├── health-probe.mjs          # starts the app and asks /health (§4 line 4)
 │   ├── plugins.mjs               # quality-plugin auto-install
+│   ├── capabilities.mjs          # what this project is, declared or detected (§3.7)
 │   └── init.js                   # scaffolds .dare/config.json, refuses risky remotes
 ├── hooks/
 │   ├── hooks.json                # PreToolUse on Bash

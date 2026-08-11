@@ -8,13 +8,15 @@
  *
  * Commands are injected rather than hard-called, so the tests drive the real decision
  * logic — which plugin, required or optional, install or skip, gate armed or not — without
- * reaching the network. What is *not* injected is the frontend detection, which reads a
- * real directory tree, because that is the part with a wrong answer worth catching.
+ * reaching the network.
+ *
+ * Frontend detection used to live here. It is now one detector among ten in
+ * `capabilities.mjs` (DESIGN.md §3.7), because "does this repo render a UI" turned out to be
+ * the first instance of a general question — what is this project, and which gates therefore
+ * apply — rather than a fact about quality plugins.
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import path from 'node:path';
 
 /** @typedef {{ ok: boolean, status: number, stdout: string, stderr: string }} RunResult */
 /** @typedef {(command: string, args: string[], options: { cwd: string }) => RunResult} Runner */
@@ -79,29 +81,6 @@ export const KNOWN_PLUGINS = {
   },
 };
 
-/** Dependency names that mean the repo renders a user interface. */
-const FRONTEND_DEPENDENCIES = [
-  'react',
-  'react-dom',
-  'vue',
-  'svelte',
-  '@sveltejs/kit',
-  'next',
-  'nuxt',
-  'astro',
-  'solid-js',
-  'preact',
-  '@angular/core',
-  'lit',
-  'remix',
-  '@remix-run/react',
-];
-
-/** Extensions that only exist in a user interface. */
-const FRONTEND_EXTENSIONS = new Set(['.jsx', '.tsx', '.vue', '.svelte', '.astro']);
-
-const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'coverage', '.next', '.nuxt', 'vendor']);
-
 /**
  * Default runner: really shells out.
  * @type {Runner}
@@ -119,62 +98,6 @@ export function defaultRunner(command, args, options) {
       stderr: failure.stderr ?? failure.message,
     };
   }
-}
-
-/**
- * Does this repository render a user interface?
- *
- * DESIGN.md §5.1 caveat 1: impeccable's detector is about UI, so on a pure API, backend or
- * CLI project the design-slop gate is *skipped, not failed*. Skipping a gate is otherwise
- * forbidden; this is the one case the spec carves out, and it only holds when there is
- * genuinely nothing to look at.
- *
- * @param {string} root
- * @returns {boolean}
- */
-export function hasFrontend(root) {
-  if (existsSync(path.join(root, 'index.html'))) return true;
-
-  const manifest = path.join(root, 'package.json');
-  if (existsSync(manifest)) {
-    try {
-      const parsed = JSON.parse(readFileSync(manifest, 'utf8'));
-      const declared = {
-        ...(parsed.dependencies ?? {}),
-        ...(parsed.devDependencies ?? {}),
-        ...(parsed.peerDependencies ?? {}),
-      };
-      if (FRONTEND_DEPENDENCIES.some((dependency) => dependency in declared)) return true;
-    } catch {
-      // A malformed package.json is not evidence of a frontend. Keep looking.
-    }
-  }
-
-  /**
-   * @param {string} dir
-   * @param {number} depth
-   * @returns {boolean}
-   */
-  function walk(dir, depth) {
-    if (depth > 6) return false;
-    /** @type {import('node:fs').Dirent[]} */
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return false;
-    }
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name)) continue;
-        if (walk(path.join(dir, entry.name), depth + 1)) return true;
-        continue;
-      }
-      if (entry.isFile() && FRONTEND_EXTENSIONS.has(path.extname(entry.name))) return true;
-    }
-    return false;
-  }
-  return walk(root, 0);
 }
 
 /**
