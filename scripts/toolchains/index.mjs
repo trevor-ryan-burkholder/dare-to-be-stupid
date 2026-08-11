@@ -52,8 +52,15 @@ import { ToolchainError } from './shared.mjs';
  *   detect: (root: string) => string | null,
  *   operations: Record<OperationName, (context: OperationContext) => Operation>,
  *   startCommand: (root: string) => string | null,
+ *   reports: string[],
  *   ci: { operation: OperationName, pattern: RegExp }[]
  * }} Toolchain
+ *
+ * `reports` names the files this toolchain's test operations write, relative to `.dare`. It
+ * exists because the driver used to hardcode node's two filenames, so a toolchain writing
+ * anything else produced a report nobody read — and a report nobody reads is indistinguishable
+ * from a run in which no test passed, which is exactly how both live runs on 10 August 2026
+ * ended at `passing: 0`.
  */
 
 /**

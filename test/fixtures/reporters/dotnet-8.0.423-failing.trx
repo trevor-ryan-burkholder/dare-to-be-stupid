@@ -1,0 +1,80 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="79398f79-206c-461c-b2bf-51759349122d" name="@work-laptop-trevor 2026-08-11 17:02:11" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-11T17:02:11.5488162-04:00" queuing="2026-08-11T17:02:11.5488163-04:00" start="2026-08-11T17:02:10.3157677-04:00" finish="2026-08-11T17:02:11.5594752-04:00" />
+  <TestSettings name="default" id="5d88ca97-3c29-4d14-8705-5f8696bd9840">
+    <Deployment runDeploymentRoot="_work-laptop-trevor_2026-08-11_17_02_11" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="2f447f79-8d84-4b5b-a925-6edddc300831" testId="5369ffaa-8594-70ae-af13-3908cd75cb60" testName="Probe.Tests.CalcTests.SkippedOne" computerName="REDACTED-HOST" duration="00:00:00.0010000" startTime="2026-08-11T17:02:11.3604002-04:00" endTime="2026-08-11T17:02:11.3604003-04:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2f447f79-8d84-4b5b-a925-6edddc300831">
+      <Output>
+        <ErrorInfo>
+          <Message>deliberately skipped, to see how a skip is reported</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="5e9a6e6c-b42e-40e6-b431-67f3f5053d4c" testId="faa07f20-75d5-0688-1e02-4454e92a40ed" testName="Probe.Tests.CalcTests.AddsNegatives" computerName="REDACTED-HOST" duration="00:00:00.0117274" startTime="2026-08-11T17:02:11.3531702-04:00" endTime="2026-08-11T17:02:11.3531972-04:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5e9a6e6c-b42e-40e6-b431-67f3f5053d4c">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Values differ
+Expected: -99
+Actual:   -3</Message>
+          <StackTrace>   at Probe.Tests.CalcTests.AddsNegatives() in /repo/tests/Probe.Tests/UnitTest1.cs:line 12
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="56cd548d-79c9-46a0-b322-2ad815bfb205" testId="61e25e7f-0079-95bb-54bc-e21763991270" testName="Probe.Tests.CalcTests.AddsTwoNumbers" computerName="REDACTED-HOST" duration="00:00:00.0017618" startTime="2026-08-11T17:02:11.3589922-04:00" endTime="2026-08-11T17:02:11.3589924-04:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="56cd548d-79c9-46a0-b322-2ad815bfb205" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="Probe.Tests.CalcTests.AddsTwoNumbers" storage="/repo/tests/probe.tests/bin/debug/net8.0/probe.tests.dll" id="61e25e7f-0079-95bb-54bc-e21763991270">
+      <Execution id="56cd548d-79c9-46a0-b322-2ad815bfb205" />
+      <TestMethod codeBase="/repo/tests/Probe.Tests/bin/Debug/net8.0/Probe.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Probe.Tests.CalcTests" name="AddsTwoNumbers" />
+    </UnitTest>
+    <UnitTest name="Probe.Tests.CalcTests.SkippedOne" storage="/repo/tests/probe.tests/bin/debug/net8.0/probe.tests.dll" id="5369ffaa-8594-70ae-af13-3908cd75cb60">
+      <Execution id="2f447f79-8d84-4b5b-a925-6edddc300831" />
+      <TestMethod codeBase="/repo/tests/Probe.Tests/bin/Debug/net8.0/Probe.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Probe.Tests.CalcTests" name="SkippedOne" />
+    </UnitTest>
+    <UnitTest name="Probe.Tests.CalcTests.AddsNegatives" storage="/repo/tests/probe.tests/bin/debug/net8.0/probe.tests.dll" id="faa07f20-75d5-0688-1e02-4454e92a40ed">
+      <Execution id="5e9a6e6c-b42e-40e6-b431-67f3f5053d4c" />
+      <TestMethod codeBase="/repo/tests/Probe.Tests/bin/Debug/net8.0/Probe.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Probe.Tests.CalcTests" name="AddsNegatives" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="5369ffaa-8594-70ae-af13-3908cd75cb60" executionId="2f447f79-8d84-4b5b-a925-6edddc300831" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="faa07f20-75d5-0688-1e02-4454e92a40ed" executionId="5e9a6e6c-b42e-40e6-b431-67f3f5053d4c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="61e25e7f-0079-95bb-54bc-e21763991270" executionId="56cd548d-79c9-46a0-b322-2ad815bfb205" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="3" executed="2" passed="1" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 8.0.29)
+[xUnit.net 00:00:00.14]   Discovering: Probe.Tests
+[xUnit.net 00:00:00.22]   Discovered:  Probe.Tests
+[xUnit.net 00:00:00.23]   Starting:    Probe.Tests
+[xUnit.net 00:00:00.35]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:00.35]       Expected: -99
+[xUnit.net 00:00:00.35]       Actual:   -3
+[xUnit.net 00:00:00.35]       Stack Trace:
+[xUnit.net 00:00:00.35]         /repo/tests/Probe.Tests/UnitTest1.cs(12,0): at Probe.Tests.CalcTests.AddsNegatives()
+[xUnit.net 00:00:00.35]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+[xUnit.net 00:00:00.35]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.36]       deliberately skipped, to see how a skip is reported
+[xUnit.net 00:00:00.36]   Finished:    Probe.Tests
+Test 'Probe.Tests.CalcTests.SkippedOne' was skipped in the test run.
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="REDACTED-HOST" outcome="Error" timestamp="2026-08-11T17:02:11.3497010-04:00">
+        <Text>[xUnit.net 00:00:00.35]     Probe.Tests.CalcTests.AddsNegatives [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="REDACTED-HOST" outcome="Warning" timestamp="2026-08-11T17:02:11.3602977-04:00">
+        <Text>[xUnit.net 00:00:00.36]     Probe.Tests.CalcTests.SkippedOne [SKIP]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

@@ -9,6 +9,13 @@ approximation of it.
 happened under. That field is load-bearing: vitest emits **absolute** file paths, so test
 IDs can only be made repo-relative against a recorded root.
 
+The TRX fixtures are the exception, and `provenance.json` says so rather than leaving a
+plausible-looking path in the field: TRX ids are fully qualified test names and never paths,
+because the two locations TRX *does* record are absolute and one of them is lowercased by the
+runner. They are also the only fixtures here that were **redacted** — the generating machine's
+hostname and absolute path were replaced. Every element, attribute and outcome is otherwise
+exactly what `dotnet test` emitted.
+
 | Fixture | Runner | Produced by |
 |---|---|---|
 | `vitest-4.1.10-run1.json`, `-run2.json` | vitest 4.1.10 | `npx vitest run --reporter=json --outputFile=report.json` |

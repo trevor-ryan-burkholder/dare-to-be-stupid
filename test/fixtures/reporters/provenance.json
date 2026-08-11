@@ -4,7 +4,10 @@
     "version": "4.1.10",
     "command": "npx vitest run --reporter=json --outputFile=report.json",
     "rootDir": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/vitest-app",
-    "sourceFiles": ["test/math.test.js", "test/strings.test.js"],
+    "sourceFiles": [
+      "test/math.test.js",
+      "test/strings.test.js"
+    ],
     "contains": {
       "passed": 6,
       "failed": 1,
@@ -18,13 +21,38 @@
     "version": "1.62.1",
     "command": "npx playwright test",
     "rootDir": "/tmp/claude-1000/-home-tburkholder-dev-dare-to-be-stupid/e7e5a8f4-07ea-496c-8d27-1b871f0ce206/scratchpad/fixture-gen/playwright-app",
-    "sourceFiles": ["tests/checkout.spec.js", "tests/search.spec.js"],
+    "sourceFiles": [
+      "tests/checkout.spec.js",
+      "tests/search.spec.js"
+    ],
     "contains": {
       "expected": 8,
       "unexpected": 2,
       "flaky": 2,
       "skipped": 2,
       "notes": "two projects (chromium, firefox), retries: 1, nested describes, one test that fails then passes on retry"
+    }
+  },
+  "dotnet-8.0.423": {
+    "runner": "trx",
+    "version": "8.0.423",
+    "command": "dotnet test --logger \"trx;LogFileName=results.trx\" --results-directory ./artifacts",
+    "rootDir": "not applicable - TRX ids are fully qualified test names, never paths (see trx.mjs)",
+    "sourceFiles": [
+      "tests/Probe.Tests/UnitTest1.cs"
+    ],
+    "redacted": "computerName replaced with REDACTED-HOST, and the generating machine's absolute path replaced with /repo. Nothing else was altered; every element, attribute and outcome is as dotnet emitted it.",
+    "contains": {
+      "passing fixture": {
+        "Passed": 2,
+        "NotExecuted": 1
+      },
+      "failing fixture": {
+        "Passed": 1,
+        "Failed": 1,
+        "NotExecuted": 1
+      },
+      "notes": "xunit, one [Fact(Skip=...)] which TRX reports as NotExecuted rather than Skipped. The failing fixture also carries ResultSummary outcome=Failed and two RunInfo outcomes (Error, Warning) which are NOT test results - that is the trap trx.mjs exists to avoid."
     }
   }
 }

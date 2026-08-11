@@ -917,11 +917,13 @@ dare-to-be-stupid/
 │   │   ├── index.mjs             # the registry: detect, dispatch, collapse
 │   │   ├── shared.mjs            # id shape, status normalisation, ReportFormatError
 │   │   ├── vitest.mjs
-│   │   └── playwright.mjs
+│   │   ├── playwright.mjs
+│   │   └── trx.mjs               # dotnet test, the first non-JSON format (§11.2)
 │   ├── toolchains/               # one module per stack: how to build it (§3.8)
 │   │   ├── index.mjs             # the registry: detect, resolve, gates
 │   │   ├── shared.mjs            # Operation — a command, or a reasoned refusal
-│   │   └── node.mjs
+│   │   ├── node.mjs
+│   │   └── dotnet.mjs            # every command verified against a real SDK (§3.8.1)
 │   ├── brief.mjs                 # compiles the per-iteration Build Brief (§8.1)
 │   ├── lessons.mjs               # sparse evidence-derived lesson memory (§13.8)
 │   ├── history.mjs               # conditional git-history context (§8.2)
@@ -1268,6 +1270,39 @@ would admit it to the ratchet and mapping it to `failed` would fire a hard reset
 nobody has read. **Empty does not throw** — "no test files" is a real state, and refusing to
 advance on it belongs to the ratchet, not to a parser. That last one is not theoretical: it is
 what both live runs on 10 August 2026 produced, and every component behaved correctly.
+
+### 11.2 TRX — the first format that is not JSON
+
+`dotnet test --logger trx` writes XML, and the registry was built on `JSON.parse`. Widening it
+raised three things worth recording, because each is a way the ratchet could have quietly
+stopped protecting anything.
+
+**Raw formats are detected before anything parses.** `parseReport` used to begin with
+`JSON.parse`, so a TRX file died as *"report is not valid JSON"* — a true sentence naming the
+wrong fault, which sends a reader to look for a corrupt file rather than an unregistered
+format. `RAW_REPORTERS` are tried on the text first.
+
+**Only `<UnitTestResult>` is a test.** A TRX from a single failing test carries **six**
+`outcome=` attributes: three on tests, one on `ResultSummary`, two on `RunInfo` diagnostics.
+Read naively that is three phantom results, one of which enters the ratchet. Verified against
+committed output rather than reasoned about.
+
+**Identity is the test name, never the paths in the file.** TRX records `storage` — absolute
+*and lowercased by the runner* — and `codeBase`, absolute. An id built from either differs
+between machines, so the ratchet would read every test as new on the first run elsewhere. That
+is a silent *widening*, which no parse error would ever announce. `testName` is the fully
+qualified `Namespace.Class.Method` and is stable, so it is the whole id. A test asserts the ids
+are unchanged when `rootDir` changes.
+
+There is no XML parser here — hard constraint 1 — so this is a regex over two attributes of one
+element. That is tolerable because the question is narrow and because XML forbids a raw `"`
+inside an attribute value, so the match cannot run past the end of it. It remains the thing in
+the registry most likely to be wrong about a TRX nobody has seen yet.
+
+**And a toolchain now declares the reports it writes.** The driver used to hardcode node's two
+filenames, so a toolchain writing anything else produced a report nobody read — indistinguishable
+from a run in which nothing passed, which is exactly how both 10 August runs ended at
+`passing: 0`. `Toolchain.reports` is what lets the driver ask instead of assume.
 
 ### 11.1 Three test tiers
 

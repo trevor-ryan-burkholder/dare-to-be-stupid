@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import { extractTestIds } from '../scripts/ratchet.mjs';
+import { decodeXmlEntities } from '../scripts/reporters/trx.mjs';
 import {
   REPORTERS,
   ReportFormatError,
@@ -430,5 +431,105 @@ describe('the reporter registry', () => {
         error.message.includes('vitest') &&
         error.message.includes('playwright'),
     );
+  });
+});
+
+describe('TRX, against real dotnet output', () => {
+  const TRX_PASSING = readFixture('dotnet-8.0.423-passing.trx');
+  const TRX_FAILING = readFixture('dotnet-8.0.423-failing.trx');
+
+  it('is detected as trx rather than dying as invalid JSON', () => {
+    // parseReport used to begin with JSON.parse, so XML died as "report is not valid JSON" —
+    // true, and the wrong fault. It sends a reader to look for a corrupt file rather than an
+    // unregistered format.
+    assert.equal(parseReport(TRX_PASSING, { rootDir: '/repo' }).runner, 'trx');
+  });
+
+  it('reads exactly the tests, and not the run-level outcomes', () => {
+    // The trap. The failing fixture carries six `outcome=` attributes: three UnitTestResult,
+    // one ResultSummary and two RunInfo. A naive read admits three phantom results, one of
+    // them into the ratchet.
+    const { tests } = parseReport(TRX_FAILING, { rootDir: '/repo' });
+    // Sorted for the assertion, not by the reader. TRX emits in execution order, which is a
+    // property of the scheduler rather than of the report; the ratchet builds a Set from
+    // these, so pinning the emitted order would assert an accident.
+    assert.deepEqual(
+      [...tests].sort((a, b) => a.id.localeCompare(b.id)),
+      [
+        { id: 'Probe.Tests.CalcTests.AddsNegatives', status: 'failed' },
+        { id: 'Probe.Tests.CalcTests.AddsTwoNumbers', status: 'passed' },
+        { id: 'Probe.Tests.CalcTests.SkippedOne', status: 'skipped' },
+      ],
+    );
+  });
+
+  it('reports a skip as skipped, though TRX calls it NotExecuted', () => {
+    const { tests } = parseReport(TRX_PASSING, { rootDir: '/repo' });
+    const skipped = tests.filter((test) => test.status === 'skipped');
+    assert.deepEqual(skipped, [{ id: 'Probe.Tests.CalcTests.SkippedOne', status: 'skipped' }]);
+  });
+
+  it('yields only the passing ids to the ratchet', () => {
+    assert.deepEqual(
+      extractTestIds(TRX_PASSING, { rootDir: '/repo' }),
+      new Set(['Probe.Tests.CalcTests.AddsNegatives', 'Probe.Tests.CalcTests.AddsTwoNumbers']),
+    );
+  });
+
+  it('drops the failing test from the passing set, and keeps the other', () => {
+    assert.deepEqual(
+      extractTestIds(TRX_FAILING, { rootDir: '/repo' }),
+      new Set(['Probe.Tests.CalcTests.AddsTwoNumbers']),
+    );
+  });
+
+  it('builds identity from the test name and never from the paths in the file', () => {
+    // TRX records `storage` (absolute AND lowercased by the runner) and `codeBase` (absolute).
+    // An id built from either differs between machines, and the ratchet would read every test
+    // as new on the first run elsewhere — a silent widening rather than a parse error.
+    const ids = [...extractTestIds(TRX_PASSING, { rootDir: '/repo' })];
+    for (const id of ids) {
+      assert.equal(id.includes('/'), false, `id carries a path: ${id}`);
+      assert.equal(id.includes('.dll'), false, `id carries an assembly: ${id}`);
+    }
+  });
+
+  it('gives the same ids whatever rootDir it is handed, because ids are not paths', () => {
+    assert.deepEqual(
+      extractTestIds(TRX_PASSING, { rootDir: '/repo' }),
+      extractTestIds(TRX_PASSING, { rootDir: '/somewhere/else/entirely' }),
+    );
+  });
+
+  it('throws on an outcome it has no defined meaning for, naming the value', () => {
+    // The registry's rule, unweakened for the new format. Mapping Inconclusive to passed
+    // admits it to the ratchet; mapping it to failed hard-resets on a word nobody has read.
+    const mutated = TRX_PASSING.replace('outcome="Passed"', 'outcome="Inconclusive"');
+    assert.throws(
+      () => parseReport(mutated, { rootDir: '/repo' }),
+      (error) => error instanceof ReportFormatError && error.message.includes('Inconclusive'),
+    );
+  });
+
+  it('throws on a result carrying no outcome at all', () => {
+    const mutated = TRX_PASSING.replace(/outcome="Passed"/, '');
+    assert.throws(() => parseReport(mutated, { rootDir: '/repo' }), ReportFormatError);
+  });
+
+  it('does not throw on a run that contained no tests', () => {
+    // "No test files" is a real state. Refusing to advance on it belongs to the ratchet, not
+    // to a parser — and this is the state both live runs on 10 August produced.
+    const empty = '<?xml version="1.0" encoding="utf-8"?>\n<TestRun id="x"><Results /></TestRun>';
+    assert.deepEqual(parseReport(empty, { rootDir: '/repo' }).tests, []);
+  });
+
+  it('decodes entities, since theory names carry quotes and angle brackets', () => {
+    assert.equal(decodeXmlEntities('Ns.C.M(s: &quot;a&amp;b&quot;, t: &lt;x&gt;)'), 'Ns.C.M(s: "a&b", t: <x>)');
+  });
+
+  it('does not double-decode an escaped ampersand', () => {
+    // `&amp;lt;` is the literal text "&lt;", not a less-than sign. Replacing &amp; last would
+    // silently rewrite a test name that legitimately contains it.
+    assert.equal(decodeXmlEntities('&amp;lt;'), '&lt;');
   });
 });

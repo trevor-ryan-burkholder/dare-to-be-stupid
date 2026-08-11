@@ -508,3 +508,35 @@ describe('the dotnet toolchain', () => {
     });
   });
 });
+
+describe('every toolchain declares the reports it writes', () => {
+  // This exists because the driver used to hardcode node's two filenames. A toolchain writing
+  // anything else produced a report nobody read — and an unread report is indistinguishable
+  // from a run in which no test passed, which is how both live runs on 10 August ended at
+  // `passing: 0`. Declaring the filenames is what lets the driver ask instead of assume.
+
+  for (const toolchain of TOOLCHAINS) {
+    it(`${toolchain.name} names at least one report`, () => {
+      assert.equal(Array.isArray(toolchain.reports), true);
+      assert.equal(toolchain.reports.length > 0, true, 'a toolchain with no report can never advance the ratchet');
+    });
+
+    it(`${toolchain.name} names no report for an operation it declines`, () => {
+      // A declined operation writes nothing. Naming a report for it would send the driver
+      // looking for a file nothing produces, and finding it absent is not evidence.
+      const declined = ['unit', 'e2e'].filter(
+        (name) =>
+          toolchain.operations[/** @type {'unit' | 'e2e'} */ (name)]({ root: '/repo', dareDir: '/repo/.dare' })
+            .kind === 'not-applicable',
+      );
+      if (declined.includes('e2e') && !declined.includes('unit')) {
+        assert.equal(toolchain.reports.length, 1, `${toolchain.name} declines e2e but names more than one report`);
+      }
+    });
+  }
+
+  it('gives node its two reports and dotnet its one', () => {
+    assert.deepEqual(nodeToolchain.reports, ['test-report.json', 'e2e-report.json']);
+    assert.deepEqual(dotnetToolchain.reports, ['unit.trx']);
+  });
+});

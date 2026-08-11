@@ -31,6 +31,7 @@
 
 import { playwrightReporter } from './playwright.mjs';
 import { ReportFormatError } from './shared.mjs';
+import { trxReporter } from './trx.mjs';
 import { vitestReporter } from './vitest.mjs';
 
 /** @typedef {import('./shared.mjs').TestStatus} TestStatus */
@@ -40,12 +41,13 @@ import { vitestReporter } from './vitest.mjs';
  * Widen this union when adding a reporter. It is written out rather than derived from
  * {@link REPORTERS} because a derived type would let a typo in a `name` become a new valid
  * runner instead of a type error.
- * @typedef {'vitest' | 'playwright'} Runner
+ * @typedef {'vitest' | 'playwright' | 'trx'} Runner
  */
 
 /**
  * @typedef {{
  *   name: Runner,
+ *   kind?: 'json',
  *   detect: (report: Record<string, unknown>) => boolean,
  *   parse: (report: Record<string, any>, rootDir: string) => TestRecord[]
  * }} Reporter
@@ -60,6 +62,30 @@ export { ReportFormatError };
  * @type {Reporter[]}
  */
 export const REPORTERS = [vitestReporter, playwrightReporter];
+
+/**
+ * Formats that are not JSON, and are therefore detected on the **raw text** before anything
+ * tries to parse it.
+ *
+ * The order matters and it is not arbitrary. `parseReport` used to begin with `JSON.parse`,
+ * so a TRX file would have died as *"report is not valid JSON"* — a true sentence and a
+ * useless one, naming the wrong fault and sending the reader to look for a corrupt file rather
+ * than an unregistered format. Raw detection runs first so the answer is "this is TRX" rather
+ * than "this is not JSON".
+ *
+ * A raw reporter needs no `rootDir`: its ids are not paths. See `trx.mjs` for why that is a
+ * property of the format rather than a shortcut.
+ *
+ * @typedef {{
+ *   name: Runner,
+ *   kind: 'raw',
+ *   detect: (raw: string) => boolean,
+ *   parse: (raw: string) => TestRecord[]
+ * }} RawReporter
+ *
+ * @type {RawReporter[]}
+ */
+export const RAW_REPORTERS = [trxReporter];
 
 /**
  * Worst-first. Used to collapse duplicate ids and to keep a failure visible.
@@ -112,6 +138,14 @@ export function parseReport(input, options) {
     throw new ReportFormatError('parseReport requires a rootDir; ids must be relative to something stable.');
   }
 
+  // Raw formats first, so a TRX file is identified as TRX rather than dying as "not valid
+  // JSON" — a true sentence that names the wrong fault and sends the reader looking for a
+  // corrupt file instead of an unregistered format.
+  if (typeof input === 'string') {
+    const raw = rawReporterFor(input);
+    if (raw !== null) return { runner: raw.name, tests: raw.parse(input) };
+  }
+
   /** @type {unknown} */
   let report = input;
   if (typeof input === 'string') {
@@ -125,11 +159,30 @@ export function parseReport(input, options) {
   const runner = detectRunner(report);
   if (runner === null) {
     throw new ReportFormatError(
-      `report matches none of the known reporters (${REPORTERS.map((entry) => entry.name).join(', ')}). Refusing ` +
+      'report matches none of the known reporters (' +
+        [...REPORTERS, ...RAW_REPORTERS].map((entry) => entry.name).join(', ') +
+        '). Refusing ' +
         'to return an empty id set, which would silently disable the ratchet (DESIGN.md §11).',
     );
   }
 
   const reporter = /** @type {Reporter} */ (REPORTERS.find((entry) => entry.name === runner));
   return { runner, tests: reporter.parse(/** @type {Record<string, any>} */ (report), rootDir) };
+}
+
+/**
+ * The first raw reporter that recognises this text, or null.
+ *
+ * Separate from `detectRunner` rather than folded into it, because the two answer questions
+ * about different things — one about a parsed object, one about bytes — and a single function
+ * taking `unknown` would have to guess which it was handed.
+ *
+ * @param {string} raw
+ * @returns {RawReporter | null}
+ */
+function rawReporterFor(raw) {
+  for (const reporter of RAW_REPORTERS) {
+    if (reporter.detect(raw)) return reporter;
+  }
+  return null;
 }

@@ -236,6 +236,11 @@ export const dotnetToolchain = {
     return `dotnet run --project ${path.dirname(executables[0])}`;
   },
 
+  // One report, because `e2e` is declined. A toolchain that declines an operation must not
+  // name a report for it: the driver would look for a file nothing writes, and finding it
+  // absent is not evidence about anything.
+  reports: [TRX_REPORT],
+
   // Which operations a workflow must be seen to run. `types` and `e2e` are absent because
   // they are not-applicable here, and an operation with no command string has no pattern for
   // a workflow to match.

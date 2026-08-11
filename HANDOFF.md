@@ -676,6 +676,44 @@ toolchain and detection confirms, as capabilities already do. **That is not buil
 money and wants an operator). The adapter has never driven a real `driveRun`. `dotnet format`
 requires source it can parse, and its behaviour on a repository mid-build is unknown.
 
+## B4-dotnet — the TRX reporter (0.33.0)
+
+**Verified against real output.** Two TRX files produced by `dotnet test` are committed to
+`test/fixtures/reporters/` with provenance — a passing run (2 passed, 1 skipped) and a failing
+one (1 passed, 1 failed, 1 skipped). Only the hostname and the generating machine's absolute
+path were redacted; every element, attribute and outcome is as emitted. 12 tests.
+
+**The bug that would have made all of it decorative.** The driver hardcoded node's two report
+filenames, so a .NET run would have written `unit.trx`, had it read by nobody, and ended at
+`passing: 0` — the exact failure both live runs produced on 10 August, arriving by a new route.
+`Toolchain.reports` now declares what each toolchain writes and the driver asks. Found by
+wiring the reporter and asking what would actually read its output, not by a test.
+
+**Three findings from the format itself**, each a way the ratchet could have silently stopped
+protecting anything:
+
+1. **Most `outcome=` attributes in a TRX are not test outcomes.** A single-failure run carries
+   six — three on `UnitTestResult`, one on `ResultSummary`, two on `RunInfo`. A naive read
+   admits three phantom results, one into the ratchet.
+2. **Neither path in the file can be identity.** `storage` is absolute *and lowercased by the
+   runner*; `codeBase` is absolute. An id from either differs between machines, so the ratchet
+   would read every test as new on the first run elsewhere. That is a silent widening, which no
+   parse error announces. The id is the fully qualified `testName`.
+3. **The registry assumed JSON.** `parseReport` began with `JSON.parse`, so XML died as "report
+   is not valid JSON" — true, and the wrong fault.
+
+**Not verified, and one of these is a real risk.**
+
+- **There is no XML parser here** — hard constraint 1 — so this is a regex over two attributes
+  of one element. It is safe against the usual failure (XML forbids a raw `"` inside an
+  attribute value, so the match cannot overrun) and it is still **the thing in the registry
+  most likely to be wrong about a TRX nobody has seen yet**. Specifically untested: MSTest and
+  NUnit adapters, which may populate `UnitTestResult` differently from xunit; multi-assembly
+  runs; and `[Theory]` names containing entities, where only `decodeXmlEntities` is unit-tested
+  and no real theory output has been seen.
+- **No .NET run has ever driven `driveRun`.** The reporter has never been fed by a live gate.
+- `junit.mjs` is still not written. Nothing has needed it.
+
 ---
 
 ## Fixed here, and worth knowing about

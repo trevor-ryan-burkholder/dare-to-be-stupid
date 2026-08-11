@@ -130,6 +130,10 @@ export const nodeToolchain = {
     }
   },
 
+  // The files the test operations above write, relative to `.dare`. The driver reads exactly
+  // these; nothing here is inferred from a filename convention.
+  reports: [UNIT_REPORT, E2E_REPORT],
+
   // Which operations a CI workflow must be seen to run, and how to recognise each one.
   //
   // Matching is regex over the workflow's text rather than a parsed document, because parsing

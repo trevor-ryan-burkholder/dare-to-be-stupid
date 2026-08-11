@@ -77,13 +77,7 @@ import {
 import { archivePreviousRun, buildRunManifest, writeRunManifest } from './run-manifest.mjs';
 import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
 import { MUTATION_CONFIG, MUTATION_CONFIG_CONTENTS } from './toolchains/node.mjs';
-import {
-  CONDITIONAL_GATE_OPERATIONS,
-  E2E_REPORT,
-  UNIT_REPORT,
-  gatesFor,
-  resolveToolchain,
-} from './toolchains/index.mjs';
+import { CONDITIONAL_GATE_OPERATIONS, gatesFor, resolveToolchain } from './toolchains/index.mjs';
 
 /** @typedef {import('./config.mjs').DareConfig} DareConfig */
 /** @typedef {'SHIPPED' | 'STALLED' | 'BUDGET' | 'ABORTED'} TerminalState */
@@ -2400,8 +2394,11 @@ export function main(argv, io = {}) {
   commitPhase('dare: design documents');
 
   // ---- Phases 2-6: the loop ---------------------------------------------
-  const unitReport = path.join(dareDir, UNIT_REPORT);
-  const e2eReport = path.join(dareDir, E2E_REPORT);
+  // Whatever the resolved toolchain says it writes, not node's two filenames. Hardcoding
+  // those meant a toolchain writing anything else produced a report nobody read, and an
+  // unread report is indistinguishable from a run in which nothing passed.
+  const reportFiles = (/** @type {string} */ dir) =>
+    resolveToolchain(dir).toolchain.reports.map((name) => path.join(dir, '.dare', name));
 
   const toolchainGates = gateSummary(cwd, dareDir);
   write(verbatim(`toolchain: ${toolchainGates.toolchain} (${toolchainGates.evidence})`));
@@ -2539,7 +2536,7 @@ export function main(argv, io = {}) {
     const passing = new Set();
     /** @type {Set<string>} */
     const nonPassing = new Set();
-    for (const file of [path.join(treeDare, UNIT_REPORT), path.join(treeDare, E2E_REPORT)]) {
+    for (const file of reportFiles(dir)) {
       if (!existsSync(file)) continue;
       try {
         for (const test of parseReport(readFileSync(file, 'utf8'), { rootDir: dir }).tests) {
@@ -2808,7 +2805,9 @@ export function main(argv, io = {}) {
         return { ok: gated.ok, results: gated.results };
       },
       readTestReports: () =>
-        [unitReport, e2eReport].filter((file) => existsSync(file)).map((file) => readFileSync(file, 'utf8')),
+        reportFiles(cwd)
+          .filter((file) => existsSync(file))
+          .map((file) => readFileSync(file, 'utf8')),
       commit: (message) => {
         // Re-asserted here rather than once before the loop: a hard reset can land on a
         // commit that predates the stanza, which would quietly un-ignore the ratchet and

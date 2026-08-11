@@ -1,0 +1,59 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="77230d10-0e88-48d6-ab7f-2ad6333fce43" name="@work-laptop-trevor 2026-08-11 16:59:42" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-11T16:59:42.8455488-04:00" queuing="2026-08-11T16:59:42.8455490-04:00" start="2026-08-11T16:59:41.6865851-04:00" finish="2026-08-11T16:59:42.8570818-04:00" />
+  <TestSettings name="default" id="35172a01-1375-44fe-8a68-694318e09e17">
+    <Deployment runDeploymentRoot="_work-laptop-trevor_2026-08-11_16_59_42" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="50635a1f-0613-4a6e-b041-ff5043dc4a94" testId="faa07f20-75d5-0688-1e02-4454e92a40ed" testName="Probe.Tests.CalcTests.AddsNegatives" computerName="REDACTED-HOST" duration="00:00:00.0088124" startTime="2026-08-11T16:59:42.6415227-04:00" endTime="2026-08-11T16:59:42.6415458-04:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="50635a1f-0613-4a6e-b041-ff5043dc4a94" />
+    <UnitTestResult executionId="add1a18d-7673-4018-995e-7942450366f9" testId="61e25e7f-0079-95bb-54bc-e21763991270" testName="Probe.Tests.CalcTests.AddsTwoNumbers" computerName="REDACTED-HOST" duration="00:00:00.0001382" startTime="2026-08-11T16:59:42.6465523-04:00" endTime="2026-08-11T16:59:42.6465524-04:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="add1a18d-7673-4018-995e-7942450366f9" />
+    <UnitTestResult executionId="81e296d5-d1a3-4235-8573-204210578bda" testId="5369ffaa-8594-70ae-af13-3908cd75cb60" testName="Probe.Tests.CalcTests.SkippedOne" computerName="REDACTED-HOST" duration="00:00:00.0010000" startTime="2026-08-11T16:59:42.6482707-04:00" endTime="2026-08-11T16:59:42.6482709-04:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="81e296d5-d1a3-4235-8573-204210578bda">
+      <Output>
+        <ErrorInfo>
+          <Message>deliberately skipped, to see how a skip is reported</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="Probe.Tests.CalcTests.AddsTwoNumbers" storage="/repo/tests/probe.tests/bin/debug/net8.0/probe.tests.dll" id="61e25e7f-0079-95bb-54bc-e21763991270">
+      <Execution id="add1a18d-7673-4018-995e-7942450366f9" />
+      <TestMethod codeBase="/repo/tests/Probe.Tests/bin/Debug/net8.0/Probe.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Probe.Tests.CalcTests" name="AddsTwoNumbers" />
+    </UnitTest>
+    <UnitTest name="Probe.Tests.CalcTests.SkippedOne" storage="/repo/tests/probe.tests/bin/debug/net8.0/probe.tests.dll" id="5369ffaa-8594-70ae-af13-3908cd75cb60">
+      <Execution id="81e296d5-d1a3-4235-8573-204210578bda" />
+      <TestMethod codeBase="/repo/tests/Probe.Tests/bin/Debug/net8.0/Probe.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Probe.Tests.CalcTests" name="SkippedOne" />
+    </UnitTest>
+    <UnitTest name="Probe.Tests.CalcTests.AddsNegatives" storage="/repo/tests/probe.tests/bin/debug/net8.0/probe.tests.dll" id="faa07f20-75d5-0688-1e02-4454e92a40ed">
+      <Execution id="50635a1f-0613-4a6e-b041-ff5043dc4a94" />
+      <TestMethod codeBase="/repo/tests/Probe.Tests/bin/Debug/net8.0/Probe.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Probe.Tests.CalcTests" name="AddsNegatives" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="faa07f20-75d5-0688-1e02-4454e92a40ed" executionId="50635a1f-0613-4a6e-b041-ff5043dc4a94" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="61e25e7f-0079-95bb-54bc-e21763991270" executionId="add1a18d-7673-4018-995e-7942450366f9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5369ffaa-8594-70ae-af13-3908cd75cb60" executionId="81e296d5-d1a3-4235-8573-204210578bda" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="3" executed="2" passed="2" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 8.0.29)
+[xUnit.net 00:00:00.11]   Discovering: Probe.Tests
+[xUnit.net 00:00:00.16]   Discovered:  Probe.Tests
+[xUnit.net 00:00:00.16]   Starting:    Probe.Tests
+[xUnit.net 00:00:00.24]       deliberately skipped, to see how a skip is reported
+[xUnit.net 00:00:00.24]   Finished:    Probe.Tests
+Test 'Probe.Tests.CalcTests.SkippedOne' was skipped in the test run.
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="REDACTED-HOST" outcome="Warning" timestamp="2026-08-11T16:59:42.6481867-04:00">
+        <Text>[xUnit.net 00:00:00.24]     Probe.Tests.CalcTests.SkippedOne [SKIP]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

@@ -166,6 +166,7 @@ describe('every file the plugin depends on is present', () => {
     'scripts/reporters/shared.mjs',
     'scripts/reporters/vitest.mjs',
     'scripts/reporters/playwright.mjs',
+    'scripts/reporters/trx.mjs',
     'scripts/toolchains/index.mjs',
     'scripts/toolchains/shared.mjs',
     'scripts/toolchains/node.mjs',

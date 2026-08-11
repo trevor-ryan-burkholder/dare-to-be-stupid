@@ -591,7 +591,7 @@ common shape — resolves to **node**, and nothing says so out loud. §3.8 predi
 moment and named the fix: the architect declares the toolchain and detection confirms, as
 capabilities already do. **That declaration is not built.** It is the residual of this item.
 
-## B4. Normalised test reporter registry — **DONE for Node (0.14.0) / OPEN for .NET**
+## B4. Normalised test reporter registry — **DONE for Node (0.14.0) and .NET (0.33.0)**
 
 `scripts/reporters/` holds `shared.mjs`, `vitest.mjs`, `playwright.mjs` and `index.mjs`.
 Ratchet logic knows nothing about either runner. Unidentifiable throws, malformed throws, an
@@ -600,6 +600,36 @@ unknown status throws, empty does not. `DESIGN.md` §11, `HANDOFF.md` item 3.
 `trx.mjs` and `junit.mjs` are outstanding and blocked with B3. When adding them: do not weaken
 the throwing behaviour to accommodate a new format, and preserve stable test identity across
 runs wherever the source framework permits.
+
+**`trx.mjs` landed 0.33.0**, tested against two **real committed TRX files** produced by
+`dotnet test` — a passing run and a failing one — with provenance recorded and only the
+hostname and absolute paths redacted. `junit.mjs` is still outstanding; nothing has needed it.
+
+Both instructions held, and each cost something:
+
+- **The throwing behaviour was not weakened.** An unmapped outcome throws by name.
+  `Inconclusive`, `Warning`, `Pending` and the rest of the TRX vocabulary are deliberately
+  *not* mapped: `passed` would admit them to the ratchet and `failed` would hard-reset on a
+  word nobody has read.
+- **Identity is stable across runs *and machines*, which was the harder half.** TRX records two
+  locations and **neither is usable** — `storage` is absolute and lowercased by the runner,
+  `codeBase` is absolute. An id from either differs between machines, so the ratchet would read
+  every test as new on the first run elsewhere: a silent widening no parse error announces. The
+  id is `testName`, the fully qualified `Namespace.Class.Method`. A test asserts the id set is
+  unchanged when `rootDir` changes.
+
+Three things the item did not anticipate:
+
+- **TRX is not JSON, and the registry was.** `parseReport` began with `JSON.parse`, so a TRX
+  file died as "not valid JSON" — the wrong fault named confidently. `RAW_REPORTERS` are now
+  detected on the text first.
+- **Most `outcome=` attributes in a TRX are not test outcomes.** A single-failure run carries
+  six: three tests, one `ResultSummary`, two `RunInfo` diagnostics. A naive read admits three
+  phantom results.
+- **The driver hardcoded node's report filenames**, so a .NET run would have written `unit.trx`,
+  had it read by nobody, and died at `passing: 0` — the exact 10 August failure. `Toolchain`
+  now declares `reports` and the driver asks instead of assuming. **Without this the reporter
+  would have been decorative.**
 
 ## B5. Capability-driven gates — **DONE (0.16.0)**
 
