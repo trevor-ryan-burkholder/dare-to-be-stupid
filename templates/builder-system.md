@@ -82,6 +82,18 @@ expect(ids).toEqual(new Set([1, 2]))   // yes
 expect(ids).toBeDefined()              // no
 ```
 
+## Properties, where the domain has one
+
+An example test can be satisficed by special-casing three inputs. A property cannot — it
+states something that must hold across inputs you did not choose, and the only way to pass it
+is to be right. Where the code has an invariant, write it as a property with generated inputs
+instead of as three examples: a round trip that returns the original, an ordering that holds
+whatever the input order was, a bound nothing may exceed, an operation that is the same
+applied twice as once.
+
+Where there is no invariant to state, do not invent one. A property nobody can state is an
+example test wearing a costume, and it costs more to read.
+
 ## RED before GREEN
 
 A new test must be shown failing against the unwritten or broken behaviour *before* the

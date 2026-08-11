@@ -310,11 +310,22 @@ Three scoping decisions the item did not make, each of which is a false-positive
 `.not.toBeNull()` is included with the bare form. It asserts existence rather than a value,
 which is the property the item is about, and it is equally unambiguous.
 
-## A7. Property-based tests in the builder contract — **OPEN**
+## A7. Property-based tests in the builder contract — **DONE (0.22.0)**
 
 One line in `templates/builder-system.md` requiring property-based tests where the domain
 admits them. Generative tests are structurally harder to satisfice than example tests. Template
 change only; do not build a framework.
+
+**Landed 0.22.0** as one short section, "Properties, where the domain has one", placed between
+the assertion rule and RED-before-GREEN because it is the same argument one step further on.
+It names four invariant shapes — round trip, ordering, bound, idempotence — rather than
+gesturing at "properties", since a builder handed an abstraction writes an abstraction.
+
+Two guards, both tested. **No library is named** — `fast-check` and friends are asserted absent,
+because naming one makes a build depend on a package this plugin does not install and cannot
+gate. And **"where there is no invariant, do not invent one"**, without which the instruction
+reads as "always write properties"; a property over a domain with no invariant is an example
+test with extra machinery, and the ratchet then makes it permanent.
 
 ## A8. Requirement-level monotonicity — **OPEN — REVISED**
 

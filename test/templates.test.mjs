@@ -151,6 +151,8 @@ describe('the builder template', () => {
     ['Clean up only your own mess', 'the dead-code boundary'],
     ['Regressions outrank everything', 'regression priority'],
     ['RED before GREEN', 'the red-evidence rule'],
+    ['Properties, where the domain has one', 'when to write a property instead of examples'],
+    ['inputs you did not choose', 'why a property is harder to satisfice than an example'],
     ['toBeTruthy', 'a concrete example of an assertion that proves nothing'],
     ['route handler', 'where guards belong'],
     ['Anything under `.dare/`, at any depth', 'what it may not touch, stated positionally'],
@@ -187,6 +189,21 @@ describe('the builder template', () => {
     for (const level of ['chaos 1', 'chaos 2', 'chaos 3']) {
       assert.equal(BUILDER.includes(level), true, `builder template never explains ${level}`);
     }
+  });
+
+  it('asks for properties without naming a library to get them from', () => {
+    // "Do not build a framework" is the whole scope of the item. Naming fast-check here
+    // would make a build depend on a package the plugin does not install and cannot gate.
+    for (const library of ['fast-check', 'jsverify', 'hypothesis', 'quickcheck']) {
+      assert.equal(BUILDER.toLowerCase().includes(library), false, `builder template names ${library}`);
+    }
+  });
+
+  it('tells the builder not to invent an invariant that is not there', () => {
+    // Without this the instruction reads as "always write properties", and a property over a
+    // domain with no invariant is an example test with extra machinery — which the ratchet
+    // then makes permanent.
+    assert.equal(BUILDER.includes('do not invent one'), true);
   });
 
   it('names no protected file, because the rule the hook enforces is the directory', () => {

@@ -395,6 +395,19 @@ application source would fail correct repositories for defensive `assert(config)
 this module's whole philosophy is that a false positive costs a full iteration on a correct
 repository while a false negative costs nothing that the reviewer was not already covering.
 
+## A7 — properties in the builder contract (0.22.0)
+
+**Verified.** The section exists and four tests hold its shape: the heading and its argument
+survive; no property-testing library is named, so a build cannot come to depend on a package
+this plugin neither installs nor gates; and the "do not invent an invariant" clause is present,
+without which the instruction reads as "always write properties".
+
+**Not verified, and this is the whole of the item's value.** Whether a builder handed this
+paragraph actually writes properties, and whether those properties are harder to satisfice in
+practice than the example tests they replace, is a claim from `BORROWED.md` R6 that no run has
+tested. It is a template change: the only evidence that could exist is a generated test suite,
+and none has been generated since the section was written.
+
 ---
 
 ## Fixed here, and worth knowing about
