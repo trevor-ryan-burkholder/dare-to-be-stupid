@@ -128,14 +128,17 @@ application that ignores `PORT`.
 # Planned work — making the harness stack-agnostic
 
 Specified on 11 August 2026. The `.dare/**` integrity item from the same plan was implemented
-in 0.10.0. On 11 August 2026 **items 1, 6, 3 and 2 were implemented** — item 1 in 0.11.0 and
-0.12.0, item 6 in 0.13.0, item 3 in 0.14.0, item 2 in 0.15.0; see below. Items 4, 5, 7, 8 and 9
-are **not implemented**. What follows is scoped against the code as it stands, with the seams
-located, so it can be picked up without re-deriving them.
+in 0.10.0. On 11 August 2026 **items 1, 6, 3, 2 and 5 were implemented** — item 1 in 0.11.0 and
+0.12.0, item 6 in 0.13.0, item 3 in 0.14.0, item 2 in 0.15.0, item 5 in 0.16.0; see below.
+**Items 4, 7, 8 and 9 remain.** What follows is scoped against the code as it stands, with the
+seams located, so it can be picked up without re-deriving them.
 
-**Item 5 is now unblocked** and is the obvious next one: its only dependency was item 2, and
-both halves it needs — the capability set (§3.7) and the toolchain's gate list (§3.8) — exist
-and are tested. Item 4 remains blocked on the `dotnet` SDK.
+Of what is left: item 7 (run manifest) is self-contained and has no blocker. Item 8
+(integration-test layer) is next in value, and the argument for it is now stronger than when it
+was written — five items landed tonight on unit tests alone, and the one live check that was
+possible without spending money (`parseNumstat` against real `git` output) is recorded above.
+Item 4 is still blocked on the `dotnet` SDK. Item 9 spends real money and needs an operator
+awake to watch it.
 
 ## Blocker to resolve first
 
@@ -207,9 +210,17 @@ Read these before designing anything; several are smaller than they look.
      future format is a superset of another, first-match-wins becomes a decision someone makes
      on purpose rather than inherits.
 4. **.NET adapter and TRX normalisation.** Subject to the blocker above.
-5. **Capability-driven gates.** An explicit, inspectable capability-to-gate table, not a rules
-   engine. Document why each universal gate is universal — build, unit tests and dependency
-   audit apply to everything — and why each conditional one is conditional.
+5. ~~**Capability-driven gates.**~~ **Done — 0.16.0.** `scripts/gate-policy.mjs`, a table with a
+   written reason per entry. `DESIGN.md` §4.2. What it actually fixed is worth stating: `npx
+   playwright test` ran on every project, so a CLI or library failed the e2e gate on a missing
+   config forever and **could never clear Phase 3 at all**. Three decisions:
+   - **Only `e2e` and `observability` are conditional.** A test asserts that list as a whole,
+     because each addition is a gate some project stops being checked by, and that should be
+     hard to do by accident.
+   - **An unknown gate runs.** Over-applying is recoverable; a silently missing gate is not.
+     A completeness test built from the real toolchain registry catches the omission instead.
+   - **Capabilities for a raced candidate come from the main tree.** Same argument as the
+     ratchet in §13.6: a candidate must not choose which gates judge it.
 6. ~~**Race candidate selection.**~~ **Done — 0.13.0.** Ties now break on lines changed, then
    files changed, then candidate index, measured by a new `parseNumstat` over
    `git diff --numstat`. Still deterministic; no model judgement anywhere near it. One thing

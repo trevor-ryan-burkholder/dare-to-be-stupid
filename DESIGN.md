@@ -439,6 +439,39 @@ The rules exist to stop this becoming a probabilistic verdict:
 - Because advisories never gate shipping, they can only ever be addressed on an iteration
   that was failing for some other reason. That is the intended ceiling on their cost.
 
+### 4.2 Which gates apply — the capability table
+
+Not every gate means something for every project. `npx playwright test` used to run on
+everything, including projects with no browser to drive; on a CLI or a library it failed on a
+missing config rather than on a defect, and since nothing defaults to pass, **such a project
+could never clear Phase 3 at all**. The gate was not catching a fault. It was reporting the
+absence of something the project was never meant to have.
+
+`scripts/gate-policy.mjs` is a table — not a rules engine — mapping every gate to either
+"universal" or a list of capabilities (§3.7), each with a written reason:
+
+| gate | applies to | why |
+|---|---|---|
+| `build`, `lint`, `types`, `unit`, `security-audit` | everything | producibility, a configured static check, the ratchet's own source of ids, and a known-vulnerable dependency are all defects regardless of shape |
+| `ci`, `docs`, `red-evidence`, `integrity` | everything | the validation set must run somewhere other than this loop; every shape has a public surface to describe; an always-green test is unproven; a gate is worth running only while its config still means something |
+| `e2e` | `web-ui`, `desktop-ui` | the runner drives a browser, and a CLI has none |
+| `observability` | `api`, `network-service` | the gate asks a health endpoint to answer a real request; a CLI's exit code is its health check |
+
+Two rules stop this becoming a way to switch gates off.
+
+**Universal is the default.** A gate absent from the table *runs*. Forgetting an entry makes a
+gate over-apply, which is recoverable; a test asserts the table covers every gate the toolchain
+registry and the static set can produce, so the omission is still caught.
+
+**A skip is announced, never silent.** Every skipped gate is printed to the operator with its
+reason and listed in the Build Brief as `does not apply - …`. A builder that cannot see why
+`e2e` is absent will helpfully add it back, and a gate list that quietly shrinks from ten
+entries to eight reads exactly like one that always had eight.
+
+Note what is *not* here: `quality:impeccable` keeps its own detection-based arming (§5.1),
+because it asks whether there is a UI to inspect right now, which is a question about the tree
+rather than about intent.
+
 ---
 
 ## 5. Quality-plugin auto-install (the "install plugins like impeccable" line)

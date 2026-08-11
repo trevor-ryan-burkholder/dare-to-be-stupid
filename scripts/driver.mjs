@@ -35,6 +35,7 @@ import {
   writeCapabilityManifest,
 } from './capabilities.mjs';
 import { loadConfig } from './config.mjs';
+import { applicableGates } from './gate-policy.mjs';
 import { hasMeaningfulHistory, historyContext } from './history.mjs';
 import { integrityGate } from './integrity.mjs';
 import {
@@ -2049,18 +2050,39 @@ export function main(argv, io = {}) {
     write(verbatim(`gate ${skip.name} not run: ${skip.reason}`));
   }
 
-  /** Every gate, named for the brief, so a builder is never surprised by one. */
+  /**
+   * Every gate, named for the brief, so a builder is never surprised by one.
+   *
+   * Filtered by the capability table (§4.2), because telling a builder to satisfy a gate that
+   * will not run is worse than saying nothing: it spends an iteration writing Playwright specs
+   * for a command-line tool. The skips are listed too, with their reasons — a builder that
+   * cannot see why e2e is absent will helpfully add it back.
+   */
+  const briefCapabilities = runCapabilities();
+  const describedGates = [
+    ...toolchainGates.gates.map((gate) => ({ name: gate.name, text: `${gate.name}: ${gate.command.join(' ')}` })),
+    ...provisioning.gates.map((gate) => ({
+      name: `quality:${gate.plugin}`,
+      text: `quality:${gate.plugin}: ${gate.command.join(' ')}${gate.frontendOnly ? ' (armed once this repo renders a UI)' : ''}`,
+    })),
+    {
+      name: 'ci',
+      text: 'ci: a workflow under .github/workflows that actually runs build, lint, types, unit and e2e',
+    },
+    { name: 'docs', text: 'docs: README.md and docs/api-contract.md, neither a stub' },
+    {
+      name: 'observability',
+      text: 'observability: structured logging in source, and a health endpoint that answers when the app is started',
+    },
+    { name: 'red-evidence', text: 'red-evidence: every newly passing test must have been seen failing first' },
+  ];
+  const applicableNames = applicableGates(describedGates, briefCapabilities);
   const gateNames = [
-    ...toolchainGates.gates.map((gate) => `${gate.name}: ${gate.command.join(' ')}`),
+    ...applicableNames.gates.map((gate) => gate.text),
+    // Both kinds of absence are declared. A toolchain skip means "this stack has no such
+    // step"; a capability skip means "this project is not that shape". Neither is silent.
     ...toolchainGates.skipped.map((skip) => `${skip.name}: not run - ${skip.reason}`),
-    ...provisioning.gates.map(
-      (gate) =>
-        `quality:${gate.plugin}: ${gate.command.join(' ')}${gate.frontendOnly ? ' (armed once this repo renders a UI)' : ''}`,
-    ),
-    'ci: a workflow under .github/workflows that actually runs build, lint, types, unit and e2e',
-    'docs: README.md and docs/api-contract.md, neither a stub',
-    'observability: structured logging in source, and a health endpoint that answers when the app is started',
-    'red-evidence: every newly passing test must have been seen failing first',
+    ...applicableNames.skipped.map((skip) => `${skip.name}: does not apply - ${skip.reason}`),
   ];
 
   /**
@@ -2081,15 +2103,24 @@ export function main(argv, io = {}) {
     // iteration. Resolving it once at provisioning time asked it of a repository holding a
     // PRD and nothing else, so the answer was always "no frontend" and the design gate never
     // armed on a greenfield build (DESIGN.md §5.1).
-    const treeGates = [
-      ...commandGates(dir, treeDare),
-      ...provisioning.gates
-        .filter((gate) => !gate.frontendOnly || hasFrontend(dir))
-        .map((gate) => ({ name: `quality:${gate.plugin}`, command: gate.command, required: true })),
-    ];
+    //
+    // Capabilities come from the main tree, never from a raced candidate's. A candidate must
+    // not be able to change which gates it is judged by (DESIGN.md §13.6), and the same
+    // argument that keeps the ratchet out of a worktree applies here.
+    const capabilities = runCapabilities();
+    const applicable = applicableGates(
+      [
+        ...commandGates(dir, treeDare),
+        ...provisioning.gates
+          .filter((gate) => !gate.frontendOnly || hasFrontend(dir))
+          .map((gate) => ({ name: `quality:${gate.plugin}`, command: gate.command, required: true })),
+      ],
+      capabilities,
+    );
+    for (const skip of applicable.skipped) write(verbatim(`gate ${skip.name} does not apply: ${skip.reason}`));
     const browsers = ensurePlaywrightBrowsers({ cwd: dir, dareDir: treeDare, run: shell });
     if (browsers.installed) write(verbatim(browsers.detail));
-    const commandResults = runGates(treeGates, { cwd: dir, run: shell });
+    const commandResults = runGates(applicable.gates, { cwd: dir, run: shell });
     const previousPassing = loadState(dareDir).passing;
 
     /** @type {Set<string>} */
@@ -2109,7 +2140,10 @@ export function main(argv, io = {}) {
     const red = recordRedEvidence(treeDare, nonPassing);
     const results = [
       ...commandResults.results,
-      ...staticGates(dir, { run: shell }),
+      // The static gates are filtered by the same table as the command gates. `observability`
+      // is the one that moves: a CLI has no health endpoint to answer, and the gate was
+      // failing it for not having one.
+      ...applicableGates(staticGates(dir, { run: shell }), capabilities).gates,
       redEvidenceGate({ previousPassing, passing, redSeen: red }),
     ];
     return { ok: results.every((result) => result.ok), results, passing };
