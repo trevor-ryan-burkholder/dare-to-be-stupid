@@ -31,6 +31,9 @@ outside a unit test:
 | `.dare/assumptions.json` filling | 0.30.0 | no live builder has emitted the block |
 | the mutation gate | 0.31.0 | **provisioning is not wired — expect this to fail** |
 | `.dare/runs/NNN/` archiving | 0.28.0 | only ever exercised on temp directories |
+| the .NET toolchain | 0.32.0 | commands verified against a real SDK; never driven by a run |
+| the TRX reporter | 0.33.0 | only ever seen xunit output from a scaffolded solution |
+| per-toolchain guidance | 0.34.0 | proven selected and archived; never proven *read* |
 
 ---
 
@@ -119,7 +122,36 @@ Same evidence. The extra thing to check is that `.dare/capabilities.json` resolv
 
 ## Case C — .NET
 
-**Blocked.** `dotnet` is not installed and there is no adapter. See `BRIEF.md` B3.
+**No longer blocked on tooling.** `dotnet 8.0.423` is installed and
+`scripts/toolchains/dotnet.mjs` exists as of 0.32.0, with the TRX reporter at 0.33.0. It is
+refused here for the same reason as every other case on this page — it spends money and wants
+an operator awake — and for nothing else.
+
+```bash
+scenario dotnet-api
+/dare "A small HTTP service that stores and returns short notes, in C#."
+```
+
+**This is the highest-information run on the page**, because more of it is untested than
+anything else. Watch four things specifically:
+
+- **Does the toolchain resolve to `dotnet` at all?** The run prints
+  `toolchain: <name> (<evidence>)`. On iteration 1 a greenfield repository has neither a
+  `package.json` nor a `.csproj`, so detection is honestly empty and **falls back to node** —
+  which means the first iteration may be gated with npm commands against a .NET project. This
+  is the known ambiguity recorded in `BRIEF.md` B3 and `toolchains/index.mjs`. If it derails
+  the run, the fix is architect declaration confirmed by detection, which is not built.
+- **Does `.dare/unit.trx` appear, and does the ratchet read it?** `Toolchain.reports` was added
+  precisely so it would. If `passing: 0` persists while `dotnet test` reports passing tests,
+  the report is being written and not read — check the filename first.
+- **What does a real TRX from a generated project look like?** The reporter has only ever seen
+  xunit output from a scaffolded solution. MSTest and NUnit populate `UnitTestResult`
+  differently, and `[Theory]` names carry entities. **Keep the file** — if the reporter throws,
+  that TRX is the most valuable artifact the run produced and belongs in
+  `test/fixtures/reporters/` with its provenance.
+- **Does `dotnet format` fail the lint gate on generated code?** It fails on whitespace the
+  compiler accepts, and exits 2. A builder that writes correct but unformatted C# will fail
+  lint every iteration until it learns, which is what the guidance fragment is for.
 
 ## Case D — deliberate rejection
 
