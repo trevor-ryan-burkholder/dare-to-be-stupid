@@ -347,6 +347,47 @@ is the only implementation. When a second one lands that stops being obvious, an
 
 ---
 
+## 3.9 The context budget — measured before a child is spawned
+
+§3.7 says what the project is and §3.8 says how to operate on it. This says how much of it a
+child is being handed at once.
+
+Every builder's input is assembled: the Build Brief, the system prompt, the PRD, design
+documents, retrieved lessons and conditional git history. That input **grows across
+iterations**, and until v0.20.0 nothing looked at it. That is this codebase's characteristic
+bug class rather than an incidental gap — there is no exception, no exit code and no red line.
+The builder is simply worse at iteration 12 than it was at iteration 2, and the run says
+nothing, because nothing asked.
+
+`scripts/context-budget.mjs` measures the assembled input inside `spawnClaude`, before the
+child exists. The position is the point: every phase goes through that one door, so a phase
+added later cannot forget the check, and refusing there costs no money and no wall-clock.
+
+**It counts characters and calls them characters.** There is no tokenizer and there will not be
+one — hard constraint 1 forbids the dependency, and a hand-rolled estimate is worse than no
+number at all, because `~48000 tokens` reads as a measurement and is a guess. §7.1 refuses to
+write `"unknown"` into a manifest for the same reason. A character count is exact, is free, and
+tracks the thing this is actually about: unbounded growth. It is a proxy for context occupancy
+and is labelled as one everywhere it appears.
+
+**Over budget fails, and nothing is ever trimmed.** Every list the Build Brief renders is
+already capped and already announces what it left out (§8.1). The one uncapped input is raw
+gate output in a failure `detail` — and trimming that means silently choosing which half of a
+compiler error the builder is allowed to read. **A truncated prompt is not a smaller task; it
+is a different task, handed over without saying so.** So the check refuses and the refusal
+names the largest part, which is what makes it actionable rather than merely correct.
+
+There is deliberately **no `enabled` flag**. A run whose prompt has grown past the ceiling
+needs an operator to look and decide it is legitimate, then raise `contextBudget.maxCharacters`
+— which is a decision. Switching the check off is a way of not making one, and it is the same
+category of error as a threshold that learns its way downward (§13, "explicitly rejected").
+
+The cheap half rides along for free: `childStartLine` prints the measured size before every
+child, so an operator watching the log sees the number climb. The budget catches a runaway;
+that line catches the slope leading to one.
+
+---
+
 ## 4. Definition of done — "enterprise production"
 
 The original operationalized DoD as *PRD requirements met*. The User's DoD is broader. A run
@@ -940,6 +981,7 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `race.enabled` / `race.n` / `race.after` | false / 3 / 2 | worktree builders raced **only after `after` stalled iterations** (§13.6) |
 | `advisory.minConfidence` | 0.7 | below this an advisory finding is recorded and not acted on (§4.1). Cannot affect PRD/DoD compliance at any value |
 | `lessons.enabled` / `lessons.maxPerBrief` | true / 3 | evidence-derived lesson memory, and how many may enter one brief (§13.8) |
+| `contextBudget.maxCharacters` | 400_000 | the assembled prompt ceiling, measured before spawn (§3.9). Characters, not tokens; sized to fire on a runaway rather than to maximise utilisation. No `enabled` key on purpose |
 
 `init.js` refuses to initialize against a remote matching `prod`, `production`, `client`,
 or `customer`, and requires a clean working tree (the ratchet's `reset --hard` destroys

@@ -341,6 +341,35 @@ It would be visible in a transcript and no transcript has been examined for it, 
 has reached the panel more than once. If a dogfood run shows a reviewer reading the briefs, the
 cold-review invariant is weaker than §1.1 has ever claimed and this is where to look first.
 
+## C4 — the context budget (0.20.0)
+
+**Verified.** `scripts/context-budget.mjs` measures the assembled input inside `spawnClaude`,
+before the child exists. 26 new unit tests cover the two ways such a check goes wrong: failing
+to fire, and firing and then quietly repairing the problem. Exactly-at-limit passes and
+one-over fails, so the boundary is asserted rather than assumed. Four driver-level tests prove
+the important half — that an over-budget prompt results in the injected runner being called
+**zero** times, so nothing is spent, and that the system prompt is counted alongside the user
+prompt (a budget measuring only the user prompt would miss the frontend-direction fragment
+appended to every builder on a UI project).
+
+**A real defect surfaced by its own tests.** `options.limit ?? DEFAULT` treated `null` as
+"caller had nothing to say" and silently substituted the default. A check that repairs a
+malformed configuration on the run's behalf is the failure it exists to catch, arriving through
+the door marked "config". Now `=== undefined`, so `null` reaches validation and throws.
+
+**Not verified — and this is the important one.** *The number has never been calibrated against
+a real run.* The 400,000-character default is reasoned from a ~200k-token window at a
+conservative three characters per token; it is not measured, because no run has ever reported
+its prompt size — the measurement did not exist until now. The first dogfood run will print a
+real figure on every child, and **that is the moment to check whether the default is sensible
+or nonsense.** It may prove far too generous to catch the degradation it targets. Do not treat
+400,000 as validated.
+
+Also unverified: whether growth actually occurs the way `BORROWED.md` R4 predicts. Every list
+in the Build Brief is capped, so the plausible growth vector is raw gate output in a failure
+`detail`, and nobody has watched that happen. The `childStartLine` figure across iterations is
+the evidence to collect.
+
 ---
 
 ## Fixed here, and worth knowing about

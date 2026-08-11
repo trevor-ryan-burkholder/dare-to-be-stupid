@@ -9,12 +9,15 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { DEFAULT_MAX_PROMPT_CHARACTERS } from './context-budget.mjs';
+
 /** @typedef {{ enabled: boolean, command: string }} DeployConfig */
 /** @typedef {{ after: number }} RealityCheckConfig */
 /** @typedef {{ enabled: boolean }} DareMeConfig */
 /** @typedef {{ enabled: boolean, n: number, after: number }} RaceConfig */
 /** @typedef {{ minConfidence: number }} AdvisoryConfig */
 /** @typedef {{ enabled: boolean, maxPerBrief: number }} LessonsConfig */
+/** @typedef {{ maxCharacters: number }} ContextBudgetConfig */
 /**
  * @typedef {{
  *   maxIterations: number, stallLimit: number, tokenCeiling: number,
@@ -23,7 +26,7 @@ import path from 'node:path';
  *   prdModel: string, styleModel: string, lessonModel: string,
  *   qualityPlugins: string[], deploy: DeployConfig, extractTests: boolean,
  *   chaos: number, realityCheck: RealityCheckConfig, dareMe: DareMeConfig, race: RaceConfig,
- *   advisory: AdvisoryConfig, lessons: LessonsConfig
+ *   advisory: AdvisoryConfig, lessons: LessonsConfig, contextBudget: ContextBudgetConfig
  * }} DareConfig
  */
 
@@ -89,6 +92,11 @@ export function defaultConfig() {
     race: { enabled: false, n: 3, after: 2 },
     advisory: { minConfidence: 0.7 },
     lessons: { enabled: true, maxPerBrief: 3 },
+    // Characters, not tokens, and deliberately so — see `context-budget.mjs`. There is no
+    // "disabled" setting: a run whose prompt has grown past this needs an operator to decide
+    // it is legitimate and raise the number, which is a decision, where switching the check
+    // off is a way of not making one.
+    contextBudget: { maxCharacters: DEFAULT_MAX_PROMPT_CHARACTERS },
   };
 }
 
@@ -288,6 +296,17 @@ export function validateConfig(input) {
       enabled: 'enabled' in race ? requireBoolean(race.enabled, 'race.enabled') : defaults.race.enabled,
       n: 'n' in race ? requirePositiveInteger(race.n, 'race.n') : defaults.race.n,
       after: 'after' in race ? requirePositiveInteger(race.after, 'race.after') : defaults.race.after,
+    };
+  }
+
+  if ('contextBudget' in source) {
+    const contextBudget = requireObject(source.contextBudget, 'contextBudget');
+    rejectUnknownKeys(contextBudget, new Set(['maxCharacters']), 'contextBudget');
+    merged.contextBudget = {
+      maxCharacters:
+        'maxCharacters' in contextBudget
+          ? requirePositiveInteger(contextBudget.maxCharacters, 'contextBudget.maxCharacters')
+          : defaults.contextBudget.maxCharacters,
     };
   }
 

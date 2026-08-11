@@ -982,9 +982,17 @@ describe('the lines that bracket a child', () => {
   // exactly rather than for substrings.
   it('warns that silence is expected, and names the model doing the waiting', () => {
     assert.equal(
-      childStartLine('design', 'claude-opus-5'),
-      'design: claude-opus-5 running, no output until it returns',
+      childStartLine('design', 'claude-opus-5', 8432),
+      'design: claude-opus-5 running on 8432 characters of prompt, no output until it returns',
     );
+  });
+
+  it('carries the measured prompt size, so growth is visible before it is fatal', () => {
+    // The budget check catches a runaway. This line catches the slope leading to one: the
+    // number is in the log every iteration, so a reader can watch it climb. Characters, and
+    // said so — there is no tokenizer here and an estimate would read as a measurement.
+    assert.equal(childStartLine('builder', 'm', 4).includes('4 characters of prompt'), true);
+    assert.equal(childStartLine('builder', 'm', 4).includes('token'), false);
   });
 
   it('reports elapsed seconds and spend when the child returns', () => {
@@ -1000,8 +1008,68 @@ describe('the lines that bracket a child', () => {
   });
 
   it('names the phase on both lines, since minutes of nothing separate them', () => {
-    assert.equal(childStartLine('builder', 'm').startsWith('builder:'), true);
+    assert.equal(childStartLine('builder', 'm', 1).startsWith('builder:'), true);
     assert.equal(childEndLine('builder', { ok: true, tokens: 1 }, 1).startsWith('builder:'), true);
+  });
+});
+
+describe('spawnClaude checks the context budget before it spends anything', () => {
+  // The check lives inside spawnClaude rather than at any call site, for the reason
+  // builderSystemPrompt is a function: every child passes through this one door, so a phase
+  // added later cannot forget it.
+
+  /**
+   * @param {number} promptLength
+   * @param {number} limit
+   */
+  function spawnWith(promptLength, limit) {
+    /** @type {string[][]} */
+    const calls = [];
+    const result = spawnClaude({
+      prompt: 'x'.repeat(promptLength),
+      systemPrompt: 'sys',
+      model: 'claude-sonnet-5',
+      phase: 'builder',
+      cwd: '/repo',
+      env: {},
+      contextLimit: limit,
+      run: (command, args) => {
+        calls.push([command, ...args]);
+        return { ok: true, status: 0, stdout: JSON.stringify({ result: 'done', is_error: false }), stderr: '' };
+      },
+    });
+    return { calls, result };
+  }
+
+  it('does not spawn at all when the prompt is over budget', () => {
+    // Refusing after the child has run would cost the full price of the mistake and teach
+    // the operator nothing they could not read in the bill.
+    const { calls, result } = spawnWith(500, 100);
+    assert.deepEqual(calls, []);
+    assert.equal(result.ok, false);
+    assert.equal(result.tokens, 0);
+    assert.equal(result.costUsd, 0);
+  });
+
+  it('reports the measurement rather than a bare failure', () => {
+    const { result } = spawnWith(500, 100);
+    assert.equal(result.raw.includes('builder: prompt is 503 characters'), true);
+    assert.equal(result.raw.includes('over the 100 character budget'), true);
+  });
+
+  it('counts the system prompt too, since the child is handed both', () => {
+    // 'sys' is three characters. A budget that measured only the user prompt would miss the
+    // frontend-direction fragment appended to every builder on a UI project.
+    const { calls } = spawnWith(98, 100);
+    assert.deepEqual(calls, []);
+  });
+
+  it('spawns normally when the prompt fits', () => {
+    const { calls, result } = spawnWith(50, 100);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], 'claude');
+    assert.equal(result.ok, true);
+    assert.equal(result.text, 'done');
   });
 });
 

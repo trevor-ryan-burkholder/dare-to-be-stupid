@@ -479,7 +479,7 @@ probe.
 The .NET command check is blocked with B3. **A9's builder output contract is a new tier-3
 candidate** — add it when A9 lands.
 
-## C4. Context budget check — **OPEN**
+## C4. Context budget check — **DONE (0.20.0)**
 
 Dare assembles Build Brief + PRD + design docs + retrieved lessons + conditional history, and
 that input grows across iterations with nothing checking it. This is the repository's
@@ -489,6 +489,29 @@ documented policy. **Do not trim silently.**
 
 Cheapest real win in this brief: no invariant conflict, nothing depends on it, and it attacks a
 named failure mode. **Ship it first.**
+
+**Landed 0.20.0 — fail loud, never trim.** `scripts/context-budget.mjs`, called inside
+`spawnClaude` before the child exists, so every phase passes through it and an oversized prompt
+costs nothing. `DESIGN.md` §3.9, config key `contextBudget.maxCharacters` (default 400,000).
+
+Four decisions the item did not specify:
+
+- **Characters, not tokens, and said so.** No tokenizer exists here and hard constraint 1
+  forbids adding one. An estimate would read as a measurement; §7.1 already refuses `"unknown"`
+  in a manifest for that reason. The count is exact and tracks unbounded growth exactly.
+- **No trimming at all, rather than a documented trim policy.** On inspection every list in the
+  brief is already capped and already announces its omissions. The one uncapped input is raw
+  gate output in a failure `detail`, and trimming that means silently choosing which half of a
+  compiler error the builder reads. A truncated prompt is a different task, handed over without
+  saying so.
+- **No `enabled` flag.** Raising the ceiling is a decision an operator makes; switching the
+  check off is a way of not making one, and belongs with the thresholds section E rejects.
+- **`childStartLine` now prints the measured size on every child.** The budget catches a
+  runaway; that line catches the slope leading to one, and it was free.
+
+One defect found by its own tests: `options.limit ?? DEFAULT` accepted `null` as "nothing to
+say" and silently applied the default. Now `=== undefined`, so `null` reaches validation and
+throws.
 
 ## C5. Differentiated race candidates — **OPEN**
 

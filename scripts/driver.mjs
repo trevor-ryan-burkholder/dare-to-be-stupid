@@ -35,6 +35,7 @@ import {
   writeCapabilityManifest,
 } from './capabilities.mjs';
 import { loadConfig } from './config.mjs';
+import { checkContextBudget, measurePrompt } from './context-budget.mjs';
 import { applicableGates } from './gate-policy.mjs';
 import { hasMeaningfulHistory, historyContext } from './history.mjs';
 import { integrityGate } from './integrity.mjs';
@@ -1861,13 +1862,24 @@ function shell(command, args, options) {
  * being spawned. Both have been wrong before, and neither is visible in a run's output.
  *
  * @param {{ prompt: string, model: string, systemPrompt?: string, phase: string, cwd: string,
- *   env: Record<string, string | undefined>,
+ *   env: Record<string, string | undefined>, contextLimit?: number,
  *   run?: (command: string, args: string[],
  *     options: { cwd: string, env?: Record<string, string | undefined>, input?: string }) =>
  *     { ok: boolean, status: number, stdout: string, stderr: string } }} options
  * @returns {ClaudeResult}
  */
 export function spawnClaude(options) {
+  // The context budget is checked here rather than at any call site, for the reason
+  // `builderSystemPrompt` gives for being a function: every child in the loop passes through
+  // this one door, so a phase added later cannot forget the check. Refusing before `run`
+  // means an oversized prompt costs no money and no wall-clock (DESIGN.md §3.9).
+  const budget = checkContextBudget({
+    phase: options.phase,
+    parts: { systemPrompt: options.systemPrompt, prompt: options.prompt },
+    limit: options.contextLimit,
+  });
+  if (!budget.ok) return { ok: false, text: '', costUsd: 0, tokens: 0, raw: budget.detail };
+
   const args = claudeArgs(options);
   const run = options.run ?? shell;
   // Every Claude child carries the re-entrancy marker. This is the half of the no-nesting
@@ -1890,12 +1902,19 @@ export function spawnClaude(options) {
  * Its job is to say that silence is expected. A phase that prints its name and then nothing
  * for nine minutes reads as a hang, and an operator who kills it loses the run.
  *
+ * It also carries the measured prompt size, which is the cheap half of the context budget
+ * (DESIGN.md §3.9). The budget check catches a runaway; this catches the slope leading to
+ * one, by putting the number in the log every time so a reader can see it climb. Characters,
+ * not tokens, and said so — there is no tokenizer here and an estimate would read as a
+ * measurement.
+ *
  * @param {string} phase
  * @param {string} model
+ * @param {number} characters the prompt and system prompt, measured
  * @returns {string}
  */
-export function childStartLine(phase, model) {
-  return `${phase}: ${model} running, no output until it returns`;
+export function childStartLine(phase, model, characters) {
+  return `${phase}: ${model} running on ${characters} characters of prompt, no output until it returns`;
 }
 
 /**
@@ -1940,9 +1959,10 @@ export function main(argv, io = {}) {
    * @returns {ReturnType<typeof spawnClaude>}
    */
   const runChild = (options) => {
-    write(verbatim(childStartLine(options.phase, options.model)));
+    const measured = measurePrompt({ systemPrompt: options.systemPrompt, prompt: options.prompt });
+    write(verbatim(childStartLine(options.phase, options.model, measured.characters)));
     const startedAt = Date.now();
-    const result = spawnClaude(options);
+    const result = spawnClaude({ ...options, contextLimit: config.contextBudget.maxCharacters });
     write(verbatim(childEndLine(options.phase, result, Math.round((Date.now() - startedAt) / 1000))));
     return result;
   };

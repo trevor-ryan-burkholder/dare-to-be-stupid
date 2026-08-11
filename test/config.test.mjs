@@ -65,6 +65,7 @@ describe('defaultConfig', () => {
       race: { enabled: false, n: 3, after: 2 },
       advisory: { minConfidence: 0.7 },
       lessons: { enabled: true, maxPerBrief: 3 },
+      contextBudget: { maxCharacters: 400000 },
     });
   });
 
@@ -135,6 +136,21 @@ describe('validateConfig merges over the defaults', () => {
     for (const bad of [-0.1, 1.5, 70, '0.7', null]) {
       assert.throws(() => validateConfig({ advisory: { minConfidence: bad } }), ConfigError, `accepted ${bad}`);
     }
+  });
+
+  it('takes a context budget as a positive whole number of characters', () => {
+    assert.equal(validateConfig({ contextBudget: { maxCharacters: 12000 } }).contextBudget.maxCharacters, 12000);
+    // No zero and no negative: both mean "refuse every prompt", which is a way of ending
+    // every run rather than a way of configuring one. There is deliberately no `enabled`
+    // key — switching the check off is how the silent degradation it catches gets back in.
+    for (const bad of [0, -1, 1.5, '400000', null]) {
+      assert.throws(() => validateConfig({ contextBudget: { maxCharacters: bad } }), ConfigError, `accepted ${bad}`);
+    }
+    assert.throws(() => validateConfig({ contextBudget: { enabled: false } }), ConfigError);
+  });
+
+  it('leaves the context budget at its default when the section is present but empty', () => {
+    assert.equal(validateConfig({ contextBudget: {} }).contextBudget.maxCharacters, 400000);
   });
 });
 
