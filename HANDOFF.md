@@ -3,6 +3,34 @@
 **State:** `main` at `0.60.0`. `npm test` 1433 pass, `npm run test:integration` 12 pass,
 `npm run test:live` 11 of 11 armed and green. `npm run release-check` clean.
 
+## Open: 0.56.0 hands the builder an objective it cannot act on
+
+Run 9 shipped, so 0.56.0 is **satisfiable** — but it cost one entirely wasted iteration
+(7.5M tokens, ~$6), and the reason is a contradiction in the brief rather than bad luck.
+
+When the panel passes with no failure evidence, the objective is *"Prove the test suite can
+fail"*, and the brief states the escape: *"Changing any first-party source makes the mutation
+gate apply again."* The same brief also carries chaos 1: *"Touch only the files this objective
+requires. Every changed line must trace directly to it."*
+
+**On an already-correct codebase those point in opposite directions.** There is no surgical edit
+to `src/` that traces to "prove your tests can fail", so a builder obeying the scope rule cannot
+arm the gate. Run 9's builder did the only other reasonable thing — it wrote another test — and
+`node.mjs` filters changed files through `TEST_LIKE_RE`, so a test file can never arm the
+mutation gate whatever git reports about it. Iteration 3 eventually touched source and iteration
+4 shipped.
+
+**The proposal, not yet built: let the driver run the mutation gate itself.** When the panel
+passes and the changed set is empty, the driver mutates the whole first-party source once,
+rather than handing a builder an objective with no legal move. That converts an unsatisfiable
+instruction into a deterministic check the driver performs, at exactly the moment it is worth
+paying for — the ship is then earned or refused without spending an iteration on theatre.
+
+Two things to check before building it: the cost of mutating a whole tree at ship time (run 9's
+scoped runs were minutes, not seconds), and that it cannot become a way for a run to ship on a
+mutation pass it never earned on its own changes. **Do not build it while a run is testing ship
+logic** — one variable at a time is the only reason runs 6 and 7 were readable.
+
 ## Deploy, built 0.61.0–0.63.0 — and the ssh half is argv nobody has run
 
 The old `deploy` was a stub: one `execFileSync` inside `ship()`, fired **after** the
