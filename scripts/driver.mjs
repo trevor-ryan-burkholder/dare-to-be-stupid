@@ -911,12 +911,18 @@ export function childEnvironment(env) {
  * It also retires two quieter hazards: `ARG_MAX` for a prompt carrying a whole template
  * plus the PRD, and a prompt that happens to begin with `--`.
  *
- * @param {{ model: string, systemPrompt?: string, phase: string }} options
+ * @param {{ model: string, systemPrompt?: string, phase: string, effort?: string }} options
  * @returns {string[]}
  */
 export function claudeArgs(options) {
   const policy = permissionsFor(options.phase);
   const args = ['-p', '--output-format', 'json', '--settings', childSettings(), '--model', options.model];
+  // Reasoning effort, per phase. Verified against a live child rather than read from help
+  // text: `low` and `max` are both accepted by `claude -p` and visibly move the thinking-token
+  // count. It is placed before the variadic `--allowedTools` for the same reason the prompt is
+  // on stdin — anything after that flag is read as one more tool name, which is the defect that
+  // killed every phase but `builder` and bought this repository its live tier (§11.1).
+  if (options.effort !== undefined && options.effort !== '') args.push('--effort', options.effort);
   if (options.systemPrompt !== undefined && options.systemPrompt.length > 0) {
     args.push('--append-system-prompt', options.systemPrompt);
   }
@@ -2796,7 +2802,7 @@ function shell(command, args, options) {
  * permissions it is given and the environment it inherits — can be asserted without one
  * being spawned. Both have been wrong before, and neither is visible in a run's output.
  *
- * @param {{ prompt: string, model: string, systemPrompt?: string, phase: string, cwd: string,
+ * @param {{ prompt: string, model: string, systemPrompt?: string, phase: string, effort?: string, cwd: string,
  *   env: Record<string, string | undefined>, contextLimit?: number,
  *   run?: (command: string, args: string[],
  *     options: { cwd: string, env?: Record<string, string | undefined>, input?: string }) =>
@@ -3008,6 +3014,7 @@ export function main(argv, io = {}) {
       prompt: `${template('prd-author.md')}\n\n---\n\nThe idea:\n\n${idea}`,
       model: config.prdModel,
       phase: 'prd',
+      effort: config.effort['prd'],
       cwd,
       env,
     });
@@ -3038,6 +3045,7 @@ export function main(argv, io = {}) {
     prompt: `${template('architect.md')}\n\n---\n\n${architectGateFragment(gateSummary(cwd, dareDir).gates)}\n\n---\n\nPRD.md:\n\n${prd}`,
     model: config.designModel,
     phase: 'design',
+      effort: config.effort['design'],
     cwd,
     env,
   });
@@ -3122,6 +3130,11 @@ export function main(argv, io = {}) {
         style: config.styleModel,
         lesson: config.lessonModel,
       },
+      // Recorded for the same reason `models` is: two runs are only comparable if what drove
+      // them is written down. Effort changes how hard each child thinks, so a run whose
+      // reviewer sat at `high` and one whose reviewer sat at `max` are different experiments,
+      // and nothing else on disk would say so.
+      effort: { ...config.effort },
       toolchain: {
         name: resolvedToolchain.toolchain.name,
         detected: resolvedToolchain.detected,
@@ -3328,6 +3341,7 @@ export function main(argv, io = {}) {
           model: config.builderModel,
           systemPrompt: builderSystemPrompt(cwd),
           phase: 'builder',
+      effort: config.effort['builder'],
           cwd: worktree.dir,
           env,
         });
@@ -3391,6 +3405,7 @@ export function main(argv, io = {}) {
           model: config.builderModel,
           systemPrompt: builderSystemPrompt(cwd),
           phase: 'builder',
+      effort: config.effort['builder'],
           cwd,
           env,
         }),
@@ -3440,6 +3455,7 @@ export function main(argv, io = {}) {
           ].join('\n'),
           model: config.reviewerModel,
           phase: 'security-escalation',
+      effort: config.effort['security-escalation'],
           cwd,
           env,
         }),
@@ -3479,6 +3495,7 @@ export function main(argv, io = {}) {
           model: config.reviewerModel,
           systemPrompt: template('reviewer-system.md'),
           phase: 'review',
+      effort: config.effort['review'],
           cwd,
           env,
         }),
@@ -3490,6 +3507,7 @@ export function main(argv, io = {}) {
             'then give your reasons.',
           model: config.reviewerModel,
           phase: 'reality-check',
+      effort: config.effort['reality-check'],
           cwd,
           env,
         }),
@@ -3498,6 +3516,7 @@ export function main(argv, io = {}) {
           prompt: `${template('lesson-extractor.md')}\n\n---\n\nThe evidence:\n\n${evidence}`,
           model: config.lessonModel,
           phase: 'lesson-extractor',
+      effort: config.effort['lesson-extractor'],
           cwd,
           env,
         }),

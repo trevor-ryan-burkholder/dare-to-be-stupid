@@ -11,6 +11,20 @@ import path from 'node:path';
 
 import { DEFAULT_MAX_PROMPT_CHARACTERS } from './context-budget.mjs';
 
+/**
+ * Reasoning effort per phase, verified against `claude --help` and against a live child
+ * rather than read: both `low` and `max` are accepted by a `-p` child and visibly move the
+ * thinking-token count.
+ *
+ * The defaults follow §1.1's principle rather than a cost curve. **The judge is pinned at
+ * `max`**, because the smartest thing in the loop should be the one deciding, and a verdict
+ * that gets cheaper as a run gets more desperate is satisficing installed at the auditor.
+ * `reality-check` and `security-escalation` sit high for the same reason in miniature: one can
+ * end a run `ABORTED` and the other can trigger a hard reset. The lesson extractor is advisory
+ * and returning `null` is an explicitly cheap answer, so it sits at the bottom.
+ */
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
+
 /** @typedef {{ path: string, status: number }} SmokeCheck */
 /** @typedef {{ enabled: boolean, command: string[], url: string, smoke: SmokeCheck[] }} DeployConfig */
 /** @typedef {{ after: number }} RealityCheckConfig */
@@ -25,7 +39,7 @@ import { DEFAULT_MAX_PROMPT_CHARACTERS } from './context-budget.mjs';
  *   reviewers: string[], ownership: Record<string, string[]>, requireUnanimous: boolean,
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, styleModel: string, lessonModel: string,
- *   qualityPlugins: string[], deploy: DeployConfig, extractTests: boolean,
+ *   qualityPlugins: string[], effort: Record<string, string>, deploy: DeployConfig, extractTests: boolean,
  *   chaos: number, realityCheck: RealityCheckConfig, dareMe: DareMeConfig, race: RaceConfig,
  *   advisory: AdvisoryConfig, lessons: LessonsConfig, contextBudget: ContextBudgetConfig
  * }} DareConfig
@@ -99,6 +113,15 @@ export function defaultConfig() {
     // optional and degrade to a warning, because neither is worth killing a run over on a
     // machine without python3 or a reachable registry (DESIGN.md §5.1).
     qualityPlugins: ['impeccable', 'knip', 'semgrep'],
+    effort: {
+      builder: 'medium',
+      prd: 'medium',
+      design: 'high',
+      review: 'max',
+      'reality-check': 'high',
+      'lesson-extractor': 'low',
+      'security-escalation': 'high',
+    },
     deploy: { enabled: false, command: [], url: '', smoke: [] },
     extractTests: true,
     chaos: 1,
@@ -320,6 +343,25 @@ export function validateConfig(input) {
     const chaos = requirePositiveInteger(source.chaos, 'chaos');
     if (chaos > 3) throw new ConfigError(`chaos must be 1, 2 or 3; got ${chaos} (DESIGN.md §13.4).`);
     merged.chaos = chaos;
+  }
+
+  if ('effort' in source) {
+    const effort = requireObject(source.effort, 'effort');
+    // Keyed by the phase names the driver already uses, so there is no mapping table between
+    // this and PHASE_PERMISSIONS to drift apart. An unknown phase is an error for the reason
+    // every unknown key here is: an effort nobody applies is a setting that silently does
+    // nothing, and an unattended run acts on this file for hours.
+    rejectUnknownKeys(effort, new Set(Object.keys(defaults.effort)), 'effort');
+    /** @type {Record<string, string>} */
+    const merged_ = { ...defaults.effort };
+    for (const [phase, level] of Object.entries(effort)) {
+      const value = requireString(level, `effort.${phase}`);
+      if (!EFFORT_LEVELS.includes(value)) {
+        throw new ConfigError(`effort.${phase} must be one of ${EFFORT_LEVELS.join(', ')}, got ${value}`);
+      }
+      merged_[phase] = value;
+    }
+    merged.effort = merged_;
   }
 
   if ('deploy' in source) {

@@ -95,6 +95,7 @@ export class RunManifestError extends Error {
  *   plugin: { name: string, version: string },
  *   configHash: string,
  *   models: Record<string, string>,
+ *   effort: Record<string, string>,
  *   toolchain: { name: string, detected: boolean, evidence: string },
  *   capabilities: { declared: string[], detected: string[], resolved: string[] },
  *   tools: Record<string, string>
@@ -185,6 +186,7 @@ function requireStringList(value, field) {
  *   pluginVersion: string,
  *   config: unknown,
  *   models: Record<string, string>,
+ *   effort: Record<string, string>,
  *   toolchain: { name: string, detected: boolean, evidence: string },
  *   capabilities: { declared: string[], detected: string[], capabilities: string[] },
  *   tools: Record<string, string>
@@ -214,6 +216,7 @@ export function buildRunManifest(input) {
     },
     configHash: configHash(input.config),
     models: requireStringMap(input.models, 'models'),
+    effort: requireStringMap(input.effort, 'effort'),
     toolchain: {
       name: requireNonEmptyString(toolchain.name, 'toolchain.name'),
       detected: toolchain.detected,

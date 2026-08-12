@@ -87,3 +87,32 @@ describe('a real claude -p child', { skip: ARMED ? false : 'DARE_LIVE is not set
     assert.equal(reparsed.text, result.text);
   });
 });
+
+describe('per-phase reasoning effort reaches a real child', { skip: ARMED ? false : 'DARE_LIVE is not set' }, () => {
+  // `claudeArgs` is the function whose defect bought this tier: `--allowedTools` is variadic,
+  // the prompt followed it, and the CLI read the prompt as one more tool name. Every phase but
+  // `builder` was dead and no assertion about the array could have found it. `--effort` is a
+  // new flag in that same array, owned by the same other binary, so it gets one live check.
+
+  it('accepts every level the config will let an operator write', { timeout: LIVE_TIMEOUT }, () => {
+    // Not just one. A level the CLI rejects makes the child exit non-zero on startup, which an
+    // unattended run would report as a failed phase rather than as a bad setting.
+    for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
+      const result = spawnClaude({
+        prompt: 'Reply with exactly the word: pineapple. No punctuation, no explanation.',
+        model: CHEAP_MODEL,
+        phase: 'reality-check',
+        effort,
+        cwd: process.cwd(),
+        env: process.env,
+      });
+      assert.equal(result.ok, true, `--effort ${effort} was refused: ${result.raw.slice(0, 400)}`);
+      assert.equal(result.text.toLowerCase().includes('pineapple'), true, `--effort ${effort}: ${result.text}`);
+    }
+  });
+
+  it('still works when no effort is given, so the flag is optional rather than required', { timeout: LIVE_TIMEOUT }, () => {
+    const result = ask('Reply with exactly the word: pineapple. No punctuation, no explanation.');
+    assert.equal(result.ok, true, result.raw.slice(0, 400));
+  });
+});

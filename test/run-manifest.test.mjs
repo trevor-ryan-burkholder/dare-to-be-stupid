@@ -48,6 +48,7 @@ const input = (overrides = {}) => ({
   pluginVersion: '0.17.0',
   config: { maxIterations: 25, tokenCeiling: 4_000_000 },
   models: { builder: 'claude-sonnet-5', reviewer: 'claude-opus-5' },
+  effort: { builder: 'medium', review: 'max' },
   toolchain: { name: 'node', detected: true, evidence: 'file package.json' },
   capabilities: {
     declared: ['api'],
@@ -94,6 +95,7 @@ describe('buildRunManifest', () => {
       plugin: { name: 'dare-to-be-stupid', version: '0.17.0' },
       configHash: configHash({ maxIterations: 25, tokenCeiling: 4_000_000 }),
       models: { builder: 'claude-sonnet-5', reviewer: 'claude-opus-5' },
+      effort: { builder: 'medium', review: 'max' },
       toolchain: { name: 'node', detected: true, evidence: 'file package.json' },
       capabilities: {
         declared: ['api'],

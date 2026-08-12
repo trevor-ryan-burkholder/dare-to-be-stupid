@@ -1533,6 +1533,7 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `prdModel` | `claude-sonnet-5` | Phase 0 PRD authoring |
 | `styleModel` | `claude-fable-5` | Junkion narration + "dare me" idea invention; pure flavor, never touches gate logic |
 | `lessonModel` | `claude-sonnet-5` | the cold lesson extractor (§13.8); advisory, so it never needs the strongest model |
+| `effort` | see §10.2 | reasoning effort per phase (`low`…`max`), keyed by the phase names the driver uses |
 | `qualityPlugins` | `["impeccable", "knip", "semgrep"]` | auto-installed in Phase 1 (§5); impeccable required, the other two degrade to a warning |
 | `deploy.enabled` | **false** | preview-only when enabled; never prod |
 | `deploy.command` | `[]` | argv array run **before** the ship decision when `enabled`; a string is refused (§10.1) |
@@ -1550,6 +1551,43 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 `init.mjs` refuses to initialize against a remote matching `prod`, `production`, `client`,
 or `customer`, and requires a clean working tree (the ratchet's `reset --hard` destroys
 uncommitted work).
+
+### 10.2 Per-phase reasoning effort
+
+`--effort` takes `low`, `medium`, `high`, `xhigh` or `max`, and it is a per-phase knob of exactly
+the same shape as the per-phase models this section already carries. Verified against a live
+child rather than read from help text: every level is accepted by `claude -p`, and the dial
+visibly moves — 232 versus 394 thinking tokens on one trivial prompt at `low` and `max`.
+
+| phase | default | why |
+|---|---|---|
+| `review` | **`max`** | §1.1: the smartest thing in the loop should be the one deciding |
+| `design` | `high` | design mistakes compound across every later iteration |
+| `reality-check` | `high` | it can end a run `ABORTED` |
+| `security-escalation` | `high` | it can trigger a hard reset and a regression objective |
+| `builder`, `prd` | `medium` | they iterate; the ratchet and the gates are what judge them |
+| `lesson-extractor` | `low` | advisory, and returning `null` is an explicitly cheap answer |
+
+**The judge is pinned at `max` and this is not a cost decision.** A verdict that gets cheaper as
+a run gets more desperate is satisficing installed at the auditor, which is the single failure
+§1.1 exists to prevent.
+
+**It is recorded in `run.json`**, beside `models`, for the reason that field exists: two runs are
+comparable only if what drove them is written down, and effort changes how hard every child
+thinks.
+
+**The flag sits before `--allowedTools`, and that placement is deliberate.** That flag is
+variadic; anything following it is read as one more tool name. It is the defect that killed every
+phase but `builder`, and it is why `test/live/claude-child.live.test.mjs` asserts **every** level
+against a real child rather than asserting the array (§11.1).
+
+> **Not built: dynamic escalation.** Raising effort after `n` stalled iterations is the obvious
+> next move, and the trigger already exists — `race.after` and `realityCheck.after` both key off
+> the same counter. Three constraints if it is ever built. It may only ever **escalate**: §13
+> rejects a threshold that learns its way downward, and an effort dial that drops when a run
+> *looks* healthy is that defect wearing a new hat. The **reviewer is never dynamic**, for the
+> reason its default is `max`. And it must be measured before it is trusted — "raise effort on a
+> stall" is a hypothesis, and this repository has been wrong about two of those in a single day.
 
 ### 10.1 Deploy — synchronous, fixed-host, and verified before the tag
 

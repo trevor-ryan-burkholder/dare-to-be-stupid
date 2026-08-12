@@ -58,6 +58,15 @@ describe('defaultConfig', () => {
       styleModel: 'claude-fable-5',
       lessonModel: 'claude-sonnet-5',
       qualityPlugins: ['impeccable', 'knip', 'semgrep'],
+      effort: {
+        builder: 'medium',
+        prd: 'medium',
+        design: 'high',
+        review: 'max',
+        'reality-check': 'high',
+        'lesson-extractor': 'low',
+        'security-escalation': 'high',
+      },
       deploy: { enabled: false, command: [], url: '', smoke: [] },
       extractTests: true,
       chaos: 1,
@@ -385,4 +394,39 @@ describe('riskyRemoteWord', () => {
       assert.equal(riskyRemoteWord(remote), null);
     });
   }
+});
+
+describe('per-phase reasoning effort', () => {
+  // Verified against a live child rather than read from help text: `--effort low` and
+  // `--effort max` are both accepted by `claude -p` and visibly move the thinking-token count
+  // (232 vs 394 on the same trivial prompt).
+
+  it('pins the judge at max, because the smartest thing in the loop should be the one deciding', () => {
+    // §1.1. A verdict that gets cheaper as a run gets more desperate is satisficing installed
+    // at the auditor, which is the one place this whole architecture exists to prevent it.
+    assert.equal(defaultConfig().effort.review, 'max');
+  });
+
+  it('gives every phase an effort, so a new one is a decision rather than a default', () => {
+    for (const phase of ['builder', 'prd', 'design', 'review', 'reality-check', 'lesson-extractor', 'security-escalation']) {
+      assert.equal(typeof defaultConfig().effort[phase], 'string', `${phase} has no effort`);
+    }
+  });
+
+  it('refuses a level the CLI does not know', () => {
+    // An unrecognised level would be passed straight to another binary's argv. Failing here
+    // costs a startup; failing there costs an unattended run.
+    assert.throws(() => validateConfig({ effort: { builder: 'ludicrous' } }), /effort\.builder/);
+  });
+
+  it('refuses a phase nobody spawns', () => {
+    // An effort nobody applies is a setting that silently does nothing.
+    assert.throws(() => validateConfig({ effort: { summariser: 'high' } }), /effort/);
+  });
+
+  it('merges one phase without discarding the rest', () => {
+    const effort = validateConfig({ effort: { builder: 'xhigh' } }).effort;
+    assert.equal(effort.builder, 'xhigh');
+    assert.equal(effort.review, 'max', 'overriding one phase dropped the others');
+  });
 });
