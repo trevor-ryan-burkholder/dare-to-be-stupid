@@ -1,8 +1,7 @@
 # START HERE — handoff, 11 August 2026
 
-**State:** `main` at `0.39.0`, pushed, working tree clean. `npm test` 1371 pass, `npm run
-test:integration` 12 pass, `npm run test:live` correctly fails unarmed. `npm run release-check`
-clean.
+**State:** `main` at `0.40.0`. `npm test` 1378 pass, `npm run test:integration` 12 pass, `npm run
+test:live` correctly fails unarmed. `npm run release-check` clean.
 
 ## There is a run in progress that this session did not see finish
 
@@ -42,12 +41,15 @@ did into the run-3 section below, whichever way it went.
 | item | state |
 |---|---|
 | **D2 case E — deliberate regression** | **do this next.** The ratchet now advances, so a forced regression is finally reachable. `DOGFOOD.md` has the script. Never exercised. |
-| D2 cases A, B, C, F | prepared in `DOGFOOD.md`, not run |
-| A8 carry optimisation | deferred by its own correction until a baseline exists; run 3 may be it |
+| D2 case F — security regression | **precondition now met.** `pins.json` is non-empty for the first time; see the pin finding below |
+| D2 cases A, B, C | prepared in `DOGFOOD.md`, not run |
+| A8 carry optimisation | **do not start without reading the pin finding below.** `PRD-3.1` is pinned to a *test file*, which the carry would let a source regression slip through |
 | A3 held-out oracle | deferred behind D2 and B2's driver-owned test invocation |
 | C5 differentiated race candidates | cheap, but ordered behind a live test of a `claude -p` child in a race worktree |
 | architect toolchain declaration | **residual of B3.** Node is first in `TOOLCHAINS`, so a repo with both `package.json` and a `.csproj` resolves to node silently |
 | mutation provisioning | **residual of A5.** Nothing installs `@stryker-mutator/vitest-runner`; the gate fails on a missing runner rather than a defect |
+| `assumptions.json` run attribution | **new, found in run 3, unfixed.** Carried across runs but keyed by `iteration`, which restarts per run — run 2's `iteration: 2` and run 3's are indistinguishable. Same shape as the C2 brief collision |
+| `gate-integrity` vs a vacuous branch | **new, unverified.** The builder found an import-edges test that could never fail; the gate bans weak matchers, not assertion-free branches |
 | A9's tier-3 check | written, never run: `DARE_LIVE=1 npm run test:live` |
 
 ## A finding about the generated app, not about the plugin
@@ -108,6 +110,90 @@ advisory: unpinned remote code execution in CI, outside the `npm ci` dependency 
 Nothing about the reviewer prompt was changed for this. §1.1's bet — that a cold, hostile,
 separate-process auditor with no build log outperforms the builder's own judgement — is now
 **measured**.
+
+## Five more findings, read out of run 3's `.dare/` while it was still running
+
+Free. No spend, nothing in that repository touched — `cat` on the machine state while iteration 2's
+builder was mid-flight. Three of the five close questions this file has carried for days.
+
+### The `ci` gate demanded a browser step from a browserless project (fixed 0.40.0)
+
+`toolchain.ci` (`scripts/toolchains/node.mjs`) required `/\bplaywright\b/` **unconditionally**, so
+on this `api, persistent-storage` project the loop declined the `e2e` gate with its full written
+reason, printed it to the operator, and then failed the `ci` gate for not running that same step.
+Run 2's log shows it: `gates failed: quality:semgrep, ci, observability`. **No honest workflow
+could satisfy it.**
+
+The builder did not stall. It complied, and wrote down why — `.dare/assumptions.json`:
+
+> *"the brief's own `e2e` gate says a CLI/library/API project has no applicable e2e … yet the `ci`
+> gate wants the workflow to run an e2e step regardless"* → *"added an `e2e` step to ci.yml running
+> `npx playwright test` … marked `continue-on-error: true`"*
+
+Run 3's cold panel then reported that step as **"a step that always reports success by
+construction"**. The loop manufactured the defect it caught, and every component behaved as
+designed while doing it. This is the `e2e`-fails-a-CLI-forever bug from item 5, surviving one level
+down because that fix filtered the gate *table* and not the CI *command list*.
+
+Fixed by filtering the required operations through the same `gateApplies` table, with the dropped
+requirement named in the gate detail. `DESIGN.md` §4.2. Nine tests. Two notes:
+
+- **Omitting `capabilities` filters nothing.** A caller that forgets over-applies CI rather than
+  silently dropping a required step — and `[]` is a different statement from `undefined`, so both
+  are asserted.
+- **The first structural test was a fraud and is worth the warning.** The wiring is unreachable
+  from a unit test (`gateTree` is inside `main`; `driveRun` takes `gates` injected), so a grep test
+  guards the call site. Version one asserted the *source line* contained `capabilities` — and
+  passed with the call site reverted, because `applicableGates(staticGates(dir, { run: shell }),
+  capabilities)` still contains the word. It now balances parentheses to isolate the call's own
+  arguments, and was verified by reverting the call site and watching it fail. **A structural test
+  matching the wrong text reports coverage it does not have.**
+
+### A4's foundation holds — a live reviewer produced a real pin
+
+This file said no pin had ever been created by a real reviewer, and that A4 silently protects
+nothing if evidence lands on blank lines. `.dare/pins.json`:
+
+```
+"id": "DoD-2-security", "evidence": "src/http/router.js:266",
+"snippet": "throw new RouteNotFoundError(`no route for ${method} ${path}`);"
+```
+
+Real executable code, fingerprinted — not a signature, not a blank line. **Weak but not wrong**,
+exactly the outcome predicted. And **Case F's precondition is satisfied for the first time**:
+`pins.json` is non-empty, so the security-regression scenario is now runnable.
+
+### F4 holds — `lessons.json` filled with a condition, not a generality
+
+The standing instruction was to read it after a real run and **delete it if it had filled with
+generalities**. It has not. One lesson, `uses: 1`, `introduced: 1, resolved: 3`, triggers
+`console.log`, `json.stringify`, `logger.js`, `observability`, `structured logging` — concrete
+tokens that appear in the failure it came from. That instruction does not need executing.
+
+### A8 is now blocked on a hazard, not only on ordering
+
+`PRD-3.1`'s requirement pin is evidenced by **a test file**: `tests/perf.test.js:49`. Requirement
+fingerprints cover the whole evidenced file, so the source that satisfies the requirement can
+regress while `tests/perf.test.js` sits untouched, the fingerprint holds, and the requirement is
+not re-litigated. Harmless today because A8's carry half is unbuilt — the fail-closed half only
+fires when the target stops resolving. **Decide the test-file-evidence case before building the
+carry.**
+
+Second reason to doubt the saving: three of five requirement pins cite `src/http/router.js`, the
+busiest file in the tree, and all three therefore share one fingerprint. On this project the carry
+would invalidate almost every iteration and save nearly nothing.
+
+### `.dare/assumptions.json` cannot say which run an entry came from (unfixed)
+
+It is carried across runs but keyed by `iteration`, and iteration numbering restarts every run. It
+currently holds run 2's `iteration: 2` and `iteration: 4` entries, and run 3's `iteration: 2` will
+land beside them indistinguishably. **Same defect shape as the brief collision C2 fixed**, in a
+file C2's carried-forward list never covered. Left alone deliberately — it is its own slice.
+
+One more thing that file records, worth checking: iteration 4's entry is the builder discovering
+that `tests/boundary.test.js`'s import-edges test *"could never fail regardless of its imports"*
+for leaf files, and adding a real assertion so red-evidence was satisfiable. `gate-integrity` bans
+weak matchers; whether it can catch an assertion-free branch is **unverified**.
 
 ## Verified live
 

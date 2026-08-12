@@ -37,7 +37,7 @@ import {
 } from './capabilities.mjs';
 import { loadConfig } from './config.mjs';
 import { checkContextBudget, measurePrompt } from './context-budget.mjs';
-import { applicableGates } from './gate-policy.mjs';
+import { applicableGates, gateApplies } from './gate-policy.mjs';
 import { hasMeaningfulHistory, historyContext } from './history.mjs';
 import { integrityGate } from './integrity.mjs';
 import {
@@ -1761,10 +1761,28 @@ function anySourceMatches(dir, depth, predicate) {
  * the gate cannot collect from. One source now, and a test asserting each pattern matches its
  * own operation's command.
  *
+ * The required list is then filtered by the same capability table as the gates themselves
+ * (§4.2), and that filter is a defect fix observed live. `toolchain.ci` requires a Playwright
+ * step unconditionally, so on an api/persistent-storage project — one whose `e2e` *gate* had
+ * just been declined as inapplicable, with a written reason printed to the operator — the `ci`
+ * gate went on demanding a browser runner the project has no use for. It cannot be satisfied
+ * honestly, so a builder satisfies it dishonestly: dogfood run 2's `.dare/assumptions.json`
+ * records the builder reasoning about exactly this contradiction and resolving it with
+ * `npx playwright test` under `continue-on-error: true`, which run 3's cold panel then reported
+ * as "a step that always reports success by construction". The loop manufactured the defect it
+ * caught. This is the same shape as the bug §4.2 was written to fix, surviving in the CI
+ * command list because item 5 filtered the gate table and not this.
+ *
+ * `capabilities` is optional and omitting it filters nothing, which is the safe direction: a
+ * caller that forgets over-applies CI rather than silently dropping a required step. Passing
+ * `[]` is a different statement — a project with no capabilities at all — and does filter.
+ *
  * @param {string} cwd
- * @returns {{ workflows: string[], covered: string[], missing: string[] }}
+ * @param {readonly string[] | null} [capabilities] the resolved set (§3.7), or null for no filter
+ * @returns {{ workflows: string[], covered: string[], missing: string[],
+ *            excluded: { operation: string, why: string }[] }}
  */
-export function inspectCiWorkflows(cwd) {
+export function inspectCiWorkflows(cwd, capabilities = null) {
   const workflowDir = path.join(cwd, '.github', 'workflows');
   const workflows = existsSync(workflowDir)
     ? readdirSync(workflowDir).filter((name) => /\.ya?ml$/.test(name)).sort()
@@ -1784,10 +1802,20 @@ export function inspectCiWorkflows(cwd) {
   }
   const text = steps.join('\n');
 
-  const required = resolveToolchain(cwd).toolchain.ci;
+  const declared = resolveToolchain(cwd).toolchain.ci;
+
+  /** @type {{ operation: string, why: string }[]} */
+  const excluded = [];
+  const required = declared.filter((entry) => {
+    if (capabilities === null) return true;
+    const verdict = gateApplies(entry.operation, capabilities);
+    if (!verdict.applies) excluded.push({ operation: entry.operation, why: verdict.why });
+    return verdict.applies;
+  });
+
   const covered = required.filter((entry) => entry.pattern.test(text)).map((entry) => entry.operation);
   const missing = required.filter((entry) => !covered.includes(entry.operation)).map((entry) => entry.operation);
-  return { workflows, covered, missing };
+  return { workflows, covered, missing, excluded };
 }
 
 /**
@@ -1892,16 +1920,27 @@ export function observabilityGate(cwd, options = {}) {
  * (DESIGN.md §4 lines 3 and 4).
  *
  * @param {string} cwd
- * @param {{ run?: import('./plugins.mjs').Runner, probeTimeoutMs?: number }} [options]
+ * @param {{ run?: import('./plugins.mjs').Runner, probeTimeoutMs?: number,
+ *          capabilities?: readonly string[] | null }} [options]
+ *        `capabilities` filters which CI steps are required, exactly as it filters the gates
+ *        themselves; omitting it requires all of them. See `inspectCiWorkflows`.
  * @returns {GateResult[]}
  */
 export function staticGates(cwd, options = {}) {
-  const ci = inspectCiWorkflows(cwd);
+  const ci = inspectCiWorkflows(cwd, options.capabilities ?? null);
 
   const readme = isSubstantial(path.join(cwd, 'README.md'), 200);
   const contract = isSubstantial(path.join(cwd, 'docs', 'api-contract.md'), 200);
 
   const ciOk = ci.workflows.length > 0 && ci.missing.length === 0;
+
+  // A requirement that was dropped is reported next to the ones that were met. An operator
+  // reading `running build, lint, types, unit` has no way to tell a project that needs four
+  // steps from one that needs five and is being let off the fifth.
+  const notRequired =
+    ci.excluded.length > 0
+      ? `; not required here: ${ci.excluded.map((entry) => `${entry.operation} (${entry.why})`).join('; ')}`
+      : '';
 
   return [
     {
@@ -1909,10 +1948,10 @@ export function staticGates(cwd, options = {}) {
       ok: ciOk,
       status: ciOk ? 0 : 1,
       detail: ciOk
-        ? `${ci.workflows.length} workflow(s) running ${ci.covered.join(', ')}`
+        ? `${ci.workflows.length} workflow(s) running ${ci.covered.join(', ')}${notRequired}`
         : ci.workflows.length === 0
           ? 'no workflow under .github/workflows'
-          : `workflows exist but never run: ${ci.missing.join(', ')}`,
+          : `workflows exist but never run: ${ci.missing.join(', ')}${notRequired}`,
     },
     {
       name: 'docs',
@@ -2741,7 +2780,11 @@ export function main(argv, io = {}) {
       // The static gates are filtered by the same table as the command gates. `observability`
       // is the one that moves: a CLI has no health endpoint to answer, and the gate was
       // failing it for not having one.
-      ...applicableGates(staticGates(dir, { run: shell }), capabilities).gates,
+      //
+      // `ci` stays universal — the validation set has to run somewhere — but *which* steps it
+      // demands is filtered by the same capabilities, which is why they are passed in as well
+      // as applied outside. Without that, a browserless project could not satisfy `ci` at all.
+      ...applicableGates(staticGates(dir, { run: shell, capabilities }), capabilities).gates,
       redEvidenceGate(evidence),
     ];
     // Withheld rather than blocked. An unproven test earns no protection from the ratchet,

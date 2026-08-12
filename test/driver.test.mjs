@@ -2390,6 +2390,121 @@ describe('staticGates', () => {
     assert.equal(staticGates(dir).find((gate) => gate.name === 'ci')?.ok, false);
   });
 
+  /**
+   * The whole validation set except the browser step - what an honest api project's CI
+   * looks like.
+   */
+  const BROWSERLESS_WORKFLOW = [
+    'on: push',
+    'jobs:',
+    '  check:',
+    '    steps:',
+    '      - run: npm run build',
+    '      - run: npm run lint',
+    '      - run: npm run typecheck',
+    '      - run: npx vitest run',
+  ].join('\n');
+
+  it('does not require a browser step in CI from a project with no browser', () => {
+    // The defect, as observed live. `toolchain.ci` requires Playwright unconditionally, so an
+    // api project whose `e2e` gate had just been declined as inapplicable still could not
+    // satisfy `ci` - not by any honest workflow. Dogfood run 2's `.dare/assumptions.json`
+    // records the builder reasoning about that exact contradiction and resolving it with
+    // `npx playwright test` under `continue-on-error: true`; run 3's cold panel then reported
+    // that step as one that always succeeds by construction. The loop built the defect it caught.
+    const dir = repoWith({ '.github/workflows/ci.yml': BROWSERLESS_WORKFLOW });
+    const gate = staticGates(dir, { capabilities: ['api', 'persistent-storage'] }).find((g) => g.name === 'ci');
+    assert.equal(gate?.ok, true, `expected ci to pass without a browser step, got: ${gate?.detail}`);
+  });
+
+  it('names the requirement it dropped, and why, in the ci detail', () => {
+    // A skip nobody can read is a skip nobody can audit. `running build, lint, types, unit`
+    // alone does not distinguish a project that needs four steps from one being let off a fifth.
+    const dir = repoWith({ '.github/workflows/ci.yml': BROWSERLESS_WORKFLOW });
+    const gate = staticGates(dir, { capabilities: ['api'] }).find((g) => g.name === 'ci');
+    assert.equal(gate?.detail.includes('not required here: e2e'), true, `got: ${gate?.detail}`);
+    assert.equal(gate?.detail.includes('none of web-ui, desktop-ui'), true, `got: ${gate?.detail}`);
+  });
+
+  it('still requires the browser step in CI from a project that has a browser', () => {
+    // The benign neighbour. A filter that dropped `e2e` for everybody would read exactly like
+    // this fix from a green suite, and would have removed the check rather than scoped it.
+    const dir = repoWith({ '.github/workflows/ci.yml': BROWSERLESS_WORKFLOW });
+    const gate = staticGates(dir, { capabilities: ['web-ui'] }).find((g) => g.name === 'ci');
+    assert.equal(gate?.ok, false);
+    assert.equal(gate?.detail.includes('never run: e2e'), true, `got: ${gate?.detail}`);
+  });
+
+  it('drops only the conditional step, never a universal one', () => {
+    // `ci` itself stays universal - the validation set has to run somewhere. What is filtered
+    // is which steps it demands, and only the gates §4.2 marks conditional may be dropped.
+    const inspected = inspectCiWorkflows(repoWith({ '.github/workflows/ci.yml': 'on: push' }), ['api']);
+    assert.deepStrictEqual(inspected.missing, ['build', 'lint', 'types', 'unit']);
+    assert.deepStrictEqual(
+      inspected.excluded.map((entry) => entry.operation),
+      ['e2e'],
+    );
+  });
+
+  it('requires every step when no capabilities are supplied', () => {
+    // The safe direction, asserted rather than assumed: a caller that forgets to thread
+    // capabilities over-applies CI. The opposite default would silently drop a required step,
+    // and a gate that quietly stops being required is the failure this repo does not get to ship.
+    const inspected = inspectCiWorkflows(repoWith({ '.github/workflows/ci.yml': BROWSERLESS_WORKFLOW }));
+    assert.deepStrictEqual(inspected.missing, ['e2e']);
+    assert.deepStrictEqual(inspected.excluded, []);
+  });
+
+  it('treats a project with no capabilities at all as browserless', () => {
+    // Distinct from omitting the argument. `[]` is an answer - a CLI or a library - and it
+    // filters; `undefined` is the absence of one, and it does not.
+    const inspected = inspectCiWorkflows(repoWith({ '.github/workflows/ci.yml': BROWSERLESS_WORKFLOW }), []);
+    assert.deepStrictEqual(inspected.missing, []);
+    assert.deepStrictEqual(
+      inspected.excluded.map((entry) => entry.operation),
+      ['e2e'],
+    );
+  });
+
+  it('passes capabilities at every call site in the driver, not just where a test can reach', () => {
+    // The functions above are unit-testable; the wiring is not. `gateTree` lives inside `main`
+    // and `driveRun` receives `gates` as an injected effect, so no unit test executes the real
+    // call - which means reverting it to `staticGates(dir, { run: shell })` leaves the whole
+    // suite green while every browserless project silently goes back to failing `ci` forever.
+    // Asserted structurally instead, in the same shape as the run manifest's no-reader test.
+    // The first version of this test read the whole source line and passed with the call site
+    // reverted, because `applicableGates(staticGates(dir, { run: shell }), capabilities)` still
+    // contains the word `capabilities` - just not as an argument to the call being checked. So
+    // the arguments are isolated by balancing parentheses. A structural test that matches the
+    // wrong text is worse than no test: it reports coverage it does not have.
+    const source = readFileSync(new URL('../scripts/driver.mjs', import.meta.url), 'utf8');
+
+    /** @type {string[]} */
+    const argumentLists = [];
+    const call = 'staticGates(';
+    for (let at = source.indexOf(call); at !== -1; at = source.indexOf(call, at + 1)) {
+      if (source.slice(0, at).endsWith('export function ')) continue;
+      let depth = 0;
+      let end = at + call.length - 1;
+      do {
+        if (source[end] === '(') depth += 1;
+        else if (source[end] === ')') depth -= 1;
+        end += 1;
+      } while (depth > 0 && end < source.length);
+      argumentLists.push(source.slice(at + call.length, end - 1));
+    }
+
+    assert.equal(argumentLists.length > 0, true, 'staticGates is no longer called from the driver at all');
+    for (const args of argumentLists) {
+      assert.equal(
+        args.includes('capabilities'),
+        true,
+        `staticGates is called without capabilities, so ci will demand a browser step from a ` +
+          `project with no browser: staticGates(${args})`,
+      );
+    }
+  });
+
   it('finds the start command only when the package really declares one', () => {
     assert.equal(startCommand(repoWith({ 'package.json': '{"scripts":{"start":"node server.js"}}' })), 'npm start');
     assert.equal(startCommand(repoWith({ 'package.json': '{"scripts":{"build":"tsc"}}' })), null);

@@ -649,6 +649,33 @@ reason and listed in the Build Brief as `does not apply - …`. A builder that c
 `e2e` is absent will helpfully add it back, and a gate list that quietly shrinks from ten
 entries to eight reads exactly like one that always had eight.
 
+**A universal gate may still have conditional contents**, and missing that cost a run. `ci` is
+universal and stays universal — the validation set has to run somewhere other than this loop —
+but *which steps* it demands comes from `toolchain.ci` (§3.8), and that list required a
+Playwright step unconditionally. So on an `api` project the loop declined the `e2e` gate with a
+written reason, printed it to the operator, and then failed the `ci` gate for not running the
+very step it had just called inapplicable. **No honest workflow could satisfy it.**
+
+That is the same defect this section opens with, one level down: a gate reporting the absence of
+something the project was never meant to have. It survived because the earlier fix filtered the
+gate *table* and not the CI *command list*.
+
+What it produced is worth recording, because it is the clearest evidence in this project of how
+an unsatisfiable gate actually fails. The builder did not stall — it complied. Dogfood run 2's
+`.dare/assumptions.json` has it reasoning about the contradiction in the plugin's own brief and
+resolving it by adding `npx playwright test` under `continue-on-error: true`, a step that cannot
+fail. Run 3's cold panel then reported that step as *"a step that always reports success by
+construction"*. The loop manufactured the defect it caught, and both halves worked exactly as
+designed while doing it.
+
+`inspectCiWorkflows` now filters the required operations through the same `gateApplies` table.
+The exclusion is reported in the gate's own detail — `not required here: e2e (…)` — for the
+reason the skip rule above gives: `running build, lint, types, unit` alone cannot be told apart
+from a project being let off a fifth step. **Omitting capabilities filters nothing**, so a caller
+that forgets over-applies CI rather than silently dropping a required step, and a structural test
+asserts every call site in the driver passes them — the wiring is unreachable from a unit test,
+because `gateTree` lives inside `main` and `driveRun` takes `gates` as an injected effect.
+
 Note what is *not* here: `quality:impeccable` keeps its own detection-based arming (§5.1),
 because it asks whether there is a UI to inspect right now, which is a question about the tree
 rather than about intent.
