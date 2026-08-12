@@ -1716,6 +1716,48 @@ export function writeMutationConfig(dareDir) {
 }
 
 /**
+ * Iteration 1's objective, which has to carry one fact the brief already states elsewhere.
+ *
+ * **Which runner the unit gate collects with has now been missed on every greenfield scenario
+ * this project has ever run** — twice on 10 August 2026 and again on run 6, where a builder
+ * spent 978 seconds and 14 million tokens writing a correct `node --test` suite that the gate
+ * collected nothing from. Each miss costs a whole iteration, and the loop recovers only on the
+ * next one, via the `no-tests` objective.
+ *
+ * The brief does say it. It says it well, in the toolchain section — third bullet, between the
+ * one about defining npm scripts and the one about module systems. That placement is the
+ * defect: it is the single most consequential sentence in the brief and it reads like trivia
+ * about layout. So iteration 1's objective now names the command too. Repetition is cheap; an
+ * iteration is not.
+ *
+ * The command is derived from the resolved toolchain rather than written here, so a second
+ * toolchain gets a true sentence instead of a Node one.
+ *
+ * @param {string | null} unitCommand the unit gate's command line, or null when it has none
+ * @returns {string}
+ */
+export function firstIterationTask(unitCommand) {
+  const base =
+    'Build what PRD.md specifies. Every gate listed below must pass from the first iteration, ' +
+    'so a missing script is a failing gate rather than an excuse.';
+  if (unitCommand === null || unitCommand === '') return base;
+  return (
+    `${base} Test ids come only from \`${unitCommand}\`: a suite that command cannot collect ` +
+    'scores zero however green your own test script looks, and the ratchet cannot advance on zero.'
+  );
+}
+
+/**
+ * @param {string} root
+ * @param {string} dareDir
+ * @returns {string | null} the unit gate's command line, or null when the toolchain declines it
+ */
+export function unitGateCommand(root, dareDir) {
+  const found = gateSummary(root, dareDir).gates.find((gate) => gate.name === 'unit');
+  return found === undefined ? null : found.command.join(' ');
+}
+
+/**
  * Every gate a toolchain will run, and every operation it has declined, with reasons.
  *
  * Two lists rather than one because they are read for different purposes: the gates go to the
@@ -2971,7 +3013,7 @@ export function main(argv, io = {}) {
     requiredIds,
     gateNames,
     alreadySpent: preLoop,
-    task: `Build what PRD.md specifies. Every gate listed below must pass from the first iteration, so a missing script is a failing gate rather than an excuse.`,
+    task: firstIterationTask(unitGateCommand(cwd, dareDir)),
     effects: {
       build: (brief) =>
         runChild({

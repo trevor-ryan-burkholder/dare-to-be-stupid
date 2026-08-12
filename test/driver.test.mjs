@@ -34,6 +34,8 @@ import {
   commandGates,
   dareIgnoreUpdate,
   ensureDareIgnored,
+  firstIterationTask,
+  unitGateCommand,
   ensurePlaywrightBrowsers,
   loadRedEvidence,
   playwrightConfigPresent,
@@ -2710,6 +2712,38 @@ describe('red-evidence', () => {
 // ---------------------------------------------------------------------------
 // Run state must never enter the target repository's history
 // ---------------------------------------------------------------------------
+
+describe('firstIterationTask', () => {
+  it('names the command test ids actually come from', () => {
+    // Missed on every greenfield scenario this project has run: 10 August twice, and run 6,
+    // where a builder spent 978 seconds and 14M tokens on a correct `node --test` suite the gate
+    // collected nothing from. The brief already said it - third bullet of the toolchain section,
+    // between npm scripts and module systems - which is the defect. It is the most consequential
+    // sentence in the brief and it read like trivia about layout.
+    const task = firstIterationTask('npx vitest run --reporter=json');
+    assert.equal(task.includes('npx vitest run --reporter=json'), true);
+    assert.equal(task.includes('scores zero'), true);
+    assert.equal(task.includes('Build what PRD.md specifies'), true, 'lost the original objective');
+  });
+
+  it('says nothing about a runner when the toolchain declines the unit gate', () => {
+    // The neighbour. A toolchain with no unit operation must not be handed a sentence naming a
+    // command that does not exist - which is what hardcoding vitest here would have produced.
+    assert.equal(firstIterationTask(null), firstIterationTask(''));
+    assert.equal(firstIterationTask(null).includes('Test ids come only from'), false);
+    assert.equal(firstIterationTask(null).includes('Build what PRD.md specifies'), true);
+  });
+});
+
+describe('unitGateCommand', () => {
+  it('reads the command from the resolved toolchain rather than assuming node', () => {
+    const dir = makeTempDir();
+    writeFileSync(path.join(dir, 'package.json'), '{"scripts":{"test":"vitest run"}}', 'utf8');
+    const command = unitGateCommand(dir, path.join(dir, '.dare'));
+    assert.equal(typeof command, 'string');
+    assert.equal(String(command).includes('vitest'), true, `got: ${command}`);
+  });
+});
 
 describe('dareIgnoreUpdate', () => {
   it('ignores the ratchet state in a .gitignore that does not cover it', () => {
