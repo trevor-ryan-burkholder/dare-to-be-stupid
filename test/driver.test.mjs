@@ -2753,6 +2753,16 @@ describe('dareIgnoreUpdate', () => {
     assert.equal(ignored.includes('.dare/assumptions.json'), true);
   });
 
+  it('ignores logs, because a reset destroys the run’s own record of the reset', () => {
+    // Measured in dogfood run 4. The operator's `> run4.log` lived in the repository, `git add -A`
+    // tracked it, and the hard reset in iteration 2 reverted it to its content at lastGoodCommit -
+    // erasing the evidence of the reset. Worse, git replaced the file rather than truncating it, so
+    // the shell's open descriptor pointed at an unlinked inode and every later line went nowhere.
+    // The terminal state of that run is unrecoverable.
+    const ignored = String(dareIgnoreUpdate('')).split('\n').map((line) => line.trim());
+    assert.equal(ignored.includes('*.log'), true);
+  });
+
   it('repairs a stanza written by an older build instead of declaring it covered', () => {
     // The reason the gap survived. The check tested only for `.dare/state.json`, so a repository
     // carrying the old stanza reported "already covered" forever and never received the newer

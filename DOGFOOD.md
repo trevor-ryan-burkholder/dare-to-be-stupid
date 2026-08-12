@@ -28,6 +28,24 @@
 > **`SHIPPED` would be the serious bug**: it would mean the panel passed an impossible
 > requirement.
 
+> **Run 4 executed case E and it passed on every criterion.** See `HANDOFF.md`. One instruction in
+> this file was wrong and cost the run's terminal state:
+>
+> **Never redirect the run's log into the repository.** The driver commits with `git add -A`, so a
+> log inside the tree becomes tracked, and a hard reset reverts it — destroying the record of the
+> reset itself. Worse, git *replaces* the file rather than truncating it, so the shell's open
+> descriptor is left on an unlinked inode and **every line written after the reset goes nowhere.**
+> Run 4's outcome had to be reconstructed from `.dare/` and the reflog.
+>
+> ```bash
+> # right: the log lives outside the tree
+> mkdir -p ~/dare-logs
+> node <plugin>/scripts/driver.mjs PRD.md --yes > ~/dare-logs/run5.log 2>&1
+> ```
+>
+> `*.log` is ignored from 0.49.0, which fixes it for new runs. The general rule stands anyway:
+> **anything you leave in the working tree is subject to `git add -A` and to a hard reset.**
+
 **Nothing else in this file has been run.** It was written so
 that an operator with an hour and a budget can execute it without re-deriving anything, which is
 what the brief asks for when Claude usage cannot be consumed: *"prepare reproducible dogfood

@@ -1,12 +1,66 @@
 # START HERE — handoff, 11 August 2026
 
-**State:** `main` at `0.46.0`, **ten commits ahead of `origin` and not pushed.** `npm test` 1390
-pass, `npm run test:integration` 12 pass, `npm run test:live` **8 of 8 armed and green** (it now has
-a first execution to compare against). `npm run release-check` clean.
+**State:** `main` at `0.49.0`, **not pushed.** `npm test` 1394 pass, `npm run test:integration` 12
+pass, `npm run test:live` **8 of 8 armed and green** (it now has a first execution to compare
+against). `npm run release-check` clean.
 
 **Everything left on the outstanding list is blocked on one of two things**, and neither is effort:
 a paid dogfood run (cases E and F), or the .NET SDK this machine does not have. The free work is
 done, and `break: 100` — the one open operator decision — was settled at 0.47.0.
+
+## Run 4: case E passed on every criterion. The ratchet reset a real run.
+
+**The mechanism the whole design exists for has now run end to end, in a live run, and done the
+right thing.** Not a fixture, not a hand-driven check — the driver did it.
+
+What was staged: a return value broken from outside the run (`body: row.body` → `body: ''`),
+committed, ceilings as run 3.
+
+What actually happened is better than what was staged:
+
+| criterion (`DOGFOOD.md` case E) | result |
+|---|---|
+| `bloopers.log` names the regressed id and a diff stat | **yes** — one record, iteration 2, with a 17-file diffstat |
+| the run performs a hard reset to `lastGoodCommit` | **yes** — `reflog`: `reset: moving to 14f6c95` |
+| the next brief's objective is the regression, *"Restore the tests listed below"* | **yes** — `iter-003.md`, verbatim, plus *"the ratchet is monotonic and 1 test(s) that passed earlier no longer pass, so the tree was reset to the last commit that held them"* |
+| nothing else proceeds that iteration; no reviewer called | **yes** — `iter-003.md` has a `### Regressions` section and **no Audit findings section at all** |
+
+**The regression it caught was not mine.** The builder repaired my injected one in 99 seconds during
+iteration 1 — worth knowing, since Phase 2 builds before Phase 4 ratchets, so an injected regression
+gets offered to the builder first. Then in iteration 2 the builder broke
+`tests/pdf.unit.test.js::pdf fit algorithm > throws ExportCapacityError when titles are too wide for
+the forced column count` **on its own**, while editing `src/pdf/render-titles.js`, and *that* is what
+the ratchet caught. An organic regression is stronger evidence than an injected one.
+
+**And the ratchet advanced inside a run for the first time: 93 → 98 ids.**
+
+Also observed, each for the first time:
+
+- **The reality-check breaker ran and was right.** `.dare/reality-check.md`: *"**unbuildable** — but
+  precisely one clause of one requirement is, and everything else is already built and green"*, with
+  98/98 tests passing, having driven the real server over HTTP. It isolated `PRD-4.1` by measurement.
+- **0.40.0 changed builder behaviour.** The blooper's diffstat shows `playwright.config.js | 10 -`
+  — the builder **deleted** the browser scaffolding once `ci` stopped demanding it, and rewrote
+  `ci.yml`. That is the oscillation ending.
+- **0.44.0 held**: no `installed chromium` line anywhere in run 4.
+- It did **not** ship (exit 1), which is correct.
+
+### The defect that nearly hid all of this
+
+`run4.log` ends mid-run with no terminal state, and the driver exited 1 having printed nothing after
+the reviews. The log was not truncated by a crash — **the hard reset reverted it.** The operator's
+`> run4.log` lived inside the repository because this project's own `DOGFOOD.md` said to, `git add -A`
+tracked it, and the reset restored its content as of `lastGoodCommit`. The blooper's own diffstat
+records the wound: `run4.log | 16 -` and `run.log | 50 -`.
+
+Worse than losing 16 lines: git **replaces** the file rather than truncating it, so the shell's open
+descriptor was left pointing at an unlinked inode and **every line written after the reset went
+nowhere.** Iterations 2 and 3 produced no visible output at all, and run 4's terminal state is
+unrecoverable — it had to be reconstructed from `.dare/`, `git log` and the reflog.
+
+Fixed at 0.49.0 by ignoring `*.log`, so the log is never tracked and the descriptor survives, and
+`DOGFOOD.md` now says to keep the log outside the tree. The general rule is the one to remember:
+**anything left in the working tree is subject to `git add -A` and to a hard reset.**
 
 ## Run 3 finished, and it found three gates the builder could not satisfy
 
@@ -166,7 +220,7 @@ details buries the one entry that mattered, and §8.3's whole value is that a re
 
 | item | state |
 |---|---|
-| **D2 case E — deliberate regression** | **detection is now verified on real data for free (see below); only the orchestration is left, and it costs money.** The repository is staged: 93-id ratchet intact, `lastGoodCommit` `f20434d`, suite 98 of 98. `DOGFOOD.md` has the script |
+| ~~**D2 case E — deliberate regression**~~ | **PASSED in run 4, on every criterion.** Reset performed, blooper written, regression brief issued, no reviewer called. The regression it caught was the builder's own, not the injected one |
 | D2 case F — security regression | **precondition now met.** `pins.json` is non-empty for the first time; see the pin finding below |
 | D2 cases A, B, C | prepared in `DOGFOOD.md`, not run |
 | A8 carry optimisation | **do not start without reading the pin finding below.** `PRD-3.1` is pinned to a *test file*, which the carry would let a source regression slip through |

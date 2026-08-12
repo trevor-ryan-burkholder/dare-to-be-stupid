@@ -1543,6 +1543,14 @@ const DARE_IGNORED_PATHS = [
   '.dare/reality-check.md',
   '.dare/pins.json',
   '.dare/assumptions.json',
+  // Not `.dare/` state, and here for a reason measured in dogfood run 4. The operator redirects
+  // the run's output into the repository — `DOGFOOD.md` said to — so `git add -A` tracked it, and
+  // the hard reset in iteration 2 **reverted the log to its state at `lastGoodCommit`**. That
+  // destroys the record of the reset itself. Worse, git replaces the file rather than truncating
+  // it, so the shell's open descriptor was left pointing at an unlinked inode and *every line
+  // written afterwards went nowhere* — the run's terminal state is unrecoverable. Ignored, the
+  // log is never tracked, the reset never touches it, and the descriptor survives.
+  '*.log',
 ];
 
 /** The explanation that goes above them. */
