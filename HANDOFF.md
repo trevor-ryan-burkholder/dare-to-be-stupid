@@ -1,6 +1,6 @@
 # START HERE — handoff, 12 August 2026
 
-**State:** `main` at `0.60.0`. `npm test` 1433 pass, `npm run test:integration` 12 pass,
+**State:** `main` at `0.64.0`. `npm test` 1433 pass, `npm run test:integration` 12 pass,
 `npm run test:live` 11 of 11 armed and green. `npm run release-check` clean.
 
 ## Open: 0.56.0 hands the builder an objective it cannot act on
@@ -59,6 +59,78 @@ What to know before using it:
 has ever deployed to a real droplet** — the ssh half is argv nobody has run. Treat it exactly as
 the .NET adapter is treated: correct by construction, unverified in the world. The first real use
 should be a throwaway box, watched.
+
+## Run 10: DoD-6 blocked the ship, the loop repaired what it named, and `removed` fired
+
+Case G again (`~/dare-dogfood/csvstat4`), same PRD, fresh tree, log at `~/dare-logs/run10.log`.
+**The only variable against run 9 was `DoD-6-adversarial-input`.**
+
+```
+BUDGET: iteration limit reached: 6 of 6
+iterations: 6  tokens: 41469901  cost: $29.4515  passing: 79   (0 quarantined)
+```
+
+**`DoD-6` failed in both panels and is a true positive.** It named two input classes, with exact
+inputs, exact outputs and `file:line` sites: `1e308 + 1e308` produced `"mean": null` at exit 0
+(true mean `1e308`, already printed as `min` and `max`), and `1e16, 1, -1e16` produced
+`"mean": 0` where the true mean is 1/3. Invalid UTF-8 collapsed two distinct values to
+`distinct: 1`.
+
+**And the loop repaired every one of them.** Verified independently against the final tree, by
+execution, not by reading the panel:
+
+| input | run 9 (shipped) | run 10 (refused, then repaired) |
+|---|---|---|
+| `printf 'a\n1e308\n1e308\n'` | — | `"mean": null` → **`1e+308`** |
+| `printf 'v\n1e16\n1\n-1e16\n'` | — | `"mean": 0` → **`0.3333333333333333`** |
+| `printf 'a,b\n1,"x\n2,y\n'` | **shipped: half the data at exit 0** | **`exit 3: unterminated quoted field`** |
+
+Compensated summation, and the cancellation case is now exact. **The tree run 10 refused to ship
+is materially better than the tree run 9 shipped**, on the same PRD, and the difference is one
+required id.
+
+The panels also converged **7 findings → 4**, and iteration 1's reviewer caught something no gate
+in this architecture can see: the packaged `bin` was **inert**. `npm pack`, `npm install -g`, then
+`csvstat data.csv` → zero bytes, exit 0, because `src/cli.ts:41` compared `import.meta.url`
+(realpath) against `process.argv[1]` (the bin symlink). Its own words: *"all six gates were run
+and are green — which is precisely the problem: every gate invokes `node dist/cli.js` and none
+invokes the shipped bin."* Reviewers also ran a 4000-case differential fuzz of the parser against
+a transcription of the state machine, and 300 cases against an independent Python reference,
+unprompted.
+
+### The `removed` pin verdict fired, for the first time
+
+This file said for two days that `removed` and `unknown` were unobserved and would need a PRD
+whose security element sits off the tested path. `removed` arrived on its own:
+
+```
+pinned security element DoD-2-security at package.json:18 did not re-verify; asking
+security-escalation: claude-opus-5 running on 1221 characters of prompt
+security regression: DoD-2-security at package.json:18
+```
+
+The pinned snippet was `"dependencies": {},` — the zero-runtime-dependency guarantee. The builder
+disturbed it, the cheap check failed, one scoped escalation child answered `removed`, a regression
+objective was issued, and the element is **`active` again with its snippet restored**. A4 now has
+`moved` (run 5) and `removed` (run 10) both measured end to end. `unknown` remains unobserved, and
+`bloopers.log` stayed empty — the security-regression path is separate from the ratchet's reset,
+which is worth knowing before looking for a blooper that will not be there.
+
+### What to fix next, and it is not `DoD-6`
+
+**Iterations 5 and 6 both died on `gates failed: mutation` and never reached a panel.** The
+repairs `DoD-6` provoked were therefore never re-judged, and the run ended `BUDGET` holding a tree
+that had probably earned a ship. Six iterations was enough when the bar was run 9's; it is not
+enough now that a real correctness line has to be satisfied *and* the mutation gate cleared on the
+same iteration.
+
+Two candidates, in order:
+
+1. **Raise `maxIterations` for the next case G run** — the cheapest possible test of whether this
+   is purely a budget effect. Run 10 was still improving when it stopped, exactly as run 5 was.
+2. **Look at whether the mutation gate is now the binding constraint.** It declined twice for "no
+   first-party source changed" and failed three times. A gate that blocks the panel on the very
+   iterations that repair a correctness finding is worth measuring before it is trusted.
 
 ## Run 9 shipped, and the panel had already proved it should not have
 
