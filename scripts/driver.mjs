@@ -1206,16 +1206,23 @@ export function driveRun(options) {
     // ---- Phase 4: ratchet ----------------------------------------------
     /** @type {Set<string>} */
     let passing;
+    // How many tests the reports contained at all, whatever their status. The ratchet needs it
+    // to tell "the runner collected nothing" from "everything failed", which are the same input
+    // — an empty passing set — and opposite conclusions. Run 6 reset 75 ids over the first.
+    let collected = 0;
     try {
       if (config.extractTests) {
         // Every runner's report contributes ids. A repo with both a unit suite and an
         // e2e suite has two, and the ratchet must hold both or it protects half the work.
         passing = new Set();
         for (const report of effects.readTestReports()) {
+          collected += parseReport(report, { rootDir }).tests.length;
           for (const id of extractTestIds(report, { rootDir })) passing.add(id);
         }
       } else {
         passing = new Set(loadState(dareDir).passing);
+        // Not report-derived, so it is not a collection failure and must not read as one.
+        collected = passing.size;
       }
     } catch (error) {
       // An unreadable report is not evidence that nothing regressed.
@@ -1223,7 +1230,7 @@ export function driveRun(options) {
     }
 
     const state = loadState(dareDir);
-    const decision = evaluateIteration(state, passing, { commit: null });
+    const decision = evaluateIteration(state, passing, { commit: null, collected });
 
     if (decision.action === 'reset') {
       appendBlooper(dareDir, {
@@ -1445,7 +1452,7 @@ export function driveRun(options) {
         ? `dare: iteration ${iterationNumber}`
         : `dare: iteration ${iterationNumber} (review outstanding)`,
     );
-    const advanced = evaluateIteration(state, passing, { commit });
+    const advanced = evaluateIteration(state, passing, { commit, collected });
     if (advanced.action === 'advance') saveState(dareDir, advanced.state);
 
     // Quarantine is not free, and this is the whole of what makes that true rather than a

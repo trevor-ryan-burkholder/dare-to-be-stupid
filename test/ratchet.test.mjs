@@ -228,6 +228,45 @@ describe('evaluateIteration rejects an empty result', () => {
   });
 });
 
+describe('evaluateIteration tells a collection failure from a regression', () => {
+  // Dogfood run 6 hard-reset a tree over all 75 of its protected ids. Not one test failed: the
+  // builder moved its suite back to `node --test`, the vitest report came back structurally
+  // empty ("No test suite found in file"), and every id was absent. Absent compared equal to
+  // regressed, so the loop destroyed an iteration's work to punish a fault the code had not
+  // committed - and, because the reset branch precedes gate reporting, told the operator
+  // "regression" rather than "the runner collected nothing".
+
+  it('rejects rather than resetting when the report contained no tests at all', () => {
+    const state = stateWith({ passing: ['a::1', 'b::2'], lastGoodCommit: 'aaaaaaa' });
+    const decision = evaluateIteration(state, [], { collected: 0 });
+    assert.equal(decision.action, 'reject');
+    assert.equal(decision.reason.includes('collection failure'), true, decision.reason);
+  });
+
+  it('still resets when tests really did run and the protected ones are gone', () => {
+    // The neighbour, and the reason this is a distinction rather than a reordering: a builder
+    // that genuinely breaks the whole suite must still be reset. §1.2's guarantee is kept.
+    const state = stateWith({ passing: ['a::1', 'b::2'], lastGoodCommit: 'aaaaaaa' });
+    const decision = evaluateIteration(state, [], { collected: 7 });
+    assert.equal(decision.action, 'reset');
+    assert.deepStrictEqual(decision.regressions, ['a::1', 'b::2']);
+  });
+
+  it('still resets when some tests collected and only the protected one vanished', () => {
+    const state = stateWith({ passing: ['a::1'], lastGoodCommit: 'aaaaaaa' });
+    const decision = evaluateIteration(state, ['c::3'], { collected: 1 });
+    assert.equal(decision.action, 'reset');
+    assert.deepStrictEqual(decision.regressions, ['a::1']);
+  });
+
+  it('keeps the old ordering when no count is supplied', () => {
+    // The conservative default: a caller that forgets keeps monotonicity's promise rather than
+    // quietly declining to reset. The driver is held to supplying it by a separate test.
+    const state = stateWith({ passing: ['a::1'], lastGoodCommit: 'aaaaaaa' });
+    assert.equal(evaluateIteration(state, []).action, 'reset');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // State persistence — a corrupt ratchet must stop the run, not restart it empty
 // ---------------------------------------------------------------------------

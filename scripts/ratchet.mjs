@@ -271,14 +271,43 @@ export function formatBlooperRecord(event) {
  * passing tests and loses an old one is still a reset — DESIGN.md §8, regressions outrank
  * everything. Only then is an empty result rejected.
  *
+ * **Except when nothing was collected at all, which is not a regression and must not be read
+ * as one.** Dogfood run 6 ended with all 75 protected ids "regressing" simultaneously and the
+ * tree hard-reset, because the builder switched its suite back to `node --test` and the vitest
+ * report came back structurally empty — `numTotalTests: 0`, "No test suite found in file". Not
+ * one test failed. The runner collected nothing, every id was absent, and absent compared
+ * equal to regressed.
+ *
+ * The distinction is available and was simply not passed in: the driver already separates
+ * `passing` from `nonPassing` while parsing the report. `collected` is their total, so
+ * `collected === 0` means *the report contained no tests whatsoever*, which is a broken
+ * collector and not evidence about the code. `collected > 0` with nothing passing is the real
+ * catastrophe and still resets, so §1.2's guarantee is kept rather than traded away.
+ *
+ * Omitting `collected` preserves the old ordering, which is the conservative direction for a
+ * caller that forgets: it keeps monotonicity's promise rather than quietly declining to reset.
+ * A structural test asserts the driver supplies it.
+ *
  * @param {RatchetState} state
  * @param {Iterable<string>} nowPassing ids that passed this iteration
- * @param {{ commit?: string | null }} [iteration]
+ * @param {{ commit?: string | null, collected?: number }} [iteration]
+ *        `collected` is how many test ids the report yielded at all, passing or not
  * @returns {RatchetDecision}
  */
 export function evaluateIteration(state, nowPassing, iteration = {}) {
   const after = new Set(nowPassing);
   const { regressions, gained } = diffAgainstRatchet(state.passing, after);
+
+  if (iteration.collected === 0 && after.size === 0) {
+    return {
+      action: 'reject',
+      reason:
+        'The test report contained no tests at all, so nothing can be concluded about the code. This is a ' +
+        'collection failure, not a regression: the ids the ratchet holds are absent rather than failing, and ' +
+        'resetting the tree over a runner that produced no output would destroy work to punish a fault it did ' +
+        'not commit. Check that the suite is one the unit gate can collect.',
+    };
+  }
 
   if (regressions.length > 0) {
     return {

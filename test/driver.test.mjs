@@ -1546,6 +1546,22 @@ describe('driveRun', () => {
     ],
   };
 
+  /**
+   * A genuine regression: the runner collected tests, and the protected one is not among them.
+   *
+   * These cases used to use `{ numTotalTests: 0, testResults: [] }`, which encoded the very
+   * ambiguity dogfood run 6 was destroyed by - an empty report means "the collector produced
+   * nothing", not "your tests vanished", and resetting on it punishes the builder for a runner
+   * fault. The fixture now collects a different test, so the protected id is genuinely absent
+   * from a report that worked.
+   */
+  const COLLECTED_WITHOUT_THE_PROTECTED_ONE = {
+    numTotalTests: 1,
+    testResults: [
+      { name: 'test/b.test.js', assertionResults: [{ ancestorTitles: [], title: 'other', status: 'passed' }] },
+    ],
+  };
+
   it('ships when the gates pass, nothing regressed and the panel is unanimous', () => {
     let shipped = 0;
     const { outcome } = run({
@@ -1604,7 +1620,7 @@ describe('driveRun', () => {
 
   it('hard-resets and writes a blooper when a passing test disappears', () => {
     const { outcome, dareDir } = run(
-      { readTestReports: () => [{ numTotalTests: 0, testResults: [] }] },
+      { readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE] },
       { maxIterations: 2 },
       ['test/a.test.js::works'],
     );
@@ -1644,7 +1660,7 @@ describe('driveRun', () => {
       requiredIds: ['PRD-1.1'],
       task: 'build the thing',
       effects: effectsWith({
-        readTestReports: () => [{ numTotalTests: 0, testResults: [] }],
+        readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE],
         build: () => {
           writeFileSync(path.join(root, 'app.txt'), 'broken by the builder\n', 'utf8');
           return { ok: true, text: '', costUsd: 0, tokens: 1, raw: '' };
@@ -1657,7 +1673,7 @@ describe('driveRun', () => {
 
   it('never loses a ratchet id to a reset', () => {
     const { dareDir } = run(
-      { readTestReports: () => [{ numTotalTests: 0, testResults: [] }] },
+      { readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE] },
       { maxIterations: 2 },
       ['test/a.test.js::works'],
     );
@@ -1861,7 +1877,7 @@ describe('driveRun', () => {
     const briefs = [];
     run(
       {
-        readTestReports: () => [{ numTotalTests: 0, testResults: [] }],
+        readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE],
         build: (brief) => {
           briefs.push(brief);
           return { ok: true, text: '', costUsd: 0, tokens: 1, raw: '' };
@@ -2712,6 +2728,41 @@ describe('red-evidence', () => {
 // ---------------------------------------------------------------------------
 // Run state must never enter the target repository's history
 // ---------------------------------------------------------------------------
+
+describe('the ratchet is told how many tests were collected', () => {
+  it('passes collected at every evaluateIteration call site in the driver', () => {
+    // Without it the ratchet cannot tell "the runner collected nothing" from "everything
+    // failed" - the same empty passing set, opposite conclusions - and run 6 hard-reset 75 ids
+    // over the first. The default is deliberately the old behaviour, so a call site that
+    // forgets fails silently back into the defect. Asserted structurally, by isolating each
+    // call's own arguments, for the same reason the capabilities test does.
+    const source = readFileSync(new URL('../scripts/driver.mjs', import.meta.url), 'utf8');
+
+    /** @type {string[]} */
+    const argumentLists = [];
+    const call = 'evaluateIteration(';
+    for (let at = source.indexOf(call); at !== -1; at = source.indexOf(call, at + 1)) {
+      let depth = 0;
+      let end = at + call.length - 1;
+      do {
+        if (source[end] === '(') depth += 1;
+        else if (source[end] === ')') depth -= 1;
+        end += 1;
+      } while (depth > 0 && end < source.length);
+      argumentLists.push(source.slice(at + call.length, end - 1));
+    }
+
+    assert.equal(argumentLists.length > 0, true, 'the driver no longer evaluates the ratchet at all');
+    for (const args of argumentLists) {
+      assert.equal(
+        args.includes('collected'),
+        true,
+        `evaluateIteration is called without collected, so an uncollectable suite will reset the ` +
+          `tree instead of failing the iteration: evaluateIteration(${args})`,
+      );
+    }
+  });
+});
 
 describe('firstIterationTask', () => {
   it('names the command test ids actually come from', () => {
