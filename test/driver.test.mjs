@@ -2742,16 +2742,43 @@ describe('dareIgnoreUpdate', () => {
     assert.equal(String(dareIgnoreUpdate('')).includes('.dare/state.json'), true);
   });
 
-  const alreadyCovered = [
-    '.dare/state.json\n',
-    '.dare/\n',
-    '.dare\n',
-    '/.dare/\n',
-    'node_modules/\n.dare/\nbuild/\n',
-    '  .dare/state.json  \n',
-  ];
+  it('ignores the pin store, which holds two of the three monotonic properties', () => {
+    // The serious one. `pins.json` carries pinned security elements and cold-passed
+    // requirements, so tracked, a hard reset to lastGoodCommit restores an older copy and a pin
+    // earned since that commit is gone - along with any recorded quarantine, which is what stops
+    // a run shipping over lost protection. Found by running `git ls-files .dare` on a real
+    // repository before deliberately triggering a reset; it was tracked there.
+    const ignored = String(dareIgnoreUpdate('')).split('\n').map((line) => line.trim());
+    assert.equal(ignored.includes('.dare/pins.json'), true);
+    assert.equal(ignored.includes('.dare/assumptions.json'), true);
+  });
+
+  it('repairs a stanza written by an older build instead of declaring it covered', () => {
+    // The reason the gap survived. The check tested only for `.dare/state.json`, so a repository
+    // carrying the old stanza reported "already covered" forever and never received the newer
+    // lines. An all-or-nothing check on a list that later grows stops covering its own list.
+    const old = ['node_modules/', '.dare/state.json', '.dare/lessons.json', '.dare/briefs/', ''].join('\n');
+    const updated = dareIgnoreUpdate(old);
+    assert.notEqual(updated, null, 'an incomplete stanza was reported as covered');
+    const lines = String(updated).split('\n').map((line) => line.trim());
+    assert.equal(lines.includes('.dare/pins.json'), true);
+    // And it appends only what was missing rather than restating the whole stanza.
+    assert.equal(lines.filter((line) => line === '.dare/state.json').length, 1, 'duplicated an existing entry');
+    assert.equal(lines.filter((line) => line === 'node_modules/').length, 1);
+  });
+
+  it('adds nothing once every path is present', () => {
+    // The neighbour: a repair pass that keeps appending on every run would grow the file without
+    // bound, and `ensureDareIgnored` reports "changed" each time it writes.
+    const complete = String(dareIgnoreUpdate(''));
+    assert.equal(dareIgnoreUpdate(complete), null, 'not idempotent');
+  });
+
+  const alreadyCovered = ['.dare/\n', '.dare\n', '/.dare/\n', 'node_modules/\n.dare/\nbuild/\n', '  .dare/  \n'];
   for (const existing of alreadyCovered) {
     it(`leaves ${JSON.stringify(existing)} alone`, () => {
+      // Only a blanket ignore is complete coverage. `.dare/state.json` alone is not, and used to
+      // be treated as though it were.
       assert.equal(dareIgnoreUpdate(existing), null);
     });
   }

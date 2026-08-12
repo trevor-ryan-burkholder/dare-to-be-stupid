@@ -586,6 +586,21 @@ Same shape, opposite failure directions, and that difference is the design:
 | security element | the **snippet**, whitespace-normalised | escalate; may become a regression |
 | requirement | the whole **file** | unpin, and re-establish from scratch |
 
+**The pin store must never be tracked by git**, and it was. `ensureDareIgnored` listed
+`state.json`, `lessons.json`, `red-evidence.json`, `bloopers.log` and the reports, and omitted
+`pins.json` — the file holding **two** of the three monotonic properties. Tracked, a
+`git reset --hard` to `lastGoodCommit` restores an older copy, so a pin earned since that commit is
+silently gone, and so is any recorded quarantine, which is the only thing stopping a run shipping
+over lost protection. It is precisely the failure the ignore stanza's own comment describes for
+`state.json`, in the file where a false negative is unrecoverable.
+
+Two defects, not one: the *list* was short, and the *check* asked only whether `.dare/state.json`
+appeared. So a repository written by an older build reported "already covered" forever and never
+received the newer lines. **An all-or-nothing check on a list that later grows stops covering its
+own list.** Every path is now checked individually and only the missing ones are appended, which
+repairs an existing repository and stays idempotent. Found by running `git ls-files .dare` on a real
+repository before deliberately triggering a reset in it.
+
 **Why a security pin escalates instead of resetting.** Re-verification is a substring search
 over code the builder may reformat at any chaos level above 1. "Ambiguity is a fail" converts a
 formatter run into a hard reset plus a regression objective the builder **cannot satisfy** — it

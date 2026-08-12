@@ -1517,11 +1517,21 @@ export function driveRun(options) {
 // Keeping run state out of the target repository's history
 // ===========================================================================
 
-/** The ignore stanza a target repository needs. */
-const DARE_IGNORE = [
-  '',
-  '# dare machine state. Never commit these: a hard reset would revert the ratchet to an',
-  '# older state.json and silently drop test ids it had already earned.',
+/**
+ * Every `.dare/` path that must never be tracked.
+ *
+ * `pins.json` and `assumptions.json` were missing from this list, and `pins.json` is the
+ * serious one. `CLAUDE.md` names three monotonic properties, and that file holds **two** of
+ * them — pinned security elements and cold-passed requirements. Tracked, a
+ * `git reset --hard` to `lastGoodCommit` restores an older copy, so a pin earned since that
+ * commit is silently gone and a recorded quarantine along with it. That is the exact failure
+ * the comment below has always described for `state.json`, in the file where the invariant
+ * says a false negative is unrecoverable.
+ *
+ * Found by reading a real repository's `git ls-files .dare` before deliberately triggering a
+ * hard reset. Both files were tracked there.
+ */
+const DARE_IGNORED_PATHS = [
   '.dare/state.json',
   '.dare/lessons.json',
   '.dare/briefs/',
@@ -1531,14 +1541,24 @@ const DARE_IGNORE = [
   '.dare/e2e-report.json',
   '.dare/playwright-installed',
   '.dare/reality-check.md',
+  '.dare/pins.json',
+  '.dare/assumptions.json',
+];
+
+/** The explanation that goes above them. */
+const DARE_IGNORE_HEADER = [
+  '',
+  '# dare machine state. Never commit these: a hard reset would revert them to an older copy',
+  '# and silently drop protection already earned - test ids from state.json, and the pinned',
+  '# security elements and cold-passed requirements from pins.json.',
+];
+
+/** Written only when the file does not already mention the settings carve-out. */
+const DARE_IGNORE_CONFIG_NOTE = [
   '',
   '# .dare/config.json is deliberately NOT ignored. It is the run settings, not machine',
   '# state, and keeping it in version control makes a run reproducible from the repo.',
-  '',
-  '# The driver commits with `git add -A` every iteration.',
-  'node_modules/',
-  '',
-].join('\n');
+];
 
 /**
  * What `.gitignore` should become, or null when it already covers `.dare/`.
@@ -1552,24 +1572,33 @@ const DARE_IGNORE = [
  * @returns {string | null}
  */
 export function dareIgnoreUpdate(existing) {
-  // The ratchet file is the one that must never be tracked, so it is the one to test for.
-  // A blanket `.dare/` counts too — someone who ignored the whole directory has already
-  // covered the case, even though this stanza no longer writes it that way.
-  const covered = existing
-    .split('\n')
-    .map((line) => line.trim())
-    .some(
-      (line) =>
-        line === '.dare/state.json' ||
-        line === '/.dare/state.json' ||
-        line === '.dare/' ||
-        line === '.dare' ||
-        line === '/.dare' ||
-        line === '/.dare/',
-    );
-  if (covered) return null;
+  const lines = existing.split('\n').map((line) => line.trim());
+
+  // A blanket `.dare/` covers everything — someone who ignored the whole directory has already
+  // handled the case, even though this stanza no longer writes it that way.
+  if (['.dare/', '.dare', '/.dare', '/.dare/'].some((form) => lines.includes(form))) return null;
+
+  // Every path is checked, not just the ratchet. Testing only for `state.json` meant a
+  // repository written by an older build kept its incomplete stanza **forever**: the check
+  // passed, nothing was appended, and `pins.json` stayed trackable. An all-or-nothing check on
+  // a list that later grows is a check that stops covering its own list.
+  const missing = DARE_IGNORED_PATHS.filter((entry) => !lines.includes(entry) && !lines.includes(`/${entry}`));
+  const needsNodeModules = !lines.includes('node_modules/') && !lines.includes('node_modules');
+  if (missing.length === 0 && !needsNodeModules) return null;
+
+  /** @type {string[]} */
+  const stanza = [];
+  if (missing.length > 0) stanza.push(...DARE_IGNORE_HEADER, ...missing);
+  if (missing.length > 0 && !existing.includes('.dare/config.json is deliberately NOT ignored')) {
+    stanza.push(...DARE_IGNORE_CONFIG_NOTE);
+  }
+  if (needsNodeModules) {
+    stanza.push('', '# The driver commits with `git add -A` every iteration.', 'node_modules/');
+  }
+  stanza.push('');
+
   const separator = existing.length === 0 || existing.endsWith('\n') ? '' : '\n';
-  return `${existing}${separator}${DARE_IGNORE}`;
+  return `${existing}${separator}${stanza.join('\n')}`;
 }
 
 /**
