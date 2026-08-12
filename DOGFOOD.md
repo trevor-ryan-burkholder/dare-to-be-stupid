@@ -295,6 +295,31 @@ With a pin present, delete the guard it names, from outside the run, and resume.
 
 The third outcome is the one worth engineering for. Confirm the run does not ship.
 
+> **"Delete the guard" is not reachable when the guard is load-bearing, and that is by design.**
+> Phase 4 ratchets **before** Phase 4b checks pins. So deleting a guard that any protected test
+> depends on — this project's pin is a `RouteNotFoundError` throw, which four 404 tests need —
+> produces a *regression*, and the run resets and issues a regression objective without ever
+> reaching the escalation. You will have tested case E a second time.
+>
+> That ordering is correct: a regression genuinely does outrank a pin. But it means this scenario
+> has to remove **the pinned snippet** rather than the guard's behaviour. Run 5 does it by changing
+> the expression while preserving what it does:
+>
+> ```js
+> // was, and is what the pin's snippet records:
+> throw new RouteNotFoundError(`no route for ${method} ${path}`);
+> // now: same error, same message, same 404 - and the pinned text appears nowhere in src/
+> const unmatched = new RouteNotFoundError(`no route for ${method} ${path}`);
+> throw unmatched;
+> ```
+>
+> Check both halves before launching: the snippet must be absent from the tree (`grep -rn 'throw
+> new RouteNotFoundError' src/`) **and** the suite must still be green, or you are testing the
+> ratchet again. Expect `moved`.
+>
+> To reach **removed** or **unknown** deliberately, pin something no test covers — that is a
+> different scenario and needs a PRD whose security element is not on a tested path.
+
 ---
 
 ## The tier-3 live check, also unrun
