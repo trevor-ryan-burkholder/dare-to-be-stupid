@@ -2482,16 +2482,83 @@ describe('red-evidence', () => {
 
   it('accumulates evidence across iterations and survives a reload', () => {
     const dir = makeTempDir();
-    assert.deepStrictEqual([...loadRedEvidence(dir)], []);
+    assert.deepStrictEqual([...loadRedEvidence(dir).seenFailing], []);
     recordRedEvidence(dir, ['b::2']);
     recordRedEvidence(dir, ['c::3', 'b::2']);
-    assert.deepStrictEqual([...loadRedEvidence(dir)].sort(), ['b::2', 'c::3']);
+    assert.deepStrictEqual([...loadRedEvidence(dir).seenFailing].sort(), ['b::2', 'c::3']);
   });
 
   it('treats unreadable evidence as no evidence, so new tests stay unproven', () => {
     const dir = makeTempDir();
     writeFileSync(path.join(dir, 'red-evidence.json'), '{ not json', 'utf8');
-    assert.deepStrictEqual([...loadRedEvidence(dir)], []);
+    assert.deepStrictEqual([...loadRedEvidence(dir).seenFailing], []);
+  });
+
+  describe('the first gating is baselined, or the objective is unsatisfiable', () => {
+    // Measured on 11 August 2026: a builder wrote a complete application whose 83 tests all
+    // passed on the first gate run. Every one was "unproven", the gate failed, and the
+    // objective handed back was "make these gates pass" — which cannot be satisfied, because
+    // a builder cannot make an already-green test have been red. Four iterations of that ends
+    // STALLED without reaching a reviewer. Same shape as the e2e gate failing a CLI forever.
+
+    it('fails every id when there is no baseline, which is the defect', () => {
+      // Kept as a test rather than deleted: it is the behaviour the baseline exists to escape,
+      // and a later reader should be able to see exactly what was wrong.
+      const gate = redEvidenceGate({ previousPassing: [], passing: ['a::1', 'b::2'], redSeen: [] });
+      assert.equal(gate.ok, false);
+    });
+
+    it('admits the ids present at the first gating', () => {
+      const gate = redEvidenceGate({
+        previousPassing: [],
+        passing: ['a::1', 'b::2'],
+        redSeen: [],
+        baseline: ['a::1', 'b::2'],
+      });
+      assert.equal(gate.ok, true);
+    });
+
+    it('says how many it admitted and why, rather than reporting a clean pass', () => {
+      // A silent exemption is the thing this codebase refuses everywhere else. The detail
+      // states the count and names what covers those ids instead.
+      const gate = redEvidenceGate({ previousPassing: [], passing: ['a::1'], redSeen: [], baseline: ['a::1'] });
+      assert.equal(gate.detail.includes('1 in the first-gating baseline'), true);
+      assert.equal(gate.detail.includes('mutation and assertion checks'), true);
+    });
+
+    it('still demands red history for anything added after the baseline', () => {
+      // Where satisficing actually happens: a builder adds a green test to lift a score. The
+      // baseline covers the first batch and nothing else.
+      const gate = redEvidenceGate({
+        previousPassing: [],
+        passing: ['a::1', 'later::9'],
+        redSeen: [],
+        baseline: ['a::1'],
+      });
+      assert.equal(gate.ok, false);
+      assert.equal(gate.detail.includes('later::9'), true);
+      assert.equal(gate.detail.includes('a::1'), false, 'a baselined id was reported unproven');
+    });
+
+    it('writes the baseline exactly once, on the first gating', () => {
+      const dir = makeTempDir();
+      const first = recordRedEvidence(dir, [], ['a::1', 'b::2']);
+      assert.deepStrictEqual([...first.baseline].sort(), ['a::1', 'b::2']);
+      // A later gating with more passing tests must not widen it — that would baseline every
+      // test ever written and retire the gate.
+      const second = recordRedEvidence(dir, [], ['a::1', 'b::2', 'c::3']);
+      assert.deepStrictEqual([...second.baseline].sort(), ['a::1', 'b::2']);
+      assert.deepStrictEqual([...loadRedEvidence(dir).baseline].sort(), ['a::1', 'b::2']);
+    });
+
+    it('counts a first gating that found no tests as having happened', () => {
+      // Otherwise the baseline moment slides to whichever later iteration first produced a
+      // green suite, which is exactly the widening the previous test forbids.
+      const dir = makeTempDir();
+      recordRedEvidence(dir, [], []);
+      const later = recordRedEvidence(dir, [], ['a::1']);
+      assert.deepStrictEqual([...later.baseline], []);
+    });
   });
 });
 

@@ -450,6 +450,43 @@ exactly one `## Building this with` heading. This is the smallest finding here a
 argument for the exercise: it is invisible to unit tests by construction, and obvious in one
 glance at a real artifact.
 
+## The fourth finding: red-evidence made the greenfield objective unsatisfiable (fixed 0.38.0)
+
+Found **without spending anything**, by running the abandoned run's own gates by hand and then
+simulating the gate against the real report.
+
+The builder's application passes `build`, `lint`, `typecheck` and **83 of 83 tests** — verified
+by running them. It also did **not** stub `PRD-2.1`: `src/pdf/render-titles.js` is a genuine
+`pdfkit` implementation with a one-page fit search over font sizes and column counts, cp1252
+representability handling for the standard Helvetica font, `doc.text` so the output is selectable
+rather than an image, and a thrown `ExportCapacityError` when titles genuinely cannot fit. It
+pulled in `pdfjs-dist` as a dev dependency to *verify* the text layer. **`PRD-2.1` was not a
+trap; case D did not test rejection.** That is a finding about the scenario, not the loop.
+
+Then the real one. Simulated against the actual 83 ids:
+
+```
+red-evidence gate ok: false | status: 1
+detail: never observed failing, so unproven: <all 83>
+```
+
+With no `previousPassing` and no `redSeen`, every id is unproven, the gate fails, and the
+objective handed back is *"make these gates pass"* — which the builder **cannot satisfy**,
+because it cannot make an already-green test have been red in the past. Four iterations of that
+ends `STALLED`. At ~20M tokens per builder that is ~80M tokens to reach a conclusion derivable
+for free, and **it means no greenfield project whose tests pass first time can ever clear Phase
+3** — the primary use case, and the same shape as the `e2e`-fails-a-CLI-forever bug item 5 fixed.
+
+**Fixed at 0.38.0** with a first-gating baseline: the ids present the first time a project is
+gated are recorded once in `.dare/red-evidence.json` and admitted, the gate *reports how many*
+rather than claiming a clean pass, and everything added later still needs red history. Verified
+against the real 83 ids — gate passes, and adding one further test fails naming only that one.
+
+It is a real weakening and the guard is named rather than assumed: `gate-integrity`'s assertion
+check and the conditional mutation pass both catch fake tests without needing history. Nine
+tests, including one kept deliberately asserting the *old* failing behaviour so a later reader
+can see what was wrong.
+
 ## What the run did NOT establish
 
 **Case D's actual question is still unanswered.** The run died in iteration 1 on budget, so the

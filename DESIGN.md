@@ -1087,6 +1087,26 @@ build children it spawns (§3), fenced by the guard hook (§6).
   run; a test that has only ever been green is treated as unproven and doesn't count toward
   the ratchet. This kills fake/tautological tests structurally instead of catching them at
   review after they've already cost an iteration.
+
+  **The first gating of a project is baselined, and that is a fix rather than a softening.**
+  Measured on 11 August 2026: a builder wrote a complete application whose **83 tests all
+  passed on the first gate run**. Every one was "unproven", the gate failed, and the objective
+  handed back was *"make these gates pass"* — which a builder **cannot satisfy**, because it
+  cannot make an already-green test have been red in the past. Four iterations of that ends
+  `STALLED` without ever reaching a reviewer. It is precisely the `e2e`-fails-a-CLI-forever
+  shape §4.2 exists to prevent: a gate reporting the absence of something that could not exist.
+
+  So the ids present at the very first gating are recorded as a **baseline** in
+  `.dare/red-evidence.json`, written **once**, and admitted — and the gate *says* how many it
+  admitted rather than reporting a clean pass. Everything added afterwards needs real red
+  history, which is where satisficing happens: a builder under pressure adds a green test to
+  lift a score, and that is still caught.
+
+  The baseline is a genuine weakening, so what covers it instead is stated rather than assumed:
+  `gate-integrity`'s assertion check (§4) rejects truthiness-only assertions deterministically,
+  and the conditional mutation pass (§4.4) fails a test insensitive to the code it covers.
+  Neither needs history. The trade is one guarantee that could not be satisfied for two that
+  can.
 - UI: Playwright against the running app, not mocked component tests.
 - Guards on the route handler and API layer. Hiding a nav link is not access control.
 - Scope discipline. Every unrelated change is regression surface, and a regression costs a

@@ -1982,38 +1982,53 @@ export function ensurePlaywrightBrowsers(options) {
  * Test ids that have been observed *not* passing at some point in this run.
  *
  * @param {string} dareDir
- * @returns {Set<string>}
+ * @returns {{ seenFailing: Set<string>, baseline: Set<string>, established: boolean }}
  */
 export function loadRedEvidence(dareDir) {
   const file = path.join(dareDir, RED_EVIDENCE);
-  if (!existsSync(file)) return new Set();
+  const empty = { seenFailing: new Set(), baseline: new Set(), established: false };
+  if (!existsSync(file)) return empty;
   try {
     const parsed = JSON.parse(readFileSync(file, 'utf8'));
-    /** @type {unknown[]} */
-    const seen = Array.isArray(parsed.seenFailing) ? parsed.seenFailing : [];
-    return new Set(seen.filter((id) => typeof id === 'string').map(String));
+    /** @param {unknown} value */
+    const ids = (value) =>
+      new Set((Array.isArray(value) ? value : []).filter((id) => typeof id === 'string').map(String));
+    return {
+      seenFailing: ids(parsed.seenFailing),
+      baseline: ids(parsed.baseline),
+      // A file that exists at all means the baseline moment has passed, even if the array is
+      // empty — a project whose first gating found zero tests still had its first gating.
+      established: true,
+    };
   } catch {
     // Unreadable evidence is no evidence. Every new test is then unproven, which fails
     // the gate loudly rather than quietly crediting tests that were never red.
-    return new Set();
+    return empty;
   }
 }
 
 /**
  * @param {string} dareDir
  * @param {Iterable<string>} nonPassing
- * @returns {Set<string>}
+ * @param {Iterable<string>} [passing] recorded as the baseline on the first gating only
+ * @returns {{ seenFailing: Set<string>, baseline: Set<string>, established: boolean }}
  */
-export function recordRedEvidence(dareDir, nonPassing) {
-  const seen = loadRedEvidence(dareDir);
-  for (const id of nonPassing) seen.add(id);
+export function recordRedEvidence(dareDir, nonPassing, passing = []) {
+  const evidence = loadRedEvidence(dareDir);
+  for (const id of nonPassing) evidence.seenFailing.add(id);
+
+  // The baseline is written exactly once, the first time this project is gated at all, and it
+  // is the escape from an unsatisfiable objective rather than a convenience. See
+  // `redEvidenceGate` for why it has to exist and what still guards the ids it admits.
+  const baseline = evidence.established ? evidence.baseline : new Set(passing);
+
   mkdirSync(dareDir, { recursive: true });
   writeFileSync(
     path.join(dareDir, RED_EVIDENCE),
-    `${JSON.stringify({ seenFailing: [...seen].sort() }, null, 2)}\n`,
+    `${JSON.stringify({ seenFailing: [...evidence.seenFailing].sort(), baseline: [...baseline].sort() }, null, 2)}\n`,
     'utf8',
   );
-  return seen;
+  return { seenFailing: evidence.seenFailing, baseline, established: true };
 }
 
 /**
@@ -2022,21 +2037,50 @@ export function recordRedEvidence(dareDir, nonPassing) {
  * that rule — it kills tautological tests before review rather than after, when they have
  * already cost an iteration.
  *
- * @param {{ previousPassing: Iterable<string>, passing: Iterable<string>, redSeen: Iterable<string> }} options
+ * **The first gating of a project is exempt, and the exemption is the fix for an unsatisfiable
+ * objective rather than a softening.** Measured on 11 August 2026: a builder wrote a complete
+ * application whose 83 tests all passed on the first gate run. With no `previousPassing` and no
+ * `redSeen`, every one was "unproven", the gate failed, and the objective handed back was
+ * *"make these gates pass"* — which the builder **cannot satisfy**, because it cannot make an
+ * already-green test have been red in the past. Four iterations of that and the run ends
+ * `STALLED` without ever reaching a reviewer. It is the same shape as the `e2e` gate failing a
+ * CLI forever for having no browser config (§4.2): a gate reporting the absence of something
+ * that could not exist.
+ *
+ * So the ids present at the very first gating are recorded as a **baseline** in
+ * `.dare/red-evidence.json`, written exactly once, and admitted. Every id added afterwards
+ * needs real red history, which is where satisficing actually happens — a builder under
+ * pressure adds a green test to lift a score, and that is still caught.
+ *
+ * **What guards the baseline instead**, because it is a genuine weakening and must not be left
+ * unguarded: `gate-integrity`'s assertion check (§4) rejects truthiness-only assertions
+ * deterministically, and the conditional mutation pass (§4.4) fails a test insensitive to the
+ * code it covers. Neither needs history. The baseline trades a guarantee that could not be
+ * satisfied for two that can.
+ *
+ * @param {{ previousPassing: Iterable<string>, passing: Iterable<string>, redSeen: Iterable<string>,
+ *   baseline?: Iterable<string> }} options
  * @returns {GateResult}
  */
 export function redEvidenceGate(options) {
   const before = new Set(options.previousPassing);
   const red = new Set(options.redSeen);
-  const unproven = [...new Set(options.passing)].filter((id) => !before.has(id) && !red.has(id)).sort();
+  const baseline = new Set(options.baseline ?? []);
+  const unproven = [...new Set(options.passing)]
+    .filter((id) => !before.has(id) && !red.has(id) && !baseline.has(id))
+    .sort();
+  const baselined = [...new Set(options.passing)].filter((id) => baseline.has(id)).length;
   return {
     name: 'red-evidence',
     ok: unproven.length === 0,
     status: unproven.length === 0 ? 0 : 1,
     detail:
-      unproven.length === 0
-        ? 'every newly passing test was seen failing first'
-        : `never observed failing, so unproven: ${unproven.join(', ')}`,
+      unproven.length > 0
+        ? `never observed failing, so unproven: ${unproven.join(', ')}`
+        : baselined > 0
+          ? `every newly passing test was seen failing first; ${baselined} in the first-gating baseline, ` +
+            'which red evidence cannot cover and mutation and assertion checks do'
+          : 'every newly passing test was seen failing first',
   };
 }
 
@@ -2654,14 +2698,16 @@ export function main(argv, io = {}) {
         // The ratchet reports this failure itself; the gate does not need to guess.
       }
     }
-    const red = recordRedEvidence(treeDare, nonPassing);
+    // Passing ids are handed over too, because the first gating of a project has to record
+    // what it found as a baseline: those tests have no "before" to have been red in.
+    const red = recordRedEvidence(treeDare, nonPassing, [...passing]);
     const results = [
       ...commandResults.results,
       // The static gates are filtered by the same table as the command gates. `observability`
       // is the one that moves: a CLI has no health endpoint to answer, and the gate was
       // failing it for not having one.
       ...applicableGates(staticGates(dir, { run: shell }), capabilities).gates,
-      redEvidenceGate({ previousPassing, passing, redSeen: red }),
+      redEvidenceGate({ previousPassing, passing, redSeen: red.seenFailing, baseline: red.baseline }),
     ];
     return { ok: results.every((result) => result.ok), results, passing };
   };
