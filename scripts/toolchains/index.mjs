@@ -135,30 +135,57 @@ const DEFAULT_TOOLCHAIN = nodeToolchain;
 /**
  * Which toolchain this tree looks like, with the evidence, or null.
  *
+ * `alternatives` holds every *other* toolchain that also matched, and it exists because the
+ * second toolchain has landed and made the comment above load-bearing. A tree with both a
+ * `package.json` and a `.csproj` resolves to node — the array order — and used to say nothing
+ * about it. The resolution is unchanged and still deterministic; what is no longer silent is
+ * that a choice was made. The architect declaration this file asks for is still the real fix,
+ * and an operator cannot ask for it while the ambiguity is invisible.
+ *
  * @param {string} root
- * @returns {{ toolchain: Toolchain, evidence: string } | null}
+ * @returns {{ toolchain: Toolchain, evidence: string,
+ *             alternatives: { toolchain: Toolchain, evidence: string }[] } | null}
  */
 export function detectToolchain(root) {
+  /** @type {{ toolchain: Toolchain, evidence: string }[]} */
+  const matched = [];
   for (const toolchain of TOOLCHAINS) {
     const evidence = toolchain.detect(root);
-    if (evidence !== null) return { toolchain, evidence };
+    if (evidence !== null) matched.push({ toolchain, evidence });
   }
-  return null;
+  if (matched.length === 0) return null;
+  // First match still wins, and deterministically. What changes is that the losers are
+  // reported: a tree holding both a `package.json` and a `.csproj` resolved to node with
+  // nothing said, and "silently" is the whole of the complaint. Same rule as a skipped gate.
+  return { ...matched[0], alternatives: matched.slice(1) };
 }
 
 /**
  * The toolchain to drive this tree with, detected or defaulted.
  *
  * @param {string} root
- * @returns {{ toolchain: Toolchain, evidence: string, detected: boolean }}
+ * @returns {{ toolchain: Toolchain, evidence: string, detected: boolean,
+ *             alternatives: { toolchain: Toolchain, evidence: string }[] }}
  */
 export function resolveToolchain(root) {
   const found = detectToolchain(root);
-  if (found !== null) return { ...found, detected: true };
+  if (found !== null) {
+    // The ambiguity travels in `evidence` because that is the field the driver already prints
+    // and the run manifest already records. A field nobody displays would document the problem
+    // to no audience.
+    const also = found.alternatives.map((entry) => `${entry.toolchain.name} (${entry.evidence})`);
+    const evidence =
+      also.length === 0
+        ? found.evidence
+        : `${found.evidence}; also matched ${also.join(', ')} - first match wins, so declare the ` +
+          'toolchain if this tree is not a node project';
+    return { toolchain: found.toolchain, evidence, detected: true, alternatives: found.alternatives };
+  }
   return {
     toolchain: DEFAULT_TOOLCHAIN,
     evidence: `nothing detected; defaulted to ${DEFAULT_TOOLCHAIN.name}`,
     detected: false,
+    alternatives: [],
   };
 }
 

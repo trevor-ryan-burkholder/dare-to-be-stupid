@@ -147,7 +147,7 @@ details buries the one entry that mattered, and §8.3's whole value is that a re
 | A8 carry optimisation | **do not start without reading the pin finding below.** `PRD-3.1` is pinned to a *test file*, which the carry would let a source regression slip through |
 | A3 held-out oracle | deferred behind D2 and B2's driver-owned test invocation |
 | C5 differentiated race candidates | cheap, but ordered behind a live test of a `claude -p` child in a race worktree |
-| architect toolchain declaration | **residual of B3.** Node is first in `TOOLCHAINS`, so a repo with both `package.json` and a `.csproj` resolves to node silently |
+| architect toolchain declaration | **residual of B3, half closed at 0.46.0.** The ambiguity is no longer silent: a tree matching both reports `also matched dotnet (…) - first match wins`. The declaration itself is still the real fix, and an operator could not ask for it while the ambiguity was invisible |
 | ~~mutation provisioning~~ | **closed at 0.43.0, and it was worse than A5 recorded.** Installing the runner locally would not have helped — Stryker looks beside its own install, not the project's. Both packages now go into one npx sandbox |
 | **`break: 100` mutation threshold** | **decide this.** Demands a perfect mutation score per changed file; measured 83.33 on a two-branch function with two honest tests. `DESIGN.md` §4.4 |
 | ~~Playwright provisioning not capability-gated~~ | **closed at 0.44.0.** `installed chromium for the e2e gate` had been logged one line after `gate e2e does not apply`. `ensurePlaywrightBrowsers` now declines when the gate does not apply; omitting capabilities still provisions, since under-provisioning fails a gate that *does* apply |

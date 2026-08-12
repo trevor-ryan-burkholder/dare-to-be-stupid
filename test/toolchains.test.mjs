@@ -231,6 +231,35 @@ describe('resolveToolchain', () => {
   it('says nothing was detected rather than dressing the default up as evidence', () => {
     assert.equal(detectToolchain(makeProject()), null);
   });
+
+  it('names the toolchains it did not pick when a tree matches more than one', () => {
+    // The residual this closes. A tree with both manifests resolves to node because node is
+    // first in TOOLCHAINS, and it used to say nothing at all - which is indistinguishable from
+    // a tree that only ever looked like node. The resolution is unchanged; the silence is not.
+    const root = makeProject({ 'package.json': '{}', 'app.csproj': '<Project />' });
+    const resolved = resolveToolchain(root);
+    assert.equal(resolved.toolchain.name, 'node');
+    assert.equal(resolved.detected, true);
+    assert.deepStrictEqual(
+      resolved.alternatives.map((entry) => entry.toolchain.name),
+      ['dotnet'],
+    );
+    assert.equal(resolved.evidence.includes('also matched dotnet'), true, resolved.evidence);
+    assert.equal(resolved.evidence.includes('first match wins'), true, resolved.evidence);
+  });
+
+  it('says nothing extra when exactly one toolchain matches', () => {
+    // The neighbour. A warning that appears on every ordinary project is a warning nobody reads,
+    // and this one must appear only where a real choice was made.
+    const resolved = resolveToolchain(makeProject({ 'package.json': '{}' }));
+    assert.deepStrictEqual(resolved.alternatives, []);
+    assert.equal(resolved.evidence, 'file package.json');
+  });
+
+  it('reports no alternatives when it fell back, because nothing matched at all', () => {
+    const resolved = resolveToolchain(makeProject({ 'PRD.md': '# thing\n' }));
+    assert.deepStrictEqual(resolved.alternatives, []);
+  });
 });
 
 describe('gatesFor', () => {
