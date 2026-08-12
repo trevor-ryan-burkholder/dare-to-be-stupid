@@ -47,6 +47,30 @@ Also established here:
 
 Cost: **$32.64** for three iterations, 37.4M tokens.
 
+### The panel audited the operator, and was right
+
+The best single piece of evidence this project has that the reviewer *verifies* rather than trusts,
+and it caught the person running the experiment rather than the builder.
+
+While staging case F, this session ran `git rm --cached run.log run4.log` and `git add -A` in one
+command, then wrote a commit message saying the logs had been untracked. The panel's finding, twice:
+
+> `run.log` and `run4.log` are tracked at HEAD (`git ls-files --error-unmatch run.log run4.log`
+> succeeds) even though `.gitignore` lists `*.log`, and commit `e14bee6`'s message claims 'Also
+> untracks run.log and run4.log' — **it did not.**
+
+It **read the commit message, disbelieved it, and ran a command to check.** The cause is exactly what
+it implies: `.gitignore` did not yet carry `*.log` at that moment — the driver appends that at run
+start — so `git add -A` re-staged both files immediately. It also grepped the contents for
+credentials before rating the finding `[trivial]`, which is the difference between a severity and a
+guess. Fixed for real in `eac0185`.
+
+**And it bears on §1.1.** The findings reference `git ls-files` and a commit message, never
+`.dare/briefs/` or the build log. So on this evidence the cold reviewer is working from the
+repository, which is the intended surface — but note what the repository contains: commits titled
+`dare: iteration 1`. The reviewer can therefore infer an agent wrote the code. That is exactly the
+*not supplied* rather than *sealed* distinction §6.1 draws, now with an observation behind it.
+
 ## Run 4: case E passed on every criterion. The ratchet reset a real run.
 
 **The mechanism the whole design exists for has now run end to end, in a live run, and done the
