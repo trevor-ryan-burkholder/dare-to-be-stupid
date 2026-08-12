@@ -1,3 +1,65 @@
+# START HERE — handoff, 11 August 2026
+
+**State:** `main` at `0.39.0`, pushed, working tree clean. `npm test` 1371 pass, `npm run
+test:integration` 12 pass, `npm run test:live` correctly fails unarmed. `npm run release-check`
+clean.
+
+## There is a run in progress that this session did not see finish
+
+`~/dare-dogfood/rejection` — dogfood case D, launched from the **working tree**, iteration 2 of
+3 when this session ended. **Read its outcome first; it is the most valuable unrecorded thing.**
+
+```bash
+cd ~/dare-dogfood/rejection
+pgrep -f 'dare-to-be-stupid/scripts/driver.mjs'   # still going?
+tail -40 run.log                                  # terminal state and closing tally
+cat .dare/state.json                              # was 93 ids at iteration 1
+ls .dare/runs/                                    # 001, 002 — archiving
+grep -n 'panel unanimous\|review outstanding\|cannot ship\|SHIPPED' run.log
+```
+
+Already observed and recorded below: the ratchet advanced (93 ids — a first), the cold panel ran,
+and it **refused to ship** with five findings. `PRD-4.1` in that repo is deliberately impossible,
+so a correct run never reaches `SHIPPED`. **`SHIPPED` would be a serious bug.** Write whatever it
+did into the run-3 section below, whichever way it went.
+
+## Two traps, both of which nearly cost this session
+
+1. **The install cache is stale.** `installed_plugins.json` says **0.34.0**; the tree is 0.39.0.
+   Anything run from the cache exercises code five versions old — including before the
+   red-evidence deadlock fix. Either `/plugin update` + `/reload-plugins`, or invoke
+   `node <repo>/scripts/driver.mjs` directly as this session did. Check the pinned
+   `gitCommitSha` before debugging anything.
+2. **A green suite proves less than it looks.** Three of the five defects found today were
+   invisible to 1,356 passing tests: a duplicate heading needed a real brief, the budget hole
+   needed a real bill, the red-evidence deadlock needed a real run's artifacts. Prefer looking at
+   a produced artifact over adding an assertion.
+
+## What is outstanding
+
+`BRIEF.md` statuses are the resume point and are current. Nothing in Tier 1 or Tier 2 remains.
+
+| item | state |
+|---|---|
+| **D2 case E — deliberate regression** | **do this next.** The ratchet now advances, so a forced regression is finally reachable. `DOGFOOD.md` has the script. Never exercised. |
+| D2 cases A, B, C, F | prepared in `DOGFOOD.md`, not run |
+| A8 carry optimisation | deferred by its own correction until a baseline exists; run 3 may be it |
+| A3 held-out oracle | deferred behind D2 and B2's driver-owned test invocation |
+| C5 differentiated race candidates | cheap, but ordered behind a live test of a `claude -p` child in a race worktree |
+| architect toolchain declaration | **residual of B3.** Node is first in `TOOLCHAINS`, so a repo with both `package.json` and a `.csproj` resolves to node silently |
+| mutation provisioning | **residual of A5.** Nothing installs `@stryker-mutator/vitest-runner`; the gate fails on a missing runner rather than a defect |
+| A9's tier-3 check | written, never run: `DARE_LIVE=1 npm run test:live` |
+
+## A finding about the generated app, not about the plugin
+
+Run 3's panel found a real bug in the dogfood application: `toRenderableText` substitutes `?` for
+any character outside cp1252, so non-Latin note titles vanish from the PDF export — and the
+builder's own fixture says `'漢字' is deliberately excluded`. That belongs to
+`~/dare-dogfood/rejection`, not here. It is recorded because it is the best evidence this project
+has that the cold reviewer catches satisficing.
+
+---
+
 # Verification status
 
 The build is finished, and the architecture iteration this file used to list as deferred is

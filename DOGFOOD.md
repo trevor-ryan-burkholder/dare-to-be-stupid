@@ -228,7 +228,12 @@ likely to stub it.
 an id passed by never being judged. Keep the whole `.dare/` directory if this happens — it is the
 most important artifact this project could produce.
 
-## Case E — deliberate regression
+## Case E — deliberate regression  ← DO THIS NEXT
+
+**Newly reachable.** Run 3 advanced the ratchet to 93 ids at iteration 1, which is the
+precondition this scenario always needed and never had. Every earlier run ended `passing: 0`.
+
+
 
 The ratchet is the reason the design exists and it has never fired on a real run.
 
