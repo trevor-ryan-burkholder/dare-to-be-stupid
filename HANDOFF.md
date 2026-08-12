@@ -14,29 +14,38 @@ can be confidently wrong (below).
 
 ## The guard hook was not in force for any run this session
 
-**Corrected immediately after being written, by the guard itself.** The first draft of this
-section claimed the hook was inactive. Committing that claim was **denied by the hook**, with
-`[dare:nested-dare]`, because the commit message named the slash command in prose.
+**This section was wrong twice before it was right, and both errors are instructive.**
 
-So the state is: `claude plugin list --json` on 12 August 2026 reports
-`dare-to-be-stupid@dare-to-be-stupid` at **0.39.0 with `"enabled": false`**, and the hook is
-nevertheless **live in this session**. Hooks register at session start; the plugin was updated
-during startup and `/reload-plugins` was never run, so the listing describes disk and the session
-describes what was loaded. **They disagree, and only one of them can deny a command.**
+The operator disabled the plugin on the *morning of 12 August 2026*, after run 7 was stopped. So
+**the guard was installed and active for runs 4 through 7.** An earlier draft of this section
+inferred from `claude plugin list --json` — which reports `0.39.0`, `"enabled": false` — that the
+hook had never been in force, and a second draft downgraded that to "undetermined". Both were
+wrong, and the second understated the evidence: those runs *did* have the guard registered.
 
-What follows for the run records is *uncertainty*, not absence. Whether the `claude -p` children
-the driver spawned registered the hook depends on what each child read at its own startup, and
-that was never observed. So the ratchet's tamper protection during runs 4 through 7 is
-**undetermined** — not proven present, not proven absent. Nothing suggests a child attempted such
-a write and the state files are consistent throughout, but no run record here should be read as
-having exercised the guard. What they exercised is the ratchet, the pins, the reset, the panel and
-the gates.
+The lesson is about the inference, not the fact. **A plugin listing describes disk at the moment
+you read it, not what a run three hours earlier loaded.** Hooks register at session start. If you
+need to know whether the guard was in force for a past run, the listing cannot tell you, and
+neither can the run log — ask the operator or record it in `.dare/run.json` at the time.
 
-**The denial is also a reproduction of a known false positive.** The blocked command was a commit
-whose *message* described the command; nothing was being invoked. `test/guard.test.mjs` asserts
-that prose mentioning the command is allowed, and the live hook denies it anyway — the same
-mismatch this file already recorded once from run 3. The unit test and the shipped behaviour do
-not agree, and the unit test is the one that is wrong about reality.
+**A live denial that the shipped code does not explain.** While this section was being committed,
+the hook denied the commit with `[dare:nested-dare]` because the message contained the slash
+command. That denial is real and **could not be reproduced**:
+
+- every cached copy from `0.10.0` onward is **byte-identical** to the working tree's `guard.mjs`
+- calling that guard's own `checkBashCommand` and `evaluate` on faithful reconstructions —
+  quoted heredoc, token mid-line, and the wrapped case where the token begins a line — **allows
+  all of them**
+- `DARE_RUNNING` was unset, and no project-level hook registration exists
+
+So something denied a command that the code, read and executed directly, permits. **Do not build
+on the explanation an earlier draft of this file gave** — that the unit test and shipped behaviour
+disagree. There is no evidence for it: the tests and the code agree with each other, and both
+disagree with what was observed once. The next person to touch `checkNestedDare` should reproduce
+this before changing anything.
+
+One smaller thing worth checking while in there: the doc comment above `checkNestedDare` states
+that "a document whose *line* begins with the slash command, written through a heredoc, is still
+refused". Executed, it is **allowed**. The comment describes a trade-off the code no longer makes.
 
 `guard.mjs`'s own logic remains unit-tested, every deny paired with a benign neighbour. What
 cannot be exercised while uninstalled is the **registration** — that the hook fires on a real
