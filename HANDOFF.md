@@ -55,6 +55,25 @@ three above. Both directions of the new floor are measured: the honest suite pas
 suite asserting only `typeof x === 'number'` scores **16.67 and fails**, naming the threshold. See
 `DESIGN.md` §4.4. If you move it, record what you measured.
 
+## Two of today's fixes verified live, in the first thirty seconds of run 4
+
+Both from `run4.log` and the tree beside it, on a real repository rather than a fixture:
+
+```
+added dare machine state to .gitignore
+archived the previous run to .dare/runs/003
+```
+
+- **0.48.0's ignore repair fired.** That repository's stanza already contained
+  `.dare/state.json`, which is exactly the case the old all-or-nothing check reported as
+  "covered" — so under the previous build nothing would have been appended and `pins.json` would
+  have stayed trackable forever. `.gitignore` now carries `.dare/pins.json` and
+  `.dare/assumptions.json`.
+- **0.41.0's archiving fired.** `.dare/runs/003/` holds `assumptions.json` beside `briefs/` and
+  `run.json`, and the live `.dare/assumptions.json` is **gone**, so this run's reviewers cannot be
+  handed run 2's and run 3's assumptions. That was the defect: five entries, four of them labelled
+  iteration 2, from two different runs.
+
 ## The ratchet caught a real regression, against a real 93-id state, for free
 
 **The mechanism the whole design exists for has now fired on real data.** Not a temp repository
