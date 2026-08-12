@@ -4,10 +4,9 @@
 pass, `npm run test:live` **8 of 8 armed and green** (it now has a first execution to compare
 against). `npm run release-check` clean.
 
-**Cases E and F have both passed on live runs. `SHIPPED` has still never happened** — run 6 got
-closest and was destroyed by a defect of ours, now fixed at 0.51.0 and 0.52.0. The next run of case G
-is the one to watch: it is the first with both fixes, and the first where the architect is told which
-gates exist.
+**Cases E and F passed on live runs, and run 8 SHIPPED — the first in this project's history.**
+Whether it deserved the tag is being audited independently; the tag alone does not settle it, and a
+unanimous panel has already coexisted with a real defect once (run 6).
 
 **Unfixed and worth a decision:** nothing verifies the lesson extractor's output, and run 6 proved it
 can be confidently wrong (below).
@@ -56,6 +55,36 @@ event — which was verified once, while installed, and is recorded under "Verif
 it denying an operator's own Bash for containing the slash command in prose. A guard whose stated
 boundary is "the run, not the plugin being installed" should not be taxing unrelated work. To
 re-verify it end to end, install, verify, and disable again as a bounded exercise.
+
+## Run 8: SHIPPED, for the first time in this project's history
+
+```
+SHIPPED: panel unanimous on 15 requirement(s)
+iterations: 1  tokens: 8156885  cost: $8.0050  passing: 79
+```
+
+Every run before this one ended `BUDGET` or `STALLED`. This is the first `SHIPPED` the loop has
+ever produced. Fifteen requirements is the ten `PRD-*` ids plus the five `DoD-*` ids, and it took
+one iteration because it resumed csvstat2's tree, which already held 79 protected tests.
+
+**The invariant that would have made this a serious bug held**: 2 security pins, **0 quarantined**,
+14 requirement pins. It is not a ship over recorded lost protection.
+
+It is the first run with all four of the run-6 fixes live — the architect receiving the gate
+commands (0.52.0), an uncollected suite failing the iteration rather than resetting the ratchet
+(0.51.0), gate failures reported even when the ratchet acts first (0.53.0), and a lesson unable to
+invent a gate (0.54.0).
+
+**Whether it deserved the tag is a separate question and is not settled by the tag.** `DOGFOOD.md`
+case G says to check before believing it, and the party that chose the PRD and staged the scenario
+is the wrong one to certify it — that is the satisficing pressure §1.1 exists to defeat. An
+independent audit is running against the PRD and the binary, without the session's context, told to
+assume the tag was not earned.
+
+The precedent for taking that seriously is one scenario old: run 6's identical audit found all ten
+requirements passing **and** a stray-quote path that silently swallowed the rest of the file and
+exited 0, which the cold panel had not caught. *"Spec-complete rather than trustworthy."* **A
+unanimous panel and a real defect have already coexisted here once.**
 
 ## Run 7: stopped early on purpose, after proving the fix worked
 
