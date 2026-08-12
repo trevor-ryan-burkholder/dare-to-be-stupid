@@ -2653,6 +2653,19 @@ export function requiredIdsFor(prd) {
     'DoD-3-ci',
     'DoD-4-docs-observability',
     'DoD-5-design',
+    // Added at 0.60.0, and bought with a ship. Dogfood run 9's panel found that an
+    // unterminated quote makes the binary report statistics over half its input at exit 0.
+    // Three reviewers found it independently, each ran it, each wrote `fail` citing
+    // `src/csv.ts:21` — and the run shipped `panel unanimous on 15 requirement(s)`, because
+    // no *required* id covered it. The PRD says nothing about unterminated quotes and the
+    // code satisfies every requirement the PRD does state, so the only channel left was
+    // `advisory-`, and §4.1 forbids an advisory from moving the verdict.
+    //
+    // 0.58.0's widened remit worked exactly as written. What was missing was somewhere for
+    // the answer to land where it could block. This id is that place, and it is required
+    // rather than advisory because the question it asks — does this program ever confidently
+    // report a wrong answer — is the definition of done, not a note attached to it.
+    'DoD-6-adversarial-input',
   ];
 }
 

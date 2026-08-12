@@ -455,6 +455,7 @@ judgment ones are Phase-5 reviewer lines.
 | 3 | **CI / build config** | Gate | a workflow under `.github/workflows` whose `run:` steps **actually invoke** build, lint, types, unit and e2e — presence of a file is not the check |
 | 4 | **Docs + observability** | Gate + Reviewer | `README` + `docs/api-contract.md` present and non-stub; structured logging present; a `/health` (or equivalent) endpoint that **answers a real request** when the app declares a start script |
 | 5 | **Design quality** | Gate + Reviewer | `npx impeccable detect src/` exit-0 (§5.1; skipped on non-UI projects); design docs exist and match the code; architecture is coherent, not accidental |
+| 6 | **Truthfulness under adversarial input** | Reviewer (cold) | no input class makes the program report a **confidently wrong answer at a success exit code**. The reviewer constructs hostile inputs and runs them (§4.5) |
 
 **Who guards the gates.** Every line above is enforced by running something. The builder
 writes what that something *is*: `commandGates` invokes `npm run lint`, and `lint` means
@@ -641,6 +642,58 @@ same clean pass as a run that verified everything, which is §4's own rule about
 > reviewer), no run has reached the panel twice, and there is therefore no baseline to measure
 > the saving against. The store, the invalidation and the fail-closed half are built; the
 > optimisation waits for a run that demonstrates review is the dominant cost.
+
+### 4.5 `DoD-6-adversarial-input` — the line that was bought with a ship
+
+Every other DoD line asks whether the code does what it was told. This one asks whether the
+code **lies**, and it exists because dogfood run 9 proved that nothing else in this document
+can ask that question.
+
+**What happened, because the mechanism matters more than the defect.** Run 9 shipped
+`panel unanimous on 15 requirement(s)`, 0 quarantined pins, the ratchet at 58. The binary
+reports statistics over *half* its input when a quote is left unterminated, at exit `0`, with
+an empty stderr. The same defect run 8 shipped, on the same PRD.
+
+**The panel was not asleep. The panel found it.** All three cold reviewers found it
+independently, **each ran the program themselves**, and each returned `status: fail` citing
+`src/csv.ts:21` — one at severity `major`, confidence 0.95, quoting the input and the output it
+produced. 0.58.0's widened remit worked exactly as specified.
+
+They filed it as `advisory-`, and §4.1 says an advisory cannot move the verdict in either
+direction. So the run shipped over three independent, executed, evidenced findings of a
+confidently wrong answer.
+
+**They filed it there because there was nowhere else.** The output contract has two channels: a
+verdict on a *required id*, or an advisory. No required id covered it — the PRD never mentions
+unterminated quotes, and `PRD-2.1` (quoted fields containing commas, doubled quotes and
+newlines) is genuinely, correctly satisfied. **A reviewer obeying the contract had exactly one
+place to put the finding, and it was the place that cannot block.**
+
+The lesson is not about reviewers and not about advisories. **A remit is not a channel.** 0.58.0
+told the panel it *may* fail a demonstrable wrong answer without giving it an id on which to do
+so, and permission with no place to act is indistinguishable from no permission at all. When
+widening what a reviewer may judge, check that a required id exists to carry the answer.
+
+Three properties make this line work rather than merely exist:
+
+- **Required, not advisory.** It is in `requiredIdsFor`, so every panel member who owns it must
+  return an entry, and a `fail` blocks. Owned by **correctness** — it is a truthfulness question,
+  and that reviewer already executes the binary.
+- **The bar is narrow and absolute: a wrong answer at exit 0.** A crash is not a failure of this
+  line, and neither is a non-zero exit with a diagnostic — those are the program *refusing to
+  lie*, which is the behaviour being required. Silence plus a plausible number is the defect. A
+  wider bar would fail every program that has any bug at all, and §4.2's whole history is gates
+  that no honest project could satisfy.
+- **A pass must name what was tried.** "I probed and found nothing" with no stated input classes
+  is a skipped check wearing a verdict, and the parser's own rule is that missing evidence fails.
+
+**What this does not do**, said plainly so nobody reads it as more than it is: it is a *judgment*
+line, not a gate. No exit code enforces it, it is exactly as good as the reviewer executing it,
+and it can be satisfied by a reviewer that probes lazily. It is strictly better than the advisory
+channel that discarded three correct findings, and strictly weaker than a deterministic check —
+which for this defect class does not exist, because "is this number right" is the oracle problem.
+`gate-integrity` cannot see it, the mutation gate cannot see it (the tests are insensitive to
+inputs nobody wrote), and neither can any linter.
 
 ### 4.1 Advisory findings — the one place a number is allowed
 

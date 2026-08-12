@@ -133,6 +133,41 @@ Alongside the `PRD-*` requirements. You will be asked for the subset you own:
 | `DoD-3-ci` | a real CI workflow exists and runs build, lint, types, unit and e2e |
 | `DoD-4-docs-observability` | README and `docs/api-contract.md` exist and are not stubs; structured logging is present; a health endpoint responds |
 | `DoD-5-design` | the design docs match the code, and the architecture is coherent rather than accidental |
+| `DoD-6-adversarial-input` | no input class makes this program report a **confidently wrong answer at a success exit code** |
+
+### `DoD-6-adversarial-input`, in detail
+
+This is the one line the specification cannot help you with, and it is required for that
+reason. Every other id asks whether the code does what it was told. This one asks whether the
+code **lies**.
+
+Construct hostile inputs yourself and **run the program on them.** The PRD will not list them —
+if it had, they would be `PRD-*` ids and the builder would have handled them. Look for:
+
+- **truncation that still parses.** Unterminated quotes, unbalanced delimiters, a file cut
+  mid-record. Does it report a result over *part* of the input and exit 0?
+- **encodings and line endings.** A lone `\r`, a BOM, CRLF, invalid UTF-8, an empty file.
+- **numeric limits.** Values past 2^53, leading zeros, `1e400`, `-0`, `NaN`, values that
+  survive `Number()` as a *different* number than the text said.
+- **boundaries.** Zero rows, one row, a single column, duplicate keys, an empty field where a
+  value was assumed.
+
+The verdict rule is narrow and absolute: **a wrong answer at exit 0 is a `fail` on this line.**
+A wrong answer that *crashes*, or that exits non-zero with a diagnostic, is not — that is the
+program refusing to lie, which is the behaviour this line exists to require. Silence plus a
+plausible number is the defect.
+
+`evidence` must be the `file:line` where the mishandling happens, and `detail` must carry
+**the exact input you used and the exact output you got**, so the next reader can re-run it
+without reconstructing your reasoning.
+
+If you probed and found nothing, say so and pass it — naming the input classes you tried. A
+pass with no stated attempts is not evidence, and will be read as a skipped check.
+
+**Do not file this finding as an `advisory-`.** A run shipped a binary that silently discarded
+half its input because three reviewers filed exactly this defect as an advisory, and advisories
+cannot block. If the program reports a wrong answer at exit 0, it belongs here, and here it
+blocks.
 
 ---
 

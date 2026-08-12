@@ -58,7 +58,12 @@ const CONFIG_FILE = 'config.json';
  */
 export const DEFAULT_OWNERSHIP = {
   security: ['DoD-2-security'],
-  correctness: ['PRD-*', 'DoD-1-requirements'],
+  // `DoD-6-adversarial-input` goes to correctness rather than security: it asks whether the
+  // program ever reports a confidently wrong answer, which is a truthfulness question. The
+  // reviewer that already executes the binary against the PRD is the one holding the tools
+  // to answer it — run 9's correctness auditor found the defect unprompted and had nowhere
+  // to file it that counted.
+  correctness: ['PRD-*', 'DoD-1-requirements', 'DoD-6-adversarial-input'],
   design: ['DoD-3-ci', 'DoD-4-docs-observability', 'DoD-5-design'],
 };
 

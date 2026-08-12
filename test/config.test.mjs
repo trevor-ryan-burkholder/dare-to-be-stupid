@@ -47,7 +47,7 @@ describe('defaultConfig', () => {
       reviewers: ['security', 'correctness', 'design'],
       ownership: {
         security: ['DoD-2-security'],
-        correctness: ['PRD-*', 'DoD-1-requirements'],
+        correctness: ['PRD-*', 'DoD-1-requirements', 'DoD-6-adversarial-input'],
         design: ['DoD-3-ci', 'DoD-4-docs-observability', 'DoD-5-design'],
       },
       requireUnanimous: true,

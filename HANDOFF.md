@@ -1,7 +1,73 @@
 # START HERE — handoff, 12 August 2026
 
-**State:** `main` at `0.59.0`. `npm test` 1431 pass, `npm run test:integration` 12 pass,
+**State:** `main` at `0.60.0`. `npm test` 1433 pass, `npm run test:integration` 12 pass,
 `npm run test:live` 11 of 11 armed and green. `npm run release-check` clean.
+
+## Run 9 shipped, and the panel had already proved it should not have
+
+Case G, fresh repo (`~/dare-dogfood/csvstat3`), the same PRD run 8 shipped, log at
+`~/dare-logs/run9.log`. **The first run in this project's history with a working guard hook.**
+
+```
+SHIPPED: panel unanimous on 15 requirement(s)
+iterations: 3  tokens: 27899716  cost: $23.5132  passing: 58
+```
+
+**What worked.** `0.56.0` is satisfiable: `seenFailing: 0`, so the ship was earned through the
+mutation gate exactly as designed. 3 security pins, all `active`, **0 quarantined** — not a ship
+over lost protection. It cost **one entirely wasted iteration**: iteration 2 made *zero tracked
+changes* (7.5M tokens, ~$6) against the "prove the suite can fail" objective before iteration 3
+finally touched source and armed the gate. Expensive, not deadlocked. An earlier reading in this
+session called it unsatisfiable; that was wrong.
+
+**What did not.** The shipped binary reports statistics over **half its input** when a quote is
+left unterminated, at exit `0`, empty stderr — the same defect run 8 shipped, reproduced
+verbatim:
+
+```
+$ printf 'a,b\n1,"x\n2,y\n' > swallow.csv     # two data rows
+$ node dist/bin.js swallow.csv                # count 1, mean 1
+$ echo $?                                     # 0
+```
+
+Integers past 2^53 still collapse two distinct ids into one wrong value at exit 0. The lone-`\r`
+case **is** fixed (exit 3 now).
+
+**And here is the part that matters.** The panel was not asleep. **All three cold reviewers found
+it independently, each ran the program themselves, and each returned `status: fail`** citing
+`src/csv.ts:21` — one at severity `major`, confidence **0.95**, quoting its own input and output.
+`0.58.0`'s widened remit worked perfectly.
+
+They filed it as `advisory-`, and §4.1 says an advisory cannot move the verdict. The shipping
+panel's own record: `verdict: pass`, `failing: []`, **`advisories: 12`, every one `status: fail`.**
+
+**They filed it there because there was nowhere else.** The contract has two channels — a verdict
+on a required id, or an advisory — and no required id covered it. The PRD never mentions
+unterminated quotes, and `PRD-2.1` is genuinely satisfied. A reviewer obeying the contract had
+exactly one place to put the finding, and it was the place that cannot block.
+
+**The lesson generalises past this defect: a remit is not a channel.** 0.58.0 told the panel it
+*may* fail a demonstrable wrong answer without giving it an id to do so on, and permission with
+nowhere to act is indistinguishable from no permission. **When you widen what a reviewer may
+judge, check that a required id exists to carry the answer.**
+
+Fixed at **0.60.0** by `DoD-6-adversarial-input`: a required id, owned by correctness, whose bar
+is narrow and absolute — *a wrong answer at exit 0 is a fail; a crash or a non-zero exit with a
+diagnostic is not.* `templates/reviewer-system.md` tells the reviewer to construct hostile inputs
+and run them, names the classes (truncation that still parses, encodings, numeric limits,
+boundaries), requires a pass to state what was tried, and says in as many words not to file this
+as an advisory. `DESIGN.md` §4.5.
+
+**It is a judgment line, not a gate, and that is stated rather than hidden.** No exit code
+enforces it. It is exactly as good as the reviewer executing it. It is strictly better than the
+advisory channel that discarded three correct findings, and strictly weaker than a deterministic
+check — which for this class does not exist, because "is this number right" is the oracle
+problem. `gate-integrity` cannot see it and neither can the mutation gate, whose tests are
+insensitive to inputs nobody thought to write.
+
+**The next run is the test of that, exactly as run 9 was the test of 0.56–0.58.** Re-run case G
+on a fresh repo with the same PRD. If `DoD-6-adversarial-input` works, the panel fails that id and
+the run does not ship until the quote handling is fixed.
 
 ## The guard hook was never firing. Not once, in any run.
 

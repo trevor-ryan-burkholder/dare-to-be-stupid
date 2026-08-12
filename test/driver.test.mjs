@@ -23,7 +23,7 @@ import { after, describe, it } from 'node:test';
 import { readAssumptions } from '../scripts/assumptions.mjs';
 import { MUTATION_CONFIG_CONTENTS } from '../scripts/toolchains/node.mjs';
 import { pinSecurityElement, quarantinePin, readPins, writePins } from '../scripts/pins.mjs';
-import { defaultConfig } from '../scripts/config.mjs';
+import { DEFAULT_OWNERSHIP, defaultConfig } from '../scripts/config.mjs';
 import {
   DriverError,
   PHASE_PERMISSIONS,
@@ -2330,7 +2330,7 @@ describe('parseDriverArgs', () => {
 });
 
 describe('requiredIdsFor', () => {
-  it('finds every PRD id and appends the five DoD lines', () => {
+  it('finds every PRD id and appends the six DoD lines', () => {
     const prd = 'PRD-1.1 does a thing.\nPRD-2.3 does another.\nPRD-1.2 and one more.';
     assert.deepStrictEqual(requiredIdsFor(prd), [
       'PRD-1.1',
@@ -2341,6 +2341,7 @@ describe('requiredIdsFor', () => {
       'DoD-3-ci',
       'DoD-4-docs-observability',
       'DoD-5-design',
+      'DoD-6-adversarial-input',
     ]);
   });
 
@@ -2349,7 +2350,29 @@ describe('requiredIdsFor', () => {
   });
 
   it('still requires the DoD lines when the PRD has no numbered requirements', () => {
-    assert.equal(requiredIdsFor('a prose document').length, 5);
+    assert.equal(requiredIdsFor('a prose document').length, 6);
+  });
+
+  // Dogfood run 9, 12 August 2026. Three cold reviewers independently found that an
+  // unterminated quote makes the shipped binary report statistics over half its input at
+  // exit 0. Each ran it. Each wrote `status: fail` with `src/csv.ts:21`. The run shipped
+  // `panel unanimous on 15 requirement(s)` anyway, because no *required* id covered the
+  // finding — the PRD never mentions unterminated quotes, and the code satisfies every
+  // requirement it does mention. So all three filed it as `advisory-`, and §4.1 says an
+  // advisory may not move the verdict in either direction.
+  //
+  // 0.58.0 widened the reviewer's remit to fail exactly this and it worked perfectly. What
+  // did not exist was a channel where the answer could block. This id is that channel.
+  it('requires an adversarial-input line, because run 9 shipped a wrong answer at exit 0', () => {
+    assert.equal(requiredIdsFor('PRD-1.1 x').includes('DoD-6-adversarial-input'), true);
+  });
+
+  it('gives the adversarial-input line an owner, or no reviewer is ever asked about it', () => {
+    // An uncovered id ends the run before a reviewer is spawned (§1.1), so adding a required
+    // id without an owner would turn every run into an abort. Correctness owns it: it is a
+    // question about whether the program tells the truth, not about security or design.
+    const covered = Object.values(DEFAULT_OWNERSHIP).flat();
+    assert.equal(covered.includes('DoD-6-adversarial-input'), true);
   });
 });
 
