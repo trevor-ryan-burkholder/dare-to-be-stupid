@@ -1,60 +1,54 @@
 # START HERE — handoff, 12 August 2026
 
-**State:** `main` at `0.55.0`, **pushed.** `npm test` 1416 pass, `npm run test:integration` 12
-pass, `npm run test:live` **8 of 8 armed and green** (it now has a first execution to compare
-against). `npm run release-check` clean.
+**State:** `main` at `0.58.0`, pushed. `npm test` 1428 pass, `npm run test:integration` 12 pass,
+`npm run test:live` 8 of 8 armed and green. `npm run release-check` clean. Working tree clean.
 
-**Cases E and F passed on live runs, and run 8 SHIPPED — the first in this project's history.**
-Whether it deserved the tag is being audited independently; the tag alone does not settle it, and a
-unanimous panel has already coexisted with a real defect once (run 6).
+**The plugin is installed but DISABLED**, on purpose — the operator disabled it on 12 August
+because its `PreToolUse` hook taxes unrelated sessions. **Nothing needs it installed.** Every run
+here invoked `node <repo>/scripts/driver.mjs PRD.md --yes` directly; installing only supplies the
+guard hook registration and the slash command, and development uses neither.
 
-**Unfixed and worth a decision:** nothing verifies the lesson extractor's output, and run 6 proved it
-can be confidently wrong (below).
+## The one thing to know before doing anything
 
-## The guard hook was not in force for any run this session
+**Versions 0.56.0, 0.57.0 and 0.58.0 have never been exercised by a live run.** They change the
+*ship condition* itself:
 
-**This section was wrong twice before it was right, and both errors are instructive.**
+- **0.56.0** — a panel pass no longer ships alone; the run must also hold proof the suite can fail
+  (mutation gate passed, or something observed red).
+- **0.57.0** — a security pin can be retracted by a new `never-was` verdict.
+- **0.58.0** — the reviewer may fail a demonstrable wrong answer that exits 0.
 
-The operator disabled the plugin on the *morning of 12 August 2026*, after run 7 was stopped. So
-**the guard was installed and active for runs 4 through 7.** An earlier draft of this section
-inferred from `claude plugin list --json` — which reports `0.39.0`, `"enabled": false` — that the
-hook had never been in force, and a second draft downgraded that to "undetermined". Both were
-wrong, and the second understated the evidence: those runs *did* have the guard registered.
+The first of those can **withhold a ship that should happen**, and that is exactly the shape of
+defect this project keeps rediscovering — a gate nothing can satisfy. It is designed against that
+(it withholds the ship, never fails the iteration, and any iteration touching first-party source
+makes the mutation gate apply again) but **design is not evidence.** The next run is the test.
 
-The lesson is about the inference, not the fact. **A plugin listing describes disk at the moment
-you read it, not what a run three hours earlier loaded.** Hooks register at session start. If you
-need to know whether the guard was in force for a past run, the listing cannot tell you, and
-neither can the run log — ask the operator or record it in `.dare/run.json` at the time.
+## Do this next
 
-**A live denial that the shipped code does not explain.** While this section was being committed,
-the hook denied the commit with `[dare:nested-dare]` because the message contained the slash
-command. That denial is real and **could not be reproduced**:
+1. **A fresh case G run** (`DOGFOOD.md`), on a new scenario repo, not a resume. It is the first run
+   with 0.56–0.58 live, and it answers whether a ship still happens when a ship must now be earned.
+   The previous scenarios are at `~/dare-dogfood/csvstat` and `csvstat2`; logs go **outside the
+   tree**, at `~/dare-logs/`.
+2. **Racing has never run with a live builder.** `race.enabled` is `false`; the git half is tier‑2
+   tested, and the half that costs money has never executed once. C5 is blocked behind it. This is
+   the largest untested surface left.
+3. **A8's carry optimisation — decide before building.** Run 3 pinned `PRD-3.1` to a *test file*, so
+   the carry would let a source regression slip through unre-litigated.
+4. **The .NET adapter is `DONE` on argv nobody has executed.** No SDK on this machine. Every
+   contract test passes regardless. Do not trust it until an SDK exists.
 
-- every cached copy from `0.10.0` onward is **byte-identical** to the working tree's `guard.mjs`
-- calling that guard's own `checkBashCommand` and `evaluate` on faithful reconstructions —
-  quoted heredoc, token mid-line, and the wrapped case where the token begins a line — **allows
-  all of them**
-- `DARE_RUNNING` was unset, and no project-level hook registration exists
+## What happened on 12 August
 
-So something denied a command that the code, read and executed directly, permits. **Do not build
-on the explanation an earlier draft of this file gave** — that the unit test and shipped behaviour
-disagree. There is no evidence for it: the tests and the code agree with each other, and both
-disagree with what was observed once. The next person to touch `checkNestedDare` should reproduce
-this before changing anything.
+Nineteen versions, `0.40.0` → `0.58.0`, each traced to a produced artifact rather than an assertion.
+Six dogfood runs. **Cases E and F passed live** — the ratchet reset a real tree and issued a
+regression-only brief; the security-escalation child ran for the first time and re-pinned a moved
+guard. **Run 8 SHIPPED, the first in this project's history.**
 
-One smaller thing worth checking while in there: the doc comment above `checkNestedDare` states
-that "a document whose *line* begins with the slash command, written through a heredoc, is still
-refused". Executed, it is **allowed**. The comment describes a trade-off the code no longer makes.
-
-`guard.mjs`'s own logic remains unit-tested, every deny paired with a benign neighbour. What
-cannot be exercised while uninstalled is the **registration** — that the hook fires on a real
-event — which was verified once, while installed, and is recorded under "Verified live".
-
-**Keeping it uninstalled is the right default for this machine.** The matcher covers `Bash`,
-`Write`, `Edit`, `MultiEdit` and `NotebookEdit` in *every* session, and this file already records
-it denying an operator's own Bash for containing the slash command in prose. A guard whose stated
-boundary is "the run, not the plugin being installed" should not be taxing unrelated work. To
-re-verify it end to end, install, verify, and disable again as a bounded exercise.
+Then an independent audit of that ship returned: ***"SHIPPED was earned against the specification it
+was given, and not against the thing the specification stands for."*** All ten requirements passed
+under execution and 15 of 15 mutations were killed — and the program silently discarded data at exit
+`0`. Three defects it found in the loop are closed (0.55.0, 0.56.0, 0.57.0); the reviewer remit
+change (0.58.0) is the answer to the fourth.
 
 ## Run 8: SHIPPED, for the first time in this project's history
 

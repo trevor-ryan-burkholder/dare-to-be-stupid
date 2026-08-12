@@ -426,7 +426,7 @@ while the measurement is a refused item away.
 re-litigated until its evidence changes" is **not met**. The line "an unresolvable evidence
 target fails rather than carries" **is** met.
 
-## A9. An assumptions log — **DONE (0.30.0); its tier-3 check written and not run**
+## A9. An assumptions log — **DONE (0.30.0); tier-3 check RUN on 12 Aug 2026, 8 of 8**
 
 Where the PRD or Build Brief is ambiguous, the builder may not silently pick an interpretation.
 It must record the assumption to a driver-owned, append-only log, which is then supplied to the
@@ -820,7 +820,7 @@ an untested mechanism is how you end up unable to say which half broke.
 
 All existing tests pass. New focused tests for every invariant added.
 
-## D2. Dogfood against real sacrificial projects — **OPEN, and the most valuable item here**
+## D2. Dogfood against real sacrificial projects — **LARGELY DONE (12 Aug 2026): cases D, E, F and G all run; E and F passed; run 8 SHIPPED. Cases A, B, C unrun (breadth, not risk)**
 
 Never exercised end to end. `HANDOFF.md` item 9. Both earlier runs died in iteration 1 with
 `passing: 0`, so the ratchet was never reached — give the regression scenarios enough budget to
