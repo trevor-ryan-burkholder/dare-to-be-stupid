@@ -1,8 +1,12 @@
 # START HERE — handoff, 11 August 2026
 
-**State:** `main` at `0.43.0`, four commits ahead of `origin` and **not pushed**. `npm test` 1384
-pass, `npm run test:integration` 12 pass, `npm run test:live` correctly fails unarmed. `npm run
-release-check` clean.
+**State:** `main` at `0.46.0`, **ten commits ahead of `origin` and not pushed.** `npm test` 1390
+pass, `npm run test:integration` 12 pass, `npm run test:live` **8 of 8 armed and green** (it now has
+a first execution to compare against). `npm run release-check` clean.
+
+**Everything left on the outstanding list is blocked on one of two things**, and neither is effort:
+a paid dogfood run (cases E and F), or a decision that belongs to the operator (`break: 100`). The
+free work is done.
 
 ## Run 3 finished, and it found three gates the builder could not satisfy
 
