@@ -1723,6 +1723,50 @@ export function writeMutationConfig(dareDir) {
 }
 
 /**
+ * The gate commands, written into the architect's prompt.
+ *
+ * `templates/architect.md` tells the architect: *"The test gates you write into `CLAUDE.md` are
+ * the gates the run will actually execute. Do not list one you cannot run."* **That sentence was
+ * false**, and dogfood run 6 is what it cost. The design phase received `architect.md` plus the
+ * PRD and nothing else — no toolchain, no gate list — so the architect could not know the unit
+ * gate collects with vitest. Reading a PRD that said the tool was satisfiable with the Node
+ * standard library, it wrote a `CLAUDE.md` forbidding every dependency **including vitest by
+ * name**, which the builder then treated as binding. The builder flagged the contradiction in
+ * writing on iteration 1 and predicted the outcome; six iterations later the suite was reverted
+ * to `node --test`, the report collected nothing, and 75 protected ids were destroyed.
+ *
+ * A promise the loop makes to the architect has to be one the loop keeps. Supplying the resolved
+ * commands is the whole of the fix: the architect cannot forbid what it can see is required.
+ *
+ * @param {{ name: string, command: string[] }[]} gates
+ * @returns {string} empty when there are no gates to describe
+ */
+export function architectGateFragment(gates) {
+  if (gates.length === 0) return '';
+  const lines = gates.map((gate) => `- \`${gate.name}\`: \`${gate.command.join(' ')}\``);
+  const unit = gates.find((gate) => gate.name === 'unit');
+  return [
+    '## The gates this run will actually execute',
+    '',
+    'Resolved for this repository, before you design anything. These are the commands the loop',
+    'runs verbatim — they are not suggestions, and nothing you write changes them.',
+    '',
+    ...lines,
+    '',
+    unit === undefined
+      ? 'This toolchain declines the unit gate, so no test ids are collected at all.'
+      : `**Test ids come only from \`${unit.command.join(' ')}\`.** A suite that command cannot ` +
+        'collect scores zero however the project defines its own test script, and the ratchet ' +
+        'cannot advance on zero.',
+    '',
+    '**Do not write a CLAUDE.md that forbids what these commands require.** A project rule',
+    'banning the dependency the unit gate runs on cannot be satisfied and cannot be escaped: the',
+    'builder will obey your document, the gate will collect nothing, and the run will make no',
+    'progress. If a rule and a gate conflict, the gate wins, so do not write the rule.',
+  ].join('\n');
+}
+
+/**
  * Iteration 1's objective, which has to carry one fact the brief already states elsewhere.
  *
  * **Which runner the unit gate collects with has now been missed on every greenfield scenario
@@ -2672,7 +2716,7 @@ export function main(argv, io = {}) {
   // ---- Phase 1: design + quality plugins --------------------------------
   write(verbatim('designing'));
   const designed = runChild({
-    prompt: `${template('architect.md')}\n\n---\n\nPRD.md:\n\n${prd}`,
+    prompt: `${template('architect.md')}\n\n---\n\n${architectGateFragment(gateSummary(cwd, dareDir).gates)}\n\n---\n\nPRD.md:\n\n${prd}`,
     model: config.designModel,
     phase: 'design',
     cwd,

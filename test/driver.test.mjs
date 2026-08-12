@@ -33,6 +33,7 @@ import {
   permissionsFor,
   commandGates,
   dareIgnoreUpdate,
+  architectGateFragment,
   ensureDareIgnored,
   firstIterationTask,
   unitGateCommand,
@@ -2761,6 +2762,42 @@ describe('the ratchet is told how many tests were collected', () => {
           `tree instead of failing the iteration: evaluateIteration(${args})`,
       );
     }
+  });
+});
+
+describe('architectGateFragment', () => {
+  const GATES = [
+    { name: 'build', command: ['npm', 'run', 'build'] },
+    { name: 'unit', command: ['npx', 'vitest', 'run', '--reporter=json'] },
+  ];
+
+  it('gives the architect the commands, verbatim, before it designs anything', () => {
+    // architect.md promises "the test gates you write into CLAUDE.md are the gates the run will
+    // actually execute". That was false: the design phase received the template and the PRD and
+    // nothing else. Run 6's architect therefore wrote a CLAUDE.md forbidding vitest by name, the
+    // builder obeyed it, and the unit gate collected nothing for six iterations.
+    const fragment = architectGateFragment(GATES);
+    assert.equal(fragment.includes('npx vitest run --reporter=json'), true);
+    assert.equal(fragment.includes('npm run build'), true);
+    assert.equal(fragment.includes('Test ids come only from'), true);
+  });
+
+  it('tells the architect not to forbid what the gates require', () => {
+    // The specific failure, named. A project rule banning the dependency the unit gate runs on
+    // can be neither satisfied nor escaped.
+    assert.equal(architectGateFragment(GATES).includes('Do not write a CLAUDE.md that forbids'), true);
+  });
+
+  it('says so plainly when a toolchain collects no ids at all', () => {
+    // The neighbour: a toolchain that declines the unit operation must not be described as
+    // having one, which is what naming vitest unconditionally would have done.
+    const fragment = architectGateFragment([{ name: 'build', command: ['dotnet', 'build'] }]);
+    assert.equal(fragment.includes('declines the unit gate'), true);
+    assert.equal(fragment.includes('vitest'), false);
+  });
+
+  it('is empty rather than a heading with nothing under it', () => {
+    assert.equal(architectGateFragment([]), '');
   });
 });
 
