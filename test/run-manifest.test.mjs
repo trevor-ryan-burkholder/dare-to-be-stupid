@@ -15,6 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, describe, it } from 'node:test';
 
+import { readAssumptions } from '../scripts/assumptions.mjs';
 import {
   RUN_ARCHIVE_DIR,
   RUN_MANIFEST,
@@ -275,6 +276,40 @@ describe('archivePreviousRun', () => {
     for (const kept of ['state.json', 'lessons.json', 'red-evidence.json', 'bloopers.log', 'config.json']) {
       assert.equal(existsSync(path.join(dareDir, kept)), true, `${kept} was archived and must not be`);
     }
+  });
+
+  it('archives the assumptions log, so a later run cannot inherit it', () => {
+    // Found in dogfood run 3. `assumptions.json` is appended rather than overwritten, so it
+    // was not losing data - it was accumulating entries keyed by `iteration`, and iteration
+    // numbering restarts every run. Run 2's `iteration: 2` and run 3's are indistinguishable.
+    const dareDir = dareWith({
+      'run.json': '{"version":1}',
+      'assumptions.json':
+        '{"version":1,"entries":[{"iteration":2,"cites":"iteration-2 brief","ambiguity":"a",' +
+        '"assumed":"added an e2e step under continue-on-error"}]}',
+    });
+    const target = archivePreviousRun(dareDir);
+
+    assert.equal(existsSync(path.join(dareDir, 'assumptions.json')), false);
+    const archived = JSON.parse(
+      readFileSync(path.join(/** @type {string} */ (target), 'assumptions.json'), 'utf8'),
+    );
+    assert.equal(archived.entries.length, 1);
+    assert.equal(archived.entries[0].iteration, 2);
+  });
+
+  it('starts the next run with an assumptions log the reviewer cannot misread', () => {
+    // The consequence, which is the reason this is a defect rather than untidiness: the log is
+    // handed to the cold panel so it can check "you assumed X, the PRD says Y". Carried across
+    // runs, the panel reasons about assumptions the current builder never made, against code
+    // that may no longer exist. `readAssumptions` on a fresh run must find nothing.
+    const dareDir = dareWith({
+      'run.json': '{"version":1}',
+      'assumptions.json':
+        '{"version":1,"entries":[{"iteration":4,"cites":"c","ambiguity":"a","assumed":"s"}]}',
+    });
+    archivePreviousRun(dareDir);
+    assert.deepStrictEqual(readAssumptions(dareDir).entries, []);
   });
 
   it('removes the originals, so the next run cannot write over them', () => {

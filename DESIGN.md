@@ -1066,6 +1066,20 @@ Three artifacts are archived, and each earned its place:
 | `run.json` | overwritten wholesale, and the only record of what a run *was* |
 | `briefs/` | collides by number, per above; the only record of what the builder was actually asked on the iteration a run went wrong |
 | `reality-check.md` | overwritten, and it is the reasoning behind an `ABORTED` |
+| `assumptions.json` | **appended**, not overwritten — a different fault with a worse consequence, below |
+
+`assumptions.json` earned its place late, and by a different argument from the other three. It
+loses nothing: entries accumulate. But they are keyed by `iteration`, and iteration numbering
+restarts every run, so a second run's `iteration: 2` lands beside the first's indistinguishably.
+Measured in dogfood run 3, whose log read `[2, 2, 4, 2, 2]` — **four entries labelled iteration 2,
+from two different runs.**
+
+The cost is not a confused operator. That log is handed to the **cold panel** (§8.3) so a reviewer
+can check "you assumed X, the PRD says Y", so carrying it across runs means reviewers reasoning
+about assumptions the current builder never made, against code that may no longer exist. It also
+means a finding the panel appears to have discovered may have been *supplied* to it by a previous
+run's assumption — which is a weaker claim than independent discovery, and the two are
+indistinguishable after the fact.
 
 The unit and e2e reports are deliberately **not** archived. They are rewritten every
 *iteration*, so they are already transient within a run, and keeping the last one would

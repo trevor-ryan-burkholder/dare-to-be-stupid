@@ -29,6 +29,8 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { ASSUMPTIONS_FILE } from './assumptions.mjs';
+
 /** Driver-owned. Protected by the `.dare/**` invariant (§6) with no rule of its own. */
 export const RUN_MANIFEST = 'run.json';
 
@@ -53,12 +55,19 @@ export const RUN_ARCHIVE_DIR = 'runs';
  * - `briefs/` — collides by number, per above. The archived brief is the only record of what
  *   the builder was actually asked on the iteration a run went wrong.
  * - `reality-check.md` — overwritten, and it is the reasoning behind an `ABORTED`.
+ * - `assumptions.json` — **appended**, which is a different fault with a worse consequence.
+ *   Nothing is destroyed; instead entries accumulate keyed by `iteration`, and iteration
+ *   numbering restarts every run, so a second run's `iteration: 2` lands beside the first's
+ *   indistinguishably. That log is handed to the **cold reviewer** (§8.3) so it can check "you
+ *   assumed X, the PRD says Y", so the cost is not a confused operator — it is a panel
+ *   reasoning about assumptions the current builder never made, against code that may no longer
+ *   exist. Observed in dogfood run 3, whose reviewers were given run 2's three assumptions.
  *
  * Deliberately absent: the unit and e2e reports. Those are rewritten every *iteration*, so
  * they are already transient within a run, and archiving the last one would preserve an
  * arbitrary moment while implying it was the run's.
  */
-const PER_RUN_ARTIFACTS = [RUN_MANIFEST, 'briefs', 'reality-check.md'];
+const PER_RUN_ARTIFACTS = [RUN_MANIFEST, 'briefs', 'reality-check.md', ASSUMPTIONS_FILE];
 
 /** The manifest's own schema version, bumped when a field's meaning changes. */
 const MANIFEST_VERSION = 1;
