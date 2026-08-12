@@ -1887,12 +1887,29 @@ export function conditionalCommandGates(root, dareDir, changedFiles) {
 export function changedSince(options) {
   if (options.since === null) return [];
   const run = options.run ?? shell;
-  const result = run('git', ['diff', '--name-only', options.since, '--'], { cwd: options.cwd });
-  if (!result.ok) return [];
-  return result.stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line !== '');
+  /** @param {{ ok: boolean, stdout: string }} result */
+  const lines = (result) =>
+    result.ok
+      ? result.stdout
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line !== '')
+      : [];
+  const tracked = lines(run('git', ['diff', '--name-only', options.since, '--'], { cwd: options.cwd }));
+  // `git diff` lists tracked changes only, and gates run **before** the iteration's commit —
+  // so until 0.64.0 every brand-new file an iteration created was invisible here. A builder
+  // that satisfied its objective by adding a module drew the same "nothing changed since the
+  // last ratchet-advancing commit" as one that did nothing, and the mutation gate declined
+  // over work sitting in the tree. Found in dogfood run 9, where the objective was "prove the
+  // suite can fail" and the builder's answer was a new test file nothing counted.
+  //
+  // `--exclude-standard` so ignored files stay ignored: `node_modules` and build output are
+  // not this iteration's work, and mutating them is not a thing anybody wants.
+  const untracked = lines(run('git', ['ls-files', '--others', '--exclude-standard'], { cwd: options.cwd }));
+  // A failed listing degrades to fewer files rather than none: the gate then scopes to less
+  // and says so, which is the recoverable direction. Losing the tracked half because the
+  // second command failed would be the loud one.
+  return [...new Set([...tracked, ...untracked])];
 }
 
 /**

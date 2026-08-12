@@ -1170,8 +1170,61 @@ describe('changedSince', () => {
         return { ok: true, status: 0, stdout: 'src/a.ts\nsrc/b.js\n', stderr: '' };
       },
     });
-    assert.deepEqual(calls, [['git', 'diff', '--name-only', 'abc123', '--']]);
+    assert.deepEqual(calls, [
+      ['git', 'diff', '--name-only', 'abc123', '--'],
+      // Untracked additions are the iteration's work too, and gates run before its commit.
+      // `--exclude-standard` keeps node_modules and build output out of it.
+      ['git', 'ls-files', '--others', '--exclude-standard'],
+    ]);
     assert.deepEqual(files, ['src/a.ts', 'src/b.js']);
+  });
+
+  // Found in dogfood run 9. `git diff --name-only` lists tracked changes only, and gates run
+  // *before* the iteration's commit — so every brand-new file an iteration creates was
+  // invisible here. A builder that satisfied an objective by adding a module got the same
+  // "nothing changed since the last ratchet-advancing commit" as one that did nothing, and the
+  // mutation gate declined over work that was sitting right there.
+  it('includes files the iteration created but has not committed yet', () => {
+    /** @type {string[][]} */
+    const calls = [];
+    const files = changedSince({
+      cwd: '/repo',
+      since: 'abc123',
+      run: (command, args) => {
+        calls.push([command, ...args]);
+        return args[0] === 'diff'
+          ? { ok: true, status: 0, stdout: 'src/a.ts\n', stderr: '' }
+          : { ok: true, status: 0, stdout: 'src/brand-new.ts\n', stderr: '' };
+      },
+    });
+    assert.deepEqual(files, ['src/a.ts', 'src/brand-new.ts']);
+    assert.equal(calls.length, 2, 'untracked files were never asked about');
+  });
+
+  it('does not report the same file twice when it is both changed and listed', () => {
+    const files = changedSince({
+      cwd: '/repo',
+      since: 'abc123',
+      run: (_command, args) =>
+        args[0] === 'diff'
+          ? { ok: true, status: 0, stdout: 'src/a.ts\n', stderr: '' }
+          : { ok: true, status: 0, stdout: 'src/a.ts\n', stderr: '' },
+    });
+    assert.deepEqual(files, ['src/a.ts']);
+  });
+
+  it('still returns the tracked changes when the untracked listing fails', () => {
+    // Degrading to fewer files is the safe direction: the gate scopes to less and says so.
+    // Losing the tracked half because the second command failed would be the loud one.
+    const files = changedSince({
+      cwd: '/repo',
+      since: 'abc123',
+      run: (_command, args) =>
+        args[0] === 'diff'
+          ? { ok: true, status: 0, stdout: 'src/a.ts\n', stderr: '' }
+          : { ok: false, status: 1, stdout: '', stderr: 'boom' },
+    });
+    assert.deepEqual(files, ['src/a.ts']);
   });
 
   it('returns nothing when there is no baseline, rather than the whole tree', () => {
