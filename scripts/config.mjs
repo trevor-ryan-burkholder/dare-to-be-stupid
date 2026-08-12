@@ -20,7 +20,7 @@ import { DEFAULT_MAX_PROMPT_CHARACTERS } from './context-budget.mjs';
 /** @typedef {{ maxCharacters: number }} ContextBudgetConfig */
 /**
  * @typedef {{
- *   maxIterations: number, stallLimit: number, tokenCeiling: number,
+ *   maxIterations: number, stallLimit: number, tokenCeiling: number, costCeiling: number,
  *   reviewers: string[], ownership: Record<string, string[]>, requireUnanimous: boolean,
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, styleModel: string, lessonModel: string,
@@ -71,6 +71,15 @@ export function defaultConfig() {
     maxIterations: 25,
     stallLimit: 4,
     tokenCeiling: 4_000_000,
+    // Tokens bound work; only this bounds money, and the two are not interchangeable. The
+    // first dogfood run measured 20,223,215 tokens at $9.43 — $0.47 per million, because cache
+    // reads dominated the count. The same token figure at uncached input rates would have been
+    // an order of magnitude dearer, so no token number can be converted into a bill.
+    //
+    // Set generously on purpose: it is a backstop against a pathological run rather than a
+    // per-run budget, and a default that fired before `tokenCeiling` in ordinary operation
+    // would make every run stop for the wrong stated reason.
+    costCeiling: 50,
     reviewers: ['security', 'correctness', 'design'],
     ownership: Object.fromEntries(Object.entries(DEFAULT_OWNERSHIP).map(([reviewer, ids]) => [reviewer, [...ids]])),
     requireUnanimous: true,
@@ -111,6 +120,21 @@ const KNOWN_REVIEWERS = new Set(['security', 'correctness', 'design']);
 function requirePositiveInteger(value, key) {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
     throw new ConfigError(`${key} must be a positive integer; got ${JSON.stringify(value)}.`);
+  }
+  return value;
+}
+
+/**
+ * A positive amount of money. Not an integer: a ceiling of $2.50 is a reasonable thing to want,
+ * and rounding it to $2 or $3 would silently change what the operator asked for.
+ *
+ * @param {unknown} value
+ * @param {string} key
+ * @returns {number}
+ */
+function requirePositiveNumber(value, key) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new ConfigError(`${key} must be a positive, finite number; got ${JSON.stringify(value)}.`);
   }
   return value;
 }
@@ -207,6 +231,7 @@ export function validateConfig(input) {
   if ('maxIterations' in source) merged.maxIterations = requirePositiveInteger(source.maxIterations, 'maxIterations');
   if ('stallLimit' in source) merged.stallLimit = requirePositiveInteger(source.stallLimit, 'stallLimit');
   if ('tokenCeiling' in source) merged.tokenCeiling = requirePositiveInteger(source.tokenCeiling, 'tokenCeiling');
+  if ('costCeiling' in source) merged.costCeiling = requirePositiveNumber(source.costCeiling, 'costCeiling');
   if ('requireUnanimous' in source) {
     merged.requireUnanimous = requireBoolean(source.requireUnanimous, 'requireUnanimous');
   }

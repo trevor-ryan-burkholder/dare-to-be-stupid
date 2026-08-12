@@ -566,9 +566,13 @@ export function gateScore(results) {
 
 /**
  * @typedef {{
- *   iteration: number, spentTokens: number, stalledIterations: number,
+ *   iteration: number, spentTokens: number, spentUsd: number, stalledIterations: number,
  *   bestGateScore: number, bestPassingCount: number
  * }} RunProgress
+ *
+ * `spentUsd` sits beside `spentTokens` rather than outside the record, because a limit the
+ * loop cannot read is not a limit. It used to be a bare `let` in `driveRun`, which is why
+ * nothing could stop a run on cost.
  */
 
 /**
@@ -584,6 +588,18 @@ export function shouldContinue(progress, config) {
       continue: false,
       state: 'BUDGET',
       reason: `token ceiling reached: ${progress.spentTokens} of ${config.tokenCeiling}`,
+    };
+  }
+  // Checked separately, because tokens are a bad proxy for money and the first dogfood run
+  // measured how bad: 20,223,215 tokens cost $9.43, or $0.47 per million, because cache reads
+  // dominated the count. The same token figure at uncached input rates would have been an
+  // order of magnitude more. A token ceiling bounds *work*; only a cost ceiling bounds spend,
+  // and an operator who sets one has said something the other cannot express.
+  if (progress.spentUsd >= config.costCeiling) {
+    return {
+      continue: false,
+      state: 'BUDGET',
+      reason: `cost ceiling reached: $${progress.spentUsd.toFixed(4)} of $${config.costCeiling}`,
     };
   }
   if (progress.iteration >= config.maxIterations) {
@@ -629,14 +645,18 @@ export function recordProgress(progress, iteration) {
  *
  * @param {RunProgress} progress
  * @param {DareConfig} config
- * @returns {{ iterationsLeft: number, tokensLeft: number, fractionLeft: number }}
+ * @returns {{ iterationsLeft: number, tokensLeft: number, usdLeft: number, fractionLeft: number }}
  */
 export function airtimeRemaining(progress, config) {
   const iterationsLeft = Math.max(0, config.maxIterations - progress.iteration);
   const tokensLeft = Math.max(0, config.tokenCeiling - progress.spentTokens);
+  const usdLeft = Math.max(0, config.costCeiling - progress.spentUsd);
   const byIterations = config.maxIterations === 0 ? 0 : iterationsLeft / config.maxIterations;
   const byTokens = config.tokenCeiling === 0 ? 0 : tokensLeft / config.tokenCeiling;
-  return { iterationsLeft, tokensLeft, fractionLeft: Math.min(byIterations, byTokens) };
+  // The tightest of the three, so the counter reports the limit that will actually end the
+  // run rather than the most flattering one.
+  const byUsd = config.costCeiling === 0 ? 0 : usdLeft / config.costCeiling;
+  return { iterationsLeft, tokensLeft, usdLeft, fractionLeft: Math.min(byIterations, byTokens, byUsd) };
 }
 
 // ---------------------------------------------------------------------------
@@ -899,6 +919,7 @@ export function driveRun(options) {
   let progress = {
     iteration: 0,
     spentTokens: options.alreadySpent?.tokens ?? 0,
+    spentUsd: options.alreadySpent?.costUsd ?? 0,
     stalledIterations: 0,
     bestGateScore: 0,
     bestPassingCount: 0,
@@ -908,7 +929,6 @@ export function driveRun(options) {
   // `driveRun` rather than degrading to no pins: continuing would silently discard every
   // recorded guard and every carried pass, and the run would look healthier for the loss.
   const pins = readPins(dareDir);
-  let costUsd = options.alreadySpent?.costUsd ?? 0;
   let builderTokens = 0;
   let builderRuns = 0;
 
@@ -934,7 +954,7 @@ export function driveRun(options) {
     reason,
     iterations: progress.iteration,
     spentTokens: progress.spentTokens,
-    costUsd,
+    costUsd: progress.spentUsd,
     passing: loadState(dareDir).passing,
   });
 
@@ -1059,13 +1079,23 @@ export function driveRun(options) {
    * @returns {boolean} true when the ceiling is now breached
    */
   const charge = (result) => {
-    progress = { ...progress, spentTokens: progress.spentTokens + result.tokens };
-    costUsd += result.costUsd;
-    return progress.spentTokens >= config.tokenCeiling;
+    progress = {
+      ...progress,
+      spentTokens: progress.spentTokens + result.tokens,
+      spentUsd: progress.spentUsd + result.costUsd,
+    };
+    return progress.spentTokens >= config.tokenCeiling || progress.spentUsd >= config.costCeiling;
   };
 
-  /** Worded exactly as `shouldContinue` words it, so the two exits read the same. */
-  const ceilingReason = () => `token ceiling reached: ${progress.spentTokens} of ${config.tokenCeiling}`;
+  /**
+   * Worded exactly as `shouldContinue` words it, so the two exits read the same — and naming
+   * whichever ceiling actually fired, because "budget" without the reason sends an operator to
+   * change the wrong number.
+   */
+  const ceilingReason = () =>
+    progress.spentUsd >= config.costCeiling
+      ? `cost ceiling reached: $${progress.spentUsd.toFixed(4)} of $${config.costCeiling}`
+      : `token ceiling reached: ${progress.spentTokens} of ${config.tokenCeiling}`;
 
   for (;;) {
     const permission = shouldContinue(progress, config);

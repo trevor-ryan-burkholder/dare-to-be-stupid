@@ -200,6 +200,19 @@ Measured on 11 August 2026: a single builder child returned **20,223,215 tokens 
 setting a small ceiling should read it as "stop after this is exceeded", not as "do not exceed
 this", and should expect a single child to be able to overshoot by an order of magnitude.
 
+**And tokens cannot be converted into money, which is why `costCeiling` exists beside it.** The
+same run measured **20,223,215 tokens at $9.4345** — $0.47 per million, because cache reads
+dominated the count. At uncached input rates that token figure would have cost an order of
+magnitude more. So a token ceiling bounds *work* and only a cost ceiling bounds *spend*; neither
+substitutes for the other, and both are checked on every child. `costCeiling` reads the envelope's
+own `total_cost_usd` rather than estimating from a rate card, for the same reason nothing else
+here estimates.
+
+**On a subscription neither is the binding constraint.** There the limit is the rate-limit
+window, and a child that runs out of allowance is told apart from a child that failed:
+`EXHAUSTION_PATTERN` marks it, the work in progress is **committed**, and the run ends `BUDGET`
+saying it can resume. A stalled allowance is not a failed build and must never be scored as one.
+
 ---
 
 ## 3.6 Agent-config security scan (borrowed from ECC's AgentShield)
@@ -1249,7 +1262,8 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 |---|---|---|
 | `maxIterations` | 25 | |
 | `stallLimit` | 4 | iterations with no gate improvement before abort |
-| `tokenCeiling` | 4_000_000 | |
+| `tokenCeiling` | 4_000_000 | bounds *work*. Not a cap and not convertible to money — see §3.5 |
+| `costCeiling` | 50 | bounds *spend*, in USD, from the envelope's own `total_cost_usd`. Decimals allowed |
 | `reviewers` | `["security","correctness","design"]` | the specialized cold panel (§1.1); each owns its DoD lines |
 | `ownership` | see §1.1 | reviewer → id patterns (`*` is the only wildcard). Must cover every required id, or the run refuses to start |
 | `requireUnanimous` | true | every panel member must return pass on its lines |

@@ -411,7 +411,7 @@ describe('runGates', () => {
 
 describe('shouldContinue', () => {
   const config = { ...defaultConfig(), maxIterations: 5, stallLimit: 3, tokenCeiling: 1000 };
-  const base = { iteration: 0, spentTokens: 0, stalledIterations: 0, bestGateScore: 0, bestPassingCount: 0 };
+  const base = { iteration: 0, spentTokens: 0, spentUsd: 0, stalledIterations: 0, bestGateScore: 0, bestPassingCount: 0 };
 
   it('allows a fresh run', () => {
     assert.deepStrictEqual(shouldContinue(base, config), { continue: true });
@@ -439,7 +439,7 @@ describe('shouldContinue', () => {
 });
 
 describe('recordProgress', () => {
-  const base = { iteration: 0, spentTokens: 0, stalledIterations: 2, bestGateScore: 3, bestPassingCount: 10 };
+  const base = { iteration: 0, spentTokens: 0, spentUsd: 0, stalledIterations: 2, bestGateScore: 3, bestPassingCount: 10 };
 
   it('resets the stall counter when a gate newly passes', () => {
     assert.equal(recordProgress(base, { gateScore: 4, passingCount: 10 }).stalledIterations, 0);
@@ -468,19 +468,31 @@ describe('airtimeRemaining', () => {
   it('reports whichever budget is closer to running out', () => {
     const config = { ...defaultConfig(), maxIterations: 10, tokenCeiling: 1000 };
     const airtime = airtimeRemaining(
-      { iteration: 2, spentTokens: 900, stalledIterations: 0, bestGateScore: 0, bestPassingCount: 0 },
+      { iteration: 2, spentTokens: 900, spentUsd: 0, stalledIterations: 0, bestGateScore: 0, bestPassingCount: 0 },
       config,
     );
-    assert.deepStrictEqual(airtime, { iterationsLeft: 8, tokensLeft: 100, fractionLeft: 0.1 });
+    assert.deepStrictEqual(airtime, { iterationsLeft: 8, tokensLeft: 100, usdLeft: 50, fractionLeft: 0.1 });
+  });
+
+  it('reports the cost budget as the tightest when money is what is running out', () => {
+    // Tokens are a bad proxy for money — measured at $0.47/M on the first dogfood run — so the
+    // counter has to be able to say "you are nearly out of budget" while tokens look fine.
+    const config = { ...defaultConfig(), maxIterations: 10, tokenCeiling: 1_000_000, costCeiling: 10 };
+    const airtime = airtimeRemaining(
+      { iteration: 1, spentTokens: 1000, spentUsd: 9.5, stalledIterations: 0, bestGateScore: 0, bestPassingCount: 0 },
+      config,
+    );
+    assert.equal(airtime.usdLeft, 0.5);
+    assert.equal(airtime.fractionLeft, 0.05);
   });
 
   it('never goes negative', () => {
     const config = { ...defaultConfig(), maxIterations: 2, tokenCeiling: 100 };
     const airtime = airtimeRemaining(
-      { iteration: 9, spentTokens: 900, stalledIterations: 0, bestGateScore: 0, bestPassingCount: 0 },
+      { iteration: 9, spentTokens: 900, spentUsd: 0, stalledIterations: 0, bestGateScore: 0, bestPassingCount: 0 },
       config,
     );
-    assert.deepStrictEqual(airtime, { iterationsLeft: 0, tokensLeft: 0, fractionLeft: 0 });
+    assert.deepStrictEqual(airtime, { iterationsLeft: 0, tokensLeft: 0, usdLeft: 50, fractionLeft: 0 });
   });
 });
 

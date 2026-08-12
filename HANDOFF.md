@@ -368,6 +368,26 @@ child in the pipeline.
 valuable result of the session's first dogfood arrived twelve minutes in, from reading two log
 lines against the code.
 
+## A cost ceiling, because tokens are not money (0.37.0)
+
+The same measurement that produced the overshoot finding produced a second one: **20,223,215
+tokens cost $9.4345** — $0.47 per million, because cache reads dominated the count. At uncached
+input rates that token figure would have cost an order of magnitude more. **No token number can
+be converted into a bill**, so `tokenCeiling` bounds work and cannot bound spend.
+
+`costCeiling` (default $50) is checked on every child alongside `tokenCeiling`, reading the
+envelope's own `total_cost_usd` rather than estimating from a rate card — the same reason nothing
+else here estimates. `spentUsd` moved into `RunProgress`, because a limit the loop cannot read is
+not a limit; it had been a bare `let` in `driveRun`. `airtimeRemaining` now reports the tightest
+of iterations, tokens and money, so the counter names the limit that will actually end the run
+rather than the most flattering one.
+
+**On a subscription neither ceiling is the binding constraint**, and the codebase already knew
+that before this session: `EXHAUSTION_PATTERN` tells a rate-limited child from a failed one,
+`landCleanly` **commits the work in progress**, and the run ends `BUDGET` stating it can resume. A
+stalled allowance is not a failed build. That path is unit-tested and has still never fired
+against a real rate limit.
+
 ## The second finding: one child can be ten times the ceiling
 
 ```

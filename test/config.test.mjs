@@ -43,6 +43,7 @@ describe('defaultConfig', () => {
       maxIterations: 25,
       stallLimit: 4,
       tokenCeiling: 4000000,
+      costCeiling: 50,
       reviewers: ['security', 'correctness', 'design'],
       ownership: {
         security: ['DoD-2-security'],
@@ -135,6 +136,16 @@ describe('validateConfig merges over the defaults', () => {
     assert.equal(validateConfig({ advisory: { minConfidence: 1 } }).advisory.minConfidence, 1);
     for (const bad of [-0.1, 1.5, 70, '0.7', null]) {
       assert.throws(() => validateConfig({ advisory: { minConfidence: bad } }), ConfigError, `accepted ${bad}`);
+    }
+  });
+
+  it('takes a cost ceiling as a positive amount, decimals included', () => {
+    // Not an integer: $2.50 is a reasonable ceiling and rounding it would silently change
+    // what the operator asked for.
+    assert.equal(validateConfig({ costCeiling: 2.5 }).costCeiling, 2.5);
+    assert.equal(validateConfig({ costCeiling: 0.01 }).costCeiling, 0.01);
+    for (const bad of [0, -1, '50', null, Number.POSITIVE_INFINITY, Number.NaN]) {
+      assert.throws(() => validateConfig({ costCeiling: bad }), ConfigError, `accepted ${bad}`);
     }
   });
 
