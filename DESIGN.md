@@ -1088,6 +1088,21 @@ build children it spawns (§3), fenced by the guard hook (§6).
   the ratchet. This kills fake/tautological tests structurally instead of catching them at
   review after they've already cost an iteration.
 
+  **It withholds credit; it does not fail the iteration.** That is what this section always
+  said, and for one version the implementation did something else — red-evidence was a blocking
+  gate, and blocking deadlocks. Measured across four iterations on 11 August 2026:
+  `seenFailing: 0`, because a builder writing code and its tests in the *same child* produces
+  tests that already pass by the time gates run. So every id added after the first gating was
+  permanently unproven, the gate failed, the iteration failed, and **the ratchet could not
+  advance** — which is what kept `previousPassing` empty, which is what made them unproven.
+  Circular. It is why every run this project had ever performed ended `passing: 0`, and it meant
+  the ratchet had never once advanced in a real run.
+
+  The deterrent is unchanged and arguably sharper: an unproven test earns **no protection**, so
+  it cannot inflate the ratchet, while the iteration proceeds on its own merits. The loop's old
+  escape was perverse — delete the new tests and the gate passes — which is an incentive
+  gradient pointing at deleting tests, inside a design built to stop exactly that.
+
   **The first gating of a project is baselined, and that is a fix rather than a softening.**
   Measured on 11 August 2026: a builder wrote a complete application whose **83 tests all
   passed on the first gate run**. Every one was "unproven", the gate failed, and the objective

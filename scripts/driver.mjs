@@ -2072,16 +2072,50 @@ export function redEvidenceGate(options) {
   const baselined = [...new Set(options.passing)].filter((id) => baseline.has(id)).length;
   return {
     name: 'red-evidence',
-    ok: unproven.length === 0,
-    status: unproven.length === 0 ? 0 : 1,
+    // Reports; does not fail. See this function's header for why blocking deadlocked the
+    // ratchet, and `unprovenIds` for where the deterrent actually lives now.
+    ok: true,
+    status: 0,
     detail:
       unproven.length > 0
-        ? `never observed failing, so unproven: ${unproven.join(', ')}`
+        ? `${unproven.length} test(s) never observed failing, so earning no ratchet credit: ${unproven.join(', ')}`
         : baselined > 0
           ? `every newly passing test was seen failing first; ${baselined} in the first-gating baseline, ` +
             'which red evidence cannot cover and mutation and assertion checks do'
           : 'every newly passing test was seen failing first',
   };
+}
+
+/**
+ * The ids a report contains that have no red history, and therefore earn no ratchet credit.
+ *
+ * This is where RED-before-GREEN actually bites, and it is what `DESIGN.md` §8 always said it
+ * was: *"a test that has only ever been green is treated as unproven and doesn't count toward
+ * the ratchet."* It never said the gate fails the iteration.
+ *
+ * Making it fail was a deadlock, measured on 11 August 2026 across four iterations. A builder
+ * that writes code and its tests in the *same child* produces tests that already pass by the
+ * time gates run — `seenFailing: 0` after four iterations. So every id added after the first
+ * gating was permanently unproven, red-evidence failed, the iteration failed, and **the ratchet
+ * could not advance** — which left `previousPassing` empty, which is what made them unproven.
+ * Circular, and it explains why every run this project has ever performed ended `passing: 0`.
+ *
+ * The deterrent survives the change and is arguably sharper: an unproven test earns **no
+ * protection**, so a fake green test cannot inflate the ratchet, and the iteration is not
+ * blocked on evidence that could not exist. The shape of a fake test is caught deterministically
+ * elsewhere — `gate-integrity`'s assertion check (§4) and the conditional mutation pass (§4.4).
+ *
+ * @param {{ passing: Iterable<string>, previousPassing: Iterable<string>,
+ *   redSeen: Iterable<string>, baseline?: Iterable<string> }} options
+ * @returns {Set<string>} the ids to withhold from the ratchet
+ */
+export function unprovenIds(options) {
+  const before = new Set(options.previousPassing);
+  const red = new Set(options.redSeen);
+  const baseline = new Set(options.baseline ?? []);
+  return new Set(
+    [...new Set(options.passing)].filter((id) => !before.has(id) && !red.has(id) && !baseline.has(id)),
+  );
 }
 
 // ===========================================================================
@@ -2701,15 +2735,21 @@ export function main(argv, io = {}) {
     // Passing ids are handed over too, because the first gating of a project has to record
     // what it found as a baseline: those tests have no "before" to have been red in.
     const red = recordRedEvidence(treeDare, nonPassing, [...passing]);
+    const evidence = { previousPassing, passing, redSeen: red.seenFailing, baseline: red.baseline };
     const results = [
       ...commandResults.results,
       // The static gates are filtered by the same table as the command gates. `observability`
       // is the one that moves: a CLI has no health endpoint to answer, and the gate was
       // failing it for not having one.
       ...applicableGates(staticGates(dir, { run: shell }), capabilities).gates,
-      redEvidenceGate({ previousPassing, passing, redSeen: red.seenFailing, baseline: red.baseline }),
+      redEvidenceGate(evidence),
     ];
-    return { ok: results.every((result) => result.ok), results, passing };
+    // Withheld rather than blocked. An unproven test earns no protection from the ratchet,
+    // which is the deterrent §8 always described; failing the iteration on it deadlocked the
+    // run instead, because the evidence it demanded could not be produced.
+    const unproven = unprovenIds(evidence);
+    const credited = new Set([...passing].filter((id) => !unproven.has(id)));
+    return { ok: results.every((result) => result.ok), results, passing: credited };
   };
 
   /**

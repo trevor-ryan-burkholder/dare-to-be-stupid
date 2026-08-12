@@ -549,8 +549,19 @@ implementation made it blocking, and blocking is what deadlocks.
 
 The spec's version is self-consistent: an unproven test earns **no ratchet credit**, which is the
 deterrent — a fake green test cannot inflate the protected set — while the iteration proceeds.
-`gate-integrity`'s assertion check and the mutation pass cover the shape. Not yet implemented;
-this is the next change, and it is the most valuable one outstanding.
+`gate-integrity`'s assertion check and the mutation pass cover the shape.
+
+**Implemented at 0.39.0.** `redEvidenceGate` reports and no longer blocks; a new `unprovenIds`
+withholds those ids from the passing set `gateTree` returns, so they earn no ratchet protection.
+Verified on the real 83 ids plus one added later: **83 of 84 credited**, the new one withheld and
+named, and the gate does not block. Four tests changed from asserting the old blocking behaviour
+to asserting the withholding, and one new test asserts red-evidence **never** blocks whatever it
+finds — the deadlock in a single line.
+
+**Not verified:** no run has yet advanced the ratchet. The change makes it possible; only a run
+proves it. That is the next thing to do, and for the first time the path to the panel is clear
+on paper: iteration 1 credits its baseline, the ratchet advances, later iterations proceed with
+new tests uncredited but unblocking.
 
 ## What the run did NOT establish
 

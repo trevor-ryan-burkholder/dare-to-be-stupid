@@ -39,6 +39,7 @@ import {
   parseDriverArgs,
   recordRedEvidence,
   redEvidenceGate,
+  unprovenIds,
   requiredIdsFor,
   staticGates,
   appendBlooper,
@@ -2465,10 +2466,21 @@ describe('red-evidence', () => {
     assert.equal(gate.ok, true);
   });
 
-  it('fails a test that has only ever been green', () => {
+  it('withholds ratchet credit from a test that has only ever been green', () => {
     const gate = redEvidenceGate({ previousPassing: ['a::1'], passing: ['a::1', 'b::2'], redSeen: [] });
-    assert.equal(gate.ok, false);
+    // Reports, does not block. The deterrent is that b::2 earns no protection, not that the
+    // iteration dies — blocking deadlocked the ratchet, measured across four iterations.
+    assert.equal(gate.ok, true);
     assert.equal(gate.detail.includes('b::2'), true);
+    assert.deepEqual([...unprovenIds({ previousPassing: [], passing: ['a::1', 'b::2'], redSeen: ['a::1'] })], ['b::2']);
+  });
+
+  it('never blocks an iteration, whatever it finds', () => {
+    // The deadlock in one assertion. Advancing the ratchet requires every gate to pass;
+    // red-evidence used to be a gate that could only pass once the ratchet had advanced.
+    for (const passing of [[], ['a::1'], ['a::1', 'b::2', 'c::3']]) {
+      assert.equal(redEvidenceGate({ previousPassing: [], passing, redSeen: [] }).ok, true);
+    }
   });
 
   it('does not re-judge tests the ratchet already holds', () => {
@@ -2501,11 +2513,12 @@ describe('red-evidence', () => {
     // a builder cannot make an already-green test have been red. Four iterations of that ends
     // STALLED without reaching a reviewer. Same shape as the e2e gate failing a CLI forever.
 
-    it('fails every id when there is no baseline, which is the defect', () => {
-      // Kept as a test rather than deleted: it is the behaviour the baseline exists to escape,
-      // and a later reader should be able to see exactly what was wrong.
-      const gate = redEvidenceGate({ previousPassing: [], passing: ['a::1', 'b::2'], redSeen: [] });
-      assert.equal(gate.ok, false);
+    it('withholds every id when there is no baseline, but does not block', () => {
+      // Both halves of the history are visible here. Blocking is what deadlocked the run;
+      // withholding is what §8 always specified.
+      const evidence = { previousPassing: [], passing: ['a::1', 'b::2'], redSeen: [] };
+      assert.equal(redEvidenceGate(evidence).ok, true);
+      assert.deepEqual([...unprovenIds(evidence)].sort(), ['a::1', 'b::2']);
     });
 
     it('admits the ids present at the first gating', () => {
@@ -2535,9 +2548,17 @@ describe('red-evidence', () => {
         redSeen: [],
         baseline: ['a::1'],
       });
-      assert.equal(gate.ok, false);
+      assert.equal(gate.ok, true, 'red-evidence must not block; that deadlocked the ratchet');
       assert.equal(gate.detail.includes('later::9'), true);
       assert.equal(gate.detail.includes('a::1'), false, 'a baselined id was reported unproven');
+      // The id added later earns no credit; the baselined one keeps it.
+      const withheld = unprovenIds({
+        previousPassing: [],
+        passing: ['a::1', 'later::9'],
+        redSeen: [],
+        baseline: ['a::1'],
+      });
+      assert.deepEqual([...withheld], ['later::9']);
     });
 
     it('writes the baseline exactly once, on the first gating', () => {
