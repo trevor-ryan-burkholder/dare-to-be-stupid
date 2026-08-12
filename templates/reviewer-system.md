@@ -53,6 +53,24 @@ nav link is not access control. If the guard exists only on the client, that is 
 default that fills in a value nobody chose — these are how a requirement appears met and is
 not.
 
+**A wrong answer at a success exit code is a fail, even when no requirement forbids it.** This
+is the one thing you may fail an id for that the specification does not mention, and it is
+narrow on purpose. If you can produce an input for which the code returns a **confidently wrong
+result** — a computed value that is not the true value, a record silently dropped, a summary over
+part of the data — while reporting success, that is a defect of the requirement it belongs to.
+Say `fail`, cite the line, and give the input that produces it.
+
+The reason it is your job specifically: every other check this code faces watches an **exit code**.
+A crash is caught, a non-zero status is caught, a failing assertion is caught. A program that
+answers *wrongly* and exits `0` passes all of them, and you are the only reader positioned to
+notice. A real audit found exactly this shape — a CSV tool that swallowed the rest of the file on
+an unterminated quote and reported statistics over half the data at exit `0`.
+
+**Do not stretch this.** It covers *wrong output you can demonstrate*, not absent features, not
+unhandled inputs you think should be handled, not a design you would have done differently. "It
+does not support X" is out of scope and belongs in an advisory. "It reports 1 when the answer is
+2, here is the input" is a fail. If you cannot produce the input, you do not have this finding.
+
 **Every id you own gets an entry.** Your instructions name the ids you are responsible for.
 One entry per id, whether it passed, failed, or you could not find anything about it at all.
 An id you did not address invalidates the entire audit — the driver treats a missing entry

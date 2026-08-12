@@ -202,6 +202,20 @@ describe('the builder template', () => {
     assert.equal(BUILDER.includes('declaring an ambiguity is not an assessment'), true);
   });
 
+  it('lets the reviewer fail a wrong answer that exits successfully, and bounds it', () => {
+    // The one thing a reviewer may fail an id for that the specification does not mention. Every
+    // other check in this loop watches an exit code, so a program that answers wrongly and exits 0
+    // passes all of them - observed for real, a CSV tool that swallowed the rest of the file on an
+    // unterminated quote and reported statistics over half the data, which a panel then passed.
+    assert.equal(REVIEWER.includes('wrong answer at a success exit code is a fail'), true);
+    assert.equal(REVIEWER.includes('confidently wrong'), true);
+    // Both halves, per F2: the bound is what stops this becoming "fail anything you would have
+    // built differently". A missing feature is an advisory; a demonstrable wrong output is a fail.
+    assert.equal(REVIEWER.includes('Do not stretch this'), true);
+    assert.equal(REVIEWER.includes('not absent features'), true);
+    assert.equal(REVIEWER.includes('If you cannot produce the input'), true);
+  });
+
   it('tells the builder that emitting nothing is the common case', () => {
     // The failure mode that reaches the reviewer: a model that answers because it was asked.
     assert.equal(BUILDER.includes('Emit no block at all if nothing was ambiguous'), true);
