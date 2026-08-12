@@ -775,7 +775,69 @@ export function parseClaudeEnvelope(stdout) {
  * The driver applies the Junkion voice itself, at render, from `style.mjs`. Children speak
  * plainly.
  */
-const CHILD_SETTINGS = JSON.stringify({ outputStyle: 'default' });
+const CHILD_OUTPUT_STYLE = 'default';
+
+/** The plugin's own hook registration — the single declaration of what the guard matches. */
+const HOOKS_MANIFEST = fileURLToPath(new URL('../hooks/hooks.json', import.meta.url));
+
+/** The plugin root, resolved so it carries no trailing separator. */
+const PLUGIN_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+
+/**
+ * The settings forced on every child: the default output style, and **the guard hook**.
+ *
+ * The guard has to be handed over explicitly, and finding out why cost this project every
+ * dogfood run it has ever performed. `hooks/hooks.json` registers the guard for the
+ * *operator's* Claude Code sessions. A `claude -p` child does not load it — measured on
+ * 12 August 2026, a child stamped `DARE_RUNNING=1` overwrote `.dare/state.json` through
+ * both Write and Bash, in dangerous and non-dangerous mode, reporting
+ * `permission_denials: []`. The SessionStart half of the same plugin surface *did* reach
+ * that child, which is what made the gap invisible: the plugin was demonstrably loaded.
+ *
+ * So every run since the guard was written has built with no guard at all. §6 says a
+ * PreToolUse hook "fires regardless of permission mode", and that is true — it was never
+ * the permission mode. The hook was never registered for the process it was meant to fence.
+ *
+ * The registration is **read from the manifest rather than restated here**, because two
+ * copies of one matcher drift, and a driver denying less than the installed plugin would
+ * report nothing while doing it.
+ *
+ * Every failure path throws. A child spawned without a guard is precisely the defect this
+ * function exists to close, and `--settings` is silently ignored in `-p` mode when it fails
+ * validation — so a malformed blob would drop the guard *and* the output style without a
+ * word. Nothing here may degrade to a warning.
+ *
+ * @returns {string} the JSON for `--settings`
+ */
+function childSettings() {
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(HOOKS_MANIFEST, 'utf8'));
+  } catch (error) {
+    throw new DriverError(
+      `the guard hook registration at ${HOOKS_MANIFEST} could not be read (${error instanceof Error ? error.message : String(error)}). ` +
+        'Refusing to spawn a child: the guard is the only limit that survives --dangerously-skip-permissions (DESIGN.md §6).',
+    );
+  }
+  // `${CLAUDE_PLUGIN_ROOT}` is expanded by the plugin loader and by nothing else. Left in a
+  // settings blob it names no file, the hook cannot run, and a hook that cannot run does not
+  // deny — which fails open, silently, in the one place that must not.
+  const hooks = JSON.parse(JSON.stringify(manifest.hooks).split('${CLAUDE_PLUGIN_ROOT}').join(PLUGIN_ROOT));
+  const entries = hooks?.PreToolUse;
+  if (!Array.isArray(entries) || entries.length === 0) {
+    throw new DriverError(`${HOOKS_MANIFEST} declares no PreToolUse hook, so a child would run unguarded`);
+  }
+  for (const entry of entries) {
+    for (const hook of entry.hooks ?? []) {
+      const command = String(hook.command ?? '');
+      const script = command.slice(command.indexOf('"') + 1, command.lastIndexOf('"'));
+      if (script === '' || !existsSync(script)) {
+        throw new DriverError(`the guard hook command names no file on disk: ${command}`);
+      }
+    }
+  }
+  return JSON.stringify({ outputStyle: CHILD_OUTPUT_STYLE, hooks });
+}
 
 /**
  * What each phase is allowed to do, in one table so a new phase cannot inherit a blanket
@@ -854,7 +916,7 @@ export function childEnvironment(env) {
  */
 export function claudeArgs(options) {
   const policy = permissionsFor(options.phase);
-  const args = ['-p', '--output-format', 'json', '--settings', CHILD_SETTINGS, '--model', options.model];
+  const args = ['-p', '--output-format', 'json', '--settings', childSettings(), '--model', options.model];
   if (options.systemPrompt !== undefined && options.systemPrompt.length > 0) {
     args.push('--append-system-prompt', options.systemPrompt);
   }

@@ -926,6 +926,47 @@ The builder runs with `--dangerously-skip-permissions`. That's the premise. PreT
 hooks fire **regardless** of permission mode, which makes them the only reliable place to
 put a limit when everything else is off.
 
+**A hook only fires where it is registered, and for eleven versions it was registered in the
+wrong place.** `hooks/hooks.json` registers the guard with *Claude Code*, which applies it to
+the operator's own sessions. **A `claude -p` child does not load the operator's plugin
+PreToolUse hooks.** Measured on 12 August 2026: a child stamped `DARE_RUNNING=1` overwrote
+`.dare/state.json` through the Write tool and through a Bash redirect, in dangerous *and*
+non-dangerous mode, each time returning `permission_denials: []`. Every dogfood run this
+project has performed — including run 8, the one that `SHIPPED` — built with **no guard at
+all**.
+
+Nothing about the sentence above is a permission-mode problem, and the paragraph before it is
+not wrong: a hook supplied through `--settings` denies the same write under
+`--dangerously-skip-permissions` immediately. The hook was simply never handed to the process
+it was meant to fence.
+
+Two things made it invisible for so long, and both are worth knowing:
+
+- **The plugin *was* loaded in those children.** Its SessionStart hook injected content into
+  the same process, so every visible signal said the plugin was present. The two hook kinds do
+  not travel together.
+- **The guard's own tests were right, and passed throughout.** `test/guard.test.mjs` runs
+  `guard.mjs` as a subprocess and asserts the deny, the allow and the benign neighbour. It
+  proves the logic. It cannot prove the *invocation* — this is `claudeArgs` exactly (§11.1),
+  arrived at the safety mechanism itself, and it is the strongest argument in this repository
+  for the live tier's existence.
+
+So from 0.59.0 the driver supplies the hook itself, in the `--settings` blob it already passed
+for the output style. The registration is **read from `hooks/hooks.json` rather than restated**,
+because two declarations of one matcher drift and a driver denying less than the installed
+plugin would report nothing while doing it. `${CLAUDE_PLUGIN_ROOT}` is expanded by the plugin
+loader and by nothing else, so the driver substitutes it and refuses to spawn if the resulting
+path names no file — an unexpanded placeholder is a hook that cannot run, and a hook that
+cannot run does not deny. Every failure path throws, because `-p` mode **silently ignores a
+settings blob that fails validation**, and a silent drop there costs the guard and the output
+style together.
+
+It also means the guard no longer depends on the plugin being installed, or enabled, or at the
+same version as the tree — none of which was true on the machine where every dogfood run was
+launched. `test/live/guard-registration.live.test.mjs` holds the guarantee, and was verified by
+breaking it: without the registration, both deny cases fail and the benign neighbour still
+passes.
+
 `hooks/guard.mjs` reads the PreToolUse payload as JSON on stdin and blocks exactly:
 1. Mutation of **any path under `.dare/`** from inside a run. Reads are untouched. The
    directory holds the state and the evidence a run is judged by, and the process being
@@ -989,8 +1030,14 @@ relied on as one.
 
 **driver-owned is a guarantee.** It is enforced by a PreToolUse hook that fires regardless of
 permission mode, it covers `.dare/` at any depth including artifacts that do not exist yet, and
-three properties are asserted rather than assumed: a run is denied the write, an operator is
-allowed it, and a neighbour that merely resembles the name is untouched.
+**four** properties are asserted rather than assumed: a run is denied the write, an operator is
+allowed it, a neighbour that merely resembles the name is untouched — and **the hook is
+registered for the child at all**.
+
+The fourth was added at 0.59.0 and the first three had been green without it since 0.10.0. A
+guarantee is the conjunction of a correct rule and a place the rule runs, and this document
+asserted the first while describing the second. The distinction is not pedantic: on the
+evidence of §6, the difference between the two was every run this project has ever performed.
 
 **not supplied is not a barrier, and must never be written as one.** It reduces what the builder
 is *handed*. It does not make anything unreadable.

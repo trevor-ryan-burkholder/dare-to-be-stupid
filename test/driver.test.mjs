@@ -15,7 +15,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -567,7 +567,10 @@ describe('parseClaudeEnvelope', () => {
 describe('claudeArgs and the permission policy', () => {
   it('asks for json and pins the model', () => {
     const args = claudeArgs({ model: 'claude-sonnet-5', phase: 'builder' });
-    assert.equal(args.slice(0, 5).join(' '), '-p --output-format json --settings {"outputStyle":"default"}');
+    // The settings blob carries the guard hook as well as the style from 0.59.0, so its
+    // exact bytes are asserted by the guard tests below rather than pinned here.
+    assert.deepStrictEqual(args.slice(0, 4), ['-p', '--output-format', 'json', '--settings']);
+    assert.equal(args[5], '--model');
     assert.equal(args.includes('claude-sonnet-5'), true);
   });
 
@@ -629,8 +632,62 @@ describe('claudeArgs and the permission policy', () => {
       const args = claudeArgs({ model: 'm', phase });
       const at = args.indexOf('--settings');
       assert.notEqual(at, -1, `${phase} was given no settings override`);
-      assert.deepStrictEqual(JSON.parse(args[at + 1]), { outputStyle: 'default' });
+      assert.equal(JSON.parse(args[at + 1]).outputStyle, 'default');
     }
+  });
+
+  // The guard hook is the one limit that survives `--dangerously-skip-permissions`
+  // (DESIGN.md §6), and until 0.59.0 the driver never registered it with the children it
+  // spawns. It relied on `hooks/hooks.json`, which Claude Code applies to the operator's
+  // own sessions — **a `claude -p` child does not load the operator's plugin PreToolUse
+  // hooks.** Measured on 12 August 2026: a child stamped `DARE_RUNNING=1` overwrote
+  // `.dare/state.json` through both Write and Bash, in dangerous *and* non-dangerous mode,
+  // with `permission_denials: []`. The same write is denied the moment the hook arrives in
+  // `--settings`.
+  //
+  // This is the `claudeArgs` defect class landing on the safety mechanism itself: the guard's
+  // logic was thoroughly unit-tested and entirely correct, and nothing asserted it was ever
+  // *invoked*. The live check in tier 3 is what actually holds this; these assertions only
+  // keep the wiring honest.
+  describe('the guard hook travels with every child', () => {
+    /** @param {string} phase */
+    function settingsFor(phase) {
+      const args = claudeArgs({ model: 'm', phase });
+      return JSON.parse(args[args.indexOf('--settings') + 1]);
+    }
+
+    it('registers a PreToolUse guard for every phase, including the read-only ones', () => {
+      // Not just the builder. `prd` and `design` hold Write and Edit, so a child of either
+      // could rewrite the state it is judged by; the read-only phases carry it because a
+      // phase list is a thing that grows.
+      for (const phase of Object.keys(PHASE_PERMISSIONS)) {
+        const entries = settingsFor(phase).hooks?.PreToolUse;
+        assert.equal(Array.isArray(entries) && entries.length > 0, true, `${phase} spawns with no guard`);
+      }
+    });
+
+    it('takes the matcher from hooks/hooks.json rather than restating it', () => {
+      // Two declarations of the same matcher is the `CI_REQUIRED_COMMANDS` drift again: the
+      // installed plugin would deny a tool the driver's own children were free to use, and
+      // nothing would report the difference.
+      const manifest = JSON.parse(readFileSync(new URL('../hooks/hooks.json', import.meta.url), 'utf8'));
+      const declared = manifest.hooks.PreToolUse.map((/** @type {{matcher: string}} */ e) => e.matcher);
+      const supplied = settingsFor('builder').hooks.PreToolUse.map((/** @type {{matcher: string}} */ e) => e.matcher);
+      assert.deepStrictEqual(supplied, declared);
+      // Same shape, so a hook added to the manifest reaches the children rather than only
+      // the operator's own sessions.
+      assert.equal(settingsFor('builder').hooks.PreToolUse.length, manifest.hooks.PreToolUse.length);
+    });
+
+    it('resolves the plugin root to a guard that is actually on disk', () => {
+      // `${CLAUDE_PLUGIN_ROOT}` is expanded by the plugin loader, and nothing expands it
+      // inside a `--settings` blob. Left in place it names no file, the hook cannot run, and
+      // a hook that cannot run does not deny — the failure is silent and opens the gate.
+      const command = settingsFor('builder').hooks.PreToolUse[0].hooks[0].command;
+      assert.equal(command.includes('${CLAUDE_PLUGIN_ROOT}'), false, `unexpanded placeholder: ${command}`);
+      const script = command.slice(command.indexOf('"') + 1, command.lastIndexOf('"'));
+      assert.equal(existsSync(script), true, `the guard the children are pointed at does not exist: ${script}`);
+    });
   });
 
   it('appends a system prompt when one is given', () => {

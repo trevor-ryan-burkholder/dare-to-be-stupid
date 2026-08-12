@@ -46,13 +46,22 @@
 > `*.log` is ignored from 0.49.0, which fixes it for new runs. The general rule stands anyway:
 > **anything you leave in the working tree is subject to `git add -A` and to a hard reset.**
 
-**Nothing else in this file has been run.** It was written so
+**Cases D, E, F and G have now all been run**, on 11 and 12 August 2026. This file was written so
 that an operator with an hour and a budget can execute it without re-deriving anything, which is
 what the brief asks for when Claude usage cannot be consumed: *"prepare reproducible dogfood
 scripts and document exact commands, expected states and evidence to collect. Do not claim
 end-to-end validation occurred unless it did."*
 
-It did not occur. Every scenario below is untested.
+| case | state |
+|---|---|
+| **D** — deliberate rejection | runs 1–3. Correctly refused to ship; found the three unsatisfiable gates |
+| **E** — deliberate regression | **run 4, passed on every criterion.** Reset performed, blooper written, regression brief issued, no reviewer called |
+| **F** — security regression | **run 5, passed.** First `security-escalation` child; returned `moved`, pin re-pointed, no reset |
+| **G** — the smallest thing that could ship | runs 6–8. **Run 8 `SHIPPED`, the first in this project's history** — then an independent audit found the shipped binary discards data at exit 0 |
+| **A, B, C** | **still unrun.** Breadth rather than risk, now that D–G have four outcomes behind them |
+
+Full records for every one of them are in `HANDOFF.md`. Read the run-8 audit before treating
+`SHIPPED` as settled: a unanimous panel and a real defect have already coexisted here twice.
 
 ---
 
@@ -70,16 +79,18 @@ and E are reachable at all.
 Since 0.31.0 there is more to watch than there was, and most of it has never been observed
 outside a unit test:
 
-| what to watch | first appeared | why it is unproven |
+| what to watch | first appeared | state as of 12 August 2026 |
 |---|---|---|
-| prompt size climbing across iterations | 0.20.0 | the 400,000-character default is reasoned, not measured |
-| `.dare/pins.json` filling | 0.29.0 | no pin has ever been created by a real reviewer |
-| `.dare/assumptions.json` filling | 0.30.0 | no live builder has emitted the block |
-| the mutation gate | 0.31.0 | **provisioning is not wired — expect this to fail** |
-| `.dare/runs/NNN/` archiving | 0.28.0 | only ever exercised on temp directories |
-| the .NET toolchain | 0.32.0 | commands verified against a real SDK; never driven by a run |
+| **the ship condition itself** | 0.56.0–0.58.0 | **never exercised by a live run, and it is the top of the list.** A panel pass no longer ships alone (0.56.0), a security pin can be retracted (0.57.0), and the panel may fail a demonstrable wrong answer at exit 0 (0.58.0) |
+| prompt size climbing across iterations | 0.20.0 | observed climbing — run 3's brief grew 16,022 → 31,562 characters after findings were fed back. The 400,000-character ceiling has still never been reached, so it remains reasoned rather than measured |
+| `.dare/pins.json` filling | 0.29.0 | **proven, runs 3 and 5.** Pinned from real reviewer evidence, re-verified cheaply, and re-pinned after a `moved` escalation. `removed` and `unknown` are still unobserved and need a PRD whose security element is off the tested path |
+| `.dare/assumptions.json` filling | 0.30.0 | **proven from run 3 onward.** The citation bar at 0.45.0 was set by a live tier-3 failure, not by reasoning |
+| the mutation gate | 0.31.0 | **provisioning closed at 0.43.0** — both packages go into one npx sandbox, because Stryker resolves runner plugins beside its *own* install. Threshold set to `break: 60` at 0.47.0 with both directions measured |
+| `.dare/runs/NNN/` archiving | 0.28.0 | **fired live in run 4** — `.dare/runs/003/`, carrying `assumptions.json` beside `briefs/` and `run.json` |
+| the .NET toolchain | 0.32.0 | commands verified against a real SDK; **never driven by a run**, and no SDK on this machine |
 | the TRX reporter | 0.33.0 | only ever seen xunit output from a scaffolded solution |
 | per-toolchain guidance | 0.34.0 | proven selected and archived; never proven *read* |
+| a race with a live builder | 0.13.0 | **never once executed.** `race.enabled` is `false`; only the git half is tier-2 tested |
 
 ---
 
@@ -371,15 +382,17 @@ inside a four-hour run instead of a sixty-second one.
 
 ---
 
-## Known, expected failure
+## ~~Known, expected failure~~ — closed at 0.43.0
 
-**The mutation gate will fail on any project without `@stryker-mutator/vitest-runner`
-installed**, because nothing provisions it (`HANDOFF.md`, A5). Until that is wired, either
-install the plugin into the scenario repository by hand before starting:
+This section used to say the mutation gate would fail on any project without
+`@stryker-mutator/vitest-runner` installed, and told the operator to hand-install it or to read
+the failure as a provisioning gap. **Both halves are now wrong, and the second was the dangerous
+one** — it instructed a future session to dismiss a genuine gate failure.
 
-```bash
-npm install --save-dev @stryker-mutator/core @stryker-mutator/vitest-runner
-```
+Hand-installing never helped. Stryker resolves test-runner plugins relative to its **own**
+installation, and `npx --yes @stryker-mutator/core` puts that in npm's npx cache, where a
+project-local runner is invisible — dogfood run 3's project had it in `node_modules` and Stryker
+still died with `Cannot find TestRunner plugin "vitest"`. `scripts/toolchains/node.mjs` now names
+both packages with `-p` so the plugin lands in the same sandbox as the core looking for it.
 
-or expect the conditional second pass to fail every iteration that reaches it, and read that
-failure as a provisioning gap rather than as a defect in the work.
+**A mutation failure is now a finding about the work, not about provisioning.** Read it as one.

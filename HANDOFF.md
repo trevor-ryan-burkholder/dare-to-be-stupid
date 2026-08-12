@@ -1,12 +1,64 @@
 # START HERE — handoff, 12 August 2026
 
-**State:** `main` at `0.58.0`, pushed. `npm test` 1428 pass, `npm run test:integration` 12 pass,
-`npm run test:live` 8 of 8 armed and green. `npm run release-check` clean. Working tree clean.
+**State:** `main` at `0.59.0`. `npm test` 1431 pass, `npm run test:integration` 12 pass,
+`npm run test:live` 11 of 11 armed and green. `npm run release-check` clean.
 
-**The plugin is installed but DISABLED**, on purpose — the operator disabled it on 12 August
-because its `PreToolUse` hook taxes unrelated sessions. **Nothing needs it installed.** Every run
-here invoked `node <repo>/scripts/driver.mjs PRD.md --yes` directly; installing only supplies the
-guard hook registration and the slash command, and development uses neither.
+## The guard hook was never firing. Not once, in any run.
+
+**Found and fixed on 12 August 2026 at 0.59.0, and it is the most serious defect this project has
+had.** `hooks/hooks.json` registers the guard with Claude Code, which applies it to the
+*operator's* sessions. **A `claude -p` child does not load the operator's plugin PreToolUse
+hooks.** Measured, not inferred: a child stamped `DARE_RUNNING=1` overwrote `.dare/state.json`
+through the Write tool **and** through a Bash redirect, in dangerous **and** non-dangerous mode,
+each time returning `permission_denials: []`.
+
+**Every dogfood run in this file was performed with no guard at all**, run 8 included — the one
+that `SHIPPED`.
+
+Two things hid it, and both are instructive:
+
+- **The plugin was demonstrably loaded in those children.** Its *SessionStart* hook injected
+  content into the same process. The two hook kinds do not travel together, so every visible
+  signal said the plugin was present.
+- **`test/guard.test.mjs` was right the whole time and passed the whole time.** It runs
+  `guard.mjs` as a subprocess and proves the deny, the allow and the benign neighbour. It proves
+  the *logic*. Nothing asserted the *invocation*. **This is the `claudeArgs` defect, arrived at
+  the safety mechanism** — and the single strongest argument this repository owns for §11.1.
+
+The fix: the driver supplies the hook in the `--settings` blob it already passed for the output
+style, **reading the matcher from `hooks/hooks.json`** rather than restating it, expanding
+`${CLAUDE_PLUGIN_ROOT}` itself, and throwing on every failure path — `-p` mode silently ignores a
+settings blob that fails validation, which would drop the guard and the style together without a
+word. It no longer depends on the plugin being installed, enabled, or at the tree's version, none
+of which was true here. `test/live/guard-registration.live.test.mjs` holds it, and was verified by
+sabotage: without the registration both deny cases fail and the benign neighbour still passes.
+`DESIGN.md` §6.
+
+**The plugin is installed at 0.39.0 — nineteen versions stale — and its hook is live in ordinary
+sessions** (it refused a recursive `rm` in this one). That no longer matters for a run, which is
+the point of the fix, but do not read a denial in your own terminal as evidence a child is fenced.
+They are different processes and, until 0.59.0, different answers.
+
+## The second finding: children inherit the operator's context, and it is wider than §5.0 says
+
+Also measured on 12 August, and **not yet fixed.** A `claude -p` child — in the repo *and in an
+empty temp directory* — is handed the operator's installed-plugin SessionStart injections, the
+project `MEMORY.md`, `userEmail`, git status and the skills list. Asked without tools, a child
+quoted this machine's memory line back verbatim.
+
+It is not only a skill surface. The injected text carries **imperative behavioural instructions**
+(*"Invoke relevant skills BEFORE any response or action — including clarifying questions"*), and a
+child obeyed **that** instead of the driver's prompt: tier 3 failed once with a live builder
+answering *"What would you like me to focus on today?"* to a prompt that asked for one word. It
+passed on re-run. **An intermittent instruction-override in every child of the loop, including the
+cold panel**, whose starvation is the reason the architecture exists (§1.1).
+
+`--safe-mode` is the mechanism and it is verified: it suppresses the injections, the memory and
+CLAUDE.md, and unlike `--bare` it leaves auth working on a subscription. **It also disables
+hooks — so it must never be given to a phase that can write**, or it would undo the fix above.
+The defensible split is the read-only cold phases (`review`, `reality-check`, `lesson-extractor`,
+`security-escalation`), which hold no writing tool and need no guard. That is a decision, not a
+patch, and it is the next one to take.
 
 ## The one thing to know before doing anything
 
@@ -29,6 +81,12 @@ makes the mutation gate apply again) but **design is not evidence.** The next ru
    with 0.56–0.58 live, and it answers whether a ship still happens when a ship must now be earned.
    The previous scenarios are at `~/dare-dogfood/csvstat` and `csvstat2`; logs go **outside the
    tree**, at `~/dare-logs/`.
+
+   **It is also the first run in this project's history that will have a guard hook** (0.59.0,
+   above). Prefer the *same* PRD run 8 shipped, on a *fresh* repo: it holds the specification
+   constant against a known outcome, so what it measures is the loop — whether a ship is still
+   reached when every test must be earned from zero, and whether 0.58.0's widened remit catches
+   the exit-0 data loss the run-8 panel passed. A new PRD would change two variables at once.
 2. **Racing has never run with a live builder.** `race.enabled` is `false`; the git half is tier‑2
    tested, and the half that costs money has never executed once. C5 is blocked behind it. This is
    the largest untested surface left.
