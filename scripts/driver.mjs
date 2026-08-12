@@ -1996,11 +1996,29 @@ export function playwrightConfigPresent(cwd) {
  * So this runs before the gates each iteration and is a no-op until there is something to
  * provision for, then a no-op forever after.
  *
- * @param {{ cwd: string, dareDir: string, run: import('./plugins.mjs').Runner }} options
+ * **It also declines when the `e2e` gate does not apply**, which was observed rather than
+ * reasoned: dogfood run 3 logged `installed chromium for the e2e gate` one line after logging
+ * that the e2e gate does not apply to that project. It downloaded a browser to satisfy a gate it
+ * had already decided not to run — because the only question asked was whether a Playwright config
+ * exists, and one existed for a reason that has since been fixed (the `ci` gate demanded a
+ * Playwright step from a browserless project, §4.2). Harmless, but it is minutes and disk spent on
+ * nothing, and it is the §4.2 provisioning seam paying out exactly as predicted.
+ *
+ * `capabilities` is optional, and omitting it provisions as before. That is the safe direction
+ * here for the opposite reason to the CI filter: a missing browser makes a gate that *does* apply
+ * fail on its absence, so over-provisioning wastes time while under-provisioning fails a run.
+ *
+ * @param {{ cwd: string, dareDir: string, run: import('./plugins.mjs').Runner,
+ *          capabilities?: readonly string[] | null }} options
  * @returns {{ installed: boolean, detail: string }}
  */
 export function ensurePlaywrightBrowsers(options) {
   const { cwd, dareDir, run } = options;
+  const capabilities = options.capabilities ?? null;
+  if (capabilities !== null) {
+    const verdict = gateApplies('e2e', capabilities);
+    if (!verdict.applies) return { installed: false, detail: `no browser needed: ${verdict.why}` };
+  }
   if (!playwrightConfigPresent(cwd)) return { installed: false, detail: 'no playwright config yet' };
   const marker = path.join(dareDir, 'playwright-installed');
   if (existsSync(marker)) return { installed: false, detail: 'browsers already provisioned' };
@@ -2733,7 +2751,7 @@ export function main(argv, io = {}) {
       capabilities,
     );
     for (const skip of applicable.skipped) write(verbatim(`gate ${skip.name} does not apply: ${skip.reason}`));
-    const browsers = ensurePlaywrightBrowsers({ cwd: dir, dareDir: treeDare, run: shell });
+    const browsers = ensurePlaywrightBrowsers({ cwd: dir, dareDir: treeDare, run: shell, capabilities });
     if (browsers.installed) write(verbatim(browsers.detail));
     const commandResults = runGates(applicable.gates, { cwd: dir, run: shell });
 

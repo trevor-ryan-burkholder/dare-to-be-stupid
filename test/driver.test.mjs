@@ -2826,6 +2826,44 @@ describe('ensurePlaywrightBrowsers', () => {
     assert.deepStrictEqual(calls, ['npx playwright install chromium'], 'must not reinstall');
   });
 
+  it('downloads no browser for a project whose e2e gate does not apply', () => {
+    // Dogfood run 3 logged `installed chromium for the e2e gate` one line after logging that the
+    // e2e gate does not apply to that project. A config existed - because the `ci` gate was
+    // demanding a Playwright step from a browserless project - and a config was the only question
+    // this function asked.
+    const cwd = makeTempDir();
+    writeFileSync(path.join(cwd, 'playwright.config.js'), 'module.exports = {};\n', 'utf8');
+    /** @type {string[]} */
+    const calls = [];
+    const result = ensurePlaywrightBrowsers({
+      cwd,
+      dareDir: path.join(cwd, '.dare'),
+      run: runnerRecording(calls),
+      capabilities: ['api', 'persistent-storage'],
+    });
+    assert.equal(result.installed, false);
+    assert.equal(result.detail.includes('none of web-ui, desktop-ui'), true, result.detail);
+    assert.deepStrictEqual(calls, [], 'a browser was downloaded for a gate that will not run');
+  });
+
+  it('still downloads the browser for a project whose e2e gate does apply', () => {
+    // The neighbour, and the asymmetry worth stating: under-provisioning is the worse error here,
+    // because a missing browser fails a gate that genuinely applies. Over-provisioning only wastes
+    // minutes, which is why omitting capabilities provisions as before.
+    const cwd = makeTempDir();
+    writeFileSync(path.join(cwd, 'playwright.config.js'), 'module.exports = {};\n', 'utf8');
+    /** @type {string[]} */
+    const calls = [];
+    const result = ensurePlaywrightBrowsers({
+      cwd,
+      dareDir: path.join(cwd, '.dare'),
+      run: runnerRecording(calls),
+      capabilities: ['web-ui'],
+    });
+    assert.equal(result.installed, true);
+    assert.deepStrictEqual(calls, ['npx playwright install chromium']);
+  });
+
   it('does not record success when the install failed', () => {
     const cwd = makeTempDir();
     writeFileSync(path.join(cwd, 'playwright.config.ts'), 'export default {};\n', 'utf8');

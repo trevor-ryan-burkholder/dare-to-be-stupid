@@ -87,7 +87,7 @@ same unsatisfiable shape as the three above, but what score means done is a prod
 | architect toolchain declaration | **residual of B3.** Node is first in `TOOLCHAINS`, so a repo with both `package.json` and a `.csproj` resolves to node silently |
 | ~~mutation provisioning~~ | **closed at 0.43.0, and it was worse than A5 recorded.** Installing the runner locally would not have helped — Stryker looks beside its own install, not the project's. Both packages now go into one npx sandbox |
 | **`break: 100` mutation threshold** | **decide this.** Demands a perfect mutation score per changed file; measured 83.33 on a two-branch function with two honest tests. `DESIGN.md` §4.4 |
-| Playwright provisioning not capability-gated | `installed chromium for the e2e gate` was logged on a project whose e2e gate does not apply. Harmless but wasteful, and the seam §4.2 predicted |
+| ~~Playwright provisioning not capability-gated~~ | **closed at 0.44.0.** `installed chromium for the e2e gate` had been logged one line after `gate e2e does not apply`. `ensurePlaywrightBrowsers` now declines when the gate does not apply; omitting capabilities still provisions, since under-provisioning fails a gate that *does* apply |
 | `assumptions.json` run attribution | **new, found in run 3, unfixed.** Carried across runs but keyed by `iteration`, which restarts per run — run 2's `iteration: 2` and run 3's are indistinguishable. Same shape as the C2 brief collision |
 | `gate-integrity` vs a vacuous branch | **new, unverified.** The builder found an import-edges test that could never fail; the gate bans weak matchers, not assertion-free branches |
 | A9's tier-3 check | written, never run: `DARE_LIVE=1 npm run test:live` |
@@ -425,9 +425,14 @@ Read these before designing anything; several are smaller than they look.
   (item 5). What survives is the **Playwright provisioning path**:
   `playwrightConfigPresent` and `ensurePlaywrightBrowsers` still key off `playwright.config.*`
   and the `.dare/playwright-installed` marker, both of which are Node-specific and neither of
-  which passes through the toolchain. It is harmless today — provisioning is a no-op until
-  there is a config to provision for — but a second toolchain with a different e2e runner will
-  find it, and it belongs behind an operation on the adapter.
+  which passes through the toolchain. A second toolchain with a different e2e runner will find
+  it, and it belongs behind an operation on the adapter.
+
+  **It was not harmless, and the note above said it was.** "Provisioning is a no-op until there is
+  a config to provision for" is true and was the wrong question: run 3 logged `installed chromium
+  for the e2e gate` one line after `gate e2e does not apply`, because a config existed for a reason
+  unrelated to any browser — the `ci` gate was demanding a Playwright step from a browserless
+  project. Capability-gated at 0.44.0. The Node-specificity is what remains.
 
 ## Items, in dependency order
 
