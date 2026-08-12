@@ -1,38 +1,76 @@
 # START HERE — handoff, 11 August 2026
 
-**State:** `main` at `0.40.0`. `npm test` 1378 pass, `npm run test:integration` 12 pass, `npm run
-test:live` correctly fails unarmed. `npm run release-check` clean.
+**State:** `main` at `0.43.0`, four commits ahead of `origin` and **not pushed**. `npm test` 1384
+pass, `npm run test:integration` 12 pass, `npm run test:live` correctly fails unarmed. `npm run
+release-check` clean.
 
-## There is a run in progress that this session did not see finish
+## Run 3 finished, and it found three gates the builder could not satisfy
 
-`~/dare-dogfood/rejection` — dogfood case D, launched from the **working tree**, iteration 2 of
-3 when this session ended. **Read its outcome first; it is the most valuable unrecorded thing.**
-
-```bash
-cd ~/dare-dogfood/rejection
-pgrep -f 'dare-to-be-stupid/scripts/driver.mjs'   # still going?
-tail -40 run.log                                  # terminal state and closing tally
-cat .dare/state.json                              # was 93 ids at iteration 1
-ls .dare/runs/                                    # 001, 002 — archiving
-grep -n 'panel unanimous\|review outstanding\|cannot ship\|SHIPPED' run.log
+```
+BUDGET: iteration limit reached: 3 of 3
+iterations: 3  tokens: 39555536  cost: $22.7225  passing: 93
 ```
 
-Already observed and recorded below: the ratchet advanced (93 ids — a first), the cold panel ran,
-and it **refused to ship** with five findings. `PRD-4.1` in that repo is deliberately impossible,
-so a correct run never reaches `SHIPPED`. **`SHIPPED` would be a serious bug.** Write whatever it
-did into the run-3 section below, whichever way it went.
+**It did not ship, which is the correct outcome** — `PRD-4.1` is deliberately impossible, so
+`SHIPPED` would have been the serious bug. The panel ran in iteration 1 and refused with five
+findings, and the ratchet held 93 ids.
+
+But the ratchet **never advanced past iteration 1**, and the reason is the finding of the session:
+
+```
+iteration 2 → gates failed: mutation, ci, gate-integrity
+iteration 3 → gates failed: mutation
+```
+
+**All three of iteration 2's failures were defects in this plugin, and the builder could not have
+fixed any of them.** Each is now fixed, each with the evidence in its commit message:
+
+| gate | why it could not pass | fixed |
+|---|---|---|
+| `mutation` | Stryker resolves runner plugins relative to its own install; `npx` put that in the npx cache where `@stryker-mutator/vitest-runner` is invisible. Uncaught crash, **no project could ever pass** | 0.43.0 |
+| `ci` | required a Playwright step on a project whose `e2e` gate had just been declined as inapplicable | 0.40.0 |
+| `gate-integrity` | walked `.stryker-tmp`, the sandbox the crashed mutation gate left behind, and failed on 22 files that do not exist in the tree | 0.42.0 |
+
+**The clearest single piece of evidence this project has produced.** Run 2's panel found the CI
+e2e step was green by construction. Run 3's builder obeyed it and removed `continue-on-error: true`
+— and then the `ci` gate failed for missing e2e, so iteration 3 put the step back as
+`npx playwright test --pass-with-no-tests`, which on a project with no browser tests is *also*
+green by construction. **The builder was oscillating between two of our own gates**, and neither
+position could satisfy both. Verified in that repo's git history, not inferred.
+
+Two more things it established: `.dare/assumptions.json` reached `[2, 2, 4, 2, 2]` — four entries
+labelled iteration 2 from two different runs (fixed 0.41.0) — and `installed chromium for the e2e
+gate` appears in the log **on a project whose e2e gate does not apply**, which is the Playwright
+provisioning seam §4.2 already flags as ungated, now observed rather than predicted.
+
+**The next wall is written down and deliberately not fixed.** `break: 100` demands a *perfect*
+mutation score on every changed file. First measurement: **83.33** on one two-branch function with
+two honest tests, failed by an `EqualityOperator` survivor no correct suite need kill. That is the
+same unsatisfiable shape as the three above, but what score means done is a product decision. See
+`DESIGN.md` §4.4; set it from a measurement and write the measurement down.
 
 ## Two traps, both of which nearly cost this session
 
-1. **The install cache is stale.** `installed_plugins.json` says **0.34.0**; the tree is 0.39.0.
-   Anything run from the cache exercises code five versions old — including before the
-   red-evidence deadlock fix. Either `/plugin update` + `/reload-plugins`, or invoke
-   `node <repo>/scripts/driver.mjs` directly as this session did. Check the pinned
-   `gitCommitSha` before debugging anything.
-2. **A green suite proves less than it looks.** Three of the five defects found today were
-   invisible to 1,356 passing tests: a duplicate heading needed a real brief, the budget hole
-   needed a real bill, the red-evidence deadlock needed a real run's artifacts. Prefer looking at
-   a produced artifact over adding an assertion.
+1. **The install cache is stale.** `installed_plugins.json` says **0.34.0**; the tree is 0.43.0.
+   Anything run from the cache exercises code nine versions old — including before the
+   red-evidence deadlock fix and all four of this session's gate fixes. Either `/plugin update` +
+   `/reload-plugins`, or invoke `node <repo>/scripts/driver.mjs` directly as this session did.
+   Check the pinned `gitCommitSha` before debugging anything.
+2. **A green suite proves less than it looks.** Every defect this session found was invisible to
+   1,378 passing tests, and each one was found by reading a real artifact: the failing brief named
+   three gates, `.dare/assumptions.json` explained *why* the builder faked a CI step, and the
+   dogfood repo's git history showed it oscillating. Prefer looking at a produced artifact over
+   adding an assertion.
+3. **The dominant defect class in this codebase is a gate the builder cannot satisfy**, and it has
+   now bitten six times: `e2e` failing a CLI forever, the red-evidence deadlock, `ci` demanding a
+   browser, `gate-integrity` on another gate's debris, `mutation` unable to load its runner, and
+   `break: 100` demanding a perfect score. **They do not look like failures — they look like a
+   builder that will not comply.** When an iteration fails the same gate twice, check whether the
+   objective is satisfiable *before* reading the builder's work.
+4. **A structural test can match the wrong text and report coverage it does not have.** This
+   session wrote one that passed with the very call site it guarded reverted, because the source
+   line contained the word it grepped for in a different call. Verify such a test by breaking the
+   thing it protects and watching it fail.
 
 ## What is outstanding
 
@@ -47,7 +85,9 @@ did into the run-3 section below, whichever way it went.
 | A3 held-out oracle | deferred behind D2 and B2's driver-owned test invocation |
 | C5 differentiated race candidates | cheap, but ordered behind a live test of a `claude -p` child in a race worktree |
 | architect toolchain declaration | **residual of B3.** Node is first in `TOOLCHAINS`, so a repo with both `package.json` and a `.csproj` resolves to node silently |
-| mutation provisioning | **residual of A5.** Nothing installs `@stryker-mutator/vitest-runner`; the gate fails on a missing runner rather than a defect |
+| ~~mutation provisioning~~ | **closed at 0.43.0, and it was worse than A5 recorded.** Installing the runner locally would not have helped — Stryker looks beside its own install, not the project's. Both packages now go into one npx sandbox |
+| **`break: 100` mutation threshold** | **decide this.** Demands a perfect mutation score per changed file; measured 83.33 on a two-branch function with two honest tests. `DESIGN.md` §4.4 |
+| Playwright provisioning not capability-gated | `installed chromium for the e2e gate` was logged on a project whose e2e gate does not apply. Harmless but wasteful, and the seam §4.2 predicted |
 | `assumptions.json` run attribution | **new, found in run 3, unfixed.** Carried across runs but keyed by `iteration`, which restarts per run — run 2's `iteration: 2` and run 3's are indistinguishable. Same shape as the C2 brief collision |
 | `gate-integrity` vs a vacuous branch | **new, unverified.** The builder found an import-edges test that could never fail; the gate bans weak matchers, not assertion-free branches |
 | A9's tier-3 check | written, never run: `DARE_LIVE=1 npm run test:live` |
