@@ -1,12 +1,87 @@
 # START HERE — handoff, 12 August 2026
 
-**State:** `main` at `0.49.0`, **pushed.** `npm test` 1394 pass, `npm run test:integration` 12
+**State:** `main` at `0.52.0`, **pushed.** `npm test` 1406 pass, `npm run test:integration` 12
 pass, `npm run test:live` **8 of 8 armed and green** (it now has a first execution to compare
 against). `npm run release-check` clean.
 
-**Cases E and F have both now passed on live runs.** What is left is breadth (D2 cases A, B, C), one
-scenario needing a different PRD (`removed`/`unknown` pin verdicts), and the .NET adapter, which is
-blocked on an SDK this machine does not have.
+**Cases E and F have both passed on live runs. `SHIPPED` has still never happened** — run 6 got
+closest and was destroyed by a defect of ours, now fixed at 0.51.0 and 0.52.0. The next run of case G
+is the one to watch: it is the first with both fixes, and the first where the architect is told which
+gates exist.
+
+**Unfixed and worth a decision:** nothing verifies the lesson extractor's output, and run 6 proved it
+can be confidently wrong (below).
+
+## Run 6: it built the thing, and then the loop destroyed 75 ids over a runner
+
+Case G — a small, deliberately satisfiable CLI, six iterations, nothing impossible. Ended
+`BUDGET: iteration limit reached: 6 of 6`, 45.6M tokens, $31.09, `passing: 75`. **Still no run has
+ever reached `SHIPPED`**, and this one came closest by a distance.
+
+Two independent agents were given the artifacts, neither with this session's context. One verified
+the binary against the PRD by execution; one was handed a hypothesis about the cause and told to
+refute it. **It did refute it, and the correction matters more than the confirmation.**
+
+### The code was genuinely good, and the panel's attention was spent elsewhere
+
+All ten PRD requirements **pass**, verified by running the binary: the exit-code contract, `empty`
+counts, quoted commas, doubled quotes, embedded newlines, BOM stripping, physical line numbering.
+The loop produced working software.
+
+The verifier then found seven defects the PRD did not cover, one of them serious: a stray or
+unterminated quote silently swallows the rest of the file into one field and **exits 0 with
+confidently wrong statistics**. Its verdict — *"spec-complete rather than trustworthy"*.
+
+**The panel did not find it.** It found a different genuine parsing bug (a file ending in two
+newlines is rejected with exit 3), so it was not asleep. But **four of its eight findings were about
+the mess our own gates created** — vitest invoked by `npx` but absent from the manifest, the
+dependency guard "inverted rather than satisfied", `vitest.config.js` untracked so the coverage
+thresholds sat outside version control. That is a new and worse cost for the unsatisfiable-gate
+class: it does not only burn iterations, **it displaces hostile attention away from the product.**
+
+### The causal chain, and the hypothesis that was wrong
+
+The obvious reading — the security gate failed once vitest's dependencies appeared — is **false**.
+`npm audit` exits 0 on that tree, the reviewer independently ran it at iteration 4 and reported *"0
+vulnerabilities over 23 packages"*, and **vitest was never a dependency in any commit**; it was
+always `npx --yes vitest`, structurally invisible to `npm audit`. What actually happened:
+
+1. The plugin collects test ids **only** via `npx vitest run --reporter=json`.
+2. **The architect was never told, and was told the opposite.** The design prompt was
+   `architect.md` + the PRD; `templates/architect.md` promises *"the test gates you write into
+   `CLAUDE.md` are the gates the run will actually execute"*. False for `unit`.
+3. So the architect wrote `CLAUDE.md`: *"Never add a dependency… not `vitest`."*
+4. The builder spotted the contradiction on **iteration 1** and predicted this exact failure in
+   `assumptions.json`.
+5. The panel objected that the executing dependency set was outside any auditable manifest, and
+   suggested **adding** vitest. The builder took the other branch on `CLAUDE.md`'s authority and
+   removed it.
+6. The report came back **structurally empty** — `numTotalTests: 0`, "No test suite found in file".
+7. **The ratchet cannot tell "collected nothing" from "everything failed".** Absent ≡ regressed, and
+   regressions are checked first, so 75 ids "regressed" and the tree was hard-reset. Iteration 6's
+   work is unrecoverable — `git fsck --lost-found` is empty.
+8. **The operator was never told why.** The gate-failure report sits *after* the reset branch, so no
+   `gates failed:` line printed at all. The log says regression; the cause was a runner.
+
+Fixed in two halves. **0.51.0** gives the ratchet the collected-test count, so a report containing no
+tests rejects the iteration instead of resetting the tree — while a report where tests really ran and
+failed still resets, so §1.2 is kept rather than traded. **0.52.0** puts the resolved gate commands
+into the architect's prompt and tells it not to write a project rule forbidding what they require,
+which makes `architect.md`'s promise true and stops the contradiction being authored at all.
+
+### The lesson store recorded something false
+
+`lessons.json` came out of the wreck saying the `DoD-2-security` **gate** rejects any devDependency
+and only passes once dependencies are removed. Every clause is wrong: it is a panel requirement not
+a gate, the gate exits 0 on that tree, and the objection was that vitest was *missing* from the
+manifest. It was stamped `resolved: 6` — crediting the iteration that was hard-reset for destroying
+the ratchet.
+
+**This is a third failure mode for F4, and worse than the generalities it was watching for.** A
+generality is ignorable. A specific, well-formed, confidently wrong lesson is actionable, persistent,
+and would be injected into future briefs. It was deleted from the scenario; a copy is kept as
+evidence. What is not fixed is the mechanism: nothing checks a lesson against the run it came from,
+and the extractor is the one child whose output nothing verifies.
 
 ## Run 5: case F passed, and the panel's findings converged 5 → 4 → 3
 
@@ -301,6 +376,7 @@ details buries the one entry that mattered, and §8.3's whole value is that a re
 | ~~Playwright provisioning not capability-gated~~ | **closed at 0.44.0.** `installed chromium for the e2e gate` had been logged one line after `gate e2e does not apply`. `ensurePlaywrightBrowsers` now declines when the gate does not apply; omitting capabilities still provisions, since under-provisioning fails a gate that *does* apply |
 | `assumptions.json` run attribution | **new, found in run 3, unfixed.** Carried across runs but keyed by `iteration`, which restarts per run — run 2's `iteration: 2` and run 3's are indistinguishable. Same shape as the C2 brief collision |
 | `gate-integrity` vs a vacuous branch | **confirmed by probe, and deliberately not fixed.** It passes both the `continue`-past-the-assertion shape and `test('asserts nothing', …)`. The first is the coverage question and belongs to the mutation gate; the second is detectable but would fail legitimate `does not throw` and helper-based suites. `DESIGN.md` §4 |
+| lesson extractor is unverified | **new, unfixed.** Run 6's lesson was specific, well-formed and false in every clause, and would have been injected into later briefs. Nothing checks a lesson against the run it came from |
 | ~~A9's tier-3 check~~ | **run for the first time, and it earned itself immediately.** 8 tests; on the first execution 7 passed and one found a real template defect (below). Fixed at 0.45.0, re-run live, 8 of 8 |
 
 ## A finding about the generated app, not about the plugin
