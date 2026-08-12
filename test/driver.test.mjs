@@ -3456,3 +3456,88 @@ describe('formatGateFailure', () => {
     assert.deepStrictEqual(formatGateFailure([]), []);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The terminal record (0.68.0)
+// ---------------------------------------------------------------------------
+
+describe('.dare/outcome.json', () => {
+  /** @param {Partial<import('../scripts/driver.mjs').Effects>} [overrides] */
+  function localEffects(overrides = {}) {
+    /** @type {import('../scripts/driver.mjs').ClaudeResult} */
+    const ok = { ok: true, text: '', costUsd: 0.01, tokens: 100, raw: '' };
+    return {
+      build: () => ok,
+      review: () => ({ ...ok, text: JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'a.ts:1', detail: 'd' }] }) }),
+      realityCheck: () => ({ ...ok, text: 'buildable' }),
+      gates: () => ({ ok: true, results: [{ name: 'mutation', ok: true, status: 0, detail: 'no survivors' }] }),
+      readTestReports: () => [{ numTotalTests: 1, testResults: [] }],
+      commit: () => 'commit1',
+      diffStat: () => ' 1 file changed',
+      ship: () => {},
+      now: () => '2026-08-10T01:49:52.963Z',
+      log: () => {},
+      ...overrides,
+    };
+  }
+
+  // run.json records what a run *was*, at its start. Nothing recorded how it ended, so the
+  // terminal state lived only in stdout — and run 4 proved stdout is not durable: its log was
+  // inside the tree, `git add -A` tracked it, and the ratchet's own `git reset --hard` reverted
+  // it. Worse, git replaces the file rather than truncating, so the shell's descriptor pointed
+  // at an unlinked inode and every line after the reset went nowhere. That run's result had to
+  // be reconstructed from `.dare/`, `git log` and the reflog.
+
+  /** @param {Partial<import('../scripts/driver.mjs').Effects>} overrides */
+  function outcomeOf(overrides) {
+    const root = makeTempDir();
+    const dareDir = path.join(root, '.dare');
+    const result = driveRun({
+      config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
+      dareDir,
+      rootDir: root,
+      requiredIds: ['PRD-1.1'],
+      task: 'build the thing',
+      effects: localEffects(overrides),
+    });
+    const file = path.join(dareDir, 'outcome.json');
+    return { result, written: existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null };
+  }
+
+  it('records the terminal state, and the values match what the driver returned', () => {
+    const { result, written } = outcomeOf({});
+    assert.notEqual(written, null, 'no terminal record was written');
+    assert.equal(written.state, result.state);
+    assert.equal(written.reason, result.reason);
+    assert.equal(written.iterations, result.iterations);
+    assert.equal(written.costUsd, result.costUsd);
+  });
+
+  it('carries a timestamp from the injected clock, not from a hidden one', () => {
+    // Same discipline as the Build Brief: nothing here consults a clock it was not handed.
+    const { written } = outcomeOf({ now: () => '2026-08-12T00:00:00.000Z' });
+    assert.equal(written.endedAt, '2026-08-12T00:00:00.000Z');
+  });
+
+  it('does not fail the run when the record cannot be written', () => {
+    // Forensics. Destroying a completed run's result because its receipt could not be filed
+    // would be exactly the wrong way round — so the failure is reported, not raised.
+    const root = makeTempDir();
+    const dareDir = path.join(root, '.dare');
+    mkdirSync(dareDir, { recursive: true });
+    // A directory where the file must go: the write fails, the run must not.
+    mkdirSync(path.join(dareDir, 'outcome.json'), { recursive: true });
+    /** @type {string[]} */
+    const logged = [];
+    const result = driveRun({
+      config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
+      dareDir,
+      rootDir: root,
+      requiredIds: ['PRD-1.1'],
+      task: 'build the thing',
+      effects: localEffects({ log: (line) => logged.push(line) }),
+    });
+    assert.equal(typeof result.state, 'string', 'the run died over a forensic artifact');
+    assert.equal(logged.some((line) => line.includes('outcome.json')), true, 'the failure was silent');
+  });
+});

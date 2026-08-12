@@ -1228,6 +1228,36 @@ means nobody managed to ask, not that there is no Claude.
 It needed no new guard rule. §6's protection is positional, so a builder cannot rewrite the
 record of what it is.
 
+### 7.3 `.dare/outcome.json` — what this run *ended* as
+
+§7.1 records what a run **was**, written once after the design phase. Nothing recorded how it
+**ended**: the terminal state, the reason, the iteration count and the spend existed only on
+stdout.
+
+**Stdout is not durable, and this project has the proof.** Dogfood run 4's log lived inside the
+repository because an earlier version of `DOGFOOD.md` said to put it there, `git add -A` tracked
+it, and the ratchet's own `git reset --hard` reverted it. Worse than losing lines: git *replaces*
+the file rather than truncating it, so the shell's open descriptor was left pointing at an
+unlinked inode and **every line written after the reset went nowhere.** That run's terminal state
+had to be reconstructed from `.dare/`, `git log` and the reflog.
+
+So `finish` writes one record on every terminal path — `state`, `reason`, `iterations`,
+`spentTokens`, `costUsd`, `passing`, and `endedAt` from the injected clock. Three properties:
+
+- **It is written at the one door every terminal state passes through.** A state added later
+  cannot forget it, which is the same argument §3.9 makes for the context budget living inside
+  `spawnClaude`.
+- **It lands in `.dare/`**, so it is driver-owned by §6's positional rule and needs no new
+  guard clause, and the ratchet never rewrites it.
+- **Failing to write it does not fail the run.** This is forensics. Destroying a completed run's
+  result because its receipt could not be filed is the wrong way round — the failure is reported
+  instead. That is the opposite of §7.2's archiving, which *does* fail the run, and the
+  difference is real: archiving protects the **previous** run's evidence, and continuing over a
+  failed archive destroys it.
+
+It joins the per-run archive list, because like `run.json` it is overwritten wholesale and a
+second run would otherwise erase the first one's ending.
+
 ### 7.2 `.dare/runs/NNN/` — the previous run, kept
 
 A manifest that only ever describes the *current* run is current rather than forensic. Before

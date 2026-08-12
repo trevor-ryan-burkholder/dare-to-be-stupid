@@ -55,6 +55,7 @@ export const RUN_ARCHIVE_DIR = 'runs';
  * - `briefs/` — collides by number, per above. The archived brief is the only record of what
  *   the builder was actually asked on the iteration a run went wrong.
  * - `reality-check.md` — overwritten, and it is the reasoning behind an `ABORTED`.
+ * - `outcome.json` — overwritten wholesale, and it is the only durable record of how a run ended.
  * - `assumptions.json` — **appended**, which is a different fault with a worse consequence.
  *   Nothing is destroyed; instead entries accumulate keyed by `iteration`, and iteration
  *   numbering restarts every run, so a second run's `iteration: 2` lands beside the first's
@@ -73,7 +74,7 @@ export const RUN_ARCHIVE_DIR = 'runs';
  * they are already transient within a run, and archiving the last one would preserve an
  * arbitrary moment while implying it was the run's.
  */
-const PER_RUN_ARTIFACTS = [RUN_MANIFEST, 'briefs', 'reality-check.md', ASSUMPTIONS_FILE, 'review.json'];
+const PER_RUN_ARTIFACTS = [RUN_MANIFEST, 'briefs', 'reality-check.md', ASSUMPTIONS_FILE, 'review.json', 'outcome.json'];
 
 /** The manifest's own schema version, bumped when a field's meaning changes. */
 const MANIFEST_VERSION = 1;

@@ -452,6 +452,17 @@ export function parseReviewerReport(raw, options) {
 export const REVIEW_RECORD = 'review.json';
 
 /**
+ * What a run *ended* as, written by `finish` on every terminal path.
+ *
+ * `run.json` (§7.1) records what a run was at its start and is written once after the design
+ * phase. Nothing recorded the ending, so the terminal state existed only in stdout — and run 4
+ * proved that stdout is not durable: its log lived in the tree, `git add -A` tracked it, and the
+ * ratchet's own reset reverted it. The result had to be reconstructed from `.dare/`, `git log`
+ * and the reflog.
+ */
+export const OUTCOME_FILE = 'outcome.json';
+
+/**
  * Persist what the panel actually decided.
  *
  * **The loop shipped a project and left no record of why.** An independent audit of the first
@@ -1066,14 +1077,41 @@ export function driveRun(options) {
    * @param {string} reason
    * @returns {RunOutcome}
    */
-  const finish = (state, reason) => ({
-    state,
-    reason,
-    iterations: progress.iteration,
-    spentTokens: progress.spentTokens,
-    costUsd: progress.spentUsd,
-    passing: loadState(dareDir).passing,
-  });
+  const finish = (state, reason) => {
+    const outcome = {
+      state,
+      reason,
+      iterations: progress.iteration,
+      spentTokens: progress.spentTokens,
+      costUsd: progress.spentUsd,
+      passing: loadState(dareDir).passing,
+    };
+    // Every terminal path funnels through here, so this is the one door that a state added
+    // later cannot forget — the same argument the context budget uses for living inside
+    // `spawnClaude`.
+    //
+    // `run.json` records what a run *was*, at its start. Nothing recorded how it **ended**,
+    // and the terminal state lived only in stdout. Dogfood run 4 is the proof that this is not
+    // hypothetical: its log was inside the tree, `git add -A` tracked it, and the ratchet's own
+    // `git reset --hard` reverted it — worse, git *replaces* the file, so the shell's open
+    // descriptor pointed at an unlinked inode and every line after the reset went nowhere. That
+    // run's terminal state had to be reconstructed from `.dare/`, `git log` and the reflog.
+    //
+    // Writing it here puts the answer inside the one directory a run may not edit and the
+    // ratchet never rewrites. Failing to write it does **not** fail the run: this is forensics,
+    // and destroying a completed run's result because its receipt could not be filed would be
+    // the wrong way round. The failure is reported instead.
+    try {
+      writeFileSync(
+        path.join(dareDir, OUTCOME_FILE),
+        `${JSON.stringify({ version: 1, endedAt: effects.now(), ...outcome }, null, 2)}\n`,
+        'utf8',
+      );
+    } catch (error) {
+      effects.log(`could not write ${OUTCOME_FILE}: ${/** @type {Error} */ (error).message}`);
+    }
+    return outcome;
+  };
 
   /**
    * Terminate on an infrastructure failure rather than a verdict.
