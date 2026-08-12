@@ -52,6 +52,7 @@ import {
   assertNotNested,
   assertOwnershipCovers,
   claudeArgs,
+  formatGateFailure,
   combinePanel,
   inspectCiWorkflows,
   observabilityGate,
@@ -3410,5 +3411,48 @@ describe('ensurePlaywrightBrowsers', () => {
       assert.equal(playwrightConfigPresent(cwd), true, name);
     }
     assert.equal(playwrightConfigPresent(makeTempDir()), false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gate failure detail in the operator's log (0.66.0)
+// ---------------------------------------------------------------------------
+
+describe('formatGateFailure', () => {
+  // 0.53.0 made a failing gate's *name* reach the log, on the argument that a diagnosis which
+  // exists but is unreachable is not a diagnosis. The detail never followed it, and that cost
+  // two dogfood runs: `gates failed: mutation` was the whole record, while the actual event was
+  // Stryker dying with ERR_MODULE_NOT_FOUND. The output existed - it went into the next
+  // iteration's brief - but a run that ends BUDGET has no next brief, so the final iteration's
+  // failure is unrecoverable.
+
+  it('prints the detail under the name, verbatim', () => {
+    const lines = formatGateFailure([{ name: 'mutation', ok: false, status: 1, detail: 'Cannot find package' }]);
+    assert.equal(lines.some((line) => line.includes('mutation')), true);
+    assert.equal(lines.some((line) => line.includes('Cannot find package')), true);
+  });
+
+  it('says how many lines it dropped rather than trimming silently', () => {
+    // Same rule as the Build Brief: a log showing ten of forty lines reads exactly like a log
+    // with ten lines.
+    const detail = Array.from({ length: 100 }, (_, i) => `line ${i}`).join('\n');
+    const lines = formatGateFailure([{ name: 'build', ok: false, status: 1, detail }], 10);
+    assert.equal(lines.some((line) => /90 more line/.test(line)), true, 'the truncation was silent');
+  });
+
+  it('keeps a short detail whole, with nothing about truncation', () => {
+    const lines = formatGateFailure([{ name: 'lint', ok: false, status: 1, detail: 'a\nb' }], 10);
+    assert.equal(lines.some((line) => /more line/.test(line)), false);
+  });
+
+  it('says so when a failing gate reported nothing at all', () => {
+    // An empty detail is itself the finding - a gate that failed and explained nothing is the
+    // shape that hid the Stryker crash - so it may not render as an absent line.
+    const lines = formatGateFailure([{ name: 'e2e', ok: false, status: 1, detail: '   ' }]);
+    assert.equal(lines.join('\n').includes('no output'), true);
+  });
+
+  it('returns nothing when nothing failed', () => {
+    assert.deepStrictEqual(formatGateFailure([]), []);
   });
 });

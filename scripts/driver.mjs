@@ -1330,6 +1330,7 @@ export function driveRun(options) {
     // diagnosis.
     if (failedGates.length > 0) {
       effects.log(`gates failed: ${failedGates.map((result) => result.name).join(', ')}`);
+      for (const line of formatGateFailure(failedGates)) effects.log(line);
     }
 
     // ---- Phase 4: ratchet ----------------------------------------------
@@ -2402,6 +2403,52 @@ export function ensurePlaywrightBrowsers(options) {
  * touches anything runs it.
  *
  * @param {{ results: GateResult[] }} gateOutcome this iteration's gate results
+ * @param {{ seenFailing: Set<string> }} redEvidence
+ * @returns {{ proven: boolean, how: string }}
+ */
+/**
+ * The failing gates' own output, for the operator's log.
+ *
+ * 0.53.0 made a failing gate's **name** reach the log, arguing that a diagnosis which exists
+ * but is unreachable on the path that needs it is not a diagnosis. The detail never followed,
+ * and that omission cost two dogfood runs. `gates failed: mutation` was the entire record while
+ * the actual event was Stryker dying with `ERR_MODULE_NOT_FOUND: Cannot find package
+ * 'typescript'` — a crash, not a surviving mutant, and a completely different repair.
+ *
+ * The output was not lost, exactly: it went into the *next* iteration's brief. But a run that
+ * ends `BUDGET` has no next brief, so the final iteration's failure is unrecoverable, and the
+ * operator watching the log sees a gate name repeating and no reason. Both runs read as "the
+ * builder cannot satisfy the mutation gate" when the truth was "the gate never ran".
+ *
+ * Verbatim and unstyled, per §9. Capped per gate, because a compiler can emit thousands of
+ * lines — and the cap **announces itself**, on the Build Brief's rule: a log showing ten of
+ * forty lines reads exactly like a log with ten lines. An empty detail is reported rather than
+ * rendered as a blank, because a gate that failed and explained nothing is precisely the shape
+ * that hid the crash.
+ *
+ * @param {GateResult[]} failed
+ * @param {number} [maxLines] per gate
+ * @returns {string[]}
+ */
+export function formatGateFailure(failed, maxLines = 60) {
+  /** @type {string[]} */
+  const out = [];
+  for (const gate of failed) {
+    const detail = String(gate.detail ?? '');
+    if (detail.trim() === '') {
+      out.push(`  ${gate.name}: exited ${gate.status} with no output`);
+      continue;
+    }
+    const lines = detail.split('\n');
+    out.push(`  ${gate.name}:`);
+    for (const line of lines.slice(0, maxLines)) out.push(`    ${line}`);
+    if (lines.length > maxLines) out.push(`    ... ${lines.length - maxLines} more line(s) not shown`);
+  }
+  return out;
+}
+
+/**
+ * @param {{ results: GateResult[] }} gateOutcome
  * @param {{ seenFailing: Set<string> }} redEvidence
  * @returns {{ proven: boolean, how: string }}
  */
