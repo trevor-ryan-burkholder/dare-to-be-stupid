@@ -3,6 +3,56 @@
 **State:** `main` at `0.64.0`. `npm test` 1433 pass, `npm run test:integration` 12 pass,
 `npm run test:live` 11 of 11 armed and green. `npm run release-check` clean.
 
+## Open: the panel is three whole-repository reads run one after another
+
+**Deferred on 12 August 2026 — investigate later.** Recorded now because the measurement exists
+and re-deriving it costs an hour.
+
+Where run 10's wall-clock actually went, from its own log:
+
+| phase | children | total | avg |
+|---|---|---|---|
+| builder | 6 | **47 min** | 470s |
+| review | 6 | **26 min** | 263s |
+| design | 1 | 6 min | 365s |
+| lesson / escalation | 3 | 2 min | — |
+| **inside children** | | **1.4 h** | |
+
+Gates sit on top of that, mutation testing especially. Everything is sequential because children
+run under `execFileSync`, which blocks the event loop for the whole call — which is also why
+there is no heartbeat, and why "hung" and "working" look identical for nine minutes at a time.
+
+**The three reviewers are read-only, own disjoint ids, and never communicate.** They are
+independent by design (§1.1) and are serialised for no reason but plumbing. Running them
+concurrently turns a review round from ~13 minutes into roughly the slowest single reviewer,
+~4½ — and the saving grows with every iteration.
+
+**This file previously called the fix "a rewrite, not a fix" — making the driver async. That is
+probably wrong**, because this codebase already solved this exact problem once. `health-probe.mjs`
+is a separate program precisely because *"the driver's gates are synchronous exit codes, and
+starting a server, polling it and reaping it is not."* The same move applies: a
+`scripts/panel.mjs` that takes the panel spec, runs the reviewers concurrently and writes their
+envelopes out, invoked by the driver with one `execFileSync`. The driver stays synchronous, and
+nothing cascades through `driveRun` or its tests.
+
+**Four guarantees currently live inside `spawnClaude` and would have to move with it**, or the
+saving is bought by silently deleting them:
+
+- the **context budget** check before each child (§3.9) — a new door that forgets it is a door
+  has no lock;
+- **cost and token accounting** from every envelope, or the ceilings stop counting;
+- **one reviewer failing must not lose the other two**, and an unparseable report must still
+  fail rather than default to pass;
+- `combinePanel`'s **coverage re-check**, so a truncated result cannot leave an id unjudged.
+
+**One honest risk:** three concurrent children on a subscription may hit the rate-limit window
+harder, or be throttled into looking like failures. Measurable rather than theoretical, and if it
+throttles the answer is a concurrency of 2, not a revert.
+
+**Do not buy this time by lowering reviewer effort.** `max` (0.67.0) is what produced run 10's
+4000-case differential fuzz and its real `npm install -g` reproduction of an inert `bin`. That is
+the only thing in this architecture that has ever caught a defect no gate can see.
+
 ## Open: 0.56.0 hands the builder an objective it cannot act on
 
 Run 9 shipped, so 0.56.0 is **satisfiable** — but it cost one entirely wasted iteration
