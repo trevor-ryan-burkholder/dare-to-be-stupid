@@ -8,6 +8,26 @@
 > D's own question**, because the panel was never reached. Full record in `HANDOFF.md`. Fix the
 > budget accounting before running anything else here, or every scenario will die the same way.
 
+> **Run 2 and run 3 followed**, from the working tree rather than the install cache — the cache
+> lags whenever the plugin has not been re-installed, and running it would exercise old code.
+> Run 2 found the red-evidence deadlock (fixed at 0.39.0). Run 3 was launched immediately after
+> that fix to see whether the ratchet finally advances.
+>
+> **Reading run 3's result**, in `~/dare-dogfood/rejection`:
+>
+> ```bash
+> tail -30 run.log                     # terminal state and the closing tally
+> cat .dare/state.json                 # passing[] non-empty means THE RATCHET ADVANCED - a first
+> grep -c '"' .dare/red-evidence.json  # baseline vs seenFailing
+> ls .dare/runs/                       # 001, 002 ... archiving working
+> grep 'review outstanding\|panel unanimous\|cannot ship' run.log
+> ```
+>
+> `PRD-4.1` — sub-millisecond HTTP on a cold process — **cannot be satisfied**. So a correct run
+> either has the panel fail that id, or the reality-check breaker declare the PRD unbuildable.
+> **`SHIPPED` would be the serious bug**: it would mean the panel passed an impossible
+> requirement.
+
 **Nothing else in this file has been run.** It was written so
 that an operator with an hour and a budget can execute it without re-deriving anything, which is
 what the brief asks for when Claude usage cannot be consumed: *"prepare reproducible dogfood
