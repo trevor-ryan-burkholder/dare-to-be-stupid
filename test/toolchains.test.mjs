@@ -299,7 +299,11 @@ describe('the conditional second pass', () => {
     assert.deepEqual(gates[0].command, [
       'npx',
       '--yes',
+      '-p',
       '@stryker-mutator/core',
+      '-p',
+      '@stryker-mutator/vitest-runner',
+      'stryker',
       'run',
       path.join('/repo/.dare', MUTATION_CONFIG),
       '--testRunner',
@@ -311,6 +315,27 @@ describe('the conditional second pass', () => {
       '--logLevel',
       'error',
     ]);
+  });
+
+  it('installs the test-runner plugin beside the core that looks for it', () => {
+    // The gate could not pass on any project, ever. Stryker resolves test-runner plugins
+    // relative to its own installation, and `npx --yes @stryker-mutator/core` installs into
+    // npm's npx cache - so `@stryker-mutator/vitest-runner` was invisible there whether or not
+    // the project had it, and Stryker died with `no TestRunner plugins were loaded`. It ended
+    // dogfood run 3 twice. Asserted separately from the argv above because this is the property,
+    // and someone rewriting that array should have to delete a test that says why.
+    const { gates } = gatesFor(
+      nodeToolchain,
+      { root: '/repo', dareDir: '/repo/.dare', changedFiles: ['src/a.js'] },
+      CONDITIONAL_GATE_OPERATIONS,
+    );
+    const argv = /** @type {string[]} */ (gates[0].command);
+    assert.equal(argv.includes('@stryker-mutator/vitest-runner'), true);
+    // Named via `-p`, which is what puts it in the sandbox, rather than appearing as a bare
+    // positional argument that Stryker would read as something else entirely.
+    assert.equal(argv[argv.indexOf('@stryker-mutator/vitest-runner') - 1], '-p');
+    // And the bin, not the package, is what npx is asked to execute once `-p` is in play.
+    assert.equal(argv[argv.indexOf('run') - 1], 'stryker');
   });
 
   it('never mutates the tests, which would mutate the oracle into a lie', () => {

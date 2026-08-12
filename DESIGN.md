@@ -712,6 +712,30 @@ So there is a second pass, and that ordering is the whole of the change:
   simply not asked until asking is worth the time.
 - **Mutation results stay out of the ratchet.** It is a pass/fail gate producing no test ids.
 
+**The runner's plugin has to live where the runner looks.** Stryker resolves test-runner plugins
+relative to its *own* installation, and `npx --yes @stryker-mutator/core` puts that installation
+in npm's npx cache. `@stryker-mutator/vitest-runner` was therefore invisible **whether or not the
+project had installed it** — dogfood run 3's project had it in `node_modules` and Stryker still
+died with `Cannot find TestRunner plugin "vitest". In fact, no TestRunner plugins were loaded`, an
+uncaught error rather than a gate result. **No project could ever have passed this gate**, and it
+ended run 3 twice. Naming both packages with `-p` and invoking the `stryker` bin puts the plugin in
+the same sandbox as the core that looks for it; measured on a project with vitest and no Stryker at
+all, the plugin loads, mutants run, the runner finds the *project's* vitest, and the driver-owned
+threshold still forces the failing exit code.
+
+**`break: 100` is an open question, not a settled one.** The threshold exists because Stryker's
+default is `null`, meaning surviving mutants exit 0 and the gate cannot fail at all. `100` made it
+able to fail; nobody has since asked whether it is *satisfiable*. First measurement, taken on the
+simplest possible module — one two-branch function with two passing tests that genuinely exercise
+both — is **83.33**, failed by this threshold. The survivor was an `EqualityOperator` mutation
+(`a < 0` → `a <= 0`), which a correct suite need not kill.
+
+So on current evidence a perfect mutation score is the bar for every changed file, and that is the
+same shape as every other defect in this section: **a gate the builder cannot satisfy.** It is left
+at `100` deliberately rather than lowered to a number nobody has justified — what score constitutes
+done is a product decision, and this file's rule is that every threshold carries a written reason.
+Whoever sets it should record the measurement they set it from.
+
 **The operation context gains the changed-file list**, so a gate can scope itself — and the
 baseline is the last **ratchet-advancing commit**, not the last iteration. That difference
 decides whether the scoping means anything: a regression iteration changes only the repair, so

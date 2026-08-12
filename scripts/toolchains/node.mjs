@@ -95,10 +95,27 @@ export const nodeToolchain = {
           'no first-party source changed since the last ratchet-advancing commit, so there is nothing to mutate',
         );
       }
+      // `-p` twice, and both are load-bearing. Stryker resolves test-runner plugins relative
+      // to its **own** installation, and `npx --yes @stryker-mutator/core` puts that
+      // installation in npm's npx cache, where the project's `@stryker-mutator/vitest-runner`
+      // is invisible — even when the project has it in `node_modules`, as dogfood run 3's did.
+      // The result was `Cannot find TestRunner plugin "vitest". In fact, no TestRunner plugins
+      // were loaded`, an uncaught StrykerError, and a gate that **no project could ever pass**:
+      // the runner is never installed because this loop provisions through npx, and installing
+      // it locally does not help because that is not where Stryker looks. It ended run 3 twice.
+      //
+      // Naming both packages puts the plugin in the same sandbox as the core that looks for it.
+      // Measured against Stryker 9.6.x on a project with vitest and no Stryker at all: the
+      // plugin loads, mutants run (5 killed, 1 survived), the runner finds the *project's*
+      // vitest, and the driver-owned threshold still forces the failing exit code.
       return command([
         'npx',
         '--yes',
+        '-p',
         '@stryker-mutator/core',
+        '-p',
+        '@stryker-mutator/vitest-runner',
+        'stryker',
         'run',
         path.join(dareDir, MUTATION_CONFIG),
         '--testRunner',
