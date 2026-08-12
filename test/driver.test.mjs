@@ -21,6 +21,7 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { readAssumptions } from '../scripts/assumptions.mjs';
+import { MUTATION_CONFIG_CONTENTS } from '../scripts/toolchains/node.mjs';
 import { pinSecurityElement, quarantinePin, readPins, writePins } from '../scripts/pins.mjs';
 import { defaultConfig } from '../scripts/config.mjs';
 import {
@@ -1154,10 +1155,18 @@ describe('writeMutationConfig', () => {
     // Stryker has no --thresholds flag and thresholds.break defaults to null, so surviving
     // mutants exit 0. The threshold therefore has to live in a file, and it has to be a file
     // under .dare or the builder owns whether the gate can fail at all.
+    //
+    // "cannot reach" in this title means cannot *edit*, which is the property. It used to also
+    // read as "cannot achieve" - the threshold was 100 - and that turned out to be literally
+    // true of correct repositories too. The number lives beside the constant with the
+    // measurement that set it; here we assert only that the gate is capable of failing.
     const dareDir = path.join(makeTempDir(), '.dare');
     const file = writeMutationConfig(dareDir);
     assert.equal(file, path.join(dareDir, 'stryker.config.json'));
-    assert.equal(JSON.parse(readFileSync(file, 'utf8')).thresholds.break, 100);
+    const written = JSON.parse(readFileSync(file, 'utf8')).thresholds.break;
+    assert.equal(typeof written, 'number');
+    assert.equal(written > 0, true, 'a break of 0 or null cannot fail, which is the default this exists to override');
+    assert.equal(written, MUTATION_CONFIG_CONTENTS.thresholds.break, 'the driver wrote something other than the constant');
   });
 });
 

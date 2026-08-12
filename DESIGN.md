@@ -741,18 +741,25 @@ the same sandbox as the core that looks for it; measured on a project with vites
 all, the plugin loads, mutants run, the runner finds the *project's* vitest, and the driver-owned
 threshold still forces the failing exit code.
 
-**`break: 100` is an open question, not a settled one.** The threshold exists because Stryker's
-default is `null`, meaning surviving mutants exit 0 and the gate cannot fail at all. `100` made it
-able to fail; nobody has since asked whether it is *satisfiable*. First measurement, taken on the
-simplest possible module — one two-branch function with two passing tests that genuinely exercise
-both — is **83.33**, failed by this threshold. The survivor was an `EqualityOperator` mutation
-(`a < 0` → `a <= 0`), which a correct suite need not kill.
+**The threshold is a floor, and it was `100` until a measurement said otherwise.** The threshold
+exists at all because Stryker's default is `null`, meaning surviving mutants exit 0 and the gate
+cannot fail. `100` made it able to fail, and the original reasoning was sound on its face: the
+question is "did a mutant survive", not "is the score good enough", and a percentage is a threshold
+that can drift — which §13 rejects by name.
 
-So on current evidence a perfect mutation score is the bar for every changed file, and that is the
-same shape as every other defect in this section: **a gate the builder cannot satisfy.** It is left
-at `100` deliberately rather than lowered to a number nobody has justified — what score constitutes
-done is a product decision, and this file's rule is that every threshold carries a written reason.
-Whoever sets it should record the measurement they set it from.
+It could not survive the first time the gate actually ran, which was only possible after the
+runner-resolution fix above. Measured on the simplest module available — one two-branch function
+with two tests that genuinely exercise both branches — the score is **83.33**, failed by `100`. The
+survivor was an `EqualityOperator` mutation (`a < 0` → `a <= 0`) that a correct suite need not kill
+and that says nothing about whether the tests prove anything. `100` was therefore not a strict gate
+but an **unsatisfiable** one, which is the defect class this section keeps returning to.
+
+**`break: 60`, and both directions are measured.** The honest suite above scores 83.33 and now
+exits 0. A suite asserting only `typeof add(1, 2) === 'number'` scores **16.67 and exits 1**, naming
+the threshold — so the gate still catches exactly what it exists for, a suite insensitive to its own
+code. The drift objection is answered by ownership rather than by the number: the config is written
+by the driver into `.dare/`, so the builder cannot negotiate it, and moving it takes a commit with a
+measurement attached. **If you change it, record what you measured.**
 
 **The operation context gains the changed-file list**, so a gate can scope itself — and the
 baseline is the last **ratchet-advancing commit**, not the last iteration. That difference

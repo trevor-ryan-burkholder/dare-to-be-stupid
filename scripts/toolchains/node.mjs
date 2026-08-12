@@ -42,11 +42,31 @@ export const E2E_REPORT = 'e2e-report.json';
 export const MUTATION_CONFIG = 'stryker.config.json';
 
 /**
- * Its contents. `break: 100` because the gate's question is "did any mutant on the changed
- * code survive", not "is the score good enough" — a percentage threshold is a threshold that
- * can drift, which §13 rejects by name.
+ * Its contents.
+ *
+ * **This was `break: 100`, and the reasoning for it was good and still lost to a measurement.**
+ * The argument was that the gate's question is "did any mutant on the changed code survive", not
+ * "is the score good enough", because a percentage is a threshold that can drift and §13 rejects
+ * drifting thresholds by name.
+ *
+ * What refuted it: the first time this gate ever actually ran — it could not run at all until the
+ * runner-resolution fix, so `100` had never been tested against anything — a module consisting of
+ * one two-branch function with two tests that genuinely exercise both branches scored **83.33**
+ * and failed. The survivor was an `EqualityOperator` mutation, `a < 0` → `a <= 0`, which a correct
+ * suite need not kill and which says nothing about whether the tests prove anything.
+ *
+ * So `100` was not a strict gate, it was an **unsatisfiable** one — the defect class that has cost
+ * this project more than any other, and the reason three separate gates blocked dogfood run 3. A
+ * gate no correct repository can pass does not enforce quality; it stops the loop and teaches the
+ * builder to delete tests.
+ *
+ * `60` is a floor, chosen to catch the failure this gate exists for — a suite insensitive to its
+ * own code — while tolerating the survivors that ordinary correct code produces. `high`/`low` only
+ * colour the report. The drift objection is answered by ownership rather than by the number: this
+ * file is written by the driver into `.dare/`, so the builder cannot negotiate it, and moving it
+ * takes a commit here with a measurement attached. **If you change it, record what you measured.**
  */
-export const MUTATION_CONFIG_CONTENTS = { thresholds: { high: 100, low: 100, break: 100 } };
+export const MUTATION_CONFIG_CONTENTS = { thresholds: { high: 80, low: 60, break: 60 } };
 
 /** Files worth mutating: first-party source, never the tests that would be mutated into lies. */
 const MUTABLE_RE = /\.[cm]?[jt]sx?$/;

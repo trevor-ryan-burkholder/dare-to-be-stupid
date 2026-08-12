@@ -420,7 +420,20 @@ describe('the conditional second pass', () => {
       CONDITIONAL_GATE_OPERATIONS,
     );
     assert.equal(gates[0].command.includes(path.join('/repo/.dare', MUTATION_CONFIG)), true);
-    assert.equal(MUTATION_CONFIG_CONTENTS.thresholds.break, 100);
+    // The property is that a threshold exists at all, since Stryker's default of `null` means
+    // survivors exit 0 and the gate cannot fail. The *number* is a judgement recorded beside the
+    // constant, and asserting it here would only restate the constant.
+    assert.equal(typeof MUTATION_CONFIG_CONTENTS.thresholds.break, 'number');
+    assert.equal(MUTATION_CONFIG_CONTENTS.thresholds.break > 0, true, 'a break of 0 cannot fail');
+  });
+
+  it('does not demand a perfect mutation score, which no correct repository achieves', () => {
+    // `break: 100` was measured, once the gate could run at all, against one two-branch function
+    // with two tests exercising both branches: 83.33, failed by an `a < 0` -> `a <= 0` survivor a
+    // correct suite need not kill. That is an unsatisfiable gate, which is the defect class that
+    // blocked three gates in dogfood run 3, not a strict one.
+    assert.equal(MUTATION_CONFIG_CONTENTS.thresholds.break < 100, true);
+    assert.equal(MUTATION_CONFIG_CONTENTS.thresholds.break >= 50, true, 'a floor this low proves nothing');
   });
 });
 

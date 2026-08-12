@@ -5,8 +5,8 @@ pass, `npm run test:integration` 12 pass, `npm run test:live` **8 of 8 armed and
 a first execution to compare against). `npm run release-check` clean.
 
 **Everything left on the outstanding list is blocked on one of two things**, and neither is effort:
-a paid dogfood run (cases E and F), or a decision that belongs to the operator (`break: 100`). The
-free work is done.
+a paid dogfood run (cases E and F), or the .NET SDK this machine does not have. The free work is
+done, and `break: 100` — the one open operator decision — was settled at 0.47.0.
 
 ## Run 3 finished, and it found three gates the builder could not satisfy
 
@@ -47,11 +47,13 @@ labelled iteration 2 from two different runs (fixed 0.41.0) — and `installed c
 gate` appears in the log **on a project whose e2e gate does not apply**, which is the Playwright
 provisioning seam §4.2 already flags as ungated, now observed rather than predicted.
 
-**The next wall is written down and deliberately not fixed.** `break: 100` demands a *perfect*
-mutation score on every changed file. First measurement: **83.33** on one two-branch function with
-two honest tests, failed by an `EqualityOperator` survivor no correct suite need kill. That is the
-same unsatisfiable shape as the three above, but what score means done is a product decision. See
-`DESIGN.md` §4.4; set it from a measurement and write the measurement down.
+**The next wall was `break: 100`, and it is now closed at 0.47.0 with `break: 60`.** It demanded a
+*perfect* mutation score on every changed file. First measurement, only possible once the gate could
+run at all: **83.33** on one two-branch function with two honest tests, failed by an
+`EqualityOperator` survivor no correct suite need kill — an unsatisfiable gate, the same shape as the
+three above. Both directions of the new floor are measured: the honest suite passes at 83.33, and a
+suite asserting only `typeof x === 'number'` scores **16.67 and fails**, naming the threshold. See
+`DESIGN.md` §4.4. If you move it, record what you measured.
 
 ## The ratchet caught a real regression, against a real 93-id state, for free
 
@@ -153,7 +155,7 @@ details buries the one entry that mattered, and §8.3's whole value is that a re
 | C5 differentiated race candidates | cheap, but ordered behind a live test of a `claude -p` child in a race worktree |
 | architect toolchain declaration | **residual of B3, half closed at 0.46.0.** The ambiguity is no longer silent: a tree matching both reports `also matched dotnet (…) - first match wins`. The declaration itself is still the real fix, and an operator could not ask for it while the ambiguity was invisible |
 | ~~mutation provisioning~~ | **closed at 0.43.0, and it was worse than A5 recorded.** Installing the runner locally would not have helped — Stryker looks beside its own install, not the project's. Both packages now go into one npx sandbox |
-| **`break: 100` mutation threshold** | **decide this.** Demands a perfect mutation score per changed file; measured 83.33 on a two-branch function with two honest tests. `DESIGN.md` §4.4 |
+| ~~`break: 100` mutation threshold~~ | **decided and closed at 0.47.0: `break: 60`.** Both directions measured — an honest suite scores 83.33 and passes, a suite asserting only `typeof x === 'number'` scores 16.67 and fails. `DESIGN.md` §4.4 |
 | ~~Playwright provisioning not capability-gated~~ | **closed at 0.44.0.** `installed chromium for the e2e gate` had been logged one line after `gate e2e does not apply`. `ensurePlaywrightBrowsers` now declines when the gate does not apply; omitting capabilities still provisions, since under-provisioning fails a gate that *does* apply |
 | `assumptions.json` run attribution | **new, found in run 3, unfixed.** Carried across runs but keyed by `iteration`, which restarts per run — run 2's `iteration: 2` and run 3's are indistinguishable. Same shape as the C2 brief collision |
 | `gate-integrity` vs a vacuous branch | **confirmed by probe, and deliberately not fixed.** It passes both the `continue`-past-the-assertion shape and `test('asserts nothing', …)`. The first is the coverage question and belongs to the mutation gate; the second is detectable but would fail legitimate `does not throw` and helper-based suites. `DESIGN.md` §4 |
