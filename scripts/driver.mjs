@@ -966,6 +966,7 @@ export function appendBlooper(dareDir, event) {
  *   readTestReports: () => unknown[],
  *   commit: (message: string) => string,
  *   diffStat: () => string,
+ *   deploy?: () => { ok: boolean, detail: string },
  *   ship: (iteration: number) => void,
  *   now: () => string,
  *   log: (line: string) => void,
@@ -1639,6 +1640,30 @@ export function driveRun(options) {
     }
 
     if (panel.verdict === 'pass') {
+      // The deploy runs **here**, in front of the ship, and that position is the whole fix.
+      // Until 0.63.0 it lived inside `ship()` — after the dare/GRAND-PRIZE tag was already
+      // written — and its failure was printed and ignored, so a run could announce a grand
+      // prize having deployed nothing. A deploy that cannot withhold the tag is not evidence
+      // about the tag (DESIGN.md §10.1).
+      const deployed = effects.deploy?.() ?? { ok: true, detail: 'no deploy configured' };
+      if (!deployed.ok) {
+        // Withheld, not failed — the same shape as the unproven-suite check above. A blinking
+        // network or a box that is down is not a reason to `git reset --hard` a tree that
+        // just passed a unanimous panel. The work stands; the claim that it is deployed does
+        // not.
+        effects.log(`cannot ship: ${deployed.detail}`);
+        objective = {
+          kind: 'review',
+          headline: 'The deploy did not come up clean.',
+          reason:
+            `the panel passed, but ${deployed.detail}. A ship is a claim that this runs where it was ` +
+            'sent, so the ship is withheld rather than the iteration failed',
+          findings: [deployed.detail],
+        };
+        closeIteration(iterationNumber, ['ship:deploy'], score, passing.size);
+        continue;
+      }
+      if (deployed.detail !== 'no deploy configured') effects.log(deployed.detail);
       effects.event?.({ kind: 'ship', iteration: iterationNumber });
       effects.ship(iterationNumber);
       return finish('SHIPPED', `panel unanimous on ${requiredIds.length} requirement(s)`);
@@ -3458,11 +3483,28 @@ export function main(argv, io = {}) {
           ],
           { cwd },
         );
-        if (config.deploy.enabled && config.deploy.command.length > 0) {
-          const [command, ...args] = config.deploy.command;
-          const deployed = shell(command, args, { cwd });
-          if (!deployed.ok) write(verbatim(`deploy failed: ${deployed.stderr.trim()}`));
+      },
+      // Deploy is **not** part of `ship`. It runs before the ship decision so a failure can
+      // withhold the tag; see the call site in `driveRun`. Credentials reach it through the
+      // operator's environment (`shell` passes `process.env`) and the driver runs it in its
+      // own process, so nothing about the deploy ever enters a prompt. That is an invariant,
+      // not an accident (DESIGN.md §10.1).
+      deploy: () => {
+        if (!config.deploy.enabled) return { ok: true, detail: 'no deploy configured' };
+        const [command, ...args] = config.deploy.command;
+        write(verbatim(`deploying: ${command} ${args.join(' ')}`));
+        const deployed = shell(command, args, { cwd });
+        if (!deployed.ok) {
+          return { ok: false, detail: `the deploy command failed: ${deployed.stderr.trim() || `exit ${deployed.status}`}` };
         }
+        const probeArgs = ['--url', config.deploy.url];
+        for (const check of config.deploy.smoke) probeArgs.push('--expect', `${check.path}=${check.status}`);
+        write(verbatim(`smoke: ${config.deploy.smoke.length} check(s) against ${config.deploy.url}`));
+        const smoked = shell('node', [HEALTH_PROBE, ...probeArgs], { cwd });
+        // Exit code, like every other check here. A non-zero probe is a failure whatever it
+        // printed, and an empty stdout still fails rather than defaulting to pass.
+        if (!smoked.ok) return { ok: false, detail: smoked.stdout.trim() || 'the smoke check failed and said nothing' };
+        return { ok: true, detail: smoked.stdout.trim() || 'smoke checks passed' };
       },
       now: () => new Date().toISOString(),
       log: (line) => write(verbatim(line)),

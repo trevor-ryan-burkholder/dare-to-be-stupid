@@ -1302,6 +1302,71 @@ describe('driveRun', () => {
     return { outcome, dareDir, root };
   }
 
+  // 0.63.0. Until then the deploy lived inside `ship()` — after the dare/GRAND-PRIZE tag was
+  // already written — and its failure was printed and ignored, so a run could announce a
+  // grand prize having deployed nothing (DESIGN.md §10.1).
+  describe('a deploy that does not come up withholds the ship', () => {
+    /** A report carrying one passing id, so the ratchet can advance and a ship is reachable. */
+    const oneGreenTest = () => [
+      {
+        numTotalTests: 1,
+        testResults: [
+          { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+        ],
+      },
+    ];
+
+    it('ships when no deploy is configured, which is the default', () => {
+      // The benign neighbour. A check that blocked every run without a deploy would make the
+      // feature mandatory by accident.
+      assert.equal(run({ readTestReports: oneGreenTest }).outcome.state, 'SHIPPED');
+    });
+
+    it('ships when the deploy and its smoke checks pass', () => {
+      const { outcome } = run({
+        readTestReports: oneGreenTest,
+        deploy: () => ({ ok: true, detail: '2 smoke check(s) passed' }),
+      });
+      assert.equal(outcome.state, 'SHIPPED');
+    });
+
+    it('does not tag when the smoke check fails', () => {
+      // The value that matters: `ship` writes the tag, so counting its calls is the only
+      // assertion that distinguishes "withheld" from "shipped and complained".
+      let shipped = 0;
+      const { outcome } = run({
+        deploy: () => ({ ok: false, detail: 'smoke: /health expected 200, answered 502' }),
+        ship: () => {
+          shipped += 1;
+        },
+      });
+      assert.notEqual(outcome.state, 'SHIPPED');
+      assert.equal(shipped, 0, 'the tag was written despite a failed deploy');
+    });
+
+    it('withholds rather than failing the iteration, so a host being down cannot reset the tree', () => {
+      // A blinking network must not `git reset --hard` a tree that just passed a unanimous
+      // panel. The run keeps going and asks the builder again; it does not destroy work.
+      let builders = 0;
+      const { outcome } = run({
+        deploy: () => ({ ok: false, detail: 'connection refused' }),
+        build: () => {
+          builders += 1;
+          return { ok: true, text: 'built', costUsd: 0, tokens: 10, raw: '' };
+        },
+      });
+      assert.notEqual(outcome.state, 'SHIPPED');
+      assert.equal(builders > 1, true, 'the run stopped instead of iterating after a failed deploy');
+    });
+
+    it('carries the deploy failure into the next objective, so the builder is told what broke', () => {
+      const { dareDir } = run({ readTestReports: oneGreenTest, deploy: () => ({ ok: false, detail: 'smoke: /api/items expected 200, answered 404' }) });
+      const briefs = readdirSync(path.join(dareDir, 'briefs'));
+      const text = briefs.map((file) => readFileSync(path.join(dareDir, 'briefs', file), 'utf8')).join('\n');
+      assert.match(text, /answered 404/);
+    });
+  });
+
   describe('the budget counts what was spent before the loop started', () => {
     // The defect the first dogfood run found. Phase 0 and Phase 1 run in `main`, before
     // driveRun exists, so their spend was invisible to it: a design child spent 2,965,864
