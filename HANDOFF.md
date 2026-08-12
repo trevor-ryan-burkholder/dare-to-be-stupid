@@ -1,6 +1,6 @@
 # START HERE — handoff, 12 August 2026
 
-**State:** `main` at `0.54.0`, **pushed.** `npm test` 1412 pass, `npm run test:integration` 12
+**State:** `main` at `0.55.0`, **pushed.** `npm test` 1416 pass, `npm run test:integration` 12
 pass, `npm run test:live` **8 of 8 armed and green** (it now has a first execution to compare
 against). `npm run release-check` clean.
 
@@ -85,6 +85,53 @@ The precedent for taking that seriously is one scenario old: run 6's identical a
 requirements passing **and** a stray-quote path that silently swallowed the rest of the file and
 exited 0, which the cold panel had not caught. *"Spec-complete rather than trustworthy."* **A
 unanimous panel and a real defect have already coexisted here once.**
+
+### The audit of that ship, by an agent with no stake in it
+
+**Verdict, verbatim: *"SHIPPED was earned against the specification it was given, and not against
+the thing the specification stands for."***
+
+What held up, and it is not nothing:
+
+- **All ten PRD requirements pass under independent execution**, every branch of the exit-code
+  contract included.
+- **The suite is not theatre.** The auditor applied **15 hand-picked mutations** to `parse`,
+  `summarise`, `table`, `render`, `read`, `args` and `usage` — **15 of 15 were killed.**
+- Every finding from the previous run's panel was genuinely repaired, not argued away.
+
+**The defect that matters, and the class it belongs to:**
+
+```
+$ printf 'a,b\n1,"x\n2,y\n' > swallow.csv     # two data rows
+$ node dist/bin.js swallow.csv                # count 1, mean 1
+$ echo $?                                     # 0
+```
+
+An unterminated quote absorbs the rest of the file into one field. The field count still matches,
+so exit 3 never fires. **A statistic over half the data, reported as success, empty stderr.** Two
+more exit-0 wrong answers: a lone `\r` turns a 3×2 file into 4 columns and zero rows, and integers
+past 2⁵³ collapse two distinct ids to one wrong value.
+
+**No gate in this architecture can see that class.** Not a crash, not a wrong exit code — a
+confident wrong number. The panel passed it.
+
+### Three findings against the loop itself
+
+1. **The panel's verdict was persisted nowhere.** *"I could not verify the unanimous-panel claim at
+   all — the evidence for it is not in the repo."* Only an unannotated `dare/GRAND-PRIZE` tag on a
+   commit named "iteration 2". **Fixed at 0.55.0** (`.dare/review.json`, annotated tag).
+2. **`seenFailing: []`, and the mutation gate declined.** All 79 ids took ratchet credit without the
+   loop watching one go red, and the compensating control did not run that iteration. **Both
+   mechanisms that exist to prove a suite can fail were absent from the iteration that shipped.**
+   Unfixed, and the strongest remaining argument that the tag means less than it looks like.
+3. **A false security pin.** `DoD-2-security` cites `src/cli.ts:20` — `if (intent.kind ===
+   'usage-error') {`, an argv branch, not a security control. §4.3 predicted this hazard in writing.
+   The escalation path handles `moved`, `removed` and `unknown`; **there is no path for "this should
+   never have been a pin"**, so under monotonicity it is permanent. Unfixed.
+
+Smaller: `dist/` is gitignored, so the shipped commit contains **no runnable binary**; `state.json`'s
+iteration counter carried over from the archived run; and two documented claims in
+`docs/api-contract.md` are falsifiable by execution.
 
 ## Run 7: stopped early on purpose, after proving the fix worked
 
@@ -475,6 +522,9 @@ details buries the one entry that mattered, and §8.3's whole value is that a re
 | `assumptions.json` run attribution | **new, found in run 3, unfixed.** Carried across runs but keyed by `iteration`, which restarts per run — run 2's `iteration: 2` and run 3's are indistinguishable. Same shape as the C2 brief collision |
 | `gate-integrity` vs a vacuous branch | **confirmed by probe, and deliberately not fixed.** It passes both the `continue`-past-the-assertion shape and `test('asserts nothing', …)`. The first is the coverage question and belongs to the mutation gate; the second is detectable but would fail legitimate `does not throw` and helper-based suites. `DESIGN.md` §4 |
 | lesson extractor is unverified | **partly closed at 0.54.0.** A lesson can no longer invent a gate — run 6's falsehood is now discarded by name. Claims about the *watched project* are still unverified, which is the half that remains |
+| **nothing verified the suite that shipped** | **top of the list.** `seenFailing: []` and the mutation gate declined on the shipping iteration, so neither mechanism that proves a suite can fail was present. Should `SHIPPED` require at least one of them? |
+| **a pin that should never have existed** | `DoD-2-security` pinned an argv branch. Escalation handles moved/removed/unknown; there is no retraction path, so under monotonicity it is permanent |
+| reviewer remit for silent wrong answers | **operator decision.** D1 discards data at exit 0 and no gate can see that class. Widening the panel's remit changes what done means |
 | ~~A9's tier-3 check~~ | **run for the first time, and it earned itself immediately.** 8 tests; on the first execution 7 passed and one found a real template defect (below). Fixed at 0.45.0, re-run live, 8 of 8 |
 
 ## A finding about the generated app, not about the plugin
