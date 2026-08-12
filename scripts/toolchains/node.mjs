@@ -66,7 +66,33 @@ export const MUTATION_CONFIG = 'stryker.config.json';
  * file is written by the driver into `.dare/`, so the builder cannot negotiate it, and moving it
  * takes a commit here with a measurement attached. **If you change it, record what you measured.**
  */
-export const MUTATION_CONFIG_CONTENTS = { thresholds: { high: 80, low: 60, break: 60 } };
+/**
+ * The driver-owned Stryker configuration.
+ *
+ * `thresholds.break` exists because Stryker's default is `null`, so surviving mutants exit 0
+ * and the gate cannot fail. `60` was measured in both directions — see §4.4.
+ *
+ * **`tsconfigFile: ''` disables Stryker's tsconfig preprocessor, and it is not a weakening.**
+ * That preprocessor dynamically imports `typescript` from **Stryker's own installation**,
+ * which is npm's npx cache, where it is not present — so on a TypeScript project whose
+ * tsconfig takes that path, the gate died with an uncaught
+ * `ERR_MODULE_NOT_FOUND: Cannot find package 'typescript'` rather than producing a result.
+ * Dogfood run 10 lost three of six iterations to it, including the two that repaired a real
+ * correctness defect, and the run ended `BUDGET` holding a tree that had probably earned a
+ * ship.
+ *
+ * This is 0.43.0's finding for a second package: **Stryker resolves from where Stryker lives,
+ * not from the project.** Unlike the runner plugin, adding `-p typescript` does **not** fix it
+ * — measured, new sandbox, identical error — because npx siblings are not on Node's ESM
+ * resolution path from inside `@stryker-mutator/core`. Removing the need for the import is the
+ * only lever this side of the boundary.
+ *
+ * Nothing is lost by skipping it: the vitest runner compiles TypeScript through vite, so
+ * Stryker never needed to read the tsconfig to mutate this tree. Measured on the run 10 tree
+ * that crashed — with it, mutants run and the score is 92.47 at exit 0; at `break: 99` the same
+ * run exits 1 naming the threshold. **The gate still fails what it should fail.**
+ */
+export const MUTATION_CONFIG_CONTENTS = { thresholds: { high: 80, low: 60, break: 60 }, tsconfigFile: '' };
 
 /** Files worth mutating: first-party source, never the tests that would be mutated into lies. */
 const MUTABLE_RE = /\.[cm]?[jt]sx?$/;

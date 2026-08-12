@@ -1283,6 +1283,20 @@ describe('writeMutationConfig', () => {
     assert.equal(written > 0, true, 'a break of 0 or null cannot fail, which is the default this exists to override');
     assert.equal(written, MUTATION_CONFIG_CONTENTS.thresholds.break, 'the driver wrote something other than the constant');
   });
+
+  it('disables the tsconfig preprocessor, which killed the gate outright on a TypeScript tree', () => {
+    // Stryker's tsconfig preprocessor dynamically imports `typescript` from **Stryker's own**
+    // installation — npm's npx cache — where it is not present. On a TypeScript project whose
+    // tsconfig takes that path the gate died with an uncaught ERR_MODULE_NOT_FOUND instead of
+    // producing a result, and dogfood run 10 lost three of six iterations to it.
+    //
+    // 0.43.0's finding for a second package: Stryker resolves from where Stryker lives, not
+    // from the project. `-p typescript` does not fix it — measured — because npx siblings are
+    // not on Node's ESM resolution path from inside @stryker-mutator/core.
+    const dareDir = path.join(makeTempDir(), '.dare');
+    const written = JSON.parse(readFileSync(writeMutationConfig(dareDir), 'utf8'));
+    assert.equal(written.tsconfigFile, '', 'the preprocessor is armed again and the gate can crash on a TS tree');
+  });
 });
 
 describe('driveRun', () => {
