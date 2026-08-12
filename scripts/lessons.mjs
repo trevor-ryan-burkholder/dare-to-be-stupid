@@ -205,6 +205,62 @@ export function nextLessonId(store) {
 }
 
 /**
+ * Names the lesson claims are gates, in the order they appear.
+ *
+ * Only id-shaped tokens count. `unit`, `ci` and `red-evidence` are gates and appear in prose
+ * constantly; `DoD-2-security` and `PRD-1.1` are requirement ids and are never gates, so a
+ * lesson calling one a gate is asserting something about this loop that is not true.
+ *
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function claimedGateNames(text) {
+  /** @type {string[]} */
+  const claimed = [];
+  for (const match of text.matchAll(/\b([A-Za-z][\w.:-]*)\s+gate\b/g)) {
+    const name = match[1];
+    const idShaped = /^(?:PRD|DoD)[-.]/i.test(name) || (name.includes('-') && /\d/.test(name));
+    if (idShaped) claimed.push(name);
+  }
+  return claimed;
+}
+
+/**
+ * Reject a lesson that describes this loop wrongly.
+ *
+ * **The extractor is the one child whose output nothing checks.** Every other child is either
+ * parsed against a contract that refuses to be charitable, or gated. Dogfood run 6 showed what
+ * that costs: it recorded *"The `DoD-2-security` **gate** in this repo enforces the
+ * zero-dependency policy: any devDependency … fails it. It only passes once dependencies are
+ * removed entirely."* Every clause is false. `DoD-2-security` is a **panel requirement**, not a
+ * gate; the security gate is `npm audit`, which exited 0 on that tree; and the panel's objection
+ * was that vitest was *missing* from the manifest, the opposite of what the lesson says. It was
+ * stamped `resolved: 6` — crediting the iteration that was hard-reset for destroying the ratchet.
+ *
+ * A generality is ignorable. This was specific, well-formed, confident and wrong, and lessons are
+ * injected into later briefs, so it would have taught every subsequent builder a falsehood.
+ *
+ * What is checkable without asking a model is whether the lesson's claims about *this loop's own
+ * vocabulary* hold. A lesson may say anything about the project it watched; it may not invent a
+ * gate. Supplying no gate list skips the check, which keeps the old behaviour for a caller that
+ * has none — and a structural test holds the driver to supplying one.
+ *
+ * @param {string} text
+ * @param {readonly string[] | null} gateNames every gate this run can actually run
+ * @returns {string | null} the offending name, or null when the lesson is grounded
+ */
+export function ungroundedGateClaim(text, gateNames) {
+  // An empty list is treated as no list. A run that genuinely has no gates has nothing for a
+  // lesson to misname, and rejecting every claim on an absent list is the unsafe direction.
+  if (gateNames === null || gateNames.length === 0) return null;
+  const known = new Set(gateNames.map((name) => name.toLowerCase()));
+  for (const claimed of claimedGateNames(text)) {
+    if (!known.has(claimed.toLowerCase())) return claimed;
+  }
+  return null;
+}
+
+/**
  * Add a lesson, if it is one and if it is new.
  *
  * Duplicate suppression is on the lesson text. The same mistake tends to be re-learned in
@@ -213,12 +269,24 @@ export function nextLessonId(store) {
  *
  * @param {LessonStore} store
  * @param {unknown} candidate
+ * @param {{ gateNames?: readonly string[] }} [options] the gates this run can run, for grounding
  * @returns {{ store: LessonStore, added: Lesson | null, reason: string }}
  */
-export function addLesson(store, candidate) {
+export function addLesson(store, candidate, options = {}) {
   const validated = validateLesson(candidate);
   if (validated === null) {
     return { store, added: null, reason: 'the candidate was not a well-formed lesson and was discarded' };
+  }
+
+  const ungrounded = ungroundedGateClaim(validated.lesson, options.gateNames ?? null);
+  if (ungrounded !== null) {
+    return {
+      store,
+      added: null,
+      reason:
+        `the candidate calls \`${ungrounded}\` a gate, and this run has no such gate. A lesson that ` +
+        'misdescribes the loop is taught to every later builder, so it is discarded rather than stored',
+    };
   }
   const key = validated.lesson.toLowerCase();
   if (store.lessons.some((lesson) => lesson.lesson.toLowerCase() === key)) {

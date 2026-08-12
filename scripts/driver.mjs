@@ -1035,10 +1035,17 @@ export function driveRun(options) {
       if (problem !== null) effects.log(problem);
       // The evidence is the driver's, not the extractor's. It saw those iteration numbers
       // because they were handed to it, and it has no way to know them independently.
-      const outcome = addLesson(store, {
-        ...candidate,
-        evidence: { introduced: struggle.introduced, resolved: struggle.resolved, tests: candidate.evidence.tests },
-      });
+      const outcome = addLesson(
+        store,
+        {
+          ...candidate,
+          evidence: { introduced: struggle.introduced, resolved: struggle.resolved, tests: candidate.evidence.tests },
+        },
+        // Grounding: a lesson may say anything about the project it watched, but it may not
+        // invent a gate of this loop's. Run 6 stored one that did, and it was false throughout.
+        { gateNames: options.gateNames },
+      );
+      if (outcome.added === null && outcome.reason.includes('calls')) effects.log(`lesson discarded: ${outcome.reason}`);
       if (outcome.added === null) return;
       saveLessons(dareDir, outcome.store);
       effects.log(`lesson ${outcome.added.id} recorded: ${outcome.added.lesson}`);

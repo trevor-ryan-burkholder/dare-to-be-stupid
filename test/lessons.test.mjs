@@ -23,6 +23,8 @@ import { after, describe, it } from 'node:test';
 
 import {
   addLesson,
+  claimedGateNames,
+  ungroundedGateClaim,
   emptyStore,
   findResolvedStruggles,
   markLessonsUsed,
@@ -351,5 +353,70 @@ describe('findResolvedStruggles', () => {
 
   it('finds nothing in an empty history', () => {
     assert.deepStrictEqual(findResolvedStruggles([]), []);
+  });
+});
+
+describe('a lesson may not invent a gate', () => {
+  // The extractor is the one child whose output nothing checks. Dogfood run 6 showed the cost:
+  // it stored "The `DoD-2-security` gate in this repo enforces the zero-dependency policy: any
+  // devDependency ... fails it. It only passes once dependencies are removed entirely." Every
+  // clause is false. DoD-2-security is a panel requirement, not a gate; the security gate is
+  // `npm audit`, which exited 0 on that tree; and the panel's objection was that vitest was
+  // MISSING from the manifest, the opposite of what the lesson claims. Lessons are injected into
+  // later briefs, so that would have taught every subsequent builder a falsehood.
+  const GATES = ['build', 'lint', 'unit', 'ci', 'red-evidence', 'security-audit', 'quality:knip'];
+
+  /** @param {string} text */
+  const candidate = (text) => ({
+    trigger: ['dependencies'],
+    scope: ['tooling'],
+    lesson: text,
+    evidence: { introduced: 1, resolved: 3, tests: [] },
+  });
+
+  const RUN_6 =
+    'The DoD-2-security gate in this repo enforces the zero-dependency policy: any devDependency ' +
+    'added to package.json fails it, and it only passes once dependencies are removed entirely.';
+
+  it('discards run 6\u2019s actual lesson, naming what was wrong with it', () => {
+    const outcome = addLesson(emptyStore(), candidate(RUN_6), { gateNames: GATES });
+    assert.equal(outcome.added, null);
+    assert.equal(outcome.reason.includes('DoD-2-security'), true, outcome.reason);
+    assert.deepStrictEqual(outcome.store.lessons, []);
+  });
+
+  it('keeps a lesson that names a gate this run really has', () => {
+    // The neighbour, and the one that matters: gate names appear in honest lessons constantly.
+    // A check that rejected those would empty the store instead of grounding it.
+    const good = candidate('The unit gate collects only with vitest, so a node:test suite scores zero.');
+    const outcome = addLesson(emptyStore(), good, { gateNames: GATES });
+    assert.notEqual(outcome.added, null);
+    assert.equal(outcome.added?.lesson.includes('unit gate'), true);
+  });
+
+  it('leaves ordinary prose alone, including hyphenated gate names', () => {
+    for (const text of [
+      'The red-evidence gate reports rather than blocks, so an unproven test earns no credit.',
+      'The quality:knip gate fails on an unused declared dependency.',
+      'Prefer one logger module; the observability gate wants a health endpoint.',
+    ]) {
+      const outcome = addLesson(emptyStore(), candidate(text), { gateNames: [...GATES, 'observability'] });
+      assert.notEqual(outcome.added, null, `wrongly discarded: ${text}`);
+    }
+  });
+
+  it('only treats id-shaped names as gate claims', () => {
+    assert.deepStrictEqual(claimedGateNames('the DoD-2-security gate rejects it'), ['DoD-2-security']);
+    assert.deepStrictEqual(claimedGateNames('the PRD-1.1 gate'), ['PRD-1.1']);
+    // Bare words are how everyone writes about gates; treating them as claims would be noise.
+    assert.deepStrictEqual(claimedGateNames('the unit gate and the ci gate'), []);
+  });
+
+  it('checks nothing when it has no gate list, rather than rejecting everything', () => {
+    // The conservative direction. An absent or empty list means the caller cannot ground the
+    // claim, not that no gate exists - and a check that fails closed here would empty the store.
+    assert.equal(ungroundedGateClaim(RUN_6, null), null);
+    assert.equal(ungroundedGateClaim(RUN_6, []), null);
+    assert.notEqual(addLesson(emptyStore(), candidate(RUN_6)).added, null);
   });
 });

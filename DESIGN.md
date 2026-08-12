@@ -1652,6 +1652,31 @@ On `SHIPPED`, in addition to `dare/iter-NNN`, the driver tags the winning commit
 that ships moves it. Purely a bookmark to the last commit that passed the whole DoD.
 
 ### 13.8 Lesson memory — sparse, evidence-derived, driver-owned
+
+**A lesson may not invent a gate**, and that rule was bought by dogfood run 6. The extractor is
+the one child whose output nothing else checks — every other child is parsed against a contract
+that refuses to be charitable, or gated. Run 6 stored this:
+
+> *"The `DoD-2-security` **gate** in this repo enforces the zero-dependency policy: any
+> devDependency … fails it … It only passes once dependencies are removed entirely."*
+
+Every clause is false. `DoD-2-security` is a **panel requirement**, not a gate; the security gate
+is `npm audit`, which exited 0 on that tree; and the panel's objection was that vitest was
+*missing* from the manifest — the opposite of what the lesson says. It was stamped `resolved: 6`,
+crediting the iteration that was hard-reset for destroying the ratchet. §13.8 was already watching
+for **generalities**; this was worse, because a generality is ignorable and this was specific,
+well-formed, confident, and injected into every later brief.
+
+So `addLesson` now takes the run's gate names and discards a candidate that calls something a gate
+when no such gate exists. Only **id-shaped** tokens count as claims — `unit`, `ci` and
+`red-evidence` appear in honest lessons constantly, while `DoD-2-security` and `PRD-1.1` are
+requirement ids and never gates. An absent or empty list checks nothing rather than rejecting
+everything, because failing closed there would empty the store instead of grounding it.
+
+This does not make the extractor trustworthy. It makes one class of falsehood — a claim about
+*this loop's own vocabulary* — checkable without asking a model, which is the same trade the
+`gate-integrity` assertion check makes. Claims about the watched project remain unverified.
+
 `lessons.enabled` (default `true`), stored in `.dare/lessons.json`. A lesson is one piece of
 reusable technical knowledge the run **earned**, and the qualifying evidence is a specific
 shape:
