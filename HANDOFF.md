@@ -12,6 +12,42 @@ gates exist.
 **Unfixed and worth a decision:** nothing verifies the lesson extractor's output, and run 6 proved it
 can be confidently wrong (below).
 
+## The guard hook was not in force for any run this session
+
+**Corrected immediately after being written, by the guard itself.** The first draft of this
+section claimed the hook was inactive. Committing that claim was **denied by the hook**, with
+`[dare:nested-dare]`, because the commit message named the slash command in prose.
+
+So the state is: `claude plugin list --json` on 12 August 2026 reports
+`dare-to-be-stupid@dare-to-be-stupid` at **0.39.0 with `"enabled": false`**, and the hook is
+nevertheless **live in this session**. Hooks register at session start; the plugin was updated
+during startup and `/reload-plugins` was never run, so the listing describes disk and the session
+describes what was loaded. **They disagree, and only one of them can deny a command.**
+
+What follows for the run records is *uncertainty*, not absence. Whether the `claude -p` children
+the driver spawned registered the hook depends on what each child read at its own startup, and
+that was never observed. So the ratchet's tamper protection during runs 4 through 7 is
+**undetermined** — not proven present, not proven absent. Nothing suggests a child attempted such
+a write and the state files are consistent throughout, but no run record here should be read as
+having exercised the guard. What they exercised is the ratchet, the pins, the reset, the panel and
+the gates.
+
+**The denial is also a reproduction of a known false positive.** The blocked command was a commit
+whose *message* described the command; nothing was being invoked. `test/guard.test.mjs` asserts
+that prose mentioning the command is allowed, and the live hook denies it anyway — the same
+mismatch this file already recorded once from run 3. The unit test and the shipped behaviour do
+not agree, and the unit test is the one that is wrong about reality.
+
+`guard.mjs`'s own logic remains unit-tested, every deny paired with a benign neighbour. What
+cannot be exercised while uninstalled is the **registration** — that the hook fires on a real
+event — which was verified once, while installed, and is recorded under "Verified live".
+
+**Keeping it uninstalled is the right default for this machine.** The matcher covers `Bash`,
+`Write`, `Edit`, `MultiEdit` and `NotebookEdit` in *every* session, and this file already records
+it denying an operator's own Bash for containing the slash command in prose. A guard whose stated
+boundary is "the run, not the plugin being installed" should not be taxing unrelated work. To
+re-verify it end to end, install, verify, and disable again as a bounded exercise.
+
 ## Run 7: stopped early on purpose, after proving the fix worked
 
 Same PRD as run 6, same ceilings, one variable changed — the architect now receives the resolved
