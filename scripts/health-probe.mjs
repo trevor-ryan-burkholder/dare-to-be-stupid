@@ -21,6 +21,7 @@
 
 import { spawn } from 'node:child_process';
 import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
 import process from 'node:process';
 import { clearTimeout, setTimeout } from 'node:timers';
@@ -143,6 +144,148 @@ export function judgeHealthResponse(response) {
     // A non-JSON body is fine. `OK` is a perfectly good health response.
   }
   return { ok: true, detail: `health endpoint answered ${response.status}` };
+}
+
+// ---------------------------------------------------------------------------
+// Remote smoke mode (DESIGN.md §10.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read `--url <base> --expect <path>=<status> ...`.
+ *
+ * Deliberately a second parser rather than a widened `parseProbeArgs`. That one builds a
+ * flag record, so a repeated flag overwrites — three smoke checks would silently become one,
+ * and a gate reporting a clean pass over less than it was asked to check is the failure mode
+ * this whole file exists to avoid.
+ *
+ * @param {string[]} argv
+ * @returns {{ url: string, checks: { path: string, status: number }[], timeout: number }}
+ */
+export function parseSmokeArgs(argv) {
+  let url = '';
+  let timeout = DEFAULT_TIMEOUT;
+  /** @type {{ path: string, status: number }[]} */
+  const checks = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === '--url') url = argv[i + 1] ?? '';
+    else if (argv[i] === '--timeout') {
+      const value = Number(argv[i + 1]);
+      if (Number.isFinite(value) && value > 0) timeout = value;
+    } else if (argv[i] === '--expect') {
+      const raw = argv[i + 1] ?? '';
+      const at = raw.lastIndexOf('=');
+      const path_ = at === -1 ? '' : raw.slice(0, at);
+      const status = Number(raw.slice(at + 1));
+      // An unparseable expectation throws rather than being skipped. Skipping it would
+      // reduce the checks silently, which reads exactly like a deploy that passed them.
+      if (path_ === '' || !Number.isInteger(status) || status <= 0) {
+        throw new Error(`--expect must be <path>=<status>, got ${JSON.stringify(raw)}`);
+      }
+      checks.push({ path: path_, status });
+    }
+  }
+  if (url === '') throw new Error('--url is required: there is no host to ask');
+  return { url, checks, timeout };
+}
+
+/**
+ * Judge one smoke response against the status the operator asked for.
+ *
+ * The expected status is exact, because the contract being checked is the deployed
+ * application's own — a `404` that was asked for is a pass, and "everything must be 200"
+ * would make it impossible to smoke-test an error path.
+ *
+ * A 2xx additionally goes through `judgeHealthResponse`, so an empty body or an endpoint
+ * reporting its own distress fails even when the number is right. Below 2xx and above 3xx
+ * those rules do not apply: an empty 404 is ordinary.
+ *
+ * @param {{ status: number, body: string }} response
+ * @param {number} expected
+ * @returns {{ ok: boolean, detail: string }}
+ */
+export function judgeSmokeResponse(response, expected) {
+  if (response.status !== expected) {
+    return { ok: false, detail: `expected ${expected}, answered ${response.status}` };
+  }
+  if (expected >= 200 && expected < 300) return judgeHealthResponse(response);
+  return { ok: true, detail: `answered ${response.status} as expected` };
+}
+
+/**
+ * One request against an absolute URL, over http or https.
+ *
+ * @param {string} base
+ * @param {string} path_
+ * @param {number} timeout
+ * @returns {Promise<{ ok: boolean, status: number, body: string, error: string }>}
+ */
+function requestUrl(base, path_, timeout) {
+  return new Promise((resolve) => {
+    /** @type {URL} */
+    let target;
+    try {
+      target = new URL(path_, base);
+    } catch (error) {
+      resolve({ ok: false, status: 0, body: '', error: `bad url: ${String(error)}` });
+      return;
+    }
+    const client = target.protocol === 'https:' ? https : http;
+    const request = client.get(target, { timeout }, (response) => {
+      /** @type {Buffer[]} */
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      response.on('end', () =>
+        resolve({
+          ok: true,
+          status: response.statusCode ?? 0,
+          body: Buffer.concat(chunks).toString('utf8').slice(0, 500),
+          error: '',
+        }),
+      );
+    });
+    request.on('timeout', () => {
+      request.destroy();
+      resolve({ ok: false, status: 0, body: '', error: 'request timed out' });
+    });
+    request.on('error', (error) => resolve({ ok: false, status: 0, body: '', error: error.message }));
+  });
+}
+
+/**
+ * Run every smoke check against a deployed host.
+ *
+ * **A transport failure is retried; a response never is.** A refused connection while a
+ * service restarts is expected and worth waiting through. A wrong status is a real answer,
+ * and re-asking until it becomes the right one is how a check that should fail passes.
+ *
+ * @param {{ url: string, checks: { path: string, status: number }[], timeout: number }} options
+ * @param {{ now?: () => number, request?: typeof requestUrl }} [effects]
+ * @returns {Promise<{ ok: boolean, detail: string }>}
+ */
+export async function runSmoke(options, effects = {}) {
+  if (options.checks.length === 0) return { ok: false, detail: 'no smoke checks were given, so nothing was verified' };
+  const now = effects.now ?? Date.now;
+  const request = effects.request ?? requestUrl;
+  const deadline = now() + options.timeout;
+  /** @type {string[]} */
+  const failures = [];
+  for (const check of options.checks) {
+    let response = await request(options.url, check.path, 2_000);
+    while (!response.ok && now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
+      response = await request(options.url, check.path, 2_000);
+    }
+    if (!response.ok) {
+      failures.push(`${check.path}: ${response.error}`);
+      continue;
+    }
+    const verdict = judgeSmokeResponse(response, check.status);
+    if (!verdict.ok) failures.push(`${check.path}: ${verdict.detail}`);
+  }
+  if (failures.length > 0) {
+    return { ok: false, detail: `${failures.length} of ${options.checks.length} smoke check(s) failed - ${failures.join('; ')}` };
+  }
+  return { ok: true, detail: `${options.checks.length} smoke check(s) passed against ${options.url}` };
 }
 
 /**
@@ -276,9 +419,23 @@ export async function probeHealth(options) {
 }
 
 async function main() {
-  const options = parseProbeArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
   /** @type {{ ok: boolean, detail: string }} */
   let outcome;
+  // Two modes, one program, dispatched on `--url`. Local mode starts the application and
+  // asks it; remote mode asks a host somebody else started. They share the judging and
+  // nothing else — remote allocates no port, spawns nothing, and reaps nothing.
+  if (argv.includes('--url')) {
+    try {
+      outcome = await runSmoke(parseSmokeArgs(argv));
+    } catch (error) {
+      outcome = { ok: false, detail: `smoke check failed: ${/** @type {Error} */ (error).message}` };
+    }
+    process.stdout.write(`${outcome.detail}\n`);
+    process.exitCode = outcome.ok ? 0 : 1;
+    return;
+  }
+  const options = parseProbeArgs(argv);
   try {
     outcome = await probeHealth({ ...options, cwd: process.cwd() });
   } catch (error) {

@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
-import { judgeHealthResponse, parseProbeArgs, probeHealth } from '../scripts/health-probe.mjs';
+import { judgeHealthResponse, judgeSmokeResponse, parseProbeArgs, parseSmokeArgs, probeHealth } from '../scripts/health-probe.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -154,5 +154,57 @@ describe('probeHealth', () => {
       true,
       `a second probe failed, which suggests the first left something running: ${second.detail}`,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Remote smoke mode (0.62.0, DESIGN.md §10.1)
+// ---------------------------------------------------------------------------
+
+describe('parseSmokeArgs', () => {
+  it('reads a base url and every expectation, in order', () => {
+    const parsed = parseSmokeArgs(['--url', 'https://s.example', '--expect', '/health=200', '--expect', '/x=404']);
+    assert.equal(parsed.url, 'https://s.example');
+    assert.deepStrictEqual(parsed.checks, [
+      { path: '/health', status: 200 },
+      { path: '/x', status: 404 },
+    ]);
+  });
+
+  it('keeps every repeat rather than letting the last one win', () => {
+    // The probe's other parser builds a flag record, so a repeated flag overwrites. Three
+    // smoke checks silently becoming one is a gate that reports a clean pass over less than
+    // it was asked to check.
+    assert.equal(parseSmokeArgs(['--url', 'https://s.example', '--expect', '/a=200', '--expect', '/b=200']).checks.length, 2);
+  });
+
+  it('throws on an expectation it cannot parse, rather than dropping it', () => {
+    assert.throws(() => parseSmokeArgs(['--url', 'https://s.example', '--expect', '/health']), /expect/i);
+    assert.throws(() => parseSmokeArgs(['--url', 'https://s.example', '--expect', '/health=ok']), /expect/i);
+  });
+
+  it('throws when there is no url to ask', () => {
+    assert.throws(() => parseSmokeArgs(['--expect', '/health=200']), /url/i);
+  });
+});
+
+describe('judgeSmokeResponse', () => {
+  it('requires the exact status that was asked for', () => {
+    assert.equal(judgeSmokeResponse({ status: 200, body: 'ok' }, 200).ok, true);
+    assert.equal(judgeSmokeResponse({ status: 500, body: 'ok' }, 200).ok, false);
+    // A 404 that was *expected* is a pass. The contract is the exit-code contract of the
+    // deployed app, not "everything must be 200".
+    assert.equal(judgeSmokeResponse({ status: 404, body: '' }, 404).ok, true);
+  });
+
+  it('applies the health rules to a 2xx, and not to anything else', () => {
+    // An empty 200 is what a catch-all route returns, so it fails; an empty 404 is ordinary.
+    assert.equal(judgeSmokeResponse({ status: 200, body: '' }, 200).ok, false);
+    assert.equal(judgeSmokeResponse({ status: 200, body: '{"status":"down"}' }, 200).ok, false);
+    assert.equal(judgeSmokeResponse({ status: 404, body: '' }, 404).ok, true);
+  });
+
+  it('names what it got when it fails, so the failure is actionable', () => {
+    assert.match(judgeSmokeResponse({ status: 503, body: '' }, 200).detail, /503/);
   });
 });

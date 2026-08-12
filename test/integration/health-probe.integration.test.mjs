@@ -17,10 +17,11 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { after, describe, it } from 'node:test';
+import http from 'node:http';
+import { after, before, describe, it } from 'node:test';
 
 import { startCommand } from '../../scripts/driver.mjs';
-import { probeHealth } from '../../scripts/health-probe.mjs';
+import { probeHealth, runSmoke } from '../../scripts/health-probe.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -108,5 +109,75 @@ describe('the health probe against a real npm start', () => {
     assert.equal(first.ok, true, first.detail);
     const second = await probeHealth({ command: 'npm start', path: '/health', timeout: TIMEOUT, cwd: app });
     assert.equal(second.ok, true, `a second probe failed, so the first left something behind: ${second.detail}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Remote smoke mode against a real listening server (0.62.0, DESIGN.md §10.1)
+// ---------------------------------------------------------------------------
+
+describe('runSmoke against a real server', () => {
+  /** @type {import('node:http').Server} */
+  let server;
+  /** @type {string} */
+  let base;
+
+  before(async () => {
+    server = http.createServer((request, response) => {
+      if (request.url === '/health') {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end('{"status":"ok"}');
+      } else if (request.url === '/sick') {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end('{"status":"down"}');
+      } else if (request.url === '/empty') {
+        response.writeHead(200);
+        response.end('');
+      } else {
+        response.writeHead(404);
+        response.end('');
+      }
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(undefined)));
+    const address = server.address();
+    base = `http://127.0.0.1:${typeof address === 'object' && address !== null ? address.port : 0}`;
+  });
+
+  after(() => new Promise((resolve) => server.close(() => resolve(undefined))));
+
+  it('passes when every expectation is met', async () => {
+    const outcome = await runSmoke({ url: base, checks: [{ path: '/health', status: 200 }, { path: '/nope', status: 404 }], timeout: 3_000 });
+    assert.equal(outcome.ok, true, outcome.detail);
+    assert.match(outcome.detail, /2 smoke check\(s\) passed/);
+  });
+
+  it('fails on a wrong status and names both numbers', async () => {
+    const outcome = await runSmoke({ url: base, checks: [{ path: '/nope', status: 200 }], timeout: 3_000 });
+    assert.equal(outcome.ok, false);
+    assert.match(outcome.detail, /expected 200, answered 404/);
+  });
+
+  it('fails a 200 that reports its own distress', async () => {
+    // The reason this reuses judgeHealthResponse rather than only comparing numbers.
+    const outcome = await runSmoke({ url: base, checks: [{ path: '/sick', status: 200 }], timeout: 3_000 });
+    assert.equal(outcome.ok, false);
+    assert.match(outcome.detail, /down/);
+  });
+
+  it('fails an empty 200, which is what a catch-all route returns', async () => {
+    const outcome = await runSmoke({ url: base, checks: [{ path: '/empty', status: 200 }], timeout: 3_000 });
+    assert.equal(outcome.ok, false);
+  });
+
+  it('fails, rather than hanging forever, when nothing is listening', async () => {
+    const outcome = await runSmoke({ url: 'http://127.0.0.1:1', checks: [{ path: '/health', status: 200 }], timeout: 700 });
+    assert.equal(outcome.ok, false);
+    assert.match(outcome.detail, /health/);
+  });
+
+  it('refuses to report success when it was given nothing to check', async () => {
+    // A deploy verified by an empty list is the stub again, reporting a pass over nothing.
+    const outcome = await runSmoke({ url: base, checks: [], timeout: 1_000 });
+    assert.equal(outcome.ok, false);
   });
 });
