@@ -1,12 +1,51 @@
-# START HERE — handoff, 11 August 2026
+# START HERE — handoff, 12 August 2026
 
-**State:** `main` at `0.49.0`, **not pushed.** `npm test` 1394 pass, `npm run test:integration` 12
+**State:** `main` at `0.49.0`, **pushed.** `npm test` 1394 pass, `npm run test:integration` 12
 pass, `npm run test:live` **8 of 8 armed and green** (it now has a first execution to compare
 against). `npm run release-check` clean.
 
-**Everything left on the outstanding list is blocked on one of two things**, and neither is effort:
-a paid dogfood run (cases E and F), or the .NET SDK this machine does not have. The free work is
-done, and `break: 100` — the one open operator decision — was settled at 0.47.0.
+**Cases E and F have both now passed on live runs.** What is left is breadth (D2 cases A, B, C), one
+scenario needing a different PRD (`removed`/`unknown` pin verdicts), and the .NET adapter, which is
+blocked on an SDK this machine does not have.
+
+## Run 5: case F passed, and the panel's findings converged 5 → 4 → 3
+
+```
+pinned security element DoD-2-security at src/http/router.js:266 did not re-verify; asking
+security-escalation: claude-opus-5 running on 1272 characters of prompt
+security-escalation: returned after 25s, 154671 tokens
+pinned security element DoD-2-security moved to src/http/router.js:266; re-pinned
+...
+BUDGET: iteration limit reached: 3 of 3
+iterations: 3  tokens: 37420203  cost: $32.6355  passing: 102
+```
+
+**A `security-escalation` child ran for the first time**, and A4's whole mechanism worked end to
+end: the cheap re-verification failed, exactly one child was asked — a **1,272-character** prompt
+scoped to that single element, 25 seconds, 154k tokens — it returned `moved`, and the pin re-pointed
+without a reset. The stored snippet is now `const unmatched = new RouteNotFoundError(...)` with a new
+fingerprint, `status: active`. It recognised the guard in a form it had never been shown.
+
+`HANDOFF.md` used to say A4 rested on an assumption nobody had tested — that a reviewer's evidence
+points at a line actually containing the guard. Run 3 answered the pinning half; run 5 answers the
+escalation half. **Both are now measured.**
+
+Also established here:
+
+- **The ratchet advanced again, 98 → 102 ids**, across a run that reset nothing.
+- **The panel converged: 5 findings, then 4, then 3.** No run had ever shown findings *decreasing*
+  across iterations. The feedback loop demonstrably reduces them rather than churning.
+- **0.45.0's assumptions bar held live.** One assumption in three iterations, and it is a real fork —
+  whether "address these findings" means change the behaviour or confirm an already-documented
+  limitation — with measurements cited. Compare run 3's *"Response headers not specified"*.
+- **The builder documented unmet requirements honestly** rather than faking them: *"these stay as
+  honestly-documented unmet requirements, the same treatment PRD-4.1's latency clause already
+  receives"*. That is the anti-satisficing behaviour the design is for, in the builder's own words.
+- **0.49.0 proved itself immediately.** The log lived at `~/dare-logs/run5.log`, outside the tree, and
+  survived complete with its terminal state — the thing run 4 lost.
+- It did **not** ship, which is correct.
+
+Cost: **$32.64** for three iterations, 37.4M tokens.
 
 ## Run 4: case E passed on every criterion. The ratchet reset a real run.
 
@@ -221,8 +260,9 @@ details buries the one entry that mattered, and §8.3's whole value is that a re
 | item | state |
 |---|---|
 | ~~**D2 case E — deliberate regression**~~ | **PASSED in run 4, on every criterion.** Reset performed, blooper written, regression brief issued, no reviewer called. The regression it caught was the builder's own, not the injected one |
-| D2 case F — security regression | **precondition now met.** `pins.json` is non-empty for the first time; see the pin finding below |
-| D2 cases A, B, C | prepared in `DOGFOOD.md`, not run |
+| ~~D2 case F — security regression~~ | **PASSED in run 5.** The escalation child ran for the first time, returned `moved`, and the pin re-pointed with no reset |
+| D2 cases A, B, C | prepared in `DOGFOOD.md`, not run. Note the whole D2 set now has two passes behind it, so these are breadth rather than risk |
+| `removed` / `unknown` pin verdicts | **still unobserved, and need a different PRD** — one whose security element is off the tested path, since a load-bearing guard regresses before Phase 4b is reached. `DOGFOOD.md` case F |
 | A8 carry optimisation | **do not start without reading the pin finding below.** `PRD-3.1` is pinned to a *test file*, which the carry would let a source regression slip through |
 | A3 held-out oracle | deferred behind D2 and B2's driver-owned test invocation |
 | C5 differentiated race candidates | cheap, but ordered behind a live test of a `claude -p` child in a race worktree |
