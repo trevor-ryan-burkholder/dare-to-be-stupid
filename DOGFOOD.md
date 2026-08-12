@@ -278,6 +278,40 @@ git add -A && git commit -m 'deliberate regression'
 should have moved the first run's `run.json`, `briefs/` and `reality-check.md` there rather than
 overwriting them.
 
+## Case G — the smallest thing that could ship
+
+**The outcome this project has never once observed is `SHIPPED`.** Every run in its history has
+ended `BUDGET` or `STALLED`. Cases A and B cannot settle it quickly: they hand over a broad idea
+("a link shortener with an admin analytics page"), and a broad idea takes more iterations to
+converge than a budget usually allows. The rejection scenario cannot settle it at all — `PRD-4.1`
+is impossible on purpose.
+
+So this case optimises for reaching the end of the pipeline rather than for breadth:
+
+- **A CLI, not a service.** `observability` then does not apply (§4.2), which removes a gate that a
+  tool with no port cannot satisfy. Capability gating is what makes this shape finishable at all.
+- **A written PRD, not an idea.** Ten small requirements with observable outcomes and explicit exit
+  codes. Nothing that needs a browser, a database, a network or a clock.
+- **Nothing impossible.** Every requirement is satisfiable with the Node standard library. If this
+  does not ship, the reason is the loop, not the specification.
+- **Six iterations.** Both earlier scenarios ran out of iterations while still improving; run 5's
+  panel findings were still falling (5 → 4 → 3) when the budget ended.
+
+```bash
+scenario csvstat            # then write PRD.md and .dare/config.json before launching
+node <plugin>/scripts/driver.mjs PRD.md --yes > ~/dare-logs/run6.log 2>&1
+```
+
+**What each outcome means.** `SHIPPED` is the first ever, and the thing to check immediately is
+whether it deserved it — read `docs/api-contract.md` against `PRD.md` and run the binary yourself
+before believing the tag. `STALLED` on a satisfiable PRD is a finding about the loop. `BUDGET` with
+findings still falling means the ceiling was the constraint and the number to raise is iterations.
+
+**The evidence that matters here is different from the other cases**: not "did a mechanism fire"
+but "does the definition of done ever get satisfied". Collect the last iteration's panel verdicts
+and, if it shipped, every `pins.json` entry — a ship over a quarantined element would be the
+serious bug.
+
 ## Case F — security regression
 
 Depends on A4, which landed in 0.29.0, and on a run that reaches the panel at least once so a
