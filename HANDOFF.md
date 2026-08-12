@@ -54,11 +54,27 @@ passed on re-run. **An intermittent instruction-override in every child of the l
 cold panel**, whose starvation is the reason the architecture exists (§1.1).
 
 `--safe-mode` is the mechanism and it is verified: it suppresses the injections, the memory and
-CLAUDE.md, and unlike `--bare` it leaves auth working on a subscription. **It also disables
-hooks — so it must never be given to a phase that can write**, or it would undo the fix above.
-The defensible split is the read-only cold phases (`review`, `reality-check`, `lesson-extractor`,
-`security-escalation`), which hold no writing tool and need no guard. That is a decision, not a
-patch, and it is the next one to take.
+CLAUDE.md, and unlike `--bare` it leaves auth working on a subscription (`--bare` demands
+`ANTHROPIC_API_KEY` and never reads OAuth, so it is unusable here).
+
+**But it is mutually exclusive with the guard, and that was measured rather than assumed.** A
+child given `--safe-mode` **and** the settings-supplied guard from 0.59.0 still overwrote
+`.dare/state.json` with `permission_denials: []`. Safe mode disables hooks *including the ones
+handed to it explicitly*. There is no combination that gets both.
+
+So the only defensible split is by write capability, and it happens to be the split that already
+exists in `PHASE_PERMISSIONS`:
+
+| phases | what they may have |
+|---|---|
+| `review`, `reality-check`, `lesson-extractor`, `security-escalation` | **safe-mode.** They hold `Read`/`Glob`/`Grep` and no Bash, so there is nothing for a guard to deny, and starving them further is what §1.1 wants anyway |
+| `builder`, `prd`, `design` | **guard, and no safe-mode.** They can write. Losing the guard to gain isolation would trade a measured catastrophe for a measured annoyance |
+
+That leaves the builder's inherited context an **open problem**, exactly as §5.0 says — now with a
+measurement behind it and a known reason it cannot be closed the easy way. Note also that safe-mode
+suppresses CLAUDE.md, and runs 6 and 7 are a controlled A/B proving the builder's reading of the
+target `CLAUDE.md` is load-bearing; any future attempt to isolate the builder has to carry that
+file into the brief deliberately rather than lose it silently.
 
 ## The one thing to know before doing anything
 
