@@ -487,6 +487,71 @@ check and the conditional mutation pass both catch fake tests without needing hi
 tests, including one kept deliberately asserting the *old* failing behaviour so a later reader
 can see what was wrong.
 
+# Dogfood run 2 — 11 August 2026, case D with an impossible requirement
+
+Same repository, the first run's output committed as a baseline, plus `PRD-4.1`: sub-millisecond
+HTTP on a cold process, which cannot be satisfied. Ceilings raised to 4 iterations / 80M tokens
+/ $200. Run from the **working tree at 0.38.0**, not the install cache, which was still 0.34.0 —
+the trap `CLAUDE.md` warns about, nearly walked into.
+
+```
+iterations: 4  tokens: 16521006  cost: $10.9031  passing: 0
+```
+
+## Verified live for the first time
+
+| thing | evidence |
+|---|---|
+| **C2 archiving** | `archived the previous run to .dare/runs/001`, containing `briefs` and `run.json` |
+| **the 0.36.0 budget fix** | `95 PERCENT OF OUR BROADCAST DAY REMAINS` after the design phase. It said **100%** last run |
+| **Phase 3 gates executing** | `gates failed: quality:semgrep, ci, observability` — never observed before |
+| **the 0.38.0 red-evidence baseline** | iteration 1's red-evidence **passed**; without it, it would have failed on all 83 |
+| **A5's conditional second pass** | `gate mutation declined: no first-party source changed since the last ratchet-advancing commit` |
+| **B5 capability gating** | `gate e2e does not apply` with its full written reason |
+| **the lesson extractor** | ran against a live child, which this file previously recorded as never having happened |
+| **the cost ceiling** | did not fire — $10.90 of $200 — and the run ended on the iteration limit, correctly named |
+
+Four iterations, against zero on the previous attempt. The pipeline reached further than it ever
+has.
+
+## The finding: red-evidence deadlocks the ratchet, and always has
+
+**`seenFailing: 0` after four iterations.** Not one test was ever observed failing.
+
+That is not an accident of this project; it is what a builder that writes code and tests in the
+*same child* always produces. By the time gates run, the tests pass. So:
+
+- `unproven = passing − previousPassing − redSeen − baseline`
+- `previousPassing` is empty, because the ratchet has never advanced
+- the baseline covers iteration 1 only
+- every test added in iteration 2 or later is therefore **permanently** unproven
+- red-evidence fails → the iteration fails → **the ratchet cannot advance** → `previousPassing`
+  stays empty → forever
+
+**It is circular.** Advancing the ratchet requires every gate to pass; red-evidence is a gate;
+red-evidence can only pass once the ratchet has advanced. The 0.38.0 baseline moved the wall by
+one iteration rather than removing it.
+
+**And it explains every run this project has ever performed.** 10 August, twice, and both runs
+today: all four ended `passing: 0`. The runner mismatch explained the first two. This explains
+all four, and it means the ratchet — the mechanism the whole design exists for — **has never
+once advanced in a real run.**
+
+Worse, the loop's only escape is perverse: delete the new tests. Then `passing` collapses to the
+baseline and the gate passes. A design built to stop Goodharting has an incentive gradient
+pointing at deleting tests.
+
+## The fix is a return to the specification, not a weakening
+
+`DESIGN.md` §8 has always said: *"a test that has only ever been green is treated as unproven and
+**doesn't count toward the ratchet**."* It does **not** say the gate fails the iteration. The
+implementation made it blocking, and blocking is what deadlocks.
+
+The spec's version is self-consistent: an unproven test earns **no ratchet credit**, which is the
+deterrent — a fake green test cannot inflate the protected set — while the iteration proceeds.
+`gate-integrity`'s assertion check and the mutation pass cover the shape. Not yet implemented;
+this is the next change, and it is the most valuable one outstanding.
+
 ## What the run did NOT establish
 
 **Case D's actual question is still unanswered.** The run died in iteration 1 on budget, so the
