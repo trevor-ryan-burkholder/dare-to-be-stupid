@@ -1203,6 +1203,17 @@ export function driveRun(options) {
     const score = gateScore(gateOutcome.results);
     const failedGates = gateOutcome.results.filter((result) => !result.ok);
 
+    // Reported the moment they are known, not only in the gate-failure branch far below, because
+    // the ratchet's reset and reject paths `continue` before ever reaching it. Dogfood run 6 is
+    // what that cost: the unit gate collected nothing, the ratchet read every absent id as a
+    // regression, and the operator's log said `regression:` followed by 75 test names and **not
+    // one word about a failing gate**. The cause was one line the loop already knew and did not
+    // print. A diagnosis that exists but is unreachable on the path that needs it is not a
+    // diagnosis.
+    if (failedGates.length > 0) {
+      effects.log(`gates failed: ${failedGates.map((result) => result.name).join(', ')}`);
+    }
+
     // ---- Phase 4: ratchet ----------------------------------------------
     /** @type {Set<string>} */
     let passing;
@@ -1270,7 +1281,6 @@ export function driveRun(options) {
     }
 
     if (!gateOutcome.ok) {
-      effects.log(`gates failed: ${failedGates.map((result) => result.name).join(', ')}`);
       objective = {
         kind: 'gates',
         headline: 'Make these gates pass. Nothing else this iteration.',

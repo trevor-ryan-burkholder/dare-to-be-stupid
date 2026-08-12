@@ -1619,6 +1619,33 @@ describe('driveRun', () => {
     assert.equal(reviews, 0, 'gates are free and run first; a panel of cold reads is not');
   });
 
+  it('names the failing gates even when the ratchet resets in the same iteration', () => {
+    // Dogfood run 6's operator saw `regression:` followed by 75 test names and not one word
+    // about a failing gate, because the reset path `continue`s before the gate-failure branch
+    // that does the reporting. The unit gate had collected nothing; the loop knew and did not
+    // say. A diagnosis unreachable on the path that needs it is not a diagnosis.
+    /** @type {string[]} */
+    const logs = [];
+    run(
+      {
+        log: (line) => logs.push(line),
+        gates: () => ({
+          ok: false,
+          results: [{ name: 'unit', ok: false, status: 1, detail: 'no test suite found' }],
+        }),
+        readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE],
+      },
+      { maxIterations: 1 },
+      ['test/a.test.js::works'],
+    );
+    assert.equal(
+      logs.some((line) => line.includes('gates failed: unit')),
+      true,
+      `the reset swallowed the gate report: ${JSON.stringify(logs)}`,
+    );
+    assert.equal(logs.some((line) => line.startsWith('regression:')), true, 'expected a reset too');
+  });
+
   it('hard-resets and writes a blooper when a passing test disappears', () => {
     const { outcome, dareDir } = run(
       { readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE] },
