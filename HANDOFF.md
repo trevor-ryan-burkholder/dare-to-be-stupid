@@ -3,6 +3,35 @@
 **State:** `main` at `0.60.0`. `npm test` 1433 pass, `npm run test:integration` 12 pass,
 `npm run test:live` 11 of 11 armed and green. `npm run release-check` clean.
 
+## Deploy, built 0.61.0–0.63.0 — and the ssh half is argv nobody has run
+
+The old `deploy` was a stub: one `execFileSync` inside `ship()`, fired **after** the
+`dare/GRAND-PRIZE` tag was written, whose failure was printed and ignored. A run could announce a
+grand prize having deployed nothing. `DESIGN.md` §10.1 now describes what was built instead.
+
+**Only synchronous fixed-host deploys are supported, and that is a decision, not a gap.** A
+push-triggered deploy has no exit code — `git push` exits 0 when the objects transfer and
+everything after it is asynchronous and unowned, so smoke-testing it means polling a URL still
+serving the *previous* deploy with no signal separating "not yet" from "broken" from "fine".
+Vercel and Netlify already own that path through their own git integrations. §3.8.1's finding, in
+a new place.
+
+What to know before using it:
+
+- `deploy.command` is an **argv array**; a string is refused by name rather than coerced.
+- `enabled: true` requires `command`, `url` **and** `smoke`. A deploy nothing can check reports
+  success whatever it did.
+- `deploy.url` goes through the **same** `riskyRemoteWord` that refuses a production git remote.
+- It runs **before** the ship decision, and a failure **withholds the tag without failing the
+  iteration** — a box being down must not `git reset --hard` a tree that just passed a panel.
+- `smoke` gets **no** `gate-policy.mjs` entry. It is a ship-time step, not a Phase-3 gate;
+  running it per iteration would deploy unreviewed code. Config being filled in is the arming.
+
+**Unproven by execution.** Tier 2 covers the probe against a real listening server, but **nothing
+has ever deployed to a real droplet** — the ssh half is argv nobody has run. Treat it exactly as
+the .NET adapter is treated: correct by construction, unverified in the world. The first real use
+should be a throwaway box, watched.
+
 ## Run 9 shipped, and the panel had already proved it should not have
 
 Case G, fresh repo (`~/dare-dogfood/csvstat3`), the same PRD run 8 shipped, log at

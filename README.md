@@ -289,7 +289,7 @@ unattended run hours of behaviour nobody asked for, with no way to tell.
 | `advisory.minConfidence` | `0.7`                             | below this an advisory finding is recorded, not acted on   |
 | `lessons`            | `{ "enabled": true, "maxPerBrief": 3 }` | evidence-derived lesson memory                           |
 | `qualityPlugins`     | `["impeccable", "knip", "semgrep"]`   | provisioned before the loop; impeccable is required, the other two degrade to a warning |
-| `deploy`             | `{ "enabled": false, "command": "" }` | **a stub — leave it off.** The command runs *after* the ship tag is written and its failure is printed and ignored, so the run reports `SHIPPED` regardless. Nothing smoke-tests the result. See `DESIGN.md` §10.1 |
+| `deploy`             | `{ "enabled": false, "command": [], "url": "", "smoke": [] }` | off by default. When enabled, all four are required: the argv array runs **before** the ship decision and the smoke checks must pass against `url`, or the tag is withheld. Fixed hosts only — push-triggered hosts have no exit code. `DESIGN.md` §10.1 |
 | `chaos`              | `1`                                   | scope budget: 1 surgical, 2 normal, 3 feral                |
 | `realityCheck.after` | `3`                                   | stalled iterations before asking if the PRD is buildable   |
 | `race`               | `{ "enabled": false, "n": 3, "after": 2 }` | worktree racing, armed only by a stall               |
@@ -396,6 +396,10 @@ records in `HANDOFF.md`; the short version:
 - **the .NET adapter driven by a run.** Its commands were verified against a real SDK; no run
   has ever used them, and there is no SDK on the development machine.
 - **the ship condition added at 0.56.0–0.58.0.** See `HANDOFF.md`.
+- **deploy against a real host.** Built at 0.61.0–0.63.0 and covered by tier 2 against a real
+  listening server, but **no run has ever deployed anything to a real droplet.** The ssh half is
+  argv nobody has executed. Treat it exactly as this project treats the .NET adapter: correct by
+  construction, unproven by execution.
 
 **Read one thing before trusting anything here: a passing suite proves less than it looks.**
 This README claimed for eleven versions that the guard hook was "verified live". It was — in an

@@ -1535,7 +1535,9 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `lessonModel` | `claude-sonnet-5` | the cold lesson extractor (§13.8); advisory, so it never needs the strongest model |
 | `qualityPlugins` | `["impeccable", "knip", "semgrep"]` | auto-installed in Phase 1 (§5); impeccable required, the other two degrade to a warning |
 | `deploy.enabled` | **false** | preview-only when enabled; never prod |
-| `deploy.command` | `""` | a shell command run on `SHIPPED`; empty means **skip**. See the warning below — this is a stub, not a feature |
+| `deploy.command` | `[]` | argv array run **before** the ship decision when `enabled`; a string is refused (§10.1) |
+| `deploy.url` | `""` | the fixed host the smoke checks ask. Required when `enabled`; refused if not http(s) or if it looks like production |
+| `deploy.smoke` | `[]` | `{ path, status }` checks against `deploy.url`. Required when `enabled` — a deploy nothing checks cannot fail |
 | `extractTests` | true | parse JSON reporter output into ratchet IDs |
 | `chaos` | 1 | stupidity dial, 1–3; per-iteration scope budget (§13) |
 | `realityCheck.after` | 3 | stalled iterations before the buildability breaker fires (§13) |
@@ -1549,53 +1551,86 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 or `customer`, and requires a clean working tree (the ratchet's `reset --hard` destroys
 uncommitted work).
 
-### 10.1 `deploy` is a stub, and saying so is the point
+### 10.1 Deploy — synchronous, fixed-host, and verified before the tag
 
-Two sentences in this section were false until 12 August 2026 — an empty `deploy.command` was
-documented as auto-detecting `vercel.json`, `netlify.toml` or a `Dockerfile`, and Phase 6 was
-documented as pushing. **Neither has ever been implemented.** What exists is
-`driver.mjs`'s `ship()`: one `execFileSync`, run *after* the `dare/GRAND-PRIZE` tag is already
-written, whose failure is **printed and then ignored** — the run still returns `SHIPPED`.
+**Built at 0.61.0–0.63.0.** Before that, two sentences in this section were false — an empty
+`deploy.command` was documented as auto-detecting `vercel.json`, `netlify.toml` or a
+`Dockerfile`, and Phase 6 was documented as pushing; neither was ever implemented — and what did
+exist was `ship()` firing one `execFileSync` **after** the `dare/GRAND-PRIZE` tag was already
+written, whose failure was printed and ignored. **A run could announce a grand prize having
+deployed nothing.** That is a `catch { return pass }` in the one phase that claims the work is
+done.
 
-That is a `catch { return pass }` in the one phase that claims the work is done, and it is
-listed here rather than quietly fixed because the fix is a design, not a patch:
+```json
+"deploy": {
+  "enabled": true,
+  "command": ["ssh", "deploy@203.0.113.10", "/srv/app/deploy.sh"],
+  "url": "https://staging.example.internal",
+  "smoke": [{ "path": "/health", "status": 200 }, { "path": "/api/items/nope", "status": 404 }]
+}
+```
 
-- **`deploy.command` must become an argv array.** `split(' ')` destroys any quoted argument, so
-  `ssh box 'cd /srv && ./deploy.sh'` arrives as six mangled tokens.
-- **Deploy must move in front of the ship decision**, so a failure can withhold the tag instead
-  of arriving after it — the same argument as §4's ship condition.
-- **A smoke check is what makes a deploy evidence.** `health-probe.mjs` already contains the
-  reusable half (`judgeHealthResponse`) and is local-only: it starts the app itself and polls
-  `127.0.0.1`. A remote mode takes a URL and asks it. It must **withhold the ship, never fail
-  the iteration**, or a blinking network triggers `git reset --hard`.
-- **`smoke` needs an entry in `gate-policy.mjs`.** Universal is the default, so an unlisted gate
-  runs on a CLI and fails there forever — §4.2, for the seventh time.
-- **Decided 12 August 2026: a synchronous deploy to a fixed host is the only supported shape.**
-  Dynamic-URL and push-triggered hosts are **explicitly unsupported**, not half-supported.
+**Only a synchronous deploy to a fixed host is supported.** Dynamic-URL and push-triggered hosts
+are **explicitly unsupported**, not half-supported. The cost argument is real — a preview host
+mints a new URL per deploy and prints it to stdout, so it needs output capture, URL extraction,
+environment-variable interpolation and teardown, four mechanisms and four places to fail open,
+while a droplet's URL is known in advance and goes straight into config. But the deciding
+argument is that **a push-triggered deploy has no exit code.**
 
-  The cost argument is real — a preview host mints a new URL per deploy and prints it to stdout,
-  so it needs output capture, URL extraction, environment-variable interpolation and teardown,
-  four more mechanisms and four more places to fail open, while a droplet's URL is known in
-  advance and goes straight into config. But the deciding argument is that **a push-triggered
-  deploy has no exit code.**
+`ssh box /srv/app/deploy.sh` returns when the deploy is finished, with a status. That is a gate.
+`git push` exits 0 the moment the objects transfer; whatever the host does afterwards is
+asynchronous, unowned, and reports nothing back. Smoke-testing it means polling a URL that is
+**still serving the previous deploy** until it maybe stops, with no signal separating "not
+deployed yet" from "deployed and broken" from "deployed and fine". That is §3.8.1 in a new
+place: *the tool reports the problem and does not fail on it.* Vercel and Netlify already own
+this through their own git integrations — **if a host deploys itself on push, dare has nothing
+to add and should not pretend otherwise.**
 
-  `ssh box /srv/app/deploy.sh` returns when the deploy is finished, with a status. That is a
-  gate. `git push` exits 0 the moment the objects transfer; whatever the host does afterwards is
-  asynchronous, unowned, and reports nothing back. Smoke-testing it means polling a URL that is
-  **serving the previous deploy** until it maybe stops, with no signal that distinguishes "not
-  deployed yet" from "deployed and broken" from "deployed and fine".
+Six properties, each of which is load-bearing:
 
-  That is §3.8.1's finding in a new place: *the tool reports the problem and does not fail on
-  it.* Phase 3 is defined as exit codes and no LLM, and an asynchronous deploy cannot supply one.
-  Hosts like Vercel and Netlify already own this path through their own git integrations, and
-  the honest division of labour is to let them: **if a host deploys itself on push, dare has
-  nothing to add and should not pretend otherwise.**
-- **Credentials reach the deploy through the operator's environment and never through a prompt.**
-  `shell` passes `options.env ?? process.env`, and the driver runs the deploy in its own process
-  rather than handing it to a child. That is correct today by accident; it is an invariant now.
+- **`command` is an argv array, and a string is refused by name.** `split(' ')` destroyed any
+  quoted argument, so `ssh box 'cd /srv && ./deploy.sh'` arrived as six mangled tokens. The old
+  shape errors rather than being coerced, because silently re-interpreting a pre-0.61.0 config
+  would run something its author did not write.
+- **`enabled: true` requires all three of `command`, `url` and `smoke`.** A deploy nothing can
+  check reports success whatever it did, which is the stub this replaces. A *disabled* section
+  validates nothing, so a half-written one does not fail runs that never deploy.
+- **`url` is refused if it is not http(s), or if `riskyRemoteWord` matches it** — the same
+  function that refuses a production-looking git remote, so the two cannot drift. The "never
+  points at anything with users" premise had a hole shaped precisely like this feature.
+- **It runs in front of the ship decision**, in `driveRun`, not inside `ship()`. A deploy that
+  cannot withhold the tag is not evidence about the tag.
+- **A failure withholds the ship; it never fails the iteration.** Same shape as §4's
+  unproven-suite check. A blinking network or a box that is down must not `git reset --hard` a
+  tree that just passed a unanimous panel — the work stands, the claim that it is deployed does
+  not. The smoke output is carried into the next objective so the builder is told what broke.
+- **Credentials reach the deploy through the operator's environment and never through a
+  prompt.** `shell` passes `options.env ?? process.env`, and the driver runs the deploy in its
+  own process rather than handing it to a child. This was true by accident; it is an invariant
+  now.
 
-Until that exists, `deploy.enabled: true` buys a command that cannot fail the run and cannot be
-checked. **Leave it off.**
+**The smoke check is the half that makes a deploy mean anything.** `health-probe.mjs` gained a
+remote mode dispatched on `--url`: no port allocation, no spawn, no process-group reaping. It
+shares `judgeHealthResponse` with local mode and nothing else.
+
+- **The expected status is exact**, so a `404` that was asked for is a pass and an error path can
+  be smoke-tested. "Everything must be 200" would make that impossible.
+- **A 2xx additionally goes through `judgeHealthResponse`**, so an empty body or an endpoint
+  reporting its own distress fails even when the number is right. Below 2xx those rules do not
+  apply: an empty 404 is ordinary.
+- **A transport failure is retried; a response never is.** A refused connection during a restart
+  is worth waiting through. A wrong status is a real answer, and re-asking until it becomes the
+  right one is how a check that should fail passes.
+- **`parseSmokeArgs` is a second parser, not a widened `parseProbeArgs`.** That one builds a flag
+  record, so a repeated flag overwrites — three smoke checks silently becoming one is a gate
+  reporting a clean pass over less than it was asked to check. An unparseable `--expect` throws
+  rather than being skipped, for the same reason.
+
+**`smoke` deliberately has no `gate-policy.mjs` entry**, and the reasoning was corrected during
+the build. Deploy is a **ship-time** step, not a Phase-3 gate — running it every iteration would
+deploy unreviewed code — so capability arming does not apply. The config being filled in is the
+arming. Tier 2 covers the probe against a real listening server, because HTTP is another
+program's contract and unit assertions about it are not enough.
 
 ---
 
