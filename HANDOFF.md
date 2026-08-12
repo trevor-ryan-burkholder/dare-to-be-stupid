@@ -256,8 +256,8 @@ details buries the one entry that mattered, and §8.3's whole value is that a re
 
 ## Two traps, both of which nearly cost this session
 
-1. **The install cache is stale.** `installed_plugins.json` says **0.34.0**; the tree is 0.43.0.
-   Anything run from the cache exercises code nine versions old — including before the
+1. **The install cache is stale.** `installed_plugins.json` says **0.34.0**; the tree is 0.50.0.
+   Anything run from the cache exercises code sixteen versions old — including before the
    red-evidence deadlock fix and all four of this session's gate fixes. Either `/plugin update` +
    `/reload-plugins`, or invoke `node <repo>/scripts/driver.mjs` directly as this session did.
    Check the pinned `gitCommitSha` before debugging anything.
@@ -272,7 +272,12 @@ details buries the one entry that mattered, and §8.3's whole value is that a re
    `break: 100` demanding a perfect score. **They do not look like failures — they look like a
    builder that will not comply.** When an iteration fails the same gate twice, check whether the
    objective is satisfiable *before* reading the builder's work.
-4. **A structural test can match the wrong text and report coverage it does not have.** This
+4. **Do not edit `templates/*.md` while a run is in flight.** `builderSystemPrompt` reads the
+   template from disk on **every child**, so a template edited mid-run reaches the next builder and
+   the run stops being the experiment you started. `scripts/*.mjs` is safe by accident — Node loaded
+   those at startup — which makes the hazard easy to miss, because the obvious-looking edit is the
+   harmless one. Land template changes between runs.
+5. **A structural test can match the wrong text and report coverage it does not have.** This
    session wrote one that passed with the very call site it guarded reverted, because the source
    line contained the word it grepped for in a different call. Verify such a test by breaking the
    thing it protects and watching it fail.
