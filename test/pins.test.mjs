@@ -20,6 +20,7 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import {
+  retractPin,
   PINS_FILE,
   PinsError,
   emptyPins,
@@ -363,5 +364,58 @@ describe('parseSecurityEscalation', () => {
   it('produces a verdict that can be quarantined without further massaging', () => {
     const verdict = parseSecurityEscalation('nothing here');
     assert.equal(quarantinePin(guardPin(), verdict.detail).status, 'quarantined');
+  });
+});
+
+describe('a pin that should never have existed', () => {
+  // An audit of this project's first SHIPPED found a DoD-2-security pin citing
+  // `if (intent.kind === 'usage-error') {` - an argv branch, not a security control. The three
+  // existing verdicts all presuppose the pinned thing WAS a control, so a false pin could only
+  // be quarantined, and quarantine blocks SHIPPED forever. DESIGN.md §4.3 predicted this exact
+  // hazard and supplied an escape for the wrong failure.
+  const pin = () =>
+    pinSecurityElement({
+      id: 'DoD-2-security',
+      evidence: 'src/cli.ts:20',
+      snippet: "if (intent.kind === 'usage-error') {",
+      iteration: 1,
+    });
+
+  it('retracts with a reason, and stops blocking the ship', () => {
+    const retracted = retractPin(pin(), 'an argv branch, not a security control');
+    assert.equal(retracted.status, 'retracted');
+    assert.equal(retracted.reason, 'an argv branch, not a security control');
+    const store = { ...emptyPins(), security: [retracted] };
+    assert.deepStrictEqual(shippingBlockers(store), [], 'a retracted pin must not block SHIPPED');
+  });
+
+  it('keeps the record rather than deleting it', () => {
+    // Protection that silently stops existing is indistinguishable from protection that was
+    // never there. The entry is the only evidence the claim was made and withdrawn.
+    const store = { ...emptyPins(), security: [retractPin(pin(), 'never a control')] };
+    assert.equal(store.security.length, 1);
+    assert.equal(store.security[0].id, 'DoD-2-security');
+  });
+
+  it('refuses to retract without a reason', () => {
+    for (const reason of ['', '   ']) {
+      assert.throws(() => retractPin(pin(), reason), PinsError);
+    }
+  });
+
+  it('still blocks the ship when the element is merely quarantined', () => {
+    // The neighbour. Retraction must not become a quieter quarantine: an element nobody could
+    // verify is a recorded loss of protection and still stops the run shipping.
+    const store = { ...emptyPins(), security: [quarantinePin(pin(), 'could not tell')] };
+    assert.equal(shippingBlockers(store).length, 1);
+  });
+
+  it('accepts the verdict only when the reviewer gives a reason', () => {
+    const withReason = parseSecurityEscalation('```json\n{"finding":"never-was","detail":"an argv branch"}\n```');
+    assert.equal(withReason.finding, 'never-was');
+    // Fail-closed: an unexplained retraction is the one shape a builder might hope to launder a
+    // real guard through, so it degrades to unknown, which quarantines.
+    const bare = parseSecurityEscalation('```json\n{"finding":"never-was"}\n```');
+    assert.equal(bare.finding, 'unknown');
   });
 });

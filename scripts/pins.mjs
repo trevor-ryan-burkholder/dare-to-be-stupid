@@ -42,6 +42,13 @@
  * - **moved** → re-pin at the new location. No reset.
  * - **cannot tell** → quarantine: recorded, surfaced to the operator, excluded from further
  *   re-verification.
+ * - **never was one** → retract, with a reason. Added after an audit found a `DoD-2-security` pin
+ *   citing `if (intent.kind === 'usage-error') {` — an argv branch. The other three answers all
+ *   presuppose the pinned thing *was* a control, so a false pin could only ever be quarantined,
+ *   and quarantine blocks `SHIPPED` forever. The escape §4.3 promised solved "where did the guard
+ *   go" and had no answer to "that was never a guard". Retracted rather than deleted: the entry
+ *   and its reason remain, because protection that silently stops existing is indistinguishable
+ *   from protection that was never there.
  *
  * One targeted call is cheaper than a wrong hard reset by an order of magnitude, and it
  * preserves "ambiguity is not a pass" — because **quarantine is not a pass**. It is a recorded
@@ -89,7 +96,7 @@ export class PinsError extends Error {
  *   snippet: string,
  *   fingerprint: string,
  *   pinnedAt: number,
- *   status: 'active' | 'quarantined',
+ *   status: 'active' | 'quarantined' | 'retracted',
  *   reason: string
  * }} SecurityPin
  */
@@ -223,7 +230,7 @@ export function pinRequirement(input) {
  * @returns {'present' | 'ambiguous'}
  */
 export function verifySecurityPin(pin, readSource) {
-  if (pin.status === 'quarantined') return 'present';
+  if (pin.status === 'quarantined' || pin.status === 'retracted') return 'present';
   const contents = readSource(pin.file);
   if (contents === null) return 'ambiguous';
   return normaliseSnippet(contents).includes(pin.snippet) ? 'present' : 'ambiguous';
@@ -243,6 +250,45 @@ export function verifyRequirementPin(pin, readSource) {
   // possible reason to stop trusting it, not a reason to shrug.
   if (contents === null) return 'fail';
   return fingerprint(contents) === pin.fingerprint ? 'carry' : 'unpin';
+}
+
+/**
+ * Retract a pin that should never have existed.
+ *
+ * **The fourth answer, and it was missing.** The escalation could say `moved`, `removed` or
+ * `unknown` — three answers that all presuppose the pinned thing *was* a security element. An
+ * audit of this project's first `SHIPPED` found a `DoD-2-security` pin citing
+ * `if (intent.kind === 'usage-error') {` — an argv branch, not a control. Under monotonicity
+ * that pin was permanent: nothing could re-verify it as a guard, because it never was one, and
+ * the only available verdicts would have quarantined it forever and blocked every future ship.
+ *
+ * `DESIGN.md` §4.3 predicted this exact hazard — *"a false pin under monotonicity is unremovable
+ * and turns a formatter run into an objective the builder cannot satisfy"* — and supplied an
+ * escape for the wrong failure. Escalation solves *"where did the guard go"*. It had no answer to
+ * *"that was never a guard"*.
+ *
+ * **Retracted, not deleted.** The record stays, with its reason, for the same argument that makes
+ * quarantine visible: a protection that silently stops existing is indistinguishable from one
+ * that was never there. A retracted pin no longer blocks `SHIPPED` — that is the point of it —
+ * so the entry is the only evidence the claim was ever made and withdrawn.
+ *
+ * The authority is unchanged and that is what keeps this from being an escape hatch. Only the
+ * scoped cold reviewer may retract, exactly as only it may re-pin; the builder cannot ask for
+ * this and cannot reach the file.
+ *
+ * @param {SecurityPin} pin
+ * @param {string} reason
+ * @returns {SecurityPin}
+ * @throws {PinsError} when no reason is given
+ */
+export function retractPin(pin, reason) {
+  if (typeof reason !== 'string' || reason.trim() === '') {
+    throw new PinsError(
+      `${pin.id} cannot be retracted without a reason. A pin withdrawn silently is indistinguishable ` +
+        'from protection that quietly stopped being checked.',
+    );
+  }
+  return { ...pin, status: 'retracted', reason };
 }
 
 /**
@@ -360,7 +406,7 @@ export function writePins(dareDir, pins) {
   return file;
 }
 
-/** @typedef {{ finding: 'removed' | 'moved' | 'unknown', evidence: string | null, snippet: string, detail: string }} EscalationVerdict */
+/** @typedef {{ finding: 'removed' | 'moved' | 'unknown' | 'never-was', evidence: string | null, snippet: string, detail: string }} EscalationVerdict */
 
 /**
  * Read the scoped security reviewer's answer about one element.
@@ -405,6 +451,14 @@ export function parseSecurityEscalation(raw) {
         return unknown(`the reviewer said the element moved but did not say where: ${detail}`);
       }
       return { finding: 'moved', evidence, snippet, detail };
+    }
+    // The fourth answer. Requires a reason, because a retraction with no argument is the one
+    // shape a builder could hope to launder a real guard through - and unlike the other three
+    // this verdict removes protection from the monotonic set rather than relocating it.
+    if (record.finding === 'never-was') {
+      return detail === ''
+        ? unknown('the reviewer said the element was never a security control but gave no reason')
+        : { finding: 'never-was', evidence: null, snippet: '', detail };
     }
     if (record.finding === 'unknown') return unknown(detail === '' ? 'the reviewer could not tell' : detail);
     return unknown(`the reviewer returned an unrecognised finding ${JSON.stringify(record.finding)}`);

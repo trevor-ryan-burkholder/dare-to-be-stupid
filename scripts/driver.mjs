@@ -67,6 +67,7 @@ import {
   pinRequirement,
   pinSecurityElement,
   quarantinePin,
+  retractPin,
   readPins,
   repinSecurityElement,
   shippingBlockers,
@@ -1389,6 +1390,14 @@ export function driveRun(options) {
           });
           pinsChanged = true;
           effects.log(`pinned security element ${pin.id} moved to ${verdict.evidence}; re-pinned`);
+        } else if (verdict.finding === 'never-was') {
+          // The pin was wrong when it was created. Retracted rather than quarantined, because a
+          // quarantine blocks SHIPPED forever and nothing can re-verify a guard that never
+          // existed. The record and its reason stay: a protection that silently stops existing
+          // is indistinguishable from one that was never there.
+          pins.security[index] = retractPin(pin, verdict.detail);
+          pinsChanged = true;
+          effects.log(`pinned security element ${pin.id} retracted, it was never a control: ${verdict.detail}`);
         } else {
           pins.security[index] = quarantinePin(pin, verdict.detail);
           pinsChanged = true;
