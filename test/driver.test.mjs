@@ -35,6 +35,7 @@ import {
   dareIgnoreUpdate,
   architectGateFragment,
   recordPanelVerdict,
+  suiteSensitivityEvidence,
   ensureDareIgnored,
   firstIterationTask,
   unitGateCommand,
@@ -1186,7 +1187,16 @@ describe('driveRun', () => {
       build: () => ok,
       review: () => ({ ...ok, text: JSON.stringify({ requirements: [GOOD_ENTRY] }) }),
       realityCheck: () => ({ ...ok, text: 'buildable' }),
-      gates: () => ({ ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }] }),
+      // A ship needs evidence the suite can fail (0.56.0), so the default harness carries a
+      // passing mutation gate - the ordinary shipping condition. Tests exercising the withheld
+      // path override this.
+      gates: () => ({
+        ok: true,
+        results: [
+          { name: 'lint', ok: true, status: 0, detail: 'passed' },
+          { name: 'mutation', ok: true, status: 0, detail: 'no survivors' },
+        ],
+      }),
       readTestReports: () => [{ numTotalTests: 1, testResults: [] }],
       commit: () => 'commit1',
       diffStat: () => ' 1 file changed',
@@ -1563,6 +1573,20 @@ describe('driveRun', () => {
       { name: 'test/b.test.js', assertionResults: [{ ancestorTitles: [], title: 'other', status: 'passed' }] },
     ],
   };
+
+  it('withholds the ship when nothing has shown the suite can fail', () => {
+    const { outcome } = run({
+      readTestReports: () => [ONE_PASSING],
+      gates: () => ({ ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }] }),
+    });
+    assert.notEqual(outcome.state, 'SHIPPED', 'shipped with no evidence the suite can fail');
+  });
+
+  it('ships once the mutation gate has proven the suite', () => {
+    // The neighbour that keeps this from being a way to never ship: the default harness carries
+    // a passing mutation gate, and that is the ordinary condition.
+    assert.equal(run({ readTestReports: () => [ONE_PASSING] }).outcome.state, 'SHIPPED');
+  });
 
   it('ships when the gates pass, nothing regressed and the panel is unanimous', () => {
     let shipped = 0;
@@ -2757,6 +2781,43 @@ describe('red-evidence', () => {
 // ---------------------------------------------------------------------------
 // Run state must never enter the target repository's history
 // ---------------------------------------------------------------------------
+
+describe('suiteSensitivityEvidence', () => {
+  // The first SHIPPED this project produced had `seenFailing: []` and a mutation gate that
+  // declined on the shipping iteration. Both mechanisms that prove a suite bites were absent
+  // from the iteration that made the claim, and an independent audit had to mutate the code
+  // itself to establish what the loop should have. The tests were good - 15 of 15 mutations
+  // killed - which is the point: SHIPPED asserted something nothing had checked.
+  const red = (/** @type {string[]} */ ids) => ({ seenFailing: new Set(ids) });
+  const gates = (/** @type {{name: string, ok: boolean}[]} */ results) => ({
+    results: results.map((r) => ({ ...r, status: r.ok ? 0 : 1, detail: '' })),
+  });
+
+  it('accepts a passing mutation gate as direct proof', () => {
+    const verdict = suiteSensitivityEvidence(gates([{ name: 'mutation', ok: true }]), red([]));
+    assert.equal(verdict.proven, true);
+    assert.equal(verdict.how.includes('mutation gate passed'), true);
+  });
+
+  it('accepts a test observed failing, which is weaker but not vacuous', () => {
+    const verdict = suiteSensitivityEvidence(gates([{ name: 'lint', ok: true }]), red(['a::1']));
+    assert.equal(verdict.proven, true);
+    assert.equal(verdict.how.includes('observed failing'), true);
+  });
+
+  it('reproduces the shipping iteration that had neither', () => {
+    // A declined mutation gate produces no result at all, which is exactly how it looked.
+    const verdict = suiteSensitivityEvidence(gates([{ name: 'lint', ok: true }]), red([]));
+    assert.equal(verdict.proven, false);
+    assert.equal(verdict.how.includes('did not run and pass'), true);
+  });
+
+  it('does not accept a mutation gate that ran and failed', () => {
+    // The neighbour. Surviving mutants are the opposite of proof, and a check that counted any
+    // mutation result would have inverted the meaning of the gate.
+    assert.equal(suiteSensitivityEvidence(gates([{ name: 'mutation', ok: false }]), red([])).proven, false);
+  });
+});
 
 describe('recordPanelVerdict', () => {
   // An independent audit of the first SHIPPED this project produced could not verify the claim

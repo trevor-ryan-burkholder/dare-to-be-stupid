@@ -1549,6 +1549,24 @@ export function driveRun(options) {
       continue;
     }
 
+    // A panel that passed is a judgement about the code. It is not evidence that the suite the
+    // judgement leaned on can fail at all, and the first SHIPPED this project produced had none.
+    const sensitivity = suiteSensitivityEvidence(gateOutcome, loadRedEvidence(dareDir));
+    if (panel.verdict === 'pass' && !sensitivity.proven) {
+      effects.log(`cannot ship: ${sensitivity.how}`);
+      objective = {
+        kind: 'review',
+        headline: 'Prove the test suite can fail before this ships.',
+        reason:
+          `the panel passed, but ${sensitivity.how}. A suite nothing has shown to be capable of failing ` +
+          'cannot support a claim that the work is done, so the ship is withheld rather than the ' +
+          'iteration failed. Changing any first-party source makes the mutation gate apply again',
+        findings: [sensitivity.how],
+      };
+      closeIteration(iterationNumber, ['ship:unproven-suite'], score, passing.size);
+      continue;
+    }
+
     if (panel.verdict === 'pass') {
       effects.event?.({ kind: 'ship', iteration: iterationNumber });
       effects.ship(iterationNumber);
@@ -2240,6 +2258,58 @@ export function ensurePlaywrightBrowsers(options) {
 // ---------------------------------------------------------------------------
 // red-evidence (DESIGN.md §8)
 // ---------------------------------------------------------------------------
+
+/**
+ * Has anything demonstrated that this suite is capable of failing?
+ *
+ * **The first `SHIPPED` this project produced had no such demonstration.** Its
+ * `red-evidence.json` recorded `seenFailing: []` — all 79 credited ids admitted by the
+ * first-gating baseline, not one ever observed red — and on the very iteration that shipped the
+ * mutation gate declined, because no first-party source had changed since the last ratchet
+ * advance. **Both mechanisms that exist to prove a suite bites were absent from the iteration
+ * that made the claim.** An independent audit had to mutate the code itself to establish what
+ * the loop should have established.
+ *
+ * That is not an accusation against the tests — 15 of 15 mutations were killed, so they were
+ * good. It is that `SHIPPED` asserted something nothing had checked.
+ *
+ * Two proofs are accepted, and either is enough:
+ *
+ * - **the mutation gate passed**, which is direct evidence the tests are sensitive to the code;
+ * - **something was observed failing**, which is weaker but non-vacuous — a suite that has gone
+ *   red is a suite that can.
+ *
+ * The per-id form — *every* credited id must have red history — is deliberately **not** required.
+ * That is the red-evidence deadlock 0.39.0 removed: a greenfield project whose tests pass first
+ * time can never produce it, and a bar no correct project can clear is the defect class this
+ * codebase keeps rediscovering. This is a floor, and it is honest about being one.
+ *
+ * It blocks the *ship*, never the iteration, and it is satisfiable by ordinary work: the mutation
+ * gate declines only when an iteration changed no first-party source, so the next iteration that
+ * touches anything runs it.
+ *
+ * @param {{ results: GateResult[] }} gateOutcome this iteration's gate results
+ * @param {{ seenFailing: Set<string> }} redEvidence
+ * @returns {{ proven: boolean, how: string }}
+ */
+export function suiteSensitivityEvidence(gateOutcome, redEvidence) {
+  const mutation = gateOutcome.results.find((result) => result.name === 'mutation');
+  if (mutation !== undefined && mutation.ok) {
+    return { proven: true, how: 'the mutation gate passed, so the tests are sensitive to the code' };
+  }
+  if (redEvidence.seenFailing.size > 0) {
+    return {
+      proven: true,
+      how: `${redEvidence.seenFailing.size} test(s) have been observed failing, so the suite can go red`,
+    };
+  }
+  return {
+    proven: false,
+    how:
+      'nothing has demonstrated that these tests can fail: none has been observed red, and the mutation ' +
+      'gate did not run and pass on this iteration',
+  };
+}
 
 /**
  * Test ids that have been observed *not* passing at some point in this run.
