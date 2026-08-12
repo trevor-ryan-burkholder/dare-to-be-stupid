@@ -75,12 +75,31 @@ mode, so it keeps working when the builder runs with `--dangerously-skip-permiss
 
 | Rule              | What it blocks                                                                                                   | What it deliberately leaves alone                                                                          |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `protected-state` | anything touching `.dare/state.json`, `.dare/config.json` or `.dare/lessons.json`                                | the rest of `.dare/`, including `bloopers.log` and `briefs/`; `tsconfig.json`; an app's own `src/state.json` |
+| `protected-state` | **mutation of any path under `.dare/`, at any depth, including files that do not exist yet** — but only from inside a run | reads, always; every write by the operator outside a run; `tsconfig.json`; an app's own `src/state.json` |
 | `git-history`     | `push --force` / `-f` / `--force-with-lease`, `rebase`, `filter-branch`, `reflog expire`                         | ordinary pushes, `git reset --hard` (the ratchet needs it), `git reflog`, "rebase" inside a commit message |
 | `rm-recursive`    | recursive `rm` outside the temp directory, and any recursive `rm` whose target cannot be resolved before it runs | non-recursive `rm`, `rm -rf /tmp/...`, `rmdir`                                                             |
 | `nested-dare`     | a builder invoking `/dare`                                                                                       | the word "dare" in prose, paths and filenames containing it                                                |
 
 A malformed or unparseable payload is a **deny**. A guard that fails open is not a guard.
+
+**`protected-state` is positional, not a list of names.** It used to name three files and leave
+the rest of `.dare/` writable; that enumeration was the defect, because each new artifact
+defaulted to writable until somebody remembered to add it — and `red-evidence.json`,
+`test-report.json` and the archived briefs are all read back as decisions. Anything inside
+`.dare/` is driver-owned.
+
+**"Inside a run" is `DARE_RUNNING` in the hook's own environment**, stamped by the driver on
+every child it spawns. Outside a run these are ordinary files and you may edit them from
+wherever you like, including from inside Claude Code. A rule that locks out the person who owns
+the repository has stopped being a guard and started being a nuisance. Rules 2–4 are refused to
+everyone, because none of them becomes reasonable merely because a human asked.
+
+**The driver hands the hook to its own children explicitly** (0.59.0). Registering it in
+`hooks/hooks.json` covers *your* Claude Code sessions; a `claude -p` child does not load the
+operator's plugin PreToolUse hooks, so for eleven versions the builder ran unguarded while
+every visible signal said otherwise. The guard now travels in the `--settings` blob and no
+longer depends on the plugin being installed, enabled, or at the same version as the tree.
+`test/live/guard-registration.live.test.mjs` is what holds that, because no unit test can.
 
 On deny it prints one `hookSpecificOutput` object with `permissionDecision: "deny"` and a
 reason tagged with the rule that fired; on allow it prints nothing, leaving the decision to
@@ -259,14 +278,18 @@ unattended run hours of behaviour nobody asked for, with no way to tell.
 | -------------------- | ------------------------------------- | ---------------------------------------------------------- |
 | `maxIterations`      | `25`                                  | hard iteration cap                                         |
 | `stallLimit`         | `4`                                   | iterations with no measurable improvement before `STALLED` |
-| `tokenCeiling`       | `4000000`                             | tokens across every child; the run ends at the first child to cross it, so budget for this plus one child |
+| `tokenCeiling`       | `4000000`                             | bounds **work**; the run ends at the first child to cross it. Not a cap — one measured child returned 20,223,215 tokens against a 2,000,000 ceiling, so expect a single child to overshoot by an order of magnitude |
+| `costCeiling`        | `50`                                  | bounds **spend**, in USD, read from the envelope's own `total_cost_usd`. Tokens are not convertible to money — the same run above cost $9.43 — so neither ceiling substitutes for the other |
+| `contextBudget.maxCharacters` | `400000`                     | the assembled prompt is measured before a child is spawned and refused if larger. Characters, not tokens, and labelled as such. No `enabled` key on purpose |
+| `extractTests`       | `true`                                | parse JSON reporter output into ratchet ids                |
+| `builderModel` / `reviewerModel` / `designModel` / `prdModel` / `styleModel` / `lessonModel` | `sonnet` / `opus` / `opus` / `sonnet` / `fable` / `sonnet` | the judge should be the smartest thing in the loop |
 | `reviewers`          | `["security","correctness","design"]` | the cold panel                                             |
 | `ownership`          | one id set per reviewer               | which ids each member owns; must cover every required id   |
 | `requireUnanimous`   | `true`                                | one dissent blocks the ship                                |
 | `advisory.minConfidence` | `0.7`                             | below this an advisory finding is recorded, not acted on   |
 | `lessons`            | `{ "enabled": true, "maxPerBrief": 3 }` | evidence-derived lesson memory                           |
-| `qualityPlugins`     | `["impeccable"]`                      | provisioned before the loop                                |
-| `deploy`             | `{ "enabled": false }`                | off by default; pre-production only                        |
+| `qualityPlugins`     | `["impeccable", "knip", "semgrep"]`   | provisioned before the loop; impeccable is required, the other two degrade to a warning |
+| `deploy`             | `{ "enabled": false, "command": "" }` | **a stub — leave it off.** The command runs *after* the ship tag is written and its failure is printed and ignored, so the run reports `SHIPPED` regardless. Nothing smoke-tests the result. See `DESIGN.md` §10.1 |
 | `chaos`              | `1`                                   | scope budget: 1 surgical, 2 normal, 3 feral                |
 | `realityCheck.after` | `3`                                   | stalled iterations before asking if the PRD is buildable   |
 | `race`               | `{ "enabled": false, "n": 3, "after": 2 }` | worktree racing, armed only by a stall               |
@@ -329,8 +352,17 @@ literal string from the same record.
 
 ## Status
 
-All eight slices of `DESIGN.md` §12 are built and gated: **562 tests**, lint and typecheck
-clean.
+All eight slices of `DESIGN.md` §12 are built and gated, across **three separately runnable
+tiers** — because a green tick for a suite that made no external call is a lie the reader takes
+for coverage:
+
+| tier | command | needs | count |
+| --- | --- | --- | --- |
+| 1 — unit | `npm test` | node only | 1431 |
+| 2 — integration | `npm run test:integration` | real `git`, `node`, `npm`; no money | 12 |
+| 3 — live | `DARE_LIVE=1 npm run test:live` | a real `claude -p`; **spends money** | 11 |
+
+Tier 3 **fails when unarmed rather than skipping.** Lint and typecheck clean.
 
 | #   | Slice                                                         | State |
 | --- | ------------------------------------------------------------- | ----- |
@@ -343,16 +375,33 @@ clean.
 | 7   | output style                                                  | done  |
 | 8   | plugin + marketplace manifests, `/dare` command               | done  |
 
+### What has met reality
+
+Nine end-to-end runs against throwaway repositories, all with `deploy.enabled: false`. Full
+records in `HANDOFF.md`; the short version:
+
+- a cold reviewer **refusing** an incomplete build, and measuring an impossible latency
+  requirement with raw sockets rather than reading the docs
+- the **ratchet resetting a real tree** on a regression the builder introduced itself, and
+  issuing a regression-only brief
+- a **security pin escalating**, returning `moved`, and re-pinning with no reset
+- one run reaching **`SHIPPED`** — and an independent audit then finding the shipped binary
+  discards data at exit `0`, which is why `SHIPPED` is a claim to check rather than a result to
+  trust
+
 ### Not yet proven
 
-Two things remain that the suite cannot settle. Both are tracked in `HANDOFF.md`:
+- **worktree racing with a live builder.** `race.enabled` is `false`; only the git half is
+  covered, by tier 2. The half that costs money has never executed once.
+- **the .NET adapter driven by a run.** Its commands were verified against a real SDK; no run
+  has ever used them, and there is no SDK on the development machine.
+- **the ship condition added at 0.56.0–0.58.0.** See `HANDOFF.md`.
 
-- a deliberately incomplete build actually drawing a `fail` verdict from a cold reviewer
-- a first end-to-end run against a throwaway repo with `deploy.enabled: false`
-
-Verified live: the guard hook denying a real PreToolUse event, `claude -p` children and
-their JSON envelope against claude 2.1.226, and `extractTestIds` against real vitest output
-rather than the committed fixtures.
+**Read one thing before trusting anything here: a passing suite proves less than it looks.**
+This README claimed for eleven versions that the guard hook was "verified live". It was — in an
+operator's own session. It was not firing in a single child the driver spawned, and the guard's
+own unit tests were correct and green throughout, because they proved the *logic* and nothing
+asserted the *invocation*. Prefer looking at a produced artifact over adding an assertion.
 
 ## Working on this repo
 
@@ -363,8 +412,17 @@ dependencies, and a test asserts that structurally by checking every import.
 npm install
 npm run lint
 npm run typecheck
-npm test
+npm test                     # tier 1
+npm run test:integration     # tier 2 — real git/node/npm, no network, no money
+DARE_LIVE=1 npm run test:live   # tier 3 — real claude -p, spends money
+npm run release-check        # refuses a shipped change at an unbumped version
 ```
+
+**Any change to a shipped file requires a version bump** in `.claude-plugin/plugin.json` and
+`package.json` together. The install cache is keyed by version, so an update at an unchanged
+version silently resolves to the old folder and keeps running the previous build —
+indistinguishable from a wrong fix. `npm run release-check` is what catches it; do not rely on
+remembering.
 
 Do not run `/dare` against this repository (`CLAUDE.md`, scope note).
 

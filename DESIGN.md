@@ -112,7 +112,8 @@ loop is phases 2–6.
    PHASE 4  RATCHET     regression? hard reset, feed back, restart iteration
    PHASE 5  REVIEW      specialized cold claude -p panel, each member on the ids it owns,
                         unanimous-or-continue, vs PRD + design + DoD  (strongest model)
-   PHASE 6  SHIP        commit · tag dare/iter-NNN · push · preview deploy
+   PHASE 6  SHIP        commit · tag dare/iter-NNN · annotated dare/GRAND-PRIZE
+                        · deploy, only if deploy.enabled and a command is set (§10)
    ─────────────────────────────────────────────────────────────  loop end ↑
 ```
 
@@ -1110,16 +1111,24 @@ dare-to-be-stupid/
 │   ├── pins.mjs                  # pinned security elements and requirements (§4.3)
 │   ├── assumptions.mjs           # what the builder had to assume (§8.3)
 │   ├── run-manifest.mjs          # .dare/run.json, and archiving the last run (§7.1, §7.2)
-│   └── init.js                   # scaffolds .dare/config.json, refuses risky remotes
+│   ├── integrity.mjs             # gate-integrity: no-op gates, weak assertions (§4)
+│   ├── preflight.mjs             # the nine checks run before a run starts (§3.5)
+│   ├── security-scan.mjs         # the repo's own agent surface, pre-run (§3.6)
+│   ├── config.mjs                # defaults, validation, and the risky-remote words (§10)
+│   ├── style.mjs                 # the Junkion render layer, output only (§9)
+│   └── init.mjs                  # scaffolds .dare/config.json, refuses risky remotes
 ├── hooks/
-│   ├── hooks.json                # PreToolUse on Bash
+│   ├── hooks.json                # PreToolUse on Bash|Write|Edit|MultiEdit|NotebookEdit
 │   └── guard.mjs                 # the limit that survives permission skipping
 ├── templates/
 │   ├── prd-author.md             # idea → PRD           (Phase 0)
 │   ├── architect.md              # PRD → design docs     (Phase 1)
 │   ├── builder-system.md         # Phase 2
 │   ├── reviewer-system.md        # Phase 5 (the actual product)
-│   └── lesson-extractor.md       # evidence → one lesson, or null (§13.8)
+│   ├── lesson-extractor.md       # evidence → one lesson, or null (§13.8)
+│   ├── frontend-direction.md     # appended to the builder only when there is a UI (§5.0)
+│   ├── toolchain-node.md         # per-toolchain idioms, into the brief (§8.4)
+│   └── toolchain-dotnet.md       # same, for .NET
 ├── output-styles/junkion.md
 └── test/fixtures/                # real vitest + playwright reporter output
 ```
@@ -1473,7 +1482,7 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `lessonModel` | `claude-sonnet-5` | the cold lesson extractor (§13.8); advisory, so it never needs the strongest model |
 | `qualityPlugins` | `["impeccable", "knip", "semgrep"]` | auto-installed in Phase 1 (§5); impeccable required, the other two degrade to a warning |
 | `deploy.enabled` | **false** | preview-only when enabled; never prod |
-| `deploy.command` | `""` | pluggable shell deploy; empty → auto-detect (vercel.json/netlify.toml/Dockerfile), else no-op. Reference recipe: `vercel deploy --prebuilt` |
+| `deploy.command` | `""` | a shell command run on `SHIPPED`; empty means **skip**. See the warning below — this is a stub, not a feature |
 | `extractTests` | true | parse JSON reporter output into ratchet IDs |
 | `chaos` | 1 | stupidity dial, 1–3; per-iteration scope budget (§13) |
 | `realityCheck.after` | 3 | stalled iterations before the buildability breaker fires (§13) |
@@ -1483,9 +1492,42 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `lessons.enabled` / `lessons.maxPerBrief` | true / 3 | evidence-derived lesson memory, and how many may enter one brief (§13.8) |
 | `contextBudget.maxCharacters` | 400_000 | the assembled prompt ceiling, measured before spawn (§3.9). Characters, not tokens; sized to fire on a runaway rather than to maximise utilisation. No `enabled` key on purpose |
 
-`init.js` refuses to initialize against a remote matching `prod`, `production`, `client`,
+`init.mjs` refuses to initialize against a remote matching `prod`, `production`, `client`,
 or `customer`, and requires a clean working tree (the ratchet's `reset --hard` destroys
 uncommitted work).
+
+### 10.1 `deploy` is a stub, and saying so is the point
+
+Two sentences in this section were false until 12 August 2026 — an empty `deploy.command` was
+documented as auto-detecting `vercel.json`, `netlify.toml` or a `Dockerfile`, and Phase 6 was
+documented as pushing. **Neither has ever been implemented.** What exists is
+`driver.mjs`'s `ship()`: one `execFileSync`, run *after* the `dare/GRAND-PRIZE` tag is already
+written, whose failure is **printed and then ignored** — the run still returns `SHIPPED`.
+
+That is a `catch { return pass }` in the one phase that claims the work is done, and it is
+listed here rather than quietly fixed because the fix is a design, not a patch:
+
+- **`deploy.command` must become an argv array.** `split(' ')` destroys any quoted argument, so
+  `ssh box 'cd /srv && ./deploy.sh'` arrives as six mangled tokens.
+- **Deploy must move in front of the ship decision**, so a failure can withhold the tag instead
+  of arriving after it — the same argument as §4's ship condition.
+- **A smoke check is what makes a deploy evidence.** `health-probe.mjs` already contains the
+  reusable half (`judgeHealthResponse`) and is local-only: it starts the app itself and polls
+  `127.0.0.1`. A remote mode takes a URL and asks it. It must **withhold the ship, never fail
+  the iteration**, or a blinking network triggers `git reset --hard`.
+- **`smoke` needs an entry in `gate-policy.mjs`.** Universal is the default, so an unlisted gate
+  runs on a CLI and fails there forever — §4.2, for the seventh time.
+- **A fixed host is far cheaper to support than a preview host.** A droplet's URL is known in
+  advance and goes straight into config. A preview host mints a new URL per deploy and prints it
+  to stdout, so it additionally needs output capture, URL extraction, environment-variable
+  interpolation and teardown — four more mechanisms, each a place to fail open. Build the fixed
+  URL first and mark dynamic-URL hosts **unsupported** rather than half-supported.
+- **Credentials reach the deploy through the operator's environment and never through a prompt.**
+  `shell` passes `options.env ?? process.env`, and the driver runs the deploy in its own process
+  rather than handing it to a child. That is correct today by accident; it is an invariant now.
+
+Until that exists, `deploy.enabled: true` buys a command that cannot fail the run and cannot be
+checked. **Leave it off.**
 
 ---
 
