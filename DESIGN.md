@@ -474,6 +474,24 @@ It also fails on **truthiness-only assertions in test files** — `toBeTruthy`, 
 claim, which was otherwise enforced only by a reviewer *reading* the tests, at the cost of a
 full iteration each time it fired.
 
+**It cannot see a test that cannot fail, and that is deliberate.** Probed directly: a test looping
+over files with `if (file.kind === 'leaf') continue;` before its only assertion passes this gate,
+and so does `test('asserts nothing', () => { const x = 1 + 1; })`. The first shape is real — run 3's
+builder found one in its own suite and recorded in `.dare/assumptions.json` that the test *"could
+never fail regardless of its imports"*, then strengthened it unprompted.
+
+The conditional-skip shape is not statically detectable at all; deciding whether an assertion
+executes is the coverage question. **That is what the mutation gate is for** (§4.4), and it is why
+that gate being inoperative until 0.43.0 mattered more than a missing runner: the one check that
+catches a test proving nothing had never run.
+
+The zero-assertion shape *is* detectable, and is still rejected, by this module's own rule that a
+false positive costs a full iteration on a correct repository while a false negative costs nothing
+the reviewer was not already covering. `test('does not throw', () => { doThing(); })` asserts
+nothing and is a legitimate test — it fails when `doThing` throws — and a suite whose assertions
+live in helpers (`expectValidNote(x)`) is ordinary. A detector firing on both would fail correct
+repositories to catch a shape the mutation gate already kills.
+
 **It does not scan a directory this loop's own tooling generated**, and that rule was bought with
 a failed iteration. Dogfood run 3's mutation gate crashed and left Stryker's instrumented sandbox
 under `.stryker-tmp/`; Stryker writes `@ts-nocheck` into every file it copies there. Because

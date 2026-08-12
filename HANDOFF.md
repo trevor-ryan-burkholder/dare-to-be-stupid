@@ -152,7 +152,7 @@ details buries the one entry that mattered, and §8.3's whole value is that a re
 | **`break: 100` mutation threshold** | **decide this.** Demands a perfect mutation score per changed file; measured 83.33 on a two-branch function with two honest tests. `DESIGN.md` §4.4 |
 | ~~Playwright provisioning not capability-gated~~ | **closed at 0.44.0.** `installed chromium for the e2e gate` had been logged one line after `gate e2e does not apply`. `ensurePlaywrightBrowsers` now declines when the gate does not apply; omitting capabilities still provisions, since under-provisioning fails a gate that *does* apply |
 | `assumptions.json` run attribution | **new, found in run 3, unfixed.** Carried across runs but keyed by `iteration`, which restarts per run — run 2's `iteration: 2` and run 3's are indistinguishable. Same shape as the C2 brief collision |
-| `gate-integrity` vs a vacuous branch | **new, unverified.** The builder found an import-edges test that could never fail; the gate bans weak matchers, not assertion-free branches |
+| `gate-integrity` vs a vacuous branch | **confirmed by probe, and deliberately not fixed.** It passes both the `continue`-past-the-assertion shape and `test('asserts nothing', …)`. The first is the coverage question and belongs to the mutation gate; the second is detectable but would fail legitimate `does not throw` and helper-based suites. `DESIGN.md` §4 |
 | ~~A9's tier-3 check~~ | **run for the first time, and it earned itself immediately.** 8 tests; on the first execution 7 passed and one found a real template defect (below). Fixed at 0.45.0, re-run live, 8 of 8 |
 
 ## A finding about the generated app, not about the plugin
