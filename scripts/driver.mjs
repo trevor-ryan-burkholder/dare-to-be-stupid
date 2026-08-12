@@ -3458,9 +3458,9 @@ export function main(argv, io = {}) {
           ],
           { cwd },
         );
-        if (config.deploy.enabled && config.deploy.command !== '') {
-          const parts = config.deploy.command.split(' ').filter((part) => part.length > 0);
-          const deployed = shell(parts[0], parts.slice(1), { cwd });
+        if (config.deploy.enabled && config.deploy.command.length > 0) {
+          const [command, ...args] = config.deploy.command;
+          const deployed = shell(command, args, { cwd });
           if (!deployed.ok) write(verbatim(`deploy failed: ${deployed.stderr.trim()}`));
         }
       },

@@ -58,7 +58,7 @@ describe('defaultConfig', () => {
       styleModel: 'claude-fable-5',
       lessonModel: 'claude-sonnet-5',
       qualityPlugins: ['impeccable', 'knip', 'semgrep'],
-      deploy: { enabled: false, command: '' },
+      deploy: { enabled: false, command: [], url: '', smoke: [] },
       extractTests: true,
       chaos: 1,
       realityCheck: { after: 3 },
@@ -91,6 +91,76 @@ describe('defaultConfig', () => {
     assert.equal(defaultConfig().deploy.enabled, false);
   });
 
+  // 0.61.0. Until then `deploy` was a stub: one `execFileSync` fired *after* the
+  // dare/GRAND-PRIZE tag was already written, whose failure was printed and ignored, with
+  // nothing checking the deployed result. A run could announce a grand prize having deployed
+  // nothing. See DESIGN.md §10.1.
+  describe('the deploy contract', () => {
+    it('defaults to an argv array, a blank url and no smoke checks', () => {
+      assert.deepStrictEqual(defaultConfig().deploy, { enabled: false, command: [], url: '', smoke: [] });
+    });
+
+    it('refuses a string command, naming the array it wants instead', () => {
+      // `split(' ')` destroyed any quoted argument: `ssh box 'cd /srv && ./deploy.sh'`
+      // arrived as six mangled tokens. An array cannot be mis-split, and rejecting the old
+      // shape loudly is what stops a pre-0.61.0 config deploying something unintended.
+      assert.throws(
+        () => validateConfig({ deploy: { enabled: false, command: 'ssh box ./deploy.sh' } }),
+        /deploy\.command.*array/i,
+      );
+    });
+
+    it('refuses to enable a deploy with nothing to run', () => {
+      assert.throws(() => validateConfig({ deploy: { enabled: true, url: 'https://s.example', smoke: [{ path: '/health', status: 200 }] } }), /command/i);
+    });
+
+    it('refuses to enable a deploy nothing can check', () => {
+      // The whole point. A deploy with no url and no smoke check is the stub again: it runs
+      // something and reports success regardless of what it did.
+      assert.throws(() => validateConfig({ deploy: { enabled: true, command: ['./d.sh'], smoke: [{ path: '/health', status: 200 }] } }), /url/i);
+      assert.throws(() => validateConfig({ deploy: { enabled: true, command: ['./d.sh'], url: 'https://s.example' } }), /smoke/i);
+    });
+
+    it('refuses a url that looks like production, exactly as it refuses such a remote', () => {
+      // The "never points at anything with users" premise had a hole shaped precisely like
+      // this feature: init refuses a prod-looking git remote and nothing checked the target.
+      assert.throws(
+        () => validateConfig({ deploy: { enabled: true, command: ['./d.sh'], url: 'https://api.production.example.com', smoke: [{ path: '/health', status: 200 }] } }),
+        /production/,
+      );
+    });
+
+    it('refuses a url that is not http or https', () => {
+      assert.throws(
+        () => validateConfig({ deploy: { enabled: true, command: ['./d.sh'], url: 'ssh://box/app', smoke: [{ path: '/health', status: 200 }] } }),
+        /http/i,
+      );
+    });
+
+    it('accepts a complete fixed-host deploy', () => {
+      const deploy = validateConfig({
+        deploy: {
+          enabled: true,
+          command: ['ssh', 'deploy@203.0.113.10', '/srv/app/deploy.sh'],
+          url: 'https://staging.example.internal',
+          smoke: [{ path: '/health', status: 200 }, { path: '/api/items', status: 200 }],
+        },
+      }).deploy;
+      assert.deepStrictEqual(deploy.command, ['ssh', 'deploy@203.0.113.10', '/srv/app/deploy.sh']);
+      assert.deepStrictEqual(deploy.smoke, [{ path: '/health', status: 200 }, { path: '/api/items', status: 200 }]);
+    });
+
+    it('requires every smoke entry to carry a path and an expected status', () => {
+      assert.throws(() => validateConfig({ deploy: { enabled: true, command: ['./d.sh'], url: 'https://s.example', smoke: [{ path: '/health' }] } }), /status/i);
+      assert.throws(() => validateConfig({ deploy: { enabled: true, command: ['./d.sh'], url: 'https://s.example', smoke: [{ status: 200 }] } }), /path/i);
+    });
+
+    it('leaves a disabled deploy alone, so an incomplete section is not an error until it is used', () => {
+      // Refusing an unused half-written section would fail runs that never deploy.
+      assert.deepStrictEqual(validateConfig({ deploy: { enabled: false } }).deploy, { enabled: false, command: [], url: '', smoke: [] });
+    });
+  });
+
   it('never enables worktree racing by default', () => {
     assert.equal(defaultConfig().race.enabled, false);
   });
@@ -112,7 +182,7 @@ describe('validateConfig merges over the defaults', () => {
 
   it('merges nested objects key by key rather than replacing them', () => {
     assert.deepStrictEqual(validateConfig({ race: { enabled: true } }).race, { enabled: true, n: 3, after: 2 });
-    assert.deepStrictEqual(validateConfig({ deploy: { enabled: true } }).deploy, { enabled: true, command: '' });
+    assert.throws(() => validateConfig({ deploy: { enabled: true } }), /command/i);
     assert.deepStrictEqual(validateConfig({ lessons: { maxPerBrief: 1 } }).lessons, { enabled: true, maxPerBrief: 1 });
   });
 

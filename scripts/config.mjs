@@ -11,7 +11,8 @@ import path from 'node:path';
 
 import { DEFAULT_MAX_PROMPT_CHARACTERS } from './context-budget.mjs';
 
-/** @typedef {{ enabled: boolean, command: string }} DeployConfig */
+/** @typedef {{ path: string, status: number }} SmokeCheck */
+/** @typedef {{ enabled: boolean, command: string[], url: string, smoke: SmokeCheck[] }} DeployConfig */
 /** @typedef {{ after: number }} RealityCheckConfig */
 /** @typedef {{ enabled: boolean }} DareMeConfig */
 /** @typedef {{ enabled: boolean, n: number, after: number }} RaceConfig */
@@ -98,7 +99,7 @@ export function defaultConfig() {
     // optional and degrade to a warning, because neither is worth killing a run over on a
     // machine without python3 or a reachable registry (DESIGN.md §5.1).
     qualityPlugins: ['impeccable', 'knip', 'semgrep'],
-    deploy: { enabled: false, command: '' },
+    deploy: { enabled: false, command: [], url: '', smoke: [] },
     extractTests: true,
     chaos: 1,
     realityCheck: { after: 3 },
@@ -189,6 +190,36 @@ function requireStringArray(value, key) {
     throw new ConfigError(`${key} must be an array of strings; got ${JSON.stringify(value)}.`);
   }
   return [.../** @type {string[]} */ (value)];
+}
+
+/**
+ * @param {unknown} value
+ * @param {string} key
+ * @returns {Record<string, unknown>}
+ */
+/**
+ * Validate the smoke list: one entry per request the deploy must answer correctly.
+ *
+ * Both fields are mandatory. A path with no expected status would make the check "did
+ * anything answer", which a 500 satisfies; a status with no path names no request.
+ *
+ * @param {unknown} value
+ * @returns {{ path: string, status: number }[]}
+ */
+function requireSmokeChecks(value) {
+  if (!Array.isArray(value)) throw new ConfigError('deploy.smoke must be an array of { path, status } objects');
+  return value.map((entry, index) => {
+    const where = `deploy.smoke[${index}]`;
+    const check = requireObject(entry, where);
+    rejectUnknownKeys(check, new Set(['path', 'status']), where);
+    if (!('path' in check)) throw new ConfigError(`${where} has no path: there is no request to make`);
+    if (!('status' in check)) {
+      throw new ConfigError(`${where} has no status: "did anything answer" is satisfied by a 500`);
+    }
+    const path_ = requireString(check.path, `${where}.path`);
+    if (!path_.startsWith('/')) throw new ConfigError(`${where}.path must start with /, got ${path_}`);
+    return { path: path_, status: requirePositiveInteger(check.status, `${where}.status`) };
+  });
 }
 
 /**
@@ -293,11 +324,45 @@ export function validateConfig(input) {
 
   if ('deploy' in source) {
     const deploy = requireObject(source.deploy, 'deploy');
-    rejectUnknownKeys(deploy, new Set(['enabled', 'command']), 'deploy');
-    merged.deploy = {
-      enabled: 'enabled' in deploy ? requireBoolean(deploy.enabled, 'deploy.enabled') : defaults.deploy.enabled,
-      command: 'command' in deploy ? requireString(deploy.command, 'deploy.command') : defaults.deploy.command,
-    };
+    rejectUnknownKeys(deploy, new Set(['enabled', 'command', 'url', 'smoke']), 'deploy');
+    // An argv array, not a string. `split(' ')` destroyed any quoted argument, so
+    // `ssh box 'cd /srv && ./deploy.sh'` arrived as six mangled tokens; the old shape is
+    // refused by name rather than coerced, because silently re-interpreting a pre-0.61.0
+    // config would run something its author did not write.
+    if ('command' in deploy && typeof deploy.command === 'string') {
+      throw new ConfigError(
+        'deploy.command must be an array of arguments, not a string. A string was split on spaces, ' +
+          "which destroys quoting. Write [\"ssh\", \"deploy@host\", \"/srv/app/deploy.sh\"].",
+      );
+    }
+    const enabled = 'enabled' in deploy ? requireBoolean(deploy.enabled, 'deploy.enabled') : defaults.deploy.enabled;
+    const command = 'command' in deploy ? requireStringArray(deploy.command, 'deploy.command') : [...defaults.deploy.command];
+    const url = 'url' in deploy ? requireString(deploy.url, 'deploy.url') : defaults.deploy.url;
+    const smoke = 'smoke' in deploy ? requireSmokeChecks(deploy.smoke) : [...defaults.deploy.smoke];
+    // Nothing is required of a section that is switched off — refusing a half-written one
+    // would fail runs that never deploy. Everything is required the moment it is used,
+    // because a deploy nothing can check reports success whatever it did, which is the stub
+    // this replaces (DESIGN.md §10.1).
+    if (enabled) {
+      if (command.length === 0) throw new ConfigError('deploy.enabled is true but deploy.command is empty: there is nothing to run');
+      if (url === '') {
+        throw new ConfigError(
+          'deploy.enabled is true but deploy.url is empty. A deploy that is not asked whether it worked is not evidence; ' +
+            'only fixed-URL hosts are supported, so the url is known in advance (DESIGN.md §10.1)',
+        );
+      }
+      if (!/^https?:\/\//i.test(url)) throw new ConfigError(`deploy.url must be an http or https URL, got ${url}`);
+      const risky = riskyRemoteWord(url);
+      if (risky !== null) {
+        throw new ConfigError(
+          `deploy.url contains ${risky}: dare is pre-production only and never points at anything with users`,
+        );
+      }
+      if (smoke.length === 0) {
+        throw new ConfigError('deploy.enabled is true but deploy.smoke is empty: a deploy nothing checks cannot fail');
+      }
+    }
+    merged.deploy = { enabled, command, url, smoke };
   }
 
   if ('realityCheck' in source) {
