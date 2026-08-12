@@ -1,6 +1,6 @@
 # START HERE — handoff, 12 August 2026
 
-**State:** `main` at `0.52.0`, **pushed.** `npm test` 1406 pass, `npm run test:integration` 12
+**State:** `main` at `0.53.0`, **pushed.** `npm test` 1407 pass, `npm run test:integration` 12
 pass, `npm run test:live` **8 of 8 armed and green** (it now has a first execution to compare
 against). `npm run release-check` clean.
 
@@ -11,6 +11,30 @@ gates exist.
 
 **Unfixed and worth a decision:** nothing verifies the lesson extractor's output, and run 6 proved it
 can be confidently wrong (below).
+
+## Run 7: stopped early on purpose, after proving the fix worked
+
+Same PRD as run 6, same ceilings, one variable changed — the architect now receives the resolved
+gate commands (0.52.0). **Stopped by the operator mid-run to conserve usage**, so there is no
+terminal state. It is resumable: `~/dare-dogfood/csvstat2` keeps its `.dare/`, its git history and
+`~/dare-logs/run7.log`, and `state.json` still holds the ratchet.
+
+What it established before it was stopped is a controlled A/B, not an inference:
+
+| | run 6 | run 7 |
+|---|---|---|
+| what the architect wrote into `CLAUDE.md` | *"Never add a dependency… not `vitest`."* | the gate command table verbatim, plus *"Test ids come only from this [command]… **Keep `vitest` in devDependencies**"* |
+| `vitest` declared | never, in any commit | yes, and `"test": "vitest run"` |
+| iteration 1 | wasted — `passing: 0` | ratchet advanced |
+| at the point of comparison | 75 ids, one advance, then a 75-id reset | **79 ids, three advances** |
+
+The architect also drew the distinction run 6's missed: *zero **runtime** dependencies*, with the
+toolchain in devDependencies. That is the whole defect, inverted, by supplying one fragment the
+design phase had never been given.
+
+**`SHIPPED` is still unobserved.** It remains the one outcome this project has never produced, and
+the three run-6 fixes exist to make it reachable. The next run of case G is the experiment; nothing
+else is blocking it.
 
 ## Run 6: it built the thing, and then the loop destroyed 75 ids over a runner
 
