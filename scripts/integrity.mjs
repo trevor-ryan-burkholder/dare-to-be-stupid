@@ -129,8 +129,32 @@ export function looseTsconfigs(cwd) {
   return loose;
 }
 
-/** Directories never worth walking for suppressions. */
-const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'coverage', '.dare', '.next']);
+/**
+ * Directories never worth walking for suppressions.
+ *
+ * `.stryker-tmp` is here because of a defect observed in dogfood run 3, and it is the most
+ * embarrassing kind: **one gate failing on another gate's debris.** The mutation gate crashed
+ * mid-run and left its instrumented sandbox behind; Stryker's instrumenter writes `@ts-nocheck`
+ * into every file it copies there. `gate-integrity` is evaluated *after* the conditional second
+ * pass, so it then walked that sandbox and reported 22 files "disabling type checking for the
+ * whole file" — none of which existed in the real tree, and not one of which the builder could
+ * have fixed. The builder had even written `never meant to be committed or scanned as source`
+ * beside the directory in its own `.gitignore`.
+ *
+ * The rule this encodes: **a directory produced by this loop's own tooling is not source.** The
+ * driver-owned Stryker config sets no `tempDirName`, so the default name is the one to skip; a
+ * future toolchain whose sandbox is named differently belongs on this list too.
+ */
+const SKIP_DIRS = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  'coverage',
+  '.dare',
+  '.next',
+  '.stryker-tmp',
+]);
 
 /**
  * Files carrying a whole-file type suppression.

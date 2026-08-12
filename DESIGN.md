@@ -474,6 +474,17 @@ It also fails on **truthiness-only assertions in test files** — `toBeTruthy`, 
 claim, which was otherwise enforced only by a reviewer *reading* the tests, at the cost of a
 full iteration each time it fired.
 
+**It does not scan a directory this loop's own tooling generated**, and that rule was bought with
+a failed iteration. Dogfood run 3's mutation gate crashed and left Stryker's instrumented sandbox
+under `.stryker-tmp/`; Stryker writes `@ts-nocheck` into every file it copies there. Because
+`gate-integrity` is evaluated **after** the conditional second pass (§4.4), it then walked that
+sandbox and failed the iteration on 22 files that did not exist in the real tree — **one gate
+failing on another gate's debris**, and not one line of it fixable by the builder, which had
+already written `never meant to be committed or scanned as source` beside the directory in its own
+`.gitignore`. Every such directory belongs in `SKIP_DIRS`, and the exclusion is paired in the
+tests with a real suppression sitting beside a sandbox, because skipping a directory is one
+keystroke from skipping the check.
+
 It belongs here rather than in an ESLint rule for the reason this whole check exists: a rule
 shipped into the project's linter is a rule the project's linter can be configured not to run,
 so the check would be negotiable by the thing it constrains. Three things keep it from

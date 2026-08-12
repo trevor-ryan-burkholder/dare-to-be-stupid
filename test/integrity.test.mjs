@@ -126,6 +126,34 @@ describe('nocheckedFiles', () => {
     const dir = repo({ files: { 'node_modules/dep/index.js': '// @ts-nocheck\n' } });
     assert.deepStrictEqual(nocheckedFiles(dir), []);
   });
+
+  it('does not walk into the mutation runner’s sandbox', () => {
+    // Dogfood run 3, iteration 2. The mutation gate crashed and left `.stryker-tmp` behind;
+    // Stryker's instrumenter writes `@ts-nocheck` into every file it copies there. This gate is
+    // evaluated after the conditional second pass, so it walked the sandbox and reported 22
+    // files as suppressed - none of them in the real tree, and none of them fixable. One gate
+    // failing on another gate's debris.
+    const dir = repo({
+      files: {
+        '.stryker-tmp/sandbox-n3XB6D/src/config.js': '// @ts-nocheck\nexport const x = 1;\n',
+        '.stryker-tmp/sandbox-n3XB6D/tests/pdf.unit.test.js': '// @ts-nocheck\n',
+      },
+    });
+    assert.deepStrictEqual(nocheckedFiles(dir), []);
+  });
+
+  it('still reports a suppression in the real tree beside a sandbox', () => {
+    // The benign neighbour, and the one that matters: skipping a directory is one keystroke away
+    // from skipping the check. A builder that really does disable type checking on its own source
+    // must still be caught while the sandbox is being ignored.
+    const dir = repo({
+      files: {
+        '.stryker-tmp/sandbox-n3XB6D/src/config.js': '// @ts-nocheck\n',
+        'src/config.js': '// @ts-nocheck\nexport const x = 1;\n',
+      },
+    });
+    assert.deepStrictEqual(nocheckedFiles(dir), [path.join('src', 'config.js')]);
+  });
 });
 
 describe('inspectIntegrity', () => {
@@ -290,6 +318,19 @@ describe('truthinessAssertions', () => {
   it('does not walk node_modules', () => {
     const dir = repo({ files: { 'node_modules/dep/a.test.js': 'expect(a).toBeTruthy();\n' } });
     assert.deepEqual(truthinessAssertions(dir), []);
+  });
+
+  it('does not walk the mutation runner’s sandbox, but still reads the real test beside it', () => {
+    // Both walks share SKIP_DIRS, so the sandbox exclusion applies here too - and so does the
+    // obligation to prove the check itself survives it. The sandbox copy is a duplicate of the
+    // real file, so without the skip this gate reports the same weak assertion twice.
+    const dir = repo({
+      files: {
+        '.stryker-tmp/sandbox-n3XB6D/tests/a.test.js': 'expect(a).toBeTruthy();\n',
+        'tests/a.test.js': 'expect(a).toBeTruthy();\n',
+      },
+    });
+    assert.deepEqual(truthinessAssertions(dir), ['tests/a.test.js:1 - toBeTruthy()']);
   });
 
   it('says nothing about a repository with no tests yet', () => {
