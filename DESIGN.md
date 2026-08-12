@@ -1517,11 +1517,26 @@ listed here rather than quietly fixed because the fix is a design, not a patch:
   the iteration**, or a blinking network triggers `git reset --hard`.
 - **`smoke` needs an entry in `gate-policy.mjs`.** Universal is the default, so an unlisted gate
   runs on a CLI and fails there forever — §4.2, for the seventh time.
-- **A fixed host is far cheaper to support than a preview host.** A droplet's URL is known in
-  advance and goes straight into config. A preview host mints a new URL per deploy and prints it
-  to stdout, so it additionally needs output capture, URL extraction, environment-variable
-  interpolation and teardown — four more mechanisms, each a place to fail open. Build the fixed
-  URL first and mark dynamic-URL hosts **unsupported** rather than half-supported.
+- **Decided 12 August 2026: a synchronous deploy to a fixed host is the only supported shape.**
+  Dynamic-URL and push-triggered hosts are **explicitly unsupported**, not half-supported.
+
+  The cost argument is real — a preview host mints a new URL per deploy and prints it to stdout,
+  so it needs output capture, URL extraction, environment-variable interpolation and teardown,
+  four more mechanisms and four more places to fail open, while a droplet's URL is known in
+  advance and goes straight into config. But the deciding argument is that **a push-triggered
+  deploy has no exit code.**
+
+  `ssh box /srv/app/deploy.sh` returns when the deploy is finished, with a status. That is a
+  gate. `git push` exits 0 the moment the objects transfer; whatever the host does afterwards is
+  asynchronous, unowned, and reports nothing back. Smoke-testing it means polling a URL that is
+  **serving the previous deploy** until it maybe stops, with no signal that distinguishes "not
+  deployed yet" from "deployed and broken" from "deployed and fine".
+
+  That is §3.8.1's finding in a new place: *the tool reports the problem and does not fail on
+  it.* Phase 3 is defined as exit codes and no LLM, and an asynchronous deploy cannot supply one.
+  Hosts like Vercel and Netlify already own this path through their own git integrations, and
+  the honest division of labour is to let them: **if a host deploys itself on push, dare has
+  nothing to add and should not pretend otherwise.**
 - **Credentials reach the deploy through the operator's environment and never through a prompt.**
   `shell` passes `options.env ?? process.env`, and the driver runs the deploy in its own process
   rather than handing it to a child. That is correct today by accident; it is an invariant now.
