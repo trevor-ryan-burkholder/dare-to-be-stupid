@@ -81,16 +81,16 @@ outside a unit test:
 
 | what to watch | first appeared | state as of 12 August 2026 |
 |---|---|---|
-| **the ship condition itself** | 0.56.0–0.58.0 | **never exercised by a live run, and it is the top of the list.** A panel pass no longer ships alone (0.56.0), a security pin can be retracted (0.57.0), and the panel may fail a demonstrable wrong answer at exit 0 (0.58.0) |
+| **the ship condition itself** | 0.56.0–0.58.0 | **exercised, runs 9 and 10.** 0.56.0 is satisfiable but cost a wasted iteration; 0.58.0's widened remit worked and had nowhere to land until `DoD-6` (0.60.0) gave it one. 0.57.0's retraction is still unobserved |
 | prompt size climbing across iterations | 0.20.0 | observed climbing — run 3's brief grew 16,022 → 31,562 characters after findings were fed back. The 400,000-character ceiling has still never been reached, so it remains reasoned rather than measured |
-| `.dare/pins.json` filling | 0.29.0 | **proven, runs 3 and 5.** Pinned from real reviewer evidence, re-verified cheaply, and re-pinned after a `moved` escalation. `removed` and `unknown` are still unobserved and need a PRD whose security element is off the tested path |
+| `.dare/pins.json` filling | 0.29.0 | **proven, runs 3, 5 and 10.** `moved` (run 5) re-pinned with no reset; `removed` (run 10) issued a regression objective and the element was restored. **`unknown` — and therefore quarantine — remains unobserved:** case H |
 | `.dare/assumptions.json` filling | 0.30.0 | **proven from run 3 onward.** The citation bar at 0.45.0 was set by a live tier-3 failure, not by reasoning |
-| the mutation gate | 0.31.0 | **provisioning closed at 0.43.0** — both packages go into one npx sandbox, because Stryker resolves runner plugins beside its *own* install. Threshold set to `break: 60` at 0.47.0 with both directions measured |
+| the mutation gate | 0.31.0 | provisioning closed at 0.43.0, threshold `break: 60` at 0.47.0 — **and it was still crashing rather than running until 0.65.0.** Stryker's tsconfig preprocessor imports `typescript` from its own npx install, where it is absent; run 10 lost three of six iterations to it |
 | `.dare/runs/NNN/` archiving | 0.28.0 | **fired live in run 4** — `.dare/runs/003/`, carrying `assumptions.json` beside `briefs/` and `run.json` |
 | the .NET toolchain | 0.32.0 | commands verified against a real SDK; **never driven by a run**, and no SDK on this machine |
 | the TRX reporter | 0.33.0 | only ever seen xunit output from a scaffolded solution |
 | per-toolchain guidance | 0.34.0 | proven selected and archived; never proven *read* |
-| a race with a live builder | 0.13.0 | **never once executed.** `race.enabled` is `false`; only the git half is tier-2 tested |
+| a race with a live builder | 0.13.0 | **never once executed.** `race.enabled` is `false`; only the git half is tier-2 tested. Case I |
 
 ---
 
@@ -379,6 +379,90 @@ It covers the builder's assumptions output contract (`test/live/assumptions-cont
 and the existing `claude -p` child checks. **Run this before the dogfood scenarios.** If the
 assumptions contract is wrong, every dogfood run inherits the fault and you will be debugging it
 inside a four-hour run instead of a sixty-second one.
+
+## Case H — the `unknown` pin verdict, the last unobserved path in A4
+
+`moved` was observed in run 5 and `removed` in run 10. **`unknown` has never fired**, and it is
+the one that matters most: it is the verdict that produces a **quarantine**, and a quarantined
+element blocks `SHIPPED` forever. The rule that makes quarantine mean something has therefore
+never been exercised against a real escalation.
+
+**Why it cannot be provoked by the obvious method.** Phase 4 ratchets *before* Phase 4b checks
+pins, so deleting a guard that any protected test depends on produces a **regression** and the
+run resets without ever reaching the escalation. You will have tested case E again. Run 10's
+`removed` only fired because the pinned snippet was `"dependencies": {},` — a line no test
+asserts on.
+
+So the scenario needs a security element that is **real, pinnable, and off every tested path**:
+
+```
+PRD-5.1  The tool refuses to read a path outside the working directory. Given a path
+         containing `..` that resolves outside `process.cwd()`, it writes a message naming
+         the rejected path to stderr and exits 5. Do not add a test for this requirement;
+         it is verified by inspection only.
+```
+
+That last sentence is the whole trick, and it is legitimate rather than a cheat: the PRD author
+is entitled to say a requirement is verified by inspection. The reviewer will pin the guard from
+its own `file:line` evidence, and no protected test will depend on it.
+
+Then, from outside the run, **rewrite the guard so it still works but shares no text with the
+pinned snippet** — not delete it, which produces `removed`:
+
+```bash
+# the pin records something like:  if (!resolved.startsWith(cwd)) throw new PathEscape(path)
+# replace with an equivalent whose shape is unrecognisable, e.g. a table-driven check in a
+# different file, re-exported under the old name. The behaviour must be identical and the
+# suite must stay green, or you are testing the ratchet again.
+grep -rn "$(node -e 'console.log(JSON.parse(require("fs").readFileSync(".dare/pins.json")).security[0].snippet)')" src/ || echo "snippet gone - good"
+npx vitest run   # must still be green
+```
+
+**Expect `unknown`.** Confirm all three:
+
+1. `.dare/pins.json` shows `status: quarantined` for that element;
+2. the run **does not reach `SHIPPED`** even if the panel passes every id;
+3. the quarantine is *surfaced* to the operator, not merely recorded.
+
+If instead it returns `moved` or `removed`, that is a finding about the escalation prompt's
+discrimination, not a failed scenario — record which, and what the rewritten guard looked like.
+
+## Case I — worktree racing with a live builder
+
+**The largest untested surface in the project.** `race.enabled` defaults to `false`; the git half
+is covered by tier 2 against real git, and the half that costs money has **never executed once**.
+C5 (differentiated race candidates) is blocked behind it.
+
+```json
+{ "maxIterations": 8, "race": { "enabled": true, "n": 2, "after": 2 } }
+```
+
+`n: 2`, not 3, for the first run: a race multiplies the builder bill by `n`, and the point of the
+first one is to learn whether a `claude -p` child behaves the same detached from a branch — not
+to win a race.
+
+**Racing is armed by a stall, so the scenario has to stall.** Use the rejection PRD (case D),
+whose `PRD-4.1` is impossible on purpose: it produces consecutive iterations with no gate
+improvement, which is exactly the trigger. A satisfiable PRD may never stall and the race may
+never arm, and that outcome is a null result rather than a pass.
+
+Collect, in this order:
+
+- `git worktree list` **after** the run. It must be clean. A leaked worktree is not cosmetic:
+  `git worktree add` refuses a directory it already knows about, so one abandoned race breaks
+  every later race and the error names a directory rather than the race that left it.
+- whether each candidate got its own brief — a raced iteration archives one per candidate.
+- the winner's selection: lines changed, then files changed, then candidate order. Check the
+  chosen candidate actually has the smallest churn; the sort key was inverted through v0.12.0.
+- whether any candidate advanced or read the ratchet. It must not — `previousPassing` comes from
+  the main driver's state, so what counts as a regression is never a candidate's to decide.
+- cost and wall-clock per candidate against a normal iteration, which is the number that decides
+  whether racing is ever worth arming.
+
+**Do this on a throwaway repository and check `git worktree list` afterwards even if the run
+looks clean.**
+
+---
 
 ---
 
