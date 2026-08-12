@@ -49,6 +49,44 @@ two honest tests, failed by an `EqualityOperator` survivor no correct suite need
 same unsatisfiable shape as the three above, but what score means done is a product decision. See
 `DESIGN.md` §4.4; set it from a measurement and write the measurement down.
 
+## The ratchet caught a real regression, against a real 93-id state, for free
+
+**The mechanism the whole design exists for has now fired on real data.** Not a temp repository
+built by the test suite — run 3's actual `.dare/state.json`, run 3's actual application, and a real
+`vitest` run.
+
+Method, and it cost nothing: back up one source file, change a **return value** (`body: row.body`
+→ `body: ''`, which is what `DOGFOOD.md` asks for — regress the code, not the test), run the real
+unit gate, and hand the real report to `extractTestIds` and `evaluateIteration`. No children were
+spawned, so no money was spent.
+
+```
+ratchet holds: 93 | now passing: 96
+REGRESSIONS  : 2
+   ✗ tests/notes.contract.test.js::…PRD-1.2: Unicode and leading whitespace round-trip byte-for-byte
+   ✗ tests/notes.contract.test.js::…PRD-1.2: reading a note by id returns exactly the title and body it was created with
+action : reset
+target : f20434d262e38c8a52b6b9d1693cfeffaf563fd3
+reason : 2 tests that previously passed no longer pass. The ratchet is monotonic: nothing else
+         proceeds until they are restored.
+```
+
+**The number that matters is 96 against 93.** Run 3's builder had added five tests, so *more tests
+were passing than the ratchet had ever held* while two protected ones were broken. Any check
+comparing counts, or comparing "did the suite get better", reports an improvement here. The set
+difference is what caught it. That is precisely the failure monotonicity exists to prevent, and it
+had never once been exercised against real data — every previous test of it used ids the test suite
+had invented.
+
+`formatRegressionTask` produced the literal objective (*"Restore these tests… Change nothing else.
+Do not add features, do not refactor"*) and the blooper record named both ids and the iteration.
+
+**Still unverified, and it is the part that needs money:** the driver's *orchestration* of this —
+the actual `git reset --hard` to that target, `bloopers.log` being written to disk, the regression
+brief reaching a live builder, and no reviewer being called that iteration. That is D2 case E, and
+the repository is ready for it: the tree was restored **byte-identical** afterwards and its suite is
+98 of 98 green, so the 93-id ratchet and `lastGoodCommit` are intact.
+
 ## Tier 3 ran for the first time, and found a template defect in eight tests
 
 `DARE_LIVE=1 npm run test:live` had been written and never executed. First run: **7 of 8**, and the
@@ -103,7 +141,7 @@ details buries the one entry that mattered, and §8.3's whole value is that a re
 
 | item | state |
 |---|---|
-| **D2 case E — deliberate regression** | **do this next.** The ratchet now advances, so a forced regression is finally reachable. `DOGFOOD.md` has the script. Never exercised. |
+| **D2 case E — deliberate regression** | **detection is now verified on real data for free (see below); only the orchestration is left, and it costs money.** The repository is staged: 93-id ratchet intact, `lastGoodCommit` `f20434d`, suite 98 of 98. `DOGFOOD.md` has the script |
 | D2 case F — security regression | **precondition now met.** `pins.json` is non-empty for the first time; see the pin finding below |
 | D2 cases A, B, C | prepared in `DOGFOOD.md`, not run |
 | A8 carry optimisation | **do not start without reading the pin finding below.** `PRD-3.1` is pinned to a *test file*, which the carry would let a source regression slip through |
