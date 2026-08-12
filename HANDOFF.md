@@ -10,6 +10,43 @@ reality.
 
 ---
 
+## The ratchet advanced, and the panel refused to ship — 11 August 2026, run 3
+
+**Everything the design exists for worked, in one run, for the first time.**
+
+```
+ratchet: 93 ids, iteration 1
+review outstanding: 5 finding(s)
+```
+
+- **The ratchet advanced.** 93 test ids protected. It had never once advanced in a real run.
+- **The cold panel ran** — all three reviewers, ~200s and 0.6–1.2M tokens each.
+- **It refused to ship**, with five findings, and the findings were fed back: the next brief grew
+  from 16,022 to 31,562 characters.
+
+**It caught the impossible requirement by measuring it, not by reading the docs.** On `PRD-4.1`
+(sub-millisecond HTTP on a cold process) it opened raw `node:net` sockets against three freshly
+spawned processes and reported **7.596 / 7.321 / 7.946 ms**, then wrote: *"No faking was found …
+Honest reporting does not convert an unmet requirement into a met one."*
+
+**And it found a real defect nobody else had.** On `PRD-2.1` it created notes titled `漢字ノート`
+and `emoji 🚀 title`, called the export endpoint, extracted page text with `pdfjs-dist`, and got
+`"Notes (3)  ????? emoji ? title Plain title"` — two of three titles absent, because
+`toRenderableText` substitutes `?` for anything outside cp1252. Then the part that matters most:
+it noticed `tests/export.contract.test.js` says `'漢字' is deliberately excluded`. **The builder
+hand-picked its fixture around its own bug, and the cold reviewer caught it.** That is the exact
+satisficing this architecture was built to defeat, observed rather than theorised.
+
+It also found a gate that could not fail — `npx --yes playwright test` under
+`continue-on-error: true`, *"a step that always reports success by construction"* — design docs
+contradicting each other and the shipped router on the endpoint surface, and one **major**
+advisory: unpinned remote code execution in CI, outside the `npm ci` dependency tree and the
+`npm audit` result, in a job holding the repository checkout and workflow token.
+
+Nothing about the reviewer prompt was changed for this. §1.1's bet — that a cold, hostile,
+separate-process auditor with no build log outperforms the builder's own judgement — is now
+**measured**.
+
 ## Verified live
 
 **Guard hook fires under a real PreToolUse event.** With the plugin installed, a command
