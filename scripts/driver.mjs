@@ -447,6 +447,53 @@ export function parseReviewerReport(raw, options) {
   return { verdict, requirements, advisories, problems };
 }
 
+/** Where the panel's verdict is written. Machine state: driver-owned, never tracked. */
+export const REVIEW_RECORD = 'review.json';
+
+/**
+ * Persist what the panel actually decided.
+ *
+ * **The loop shipped a project and left no record of why.** An independent audit of the first
+ * `SHIPPED` this project ever produced reported: *"I could not verify the unanimous-panel claim
+ * at all — the evidence for it is not in the repo."* All that existed was `dare/GRAND-PRIZE`, an
+ * unannotated lightweight tag on a commit named "iteration 2". No per-requirement verdicts, no
+ * unanimity record, nothing an auditor could disagree with.
+ *
+ * That is a hole in the product's central claim. §1.1 exists because a cold hostile panel judges
+ * better than the builder; if the judgement is not written down, "the panel passed it" is an
+ * assertion by the thing being audited. `reality-check.md` is persisted, and it only ever explains
+ * an `ABORTED` — the loop recorded its excuses and not its verdicts.
+ *
+ * Appended rather than overwritten, because the interesting sequence is how a panel's findings
+ * move across iterations, and run 5's 5 → 4 → 3 convergence was visible only in a log that a
+ * later reset could have destroyed.
+ *
+ * @param {string} dareDir
+ * @param {{ iteration: number, verdict: string, requireUnanimous: boolean, requiredIds: string[],
+ *           failing: string[], reviewers: unknown[], advisories: unknown[] }} entry
+ * @returns {string} the path written
+ */
+export function recordPanelVerdict(dareDir, entry) {
+  const file = path.join(dareDir, REVIEW_RECORD);
+  /** @type {{ version: number, panels: unknown[] }} */
+  let store = { version: 1, panels: [] };
+  if (existsSync(file)) {
+    try {
+      const parsed = JSON.parse(readFileSync(file, 'utf8'));
+      if (parsed !== null && typeof parsed === 'object' && Array.isArray(parsed.panels)) {
+        store = { version: 1, panels: parsed.panels };
+      }
+    } catch {
+      // A corrupt record is evidence lost, not a reason to stop: this file decides nothing.
+      // It is rebuilt from this panel onward rather than aborting a healthy run.
+    }
+  }
+  store.panels.push(entry);
+  mkdirSync(dareDir, { recursive: true });
+  writeFileSync(file, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  return file;
+}
+
 /**
  * The panel is unanimous or the run continues (DESIGN.md §1.1, §10 `requireUnanimous`).
  *
@@ -1396,6 +1443,17 @@ export function driveRun(options) {
     }
     const panel = combinePanel(reports, { requireUnanimous: config.requireUnanimous, requiredIds });
 
+    // Written before anything acts on it, so a record exists whichever way the run then goes.
+    recordPanelVerdict(dareDir, {
+      iteration: iterationNumber,
+      verdict: panel.verdict,
+      requireUnanimous: config.requireUnanimous,
+      requiredIds,
+      failing: panel.failing,
+      reviewers: reports,
+      advisories: panel.advisories,
+    });
+
     // ---- Phase 5b: record what this panel established (DESIGN.md §4.3) --
     // Only passes with a real file:line are pinned, which is not an extra rule — the parser
     // has already flipped any pass whose evidence is missing or shapeless.
@@ -1567,6 +1625,7 @@ const DARE_IGNORED_PATHS = [
   '.dare/reality-check.md',
   '.dare/pins.json',
   '.dare/assumptions.json',
+  '.dare/review.json',
   // Not `.dare/` state, and here for a reason measured in dogfood run 4. The operator redirects
   // the run's output into the repository — `DOGFOOD.md` said to — so `git add -A` tracked it, and
   // the hard reset in iteration 2 **reverted the log to its state at `lastGoodCommit`**. That
@@ -3230,7 +3289,21 @@ export function main(argv, io = {}) {
       ship: (iteration) => {
         const tag = `dare/iter-${String(iteration).padStart(3, '0')}`;
         shell('git', ['tag', '-f', tag], { cwd });
-        shell('git', ['tag', '-f', 'dare/GRAND-PRIZE'], { cwd });
+        // Annotated, not bare. An audit of the first SHIPPED found only an unannotated tag and
+        // could not verify the claim behind it; a tag that carries no reason is not evidence.
+        shell(
+          'git',
+          [
+            'tag',
+            '-f',
+            '-a',
+            'dare/GRAND-PRIZE',
+            '-m',
+            `SHIPPED: panel ${config.requireUnanimous ? 'unanimous' : 'majority'} on ` +
+              `${requiredIds.length} requirement(s). Verdicts in .dare/${REVIEW_RECORD}.`,
+          ],
+          { cwd },
+        );
         if (config.deploy.enabled && config.deploy.command !== '') {
           const parts = config.deploy.command.split(' ').filter((part) => part.length > 0);
           const deployed = shell(parts[0], parts.slice(1), { cwd });

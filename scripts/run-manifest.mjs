@@ -63,11 +63,17 @@ export const RUN_ARCHIVE_DIR = 'runs';
  *   reasoning about assumptions the current builder never made, against code that may no longer
  *   exist. Observed in dogfood run 3, whose reviewers were given run 2's three assumptions.
  *
+ * - `review.json` — the panel's verdicts. Added after an audit of the first `SHIPPED` this
+ *   project produced reported that it *"could not verify the unanimous-panel claim at all — the
+ *   evidence for it is not in the repo"*. It belongs to one run for the same reason the briefs
+ *   do: iteration numbering restarts, so a second run's verdicts would append beside the first's
+ *   with no way to tell them apart.
+ *
  * Deliberately absent: the unit and e2e reports. Those are rewritten every *iteration*, so
  * they are already transient within a run, and archiving the last one would preserve an
  * arbitrary moment while implying it was the run's.
  */
-const PER_RUN_ARTIFACTS = [RUN_MANIFEST, 'briefs', 'reality-check.md', ASSUMPTIONS_FILE];
+const PER_RUN_ARTIFACTS = [RUN_MANIFEST, 'briefs', 'reality-check.md', ASSUMPTIONS_FILE, 'review.json'];
 
 /** The manifest's own schema version, bumped when a field's meaning changes. */
 const MANIFEST_VERSION = 1;

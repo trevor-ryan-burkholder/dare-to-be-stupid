@@ -34,6 +34,7 @@ import {
   commandGates,
   dareIgnoreUpdate,
   architectGateFragment,
+  recordPanelVerdict,
   ensureDareIgnored,
   firstIterationTask,
   unitGateCommand,
@@ -2756,6 +2757,62 @@ describe('red-evidence', () => {
 // ---------------------------------------------------------------------------
 // Run state must never enter the target repository's history
 // ---------------------------------------------------------------------------
+
+describe('recordPanelVerdict', () => {
+  // An independent audit of the first SHIPPED this project produced could not verify the claim
+  // behind it: "the evidence for it is not in the repo". All that existed was an unannotated
+  // dare/GRAND-PRIZE tag on a commit named "iteration 2". The loop persisted reality-check.md,
+  // which only ever explains an ABORTED - it recorded its excuses and not its verdicts.
+
+  /** @param {number} iteration @param {string} verdict */
+  const entry = (iteration, verdict) => ({
+    iteration,
+    verdict,
+    requireUnanimous: true,
+    requiredIds: ['PRD-1.1'],
+    failing: verdict === 'pass' ? [] : ['PRD-1.1'],
+    reviewers: [{ requirements: [{ id: 'PRD-1.1', verdict }] }],
+    advisories: [],
+  });
+
+  it('writes the verdict where an auditor can disagree with it', () => {
+    const dareDir = path.join(makeTempDir(), '.dare');
+    const file = recordPanelVerdict(dareDir, entry(1, 'fail'));
+    const stored = JSON.parse(readFileSync(file, 'utf8'));
+    assert.equal(stored.panels.length, 1);
+    assert.equal(stored.panels[0].verdict, 'fail');
+    assert.deepStrictEqual(stored.panels[0].failing, ['PRD-1.1']);
+    assert.equal(stored.panels[0].requireUnanimous, true);
+  });
+
+  it('appends, because the sequence across iterations is the interesting part', () => {
+    // Run 5's panel went 5 findings, then 4, then 3. That convergence existed only in a log,
+    // and a log is what a hard reset destroyed in run 4.
+    const dareDir = path.join(makeTempDir(), '.dare');
+    recordPanelVerdict(dareDir, entry(1, 'fail'));
+    const file = recordPanelVerdict(dareDir, entry(2, 'pass'));
+    const stored = JSON.parse(readFileSync(file, 'utf8'));
+    assert.deepStrictEqual(
+      stored.panels.map((/** @type {{ iteration: number }} */ p) => p.iteration),
+      [1, 2],
+    );
+  });
+
+  it('rebuilds from a corrupt record rather than killing a healthy run', () => {
+    // This file decides nothing, so it degrades like the lesson store and not like the ratchet.
+    const dareDir = path.join(makeTempDir(), '.dare');
+    mkdirSync(dareDir, { recursive: true });
+    writeFileSync(path.join(dareDir, 'review.json'), '{ not json', 'utf8');
+    const stored = JSON.parse(readFileSync(recordPanelVerdict(dareDir, entry(3, 'pass')), 'utf8'));
+    assert.equal(stored.panels.length, 1);
+    assert.equal(stored.panels[0].iteration, 3);
+  });
+
+  it('is never tracked by git, so a reset cannot revert the evidence', () => {
+    const ignored = String(dareIgnoreUpdate('')).split('\n').map((line) => line.trim());
+    assert.equal(ignored.includes('.dare/review.json'), true);
+  });
+});
 
 describe('the ratchet is told how many tests were collected', () => {
   it('passes collected at every evaluateIteration call site in the driver', () => {
