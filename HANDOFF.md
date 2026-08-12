@@ -49,6 +49,31 @@ two honest tests, failed by an `EqualityOperator` survivor no correct suite need
 same unsatisfiable shape as the three above, but what score means done is a product decision. See
 `DESIGN.md` §4.4; set it from a measurement and write the measurement down.
 
+## Tier 3 ran for the first time, and found a template defect in eight tests
+
+`DARE_LIVE=1 npm run test:live` had been written and never executed. First run: **7 of 8**, and the
+failure was not the harness. Given a requirement stating its status code, its exact body, and the
+words *"Nothing about this requirement is ambiguous"*, a live builder still emitted:
+
+```
+ambiguity: 'Response headers not specified'
+assumed:   'Content-Type: application/json is required; no authentication required'
+```
+
+**The observation is true and recording it is still wrong.** `templates/builder-system.md` already
+said "Emit no block at all if nothing was ambiguous", and that was not enough, because a detail the
+document omits genuinely *is* unstated — the model was being accurate, not lazy. What was missing
+was a bar: **would a competent engineer reading this text have chosen differently?** `404 or 410`
+for an expired link is a fork; the Content-Type of a json body is not.
+
+Fixed at 0.45.0 with that bar and both halves of the example, then **re-run live: 8 of 8**. The
+half that proves it discriminates rather than mutes is the *other* live test, which requires an
+assumption to be emitted for a genuine fork and still passes.
+
+Why it matters beyond tidiness: this log is handed to the cold panel. A log of unstated-but-obvious
+details buries the one entry that mattered, and §8.3's whole value is that a reviewer can check
+"you assumed X, the PRD says Y".
+
 ## Two traps, both of which nearly cost this session
 
 1. **The install cache is stale.** `installed_plugins.json` says **0.34.0**; the tree is 0.43.0.
@@ -90,7 +115,7 @@ same unsatisfiable shape as the three above, but what score means done is a prod
 | ~~Playwright provisioning not capability-gated~~ | **closed at 0.44.0.** `installed chromium for the e2e gate` had been logged one line after `gate e2e does not apply`. `ensurePlaywrightBrowsers` now declines when the gate does not apply; omitting capabilities still provisions, since under-provisioning fails a gate that *does* apply |
 | `assumptions.json` run attribution | **new, found in run 3, unfixed.** Carried across runs but keyed by `iteration`, which restarts per run — run 2's `iteration: 2` and run 3's are indistinguishable. Same shape as the C2 brief collision |
 | `gate-integrity` vs a vacuous branch | **new, unverified.** The builder found an import-edges test that could never fail; the gate bans weak matchers, not assertion-free branches |
-| A9's tier-3 check | written, never run: `DARE_LIVE=1 npm run test:live` |
+| ~~A9's tier-3 check~~ | **run for the first time, and it earned itself immediately.** 8 tests; on the first execution 7 passed and one found a real template defect (below). Fixed at 0.45.0, re-run live, 8 of 8 |
 
 ## A finding about the generated app, not about the plugin
 

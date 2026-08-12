@@ -207,6 +207,23 @@ describe('the builder template', () => {
     assert.equal(BUILDER.includes('Emit no block at all if nothing was ambiguous'), true);
   });
 
+  it('gives the ambiguity bar as a fork, with both halves of the example', () => {
+    // "Emit nothing if nothing was ambiguous" was already there and was not enough. The first
+    // tier-3 run ever executed handed a live builder a requirement stating its status code, its
+    // exact body and the words "nothing about this is ambiguous", and it still recorded that
+    // response headers were unspecified - a true observation, and noise in an auditor's hands.
+    //
+    // Both halves are asserted for the reason F2 gives: a rule with only positive examples does
+    // not tell the reader where the line is. The counterexample is the half that does the work.
+    // Matched in two fragments rather than one, because the sentence wraps in the template and a
+    // substring that straddles the newline fails for a formatting reason nobody intended.
+    assert.equal(BUILDER.includes('The bar is a fork, not a silence'), true);
+    assert.equal(BUILDER.includes('have chosen differently'), true);
+    assert.equal(BUILDER.includes('a detail the document did not mention is not'), true);
+    assert.equal(BUILDER.includes('404 or 410'), true, 'lost the fork example');
+    assert.equal(BUILDER.includes('Content-Type'), true, 'lost the counterexample, which is the half that draws the line');
+  });
+
   it('does not tell an unattended builder to stop and ask', () => {
     // There is nobody to ask. Ambiguity is resolved by the PRD phase and the
     // reality-check circuit-breaker; a builder that stalls waiting for an answer just

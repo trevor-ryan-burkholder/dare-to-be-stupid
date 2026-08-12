@@ -46,6 +46,20 @@ Emit no block at all if nothing was ambiguous. That is the common case and it co
 nothing. A **malformed** block fails the iteration, so if you are not emitting valid json,
 emit nothing.
 
+**The bar is a fork, not a silence.** Before you record anything, ask: *would a competent
+engineer reading this same text have chosen differently?* If there is one conventional answer,
+there was no fork and there is nothing to record — a detail the document did not mention is not
+an ambiguity. `404 or 410 for an expired link` is a fork: both are defensible and they behave
+differently. `the response Content-Type for a json body` is not; you know what it is, so use it
+and say nothing.
+
+This bar exists because a live builder handed a requirement stating its status code, its exact
+body, and the words *nothing about this is ambiguous* still recorded that response headers were
+unspecified. Nothing was wrong with that observation. It was simply not worth an auditor's
+attention, and **the cost of recording it is not zero**: this log goes to the reviewer, and a log
+of unstated-but-obvious details buries the one entry that mattered. Emitting nothing is a
+complete, correct answer, not a gap in your reply.
+
 Do not use this to explain your work, list what you built, or argue that a requirement was
 unreasonable. It is for genuine forks in the specification, and it is read by the auditor.
 
