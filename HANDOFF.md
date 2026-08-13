@@ -186,6 +186,14 @@ so the cost is a wasted race (3 builders, ~7.4M tokens) rather than a dead run. 
 worst shape for a defect — expensive, silent, and indistinguishable from a race that simply had
 no winner** unless you read the line.
 
+**Two further facts from the same run.** Racing **armed a second time** later in the run, so with
+`after: 1` and adequate headroom it arms reliably rather than by luck. And killing the driver
+`-9` mid-race **leaks the worktrees**: three were left at `/tmp/dare-race-55237-4/`, detached at
+the base commit, and `git worktree list` showed four entries afterwards. Cleanup runs on the
+driver's own paths out, not on a signal, which is §13.6's named hazard arriving by a route it did
+not anticipate. Recovered with `git worktree remove --force`; an operator who kills a race must do
+this or every later race in that repository fails on a directory git already knows about.
+
 **NEEDS REVIEW — the fix is a design decision, not a patch.** `applyWinner` could commit or stash
 the main tree before merging, but *what* it is committing is the losing builder's work, and
 committing that silently would put unreviewed changes on the branch the winner is about to
