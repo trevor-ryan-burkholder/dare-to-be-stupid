@@ -583,9 +583,25 @@ known defect produces evidence about software nobody will ship.
 child is re-parented and survives — measured. So:
 
 ```bash
-pkill -f 'scripts/driver.mjs'
-ps -eo pid,args | grep '[c]laude' | grep -v 'grep'    # kill any survivor by pid
+kill -TERM "$(pgrep -f '[s]cripts/driver.mjs' | head -1)"
+ps -eo pid,args | grep '[c]laude --' | head       # kill any survivor by pid
 ```
+
+**Bracket the pattern.** `pkill -f 'scripts/driver.mjs'` matches *the shell running it* and kills
+its own caller. That is not hypothetical — it happened while following the previous version of
+this instruction.
+
+**Before any intervention between runs, correct `lastGoodCommit`.** `.dare/state.json` persists
+across runs, so the next run's first hard reset targets a commit from the *previous* one,
+**discarding everything the operator committed in between, silently.** Measured: case H's first
+intervention was reverted this way, guard and all. After committing an intervention, point the
+ratchet at it with a one-line edit to `.dare/state.json` (the guard permits an operator to edit
+`.dare/` outside a run):
+
+    lastGoodCommit  ->  git rev-parse HEAD
+
+Only when the tree is genuinely green. It is a claim that this commit is a good state, and the
+ratchet will believe it.
 
 **Evidence to keep from every run, without exception.** The whole `.dare/` directory, the full
 log, and the answer to "what does the binary actually do now", obtained by running it rather than

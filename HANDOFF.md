@@ -41,6 +41,37 @@ a list that never had it.
 execution and invisible to 1687 unit tests — the `.hypothesis/` cache, the ssh rate-limit, and
 this. A brief is output nobody asserts on, and it is handed to the one reader who will act on it.
 
+### The ratchet reverts the operator's between-run work, and case H's recipe cannot survive it
+
+**Case H attempt 2 failed, and the failure is worth more than the case.** The recipe says to
+rewrite the pinned guard *"from outside the run"*. I did: committed it, suite green, snippet gone.
+The run then hard-reset on two regressions and **my commit vanished from history** —
+`src/paths.ts` was back to the original, pinned snippet and all, and the pin re-verified as
+`active`.
+
+**The mechanism.** `lastGoodCommit` lives in `.dare/state.json`, which **persists across runs**.
+Attempt 2's reset targeted `047b680`, a commit from the *previous* run, predating the intervention
+entirely. Two operator commits were discarded without a word.
+
+**Generalised, because this is not about case H:** *anything an operator commits between runs is
+discarded by the first hard reset of the next run.* The driver never re-establishes
+`lastGoodCommit` at start-up, so it will reset to a state from a run that ended hours ago. An
+operator fixing a bug by hand between runs loses that work silently — the loop reports a
+regression and a reset, both true, and says nothing about the commits it dropped on the way.
+
+**Same shape as the archive defect one entry below**: a hard reset to a commit older than the
+thing being protected. Two instances in one run; this one destroyed *operator work* rather than
+machine state.
+
+**What case H needs, and the retry uses it:** set `lastGoodCommit` to the intervention commit
+before restarting. Not a workaround — the intervention *is* a good state, its id set matches the
+ratchet's own 56, and the stale value was simply wrong. Arguably what the driver should do itself.
+
+**Two smaller confirmations.** `SIGTERM` stopped the driver first time with no orphaned `claude -p`
+children, matching the morning's measurement. And `pkill -f 'scripts/driver.mjs'` **killed my own
+shell**, because the pattern matches the command line containing it — which is what `DOGFOOD.md`
+told the operator to run.
+
 ### 0.105.0 — C2 archiving destroyed the evidence it exists to preserve. Fifth instance, first that is not merely pollution
 
 **Found by checking a success message instead of believing it.** `caseH`'s second run printed
