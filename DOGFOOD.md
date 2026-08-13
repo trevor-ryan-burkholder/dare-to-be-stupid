@@ -580,6 +580,42 @@ Collect, in this order:
 **Do this on a throwaway repository and check `git worktree list` afterwards even if the run
 looks clean.**
 
+**Staged and validated 13 August, launch only.** `~/dare-dogfood/caseI`: fresh repository on
+`main`, the **real** rejection PRD copied from `~/dare-dogfood/rejection` — the one carrying
+`PRD-4.1`, sub-millisecond HTTP on a freshly started process, which is impossible by construction
+and is the stall engine the race needs. One commit, one worktree, config **checked through
+`validateConfig` itself** rather than eyeballed:
+
+```json
+{ "maxIterations": 8, "stallLimit": 4, "tokenCeiling": 80000000,
+  "costCeiling": 100, "chaos": 1, "race": { "enabled": true, "n": 2, "after": 2 } }
+```
+
+**`stallLimit: 4` against `race.after: 2` is the whole design of the scenario.** The race arms on
+the third consecutive stall and the run ends on the fourth, so there is a **two-iteration window**
+in which a race can happen and land. Widen `stallLimit` and the run wanders; narrow it and the
+race never arms.
+
+**80M rather than the 15M that killed three runs**, because a raced iteration pays the builder
+`n` times and the race cannot arm before iteration 3.
+
+```bash
+set -o pipefail
+node ~/dev/dare-to-be-stupid/scripts/driver.mjs PRD.md --yes 2>&1 | tee ~/dare-logs/caseI.log
+```
+
+**Host note that would have killed the staging silently:** this machine runs **git 2.25.1**, and
+`git init --initial-branch` needs **2.28**. The repository was created with `git init` plus
+`git symbolic-ref HEAD refs/heads/main`. Tier 2 found this same wall on its first run; it is not
+a one-off, and any recipe on this page that reaches for `--initial-branch` is wrong here.
+
+**Two PRDs are called "the rejection PRD" on this page and they are not the same document.** Case
+D above prints one whose trap is `PRD-2.1` (a PDF export); the run that actually happened used one
+whose trap is `PRD-4.1` (sub-millisecond latency), and that is the copy in
+`~/dare-dogfood/rejection`. Case I wants the **latter** — an impossible *non-functional*
+requirement stalls more reliably than a merely hard feature, because no amount of building moves
+it.
+
 ---
 
 ---
