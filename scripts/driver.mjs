@@ -598,12 +598,37 @@ export function runGates(gates, options) {
       });
       continue;
     }
+    /**
+     * What a failing gate actually said, from **both** streams.
+     *
+     * This was `stderr || stdout`, and that `||` cost a diagnosis. Two `npm warn Unknown user
+     * config` lines are non-empty, so on any machine with a stray `.npmrc` key **stdout is
+     * discarded entirely** — and stdout is where Stryker prints its mutation report, where
+     * vitest prints its failures, where most tools put the answer. Dogfood run 14's mutation
+     * failure reached the operator as nothing but two npm warnings.
+     *
+     * It is the same defect 0.53.0 and 0.66.0 each fixed one layer of: the diagnosis existed and
+     * was unreachable on the path that needed it. Fixed here at the source rather than in the
+     * renderer, so the brief handed to the builder gains it too.
+     *
+     * Both streams are labelled when both are present, because an error on stderr and a report
+     * on stdout are different claims and concatenating them unlabelled invents a third.
+     *
+     * @param {{ status: number, stdout: string, stderr: string }} result
+     * @returns {string}
+     */
+    const failureDetail = (result) => {
+      const out = result.stdout.trim();
+      const err = result.stderr.trim();
+      if (out !== '' && err !== '') return `stderr:\n${err}\n\nstdout:\n${out}`;
+      return out || err || `exit ${result.status}`;
+    };
     const outcome = options.run(gate.command[0], gate.command.slice(1), { cwd: options.cwd });
     results.push({
       name: gate.name,
       ok: outcome.ok,
       status: outcome.status,
-      detail: outcome.ok ? 'passed' : (outcome.stderr || outcome.stdout || `exit ${outcome.status}`).trim(),
+      detail: outcome.ok ? 'passed' : failureDetail(outcome),
     });
   }
   return { ok: results.every((result) => result.ok), results };

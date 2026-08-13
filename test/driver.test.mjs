@@ -3632,3 +3632,38 @@ describe('every .dare artifact the driver writes is ignored by git', () => {
     }
   });
 });
+
+describe('a failing gate reports both streams', () => {
+  // It was `stderr || stdout`, and that `||` cost a diagnosis. Two `npm warn Unknown user config`
+  // lines are non-empty, so on any machine with a stray .npmrc key stdout was discarded entirely
+  // - and stdout is where Stryker prints its mutation report and vitest prints its failures.
+  // Dogfood run 14's mutation failure reached the operator as two npm warnings and nothing else.
+
+  /** @param {{ stdout: string, stderr: string }} streams */
+  const detailOf = (streams) =>
+    runGates([{ name: 'unit', command: ['x'], required: true }], {
+      cwd: '/repo',
+      run: () => ({ ok: false, status: 1, ...streams }),
+    }).results[0].detail;
+
+  it('keeps stdout when stderr holds only noise', () => {
+    const detail = detailOf({ stdout: 'Mutation score 41.2 under threshold 60', stderr: 'npm warn Unknown user config' });
+    assert.match(detail, /Mutation score 41\.2/);
+  });
+
+  it('labels the two, because an error and a report are different claims', () => {
+    // Concatenating them unlabelled invents a third thing that neither stream said.
+    const detail = detailOf({ stdout: 'the report', stderr: 'the error' });
+    assert.match(detail, /stderr:\n the error|stderr:\nthe error/);
+    assert.match(detail, /stdout:\nthe report/);
+  });
+
+  it('falls back to the exit code when the command said nothing at all', () => {
+    assert.equal(detailOf({ stdout: '', stderr: '' }), 'exit 1');
+  });
+
+  it('still reports a lone stream unlabelled', () => {
+    assert.equal(detailOf({ stdout: '', stderr: 'boom' }), 'boom');
+    assert.equal(detailOf({ stdout: 'boom', stderr: '' }), 'boom');
+  });
+});
