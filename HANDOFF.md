@@ -29,9 +29,49 @@ iterations — the sizing the two historical ships used — `ship1` reached iter
 **25% of its ceiling**, ~8.4M per iteration, squarely inside the 5–9M band measured on the three
 15M runs that all died at iteration 2. Nothing about the loop had degraded; the ceilings had.
 
-**Findings are converging: 13 on iteration 1, 4 on iteration 3.** Iteration 2 produced no panel at
-all because a gate failed first — the cheap path working exactly as designed, and worth recording
-because it is invisible in any token total.
+**Iteration 2 produced no panel at all** because a gate failed first — the cheap path working
+exactly as designed, and worth recording because it is invisible in any token total.
+
+**The A8 carry is running in anger and growing:** *"skipped re-review of 2 requirement(s)"* on
+iteration 3, **6** on iteration 4. Item 12's 8% delta was measured on a bench; this is it working
+on a real tree, and the count rising is the shape you would want.
+
+**Prompt growth is visible and worth watching (§3.9):** the builder prompt went **18,496 → 41,412
+characters** between iterations 3 and 4 as findings and history accumulated. Well inside the
+400,000-character budget, so nothing refused — but that is a **2.2× jump in one iteration**, and
+§3.9 exists because this degradation never announces itself.
+
+**A9 has its first live case, and the panel reproduced the defect rather than asserting it.**
+Iteration 1's builder logged two assumptions, both cited, both kept. The second reads:
+
+> `docs/architecture.md` — *guarded the call with the standard ESM entrypoint check
+> (`process.argv[1] === fileURLToPath(import.meta.url)`)*
+
+The panel then failed `PRD-1.1` on exactly that guard: `process.argv[1]` is the **unresolved
+symlink** npm's `node_modules/.bin` creates, while `fileURLToPath(import.meta.url)` is the realpath
+Node resolves, so they differ for **every installed invocation** and `main()` never runs. Installed
+`csvstat data.csv` exits 0 and prints **zero bytes**. The same file by direct path prints correctly.
+
+**And the reviewer went and did it**: `npm pack`, then `npm install --prefix /tmp/inst --omit=dev`,
+against npm's own installer rather than a hand-made link, and isolated the guard as the sole cause.
+That is the hostile-reviewer discipline the whole architecture exists for, in the wild.
+
+**Stated precisely, because the tempting claim is stronger than the evidence.** The builder
+declared the fork; the panel failed that exact choice. What is *proven* is that a silent
+interpretation became a visible one and the visible one was wrong. What is **not** proven is that
+the log is *why* the reviewer looked — it reads the code too. Same subject is not causation, and
+this file does not get to have it both ways.
+
+**A sharper reason to care:** this run is executing pre-0.106.0 code, whose parser silently dropped
+a cited assumption emitted without the array wrapper. Its log holds entries from iteration 1 only.
+Sonnet-5 measured 6 of 6 correct on the shape, so the log is probably complete — but "probably"
+is the exact word 0.106.0 exists to delete.
+
+**The findings are persistent, not stalled-looking-like-progress.** 13 → 4 → 4, and the four are
+the *same* four: `PRD-1.1`, `DoD-1`, `DoD-6` and `DoD-5`. `DoD-6` — *two independent input classes
+report a confidently wrong answer at exit 0* — has survived from iteration 1. The loop is refusing
+to ship and naming the same defect each time, which is the correct behaviour and is also the
+signal an operator should read before spending twelve iterations on it.
 
 **The sequential panel costs more than the whole build.** Full table in `PLAN.md` item 10. The
 short version: iteration 3's builder ran **36 seconds** and its panel ran **1,493** — 41×. Panel
