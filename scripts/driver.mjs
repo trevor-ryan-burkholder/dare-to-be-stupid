@@ -2025,7 +2025,9 @@ export function commandGates(root, dareDir) {
  *
  * @param {string} root
  * @param {string} dareDir
- * @param {string[]} changedFiles measured from the last ratchet-advancing commit
+ * @param {string[] | undefined} changedFiles measured from the last ratchet-advancing commit,
+ *   or `undefined` when no such commit exists yet — a distinction the consuming gate reports as
+ *   a different sentence, because "no baseline" and "nothing changed" are different facts
  * @returns {{ gates: Gate[], skipped: { name: string, reason: string }[] }}
  */
 export function conditionalCommandGates(root, dareDir, changedFiles) {
@@ -3690,7 +3692,12 @@ export function main(argv, io = {}) {
     // which is the whole of the ordering change: mutation testing is slow, and running it on
     // an iteration that does not compile spends minutes to learn what `build` already said.
     if (commandResults.ok) {
-      const changedFiles = changedSince({ cwd: dir, since: loadState(dareDir).lastGoodCommit, run: shell });
+      // `undefined` when there is no ratchet-advancing commit yet, rather than the empty list
+      // `changedSince` would return. The consuming gate declines either way and the two reasons
+      // it gives are different sentences, because "I have no baseline" and "nothing changed" are
+      // different facts — see the mutation entry in `toolchains/node.mjs`.
+      const lastGood = loadState(dareDir).lastGoodCommit;
+      const changedFiles = lastGood === null ? undefined : changedSince({ cwd: dir, since: lastGood, run: shell });
       writeMutationConfig(treeDare);
       const second = conditionalCommandGates(dir, treeDare, changedFiles);
       for (const skip of second.skipped) write(verbatim(`gate ${skip.name} declined: ${skip.reason}`));

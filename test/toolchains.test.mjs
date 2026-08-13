@@ -404,9 +404,24 @@ describe('the conditional second pass', () => {
     assert.equal(skipped[0].reason.includes('nothing to mutate'), true);
   });
 
-  it('declines when no changed-file list was supplied at all', () => {
+  // Watched in a live improve-mode run on 13 August 2026: the gate printed "no first-party
+  // source changed since the last ratchet-advancing commit" while `src/cli.mjs`, `src/parse.mjs`
+  // and `src/stats.mjs` were all modified in the tree. The *decision* was right — iteration 1
+  // has no `state.json`, so there is no baseline to scope a diff against — but the *sentence*
+  // was a claim about the world and it was false.
+  //
+  // A message that misdirects costs an investigation, which this repository has now paid for
+  // three separate times. "I have no baseline" and "nothing changed" are different facts and the
+  // gate must not report the second when it means the first.
+  it('declines when no changed-file list was supplied at all, and says that rather than claiming nothing changed', () => {
     const { skipped } = gatesFor(nodeToolchain, { root: '/repo', dareDir: '/repo/.dare' }, CONDITIONAL_GATE_OPERATIONS);
     assert.equal(skipped.length, 1);
+    assert.equal(skipped[0].reason.includes('no baseline'), true, skipped[0].reason);
+    assert.equal(
+      skipped[0].reason.includes('no first-party source changed'),
+      false,
+      `an absent baseline was reported as an empty diff: ${skipped[0].reason}`,
+    );
   });
 
   it('points the runner at a driver-owned config, not the project’s', () => {

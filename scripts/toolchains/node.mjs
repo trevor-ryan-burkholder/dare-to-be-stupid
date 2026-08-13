@@ -132,7 +132,20 @@ export const nodeToolchain = {
     // files), `--reporters` and `--logLevel`.
     /** @param {{ dareDir: string, changedFiles?: string[] }} context */
     mutation: ({ dareDir, changedFiles }) => {
-      const mutable = (changedFiles ?? []).filter((file) => MUTABLE_RE.test(file) && !TEST_LIKE_RE.test(file));
+      // An absent list and an empty one are different facts and must not share a sentence.
+      // Watched in a live improve-mode run: the gate reported "no first-party source changed"
+      // while three source files were modified in the tree. It was right to decline — iteration 1
+      // has no `state.json`, so `lastGoodCommit` is null and there is no baseline to diff
+      // against — but what it said was a claim about the world, and the claim was false. A
+      // message that misdirects costs an investigation, and this repository has paid for that
+      // three times now.
+      if (changedFiles === undefined) {
+        return notApplicable(
+          'no baseline to scope the changed set against: no commit has advanced the ratchet yet, ' +
+            'so what this iteration put at risk cannot be measured. This is not a statement that nothing changed',
+        );
+      }
+      const mutable = changedFiles.filter((file) => MUTABLE_RE.test(file) && !TEST_LIKE_RE.test(file));
       if (mutable.length === 0) {
         // Not a pass and not a skip of the gate — a statement that this iteration changed no
         // mutable source. Mutating an empty set would exit 0 and read exactly like a run in
