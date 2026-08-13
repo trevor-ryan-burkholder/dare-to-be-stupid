@@ -1,9 +1,9 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.90.0`. Measured at 0.90.0: `npm test` **1629 pass**,
-`npm run test:integration` **30 pass**, `npm run test:live` **23 of 23 across 10 files**,
-`npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. All four tiers
-re-measured at this version; nothing here is inherited from an older one.
+**State:** `main` at `0.91.0`. Measured at 0.91.0: `npm test` **1635 pass**,
+`npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
+`npm run release-check` **ok**. `npm run test:live` **23 of 23 across 10 files** at 0.90.0 and
+not re-run since — nothing in 0.91.0 touches a spawn path or a template contract.
 
 **This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
 `package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
@@ -14,6 +14,46 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### Item 11 — ship-time mutation. DONE at 0.91.0, and the proposal was wrong in one place
+
+**Both named pre-checks were run as measurements, and the second changed the design.**
+
+*Cost.* Stryker 9.6.1 against a nine-module vitest fixture: 22 mutants in **6.75s**, 176 mutants
+in **21.2s** — about **4.7s fixed overhead plus ~94ms per mutant** on this machine. Bounded by
+`gateTimeoutMs`, and a timeout is a failure, so a very large greenfield ship could in principle
+be refused for slowness. Named, not mitigated.
+
+*Laundering.* The proposal was to mutate the **whole first-party tree** once. That form launders,
+and here is the demonstration rather than the argument:
+
+| mutated set | result |
+|---|---|
+| `m9.mjs`, the one module with no tests, alone | `0.00`, **exit 1** |
+| `m9.mjs` beside eight well-tested modules | `84.85` overall, **exit 0**, with `m9.mjs 0.00` |
+
+`thresholds.break` is a percentage, so the more well-tested code a repository already holds, the
+less the run's own work has to prove. It bites hardest in **improve mode**, where iteration 1
+changes three files in a repository of five hundred and gets no scoped mutation at all — there is
+no ratchet baseline on iteration 1 to diff against.
+
+**So the scope is the run's own diff since its start commit, not the tree.** It cannot be diluted
+by code the run did not write, is never empty when the run did anything, and on a greenfield run
+*is* the whole tree because the run wrote the whole tree. Strictly better on all three counts,
+and it was the pre-check that found it — which is the argument for pre-checks.
+
+`shipTimeMutation` fails closed on every path: no start commit, empty scope, a toolchain that
+declines mutation (dotnet does), a crashed gate. "The check could not run" is never spelled the
+same way as "the suite is proven".
+
+**Confirmed no run was in flight** before touching ship logic, as the proposal requires: no
+`driver.mjs`, no `claude -p`, no lock file.
+
+**Not verified:** no run has reached this path. The unit tests drive the decision through an
+injected effect, so what is proved is that a passing ship-time mutation ships and a failing one
+withholds *with its own reason*; that the real `shipTimeMutation` produces the right verdict
+against a real Stryker is unproven, and would want tier 2 or a dogfood run. The cost figures are
+from a trivial suite and do not predict a real one.
 
 ### Item 5 — R15's phrasing paragraph. CLOSED as already done at 0.76.0
 

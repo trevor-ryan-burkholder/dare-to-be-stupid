@@ -55,6 +55,7 @@ import {
   assertNotNested,
   assertOwnershipCovers,
   childBudget,
+  shipTimeMutationScope,
   claudeArgs,
   formatGateFailure,
   DARE_IGNORED_PATHS,
@@ -2136,6 +2137,58 @@ describe('driveRun', () => {
     assert.notEqual(outcome.state, 'SHIPPED', 'shipped with no evidence the suite can fail');
   });
 
+  // The 0.56.0 contradiction, and the item that removes it. The ship-withheld objective says
+  // "prove the test suite can fail" and names changing first-party source as the escape, while
+  // chaos 1 in the same brief says every changed line must trace to the objective. On an
+  // already-correct tree there is no such line, so run 9 spent 7.5M tokens and about $6 on an
+  // iteration with no legal move. The driver runs the gate itself instead.
+  describe('ship-time mutation, run by the driver', () => {
+    it('ships when it proves the suite, without spending an iteration on theatre', () => {
+      /** @type {string[]} */
+      const lines = [];
+      const { outcome } = run({
+        readTestReports: () => [ONE_PASSING],
+        gates: () => ({ ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }] }),
+        log: (line) => lines.push(line),
+        shipTimeMutation: () => ({
+          ok: true,
+          detail: "mutating the 2 file(s) this run changed: every mutant was caught, so the suite is sensitive to this run's code",
+        }),
+      });
+      assert.equal(outcome.state, 'SHIPPED', `${outcome.state}: ${outcome.reason}`);
+      assert.equal(
+        lines.some((line) => line.startsWith('ship-time mutation:')),
+        true,
+        lines.join('\n'),
+      );
+    });
+
+    it('withholds the ship when it fails, and carries the real reason rather than the generic one', () => {
+      /** @type {string[]} */
+      const lines = [];
+      const { outcome } = run({
+        readTestReports: () => [ONE_PASSING],
+        gates: () => ({ ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }] }),
+        log: (line) => lines.push(line),
+        shipTimeMutation: () => ({ ok: false, detail: 'mutating the 1 file(s) this run changed: 4 mutants survived' }),
+      });
+      assert.notEqual(outcome.state, 'SHIPPED');
+      assert.equal(
+        lines.some((line) => line.includes('4 mutants survived')),
+        true,
+        'the measured result must reach the operator, not be replaced by the generic sentence',
+      );
+    });
+
+    it('withholds when the effect is absent, because an absent check is not a passing one', () => {
+      const { outcome } = run({
+        readTestReports: () => [ONE_PASSING],
+        gates: () => ({ ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }] }),
+      });
+      assert.notEqual(outcome.state, 'SHIPPED');
+    });
+  });
+
   it('ships once the mutation gate has proven the suite', () => {
     // The neighbour that keeps this from being a way to never ship: the default harness carries
     // a passing mutation gate, and that is the ordinary condition.
@@ -3380,6 +3433,39 @@ describe('red-evidence', () => {
 // ---------------------------------------------------------------------------
 // Run state must never enter the target repository's history
 // ---------------------------------------------------------------------------
+
+describe('shipTimeMutationScope', () => {
+  // The 0.56.0 contradiction: the ship-withheld objective says "prove the test suite can fail"
+  // and names changing first-party source as the escape, while chaos 1 in the same brief says
+  // every changed line must trace to the objective. On an already-correct tree there is no
+  // such line, so run 9 spent 7.5M tokens and about $6 on an iteration with no legal move.
+  it('mutates what this run changed, and says how many files that is', () => {
+    assert.deepStrictEqual(shipTimeMutationScope({ changedFiles: ['src/a.mjs', 'src/b.mjs'] }), {
+      can: true,
+      reason: 'mutating the 2 file(s) this run changed',
+    });
+  });
+
+  it('refuses when the run changed nothing, rather than reporting a pass', () => {
+    // "There was nothing to check" must never be spelled the same way as "the check passed".
+    const scope = shipTimeMutationScope({ changedFiles: [] });
+    assert.equal(scope.can, false);
+    assert.equal(scope.reason.includes('nothing of its own to mutate'), true, scope.reason);
+  });
+
+  // Why the scope is the run's diff and not the whole tree, which is a correction to the
+  // proposal in HANDOFF.md and was bought by measuring it. Against Stryker 9.6.1 on a
+  // nine-module fixture: one module with no tests scores 0.00 and exits 1 when mutated alone,
+  // and the same module passes at 84.85% overall, exit 0, mutated beside eight well-tested
+  // neighbours. thresholds.break is a percentage, so a whole-tree run dilutes - the more
+  // well-tested code a repository already has, the less the run's own work has to prove.
+  it('does not widen the scope past the run, which is what would let a ship be laundered', () => {
+    // The improve-mode shape: three files touched in a large existing repository. The scope is
+    // three, not five hundred, and no amount of pre-existing well-tested code can carry them.
+    const scope = shipTimeMutationScope({ changedFiles: ['src/parse.mjs', 'src/cli.mjs', 'src/stats.mjs'] });
+    assert.equal(scope.reason.includes('3 file(s)'), true, scope.reason);
+  });
+});
 
 describe('suiteSensitivityEvidence', () => {
   // The first SHIPPED this project produced had `seenFailing: []` and a mutation gate that

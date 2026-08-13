@@ -134,7 +134,7 @@ spawn path, no gate logic in the same commit.
 
 ## Phase 3 — features, in dependency order.
 
-### 11. Ship-time mutation by the driver (the 0.56.0 contradiction) — OPEN
+### 11. Ship-time mutation by the driver (the 0.56.0 contradiction) — DONE (0.91.0)
 Proposal already written in `HANDOFF.md`: when the panel passes on an empty changed-set, the
 driver mutates the whole first-party tree once, instead of handing the builder *"prove your
 tests can fail"* under a scope rule that forbids every legal move (7.5M tokens of theatre in

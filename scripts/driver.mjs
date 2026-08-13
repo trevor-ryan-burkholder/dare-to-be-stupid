@@ -1151,6 +1151,7 @@ export function appendBlooper(dareDir, event) {
  *   readSource?: (file: string) => string | null,
  *   securityEscalation?: (pin: import('./pins.mjs').SecurityPin) => ClaudeResult,
  *   gates: () => { ok: boolean, results: GateResult[] },
+ *   shipTimeMutation?: () => { ok: boolean, detail: string },
  *   readTestReports: () => unknown[],
  *   commit: (message: string) => string,
  *   diffStat: () => string,
@@ -1841,7 +1842,29 @@ export function driveRun(options) {
 
     // A panel that passed is a judgement about the code. It is not evidence that the suite the
     // judgement leaned on can fail at all, and the first SHIPPED this project produced had none.
-    const sensitivity = suiteSensitivityEvidence(gateOutcome, loadRedEvidence(dareDir));
+    let sensitivity = suiteSensitivityEvidence(gateOutcome, loadRedEvidence(dareDir));
+
+    // The driver runs the mutation gate itself rather than asking for something impossible.
+    //
+    // **The contradiction this removes** (0.56.0, measured in run 9 at 7.5M tokens and about
+    // $6 of entirely wasted iteration): the objective below says *"prove the test suite can
+    // fail"* and names the escape — *"changing any first-party source makes the mutation gate
+    // apply again"* — while chaos 1 in the same brief says *"every changed line must trace
+    // directly to this objective"*. On an already-correct tree those point in opposite
+    // directions: no surgical edit to `src/` traces to "prove your tests can fail". Run 9's
+    // builder did the only other reasonable thing and wrote another test, and `TEST_LIKE_RE`
+    // means a test file can never arm the mutation gate. The instruction had no legal move.
+    //
+    // It is asked **only here** — after a passing panel, once, at the moment the answer is
+    // worth paying for — and never on an ordinary iteration, where per-file scoping already
+    // costs what it should.
+    if (panel.verdict === 'pass' && !sensitivity.proven && effects.shipTimeMutation !== undefined) {
+      const attempt = effects.shipTimeMutation();
+      effects.log(`ship-time mutation: ${attempt.detail}`);
+      if (attempt.ok) sensitivity = { proven: true, how: attempt.detail };
+      else sensitivity = { proven: false, how: attempt.detail };
+    }
+
     if (panel.verdict === 'pass' && !sensitivity.proven) {
       effects.log(`cannot ship: ${sensitivity.how}`);
       objective = {
@@ -2725,6 +2748,40 @@ export function formatGateFailure(failed, maxLines = 60) {
 }
 
 /**
+ * Which files a ship-time mutation run should mutate, and whether it can run at all.
+ *
+ * **Scoped to what this run changed, not to the whole tree, and that is a correction to the
+ * proposal in `HANDOFF.md` bought by measuring it.** The proposal was to mutate the entire
+ * first-party tree once at ship time. Measured against Stryker 9.6.1 on a nine-module fixture:
+ * one module with no tests at all scores `0.00` and **fails** the gate when mutated alone —
+ * and passes at **84.85% overall, exit 0**, when mutated alongside eight well-tested
+ * neighbours. `thresholds.break` is a *percentage*, so a whole-tree run dilutes: the more
+ * well-tested code a repository already has, the less the run's own work has to prove.
+ *
+ * That is precisely the laundering the proposal told us to check for — *"that it cannot become
+ * a way for a run to ship on a mutation pass it never earned on its own changes"* — and the
+ * whole-tree form fails the check. It bites hardest in improve mode, where iteration 1 changes
+ * three files in a repository of five hundred and gets no scoped mutation at all, because
+ * iteration 1 has no ratchet baseline to diff against.
+ *
+ * The run's own diff has neither problem. It is never empty when the run did anything, it
+ * cannot be diluted by code the run did not write, and on a greenfield run it *is* the whole
+ * tree, because the run wrote the whole tree.
+ *
+ * @param {{ changedFiles: string[] }} input
+ * @returns {{ can: boolean, reason: string }}
+ */
+export function shipTimeMutationScope(input) {
+  if (input.changedFiles.length === 0) {
+    // Not a pass. A run that changed nothing since its own start commit has produced nothing
+    // for a mutation run to be evidence about, and "there was nothing to check" must never be
+    // spelled the same way as "the check passed".
+    return { can: false, reason: 'this run has changed no file since it started, so there is nothing of its own to mutate' };
+  }
+  return { can: true, reason: `mutating the ${input.changedFiles.length} file(s) this run changed` };
+}
+
+/**
  * @param {{ results: GateResult[] }} gateOutcome
  * @param {{ seenFailing: Set<string> }} redEvidence
  * @returns {{ proven: boolean, how: string }}
@@ -3315,6 +3372,47 @@ export function runDeploy(deploy, options) {
 }
 
 /**
+ * Run the mutation gate once, at ship time, over what this run itself changed.
+ *
+ * Called from exactly one place — a passing panel with no other evidence that the suite can
+ * fail — and never on an ordinary iteration. See `shipTimeMutationScope` for why the scope is
+ * the run's diff rather than the whole tree, which is a measured correction to the proposal.
+ *
+ * Everything here fails closed. No scope, no toolchain command, a declined gate, a crash: all
+ * of them return `ok: false`. The one thing this must never do is convert "the check could not
+ * run" into "the suite is proven", which is the shape §4 refuses everywhere else.
+ *
+ * @param {string} cwd
+ * @param {string} dareDir the driver's own directory in that tree
+ * @param {string} startCommit the commit this run began at
+ * @param {number} timeoutMs the gate ceiling, so a slow mutation run is a named failure
+ * @returns {{ ok: boolean, detail: string }}
+ */
+export function shipTimeMutation(cwd, dareDir, startCommit, timeoutMs) {
+  if (startCommit === '') {
+    return { ok: false, detail: 'no start commit was recorded for this run, so its own changes cannot be identified' };
+  }
+  const changedFiles = changedSince({ cwd, since: startCommit, run: shell });
+  const scope = shipTimeMutationScope({ changedFiles });
+  if (!scope.can) return { ok: false, detail: scope.reason };
+
+  writeMutationConfig(dareDir);
+  const built = conditionalCommandGates(cwd, dareDir, changedFiles);
+  const gate = built.gates.find((candidate) => candidate.name === 'mutation');
+  if (gate === undefined) {
+    // The toolchain declined — `dotnet` declines mutation rather than guessing Stryker.NET's
+    // command line — or every changed file was test-like. Either way nothing was measured.
+    const declined = built.skipped.find((candidate) => candidate.name === 'mutation');
+    return { ok: false, detail: `the mutation gate could not run at ship time: ${declined?.reason ?? 'no reason given'}` };
+  }
+  const outcome = runGates([gate], { cwd, run: shell, timeoutMs });
+  const result = outcome.results[0];
+  return outcome.ok
+    ? { ok: true, detail: `${scope.reason}: every mutant was caught, so the suite is sensitive to this run's code` }
+    : { ok: false, detail: `${scope.reason}: ${result?.detail ?? 'the gate failed and said nothing'}` };
+}
+
+/**
  * Spawn one `claude -p` child and read its envelope.
  *
  * The runner is injectable so that the two properties that matter about a child — the
@@ -3785,11 +3883,15 @@ export function main(argv, io = {}) {
   // why that absence is the point rather than an omission.
   const resolvedToolchain = resolveToolchain(cwd);
   const capabilityRecord = resolveCapabilities({ root: cwd, declared: declaredCapabilities });
+  // Captured once, into a name, because two things read it now: the run manifest below and
+  // the ship-time mutation scope. Asking git twice would invite the two to disagree after the
+  // first commit of the run, which is exactly when the scope stops being empty.
+  const runStartCommit = shell('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim();
   writeRunManifest(
     dareDir,
     buildRunManifest({
       startedAt: new Date().toISOString(),
-      startCommit: shell('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim(),
+      startCommit: runStartCommit,
       pluginName: 'dare-to-be-stupid',
       pluginVersion: pluginVersion(),
       config,
@@ -4207,6 +4309,7 @@ export function main(argv, io = {}) {
         const gated = gateTree(cwd);
         return { ok: gated.ok, results: gated.results };
       },
+      shipTimeMutation: () => shipTimeMutation(cwd, dareDir, runStartCommit, config.gateTimeoutMs),
       readTestReports: () =>
         reportFiles(cwd)
           .filter((file) => existsSync(file))

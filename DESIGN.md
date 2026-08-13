@@ -1678,6 +1678,43 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `childTimeoutMs` | 1_800_000 | bounds *wall-clock per child*, and it is the only one of the three that is a watchdog. `tokenCeiling` and `costCeiling` bind a child that returns; neither can see one that does not. Roughly 2.8x the longest child ever observed (§3.9) |
 | `gateTimeoutMs` | 2_700_000 | the same watchdog for gate commands, which hang the same way. **Not derived from measurement**, unlike the row above: no run has recorded a per-gate duration and mutation testing is the unmeasured slow one, so this is a backstop sized to be embarrassing to hit. When it fires, the driver also sweeps the descendants the gate leaked — see below |
 
+**Ship-time mutation: the driver runs the gate rather than asking for something impossible.**
+When the panel passes and nothing else has shown the suite can fail, the objective used to be
+*"prove the test suite can fail"*, naming *"changing any first-party source"* as the escape —
+while chaos 1 in the same brief requires every changed line to trace to the objective. On an
+already-correct tree those point in opposite directions: no surgical edit to `src/` traces to
+*prove your tests can fail*. Run 9's builder wrote another test, `TEST_LIKE_RE` means a test file
+can never arm the mutation gate, and the run spent one whole iteration — 7.5M tokens, about $6 —
+on an instruction with no legal move.
+
+So the driver now runs the mutation gate itself, once, at the moment the answer is worth paying
+for. Never on an ordinary iteration, where per-file scoping already costs what it should.
+
+**It mutates what the run changed since its own start commit, not the whole tree, and that is a
+correction to the original proposal bought by measuring it.** `thresholds.break` is a
+*percentage*, so a whole-tree run dilutes. Measured against Stryker 9.6.1 on a nine-module
+fixture:
+
+| mutated set | result |
+|---|---|
+| the one module with no tests, alone | `0.00`, **exit 1** — the gate fails, correctly |
+| the same module beside eight well-tested ones | `84.85` overall, **exit 0** — `m9.mjs 0.00` and the run ships |
+
+That is exactly the laundering the proposal said to check for: a way to ship on a mutation pass
+the run never earned on its own changes. It bites hardest in improve mode, where iteration 1
+changes three files in a repository of five hundred and gets no scoped mutation at all, having no
+ratchet baseline to diff against. The run's own diff cannot be diluted by code the run did not
+write, is never empty when the run did anything, and on a greenfield run *is* the whole tree.
+
+Cost, measured on the same fixture: about **4.7s fixed overhead plus ~94ms per mutant** (22
+mutants in 6.75s; 176 in 21.2s). Bounded by `gateTimeoutMs`, and a timeout is a failure — so a
+very large greenfield ship can in principle be refused for slowness. Named rather than mitigated;
+what would settle it is one run that logs the gate's wall clock.
+
+Everything in it fails closed. No start commit, an empty scope, a toolchain that declines
+mutation, a crashed gate: all return not-proven. *"The check could not run"* must never be
+spelled the same way as *"the suite is proven"*.
+
 **A child is now bounded in flight, not only on return.** `tokenCeiling` and `costCeiling` are
 read off a returned envelope, so both bind a child that **came back**; a child still running
 produced no envelope, spent no recorded money and passed both forever. The overshoot bound was
