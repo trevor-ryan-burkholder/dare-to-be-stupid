@@ -430,6 +430,72 @@ the constraints in R13 ever change, this is the reason to look again.
 
 ---
 
+# Round four — a Stanford multi-agent study, 12 August 2026
+
+Arrived via a video claiming Stanford had "proved" that a hierarchical multi-agent system with a
+coordinator is wrong, and that the fix is asynchronous agents reading and writing a shared
+verified context. **The video inverted the paper.** What the study reports is that *"when a single
+agent and a team get the same amount of compute, the solo agent performs at least as well"* — an
+argument that multi-agent teams are usually **not worth the compute**, used to sell more agents in
+a different topology. It says nothing about hierarchy, coordinators, or shared memory.
+
+Recorded here anyway, because two of its actual findings are worth taking, and because the
+misreading is itself instructive: **a real result wearing a conclusion it did not reach.**
+
+Read via a secondary summary, not the paper. No title or authors were given. Scope caveat from the
+article: *text-based reasoning tasks only, no tool use* — which is outside this loop's regime,
+where every child writes files and runs suites.
+
+## R14. The panel versus one reviewer at equal compute — **take it, as an experiment**
+
+The study's central claim aimed at §1.1: this loop runs **three** reviewers. Would **one reviewer
+owning all sixteen ids at `max` effort** do as well?
+
+Uncomfortable, and testable with config alone — `reviewers`, `ownership` and `effort` are all
+config, so it is the run 6 vs run 7 method with one variable moved. **The study's own exceptions
+cut toward the panel** (*teams performed better with weaker base models*; *single agents sometimes
+think too narrowly, while teams cast a wider net*), but this panel runs on Opus at `max`, which is
+precisely the regime where the paper says teams help least.
+
+Evidence already in hand, pointing both ways: run 12's correctness reviewer alone wrote an
+independent reference implementation and fuzzed 110,877 cases; and run 10's *design* auditor was
+the one that found the inert `bin`. A single reviewer might have done the first and missed the
+second. **Measure it. Do not assume the panel is earning its cost.**
+
+## R15. A finding phrased as an input gets answered as an input — **take it, and it has a fix**
+
+The study's stated mechanism is that *"each handoff risks losing relevant information."* This loop
+has one handoff it cannot remove: **panel finding → Build Brief → builder.**
+
+Run 13 is that loss, measured. The panel found the mean defect and phrased it as an input —
+`1e308, 1e308` yields `Infinity`. The builder fixed **exactly that input**, switching `sum += n`
+to `mean += n / count`, which passes the protected test, removes the overflow, and returns `0.5`
+where the true mean is `1/3`. The finding was about *the arithmetic mean*; what survived the
+handoff was *a failing example*.
+
+**The fix is one paragraph in `templates/reviewer-system.md`:** a finding must state **the property
+violated**, with the input as evidence *for* it rather than as the finding itself.
+
+- Survives the handoff: *"`mean` is not the arithmetic mean under catastrophic cancellation;
+  demonstrated by `1e16, 1, -1e16` → `0.5`."*
+- Does not: *"`1e308, 1e308` gives Infinity."*
+
+Observed in two consecutive runs before the mechanism had a name.
+
+## Explicitly rejected from round four
+
+- **Removing the coordinator.** The bottleneck the video describes is real and comes from a
+  coordinator that is a *model*, not from one existing. This driver is a program: it reads exit
+  codes and parsed JSON, never a child's reasoning, and has no context window to saturate.
+  Deleting it deletes the arbiter that owns monotonicity, the guard, and the ratchet.
+- **Asynchronous agents writing shared state.** The paper's own mechanism condemns it — that is
+  *more* handoffs — and a shared writable store with no single owner is §6's defect at scale: a
+  process that can write the evidence it is judged by is not being judged.
+- **"A shared verified context."** Not rejected, already built: `.dare/` is that store, and §8.1
+  states the principle outright — *"The repository and the driver's own artifacts are the memory.
+  A child's conversation is disposable."* The blackboard is not an alternative to the coordinator
+  here; the coordinator is what makes it trustworthy.
+
 ## Sources
 
 - [SCAFFOLD-CEGIS: Preventing Latent Security Degradation in LLM-Driven Iterative Code Refinement](https://arxiv.org/abs/2603.08520)
