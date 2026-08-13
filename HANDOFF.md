@@ -1,7 +1,14 @@
-# START HERE — handoff, 12 August 2026
+# START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.64.0`. `npm test` 1433 pass, `npm run test:integration` 12 pass,
-`npm run test:live` 11 of 11 armed and green. `npm run release-check` clean.
+**State:** `main` at `0.78.0`. Measured 13 August: `npm test` **1531 pass**,
+`npm run test:integration` **18 pass**, `npm run release-check` **ok — no shipped file changed
+since e32e9b7**. `npm run test:live` is **19 checks across 5 files and was not re-run** when this
+line was written; treat its status as unknown rather than green.
+
+**This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
+`package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
+is the first line anyone reads and it was the least true. If you change the version, change this
+line in the same commit.
 
 ## Verified from run 10's artifacts: the advisory pipeline works end to end
 
@@ -200,20 +207,10 @@ committing that silently would put unreviewed changes on the branch the winner i
 fast-forward. Cleaning the tree instead discards work the ratchet has not judged. Neither is
 obviously right, and I have not built either — this was not a build session.
 
-**Also observed:** attempt 1 (`race1.log`, `after: 2`, `maxIterations: 6`) never armed, and the
-reason is a constraint worth keeping. `shouldRace` refuses when fewer than two iterations remain —
-*"a race needs one to run and one to land the winner"* — so `after: 2` in a six-iteration budget
-leaves a single two-iteration window in which both stalls must land. Combined with
-`recordProgress` resetting the counter whenever the ratchet grows, a converging run never arms it.
-**The rule: `maxIterations >= race.after + 3`, and the stall has to arrive early.**
+### Attempt 1 never armed, and the arithmetic is the constraint worth keeping
 
-
-
-**Racing still has not executed with a live builder.** Attempt 1 (`~/dare-logs/race1.log`,
-`~/dare-dogfood/race1`, `race.enabled: true, n: 3, after: 2, maxIterations: 6`) never armed it,
-and the reason is arithmetic rather than bad luck.
-
-**What the run did:**
+`~/dare-logs/race1.log`, `~/dare-dogfood/race1`, `race.enabled: true, n: 3, after: 2,
+maxIterations: 6`:
 
 ```
 SEGMENT ONE   -> review outstanding: 9 finding(s)
@@ -223,29 +220,24 @@ SEGMENT FOUR  -> review outstanding: 3 finding(s)
 SEGMENT FIVE  -> (killed here)
 ```
 
-**Two things had to line up and did not.**
+**Two things had to line up and did not.** First, a converging run keeps resetting the stall
+counter: `recordProgress` counts an iteration as improved when the gate score rises *or* the
+ratchet grows, so findings falling 9 → 2 while the builder was also adding tests kept
+`passingCount` climbing and `stalledIterations` returning to zero. The PRD was designed to
+plateau — one impossible latency clause, everything else satisfiable — and it did not plateau
+soon enough.
 
-First, **a converging run keeps resetting the stall counter.** `recordProgress` counts an
-iteration as improved when the gate score rises *or* the ratchet grows. Findings falling 9 → 2
-means the builder was also adding tests, so `passingCount` kept climbing and
-`stalledIterations` kept returning to zero. The PRD was designed to plateau — one impossible
-latency clause, everything else satisfiable — and it did not plateau soon enough.
+Second, **`shouldRace` refuses when fewer than two iterations remain** — *"a race needs one to run
+and one to land the winner."* With `after: 2` and `maxIterations: 6`, racing can arm only in the
+window between iterations 3 and 4, so both stalls have to land inside it or the opportunity is
+gone, and at segment 5 the run was already past it whatever it did next.
 
-Second, and this is the constraint worth writing down: **`shouldRace` refuses when fewer than two
-iterations remain** — *"a race needs one to run and one to land the winner."* So with
-`after: 2` and `maxIterations: 6`, racing can only arm in the window between iteration 3 and
-iteration 4. Two stalls have to land inside a two-iteration window or the opportunity is gone,
-and at segment 5 the run was already past it whatever it did next.
-
-**The practical rule:** racing needs `maxIterations >= race.after + 3` before it can arm at all,
-and it needs the stall to arrive *early*. A six-iteration budget with `after: 2` gives racing a
-single chance. I killed the run at segment 5 once the window had closed rather than let it spend
-two more iterations proving nothing — the operator's standing instruction is to stop a run whose
-problem is known rather than watch it finish.
-
-**Attempt 2 is running** on the same tree with `race.after: 1` and `maxIterations: 10`: the first
-non-improving iteration arms it, and the headroom exists when it does. The `knip` failure at
-segment 2 of attempt 1 is the evidence that this PRD does produce non-improving iterations.
+**The rule: `maxIterations >= race.after + 3`, and the stall has to arrive early.** I killed the
+run at segment 5 once the window had closed rather than let it spend two more iterations proving
+nothing — the operator's standing instruction is to stop a run whose problem is known rather than
+watch it finish. The `knip` failure at segment 2 is the evidence that this PRD does produce
+non-improving iterations, which is why attempt 2 — **the race recorded above** — was re-run on the
+same tree with `after: 1` and `maxIterations: 10`.
 
 ## Nothing stops two drivers running against one repository. 13 August 2026
 
