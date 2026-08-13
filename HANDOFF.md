@@ -136,6 +136,48 @@ has ever deployed to a real droplet** — the ssh half is argv nobody has run. T
 the .NET adapter is treated: correct by construction, unverified in the world. The first real use
 should be a throwaway box, watched.
 
+## Queue item 3 — the 0.56.0–0.58.0 ship condition, both branches reached live. 13 August 2026
+
+**Not tested in isolation: reached by runs that executed**, and in two cases both branches
+appear in the same run. Log line numbers given so this is checkable rather than asserted.
+
+**0.56.0 — withholding.** `run9.log:30` and `run12.log:77`, identically:
+
+```
+cannot ship: nothing has demonstrated that these tests can fail: none has been observed
+red, and the mutation gate did not run and pass on this iteration
+```
+
+In run 12 the panel had **passed unanimously** at that iteration. The ship was withheld by the
+suite-sensitivity check alone, and the iteration was *not* failed — which is the specified
+behaviour and the difference between a withheld tag and a destroyed tree.
+
+**0.56.0 — shipping.** `run9.log:69` `SHIPPED: panel unanimous on 15 requirement(s)` and
+`run12.log:111` `SHIPPED: panel unanimous on 16 requirement(s)`. Both runs therefore traversed
+**withhold → repair → ship** end to end.
+
+**0.58.0 — blocking.** Run 10's `review.json` carries six `DoD-6-adversarial-input` entries, and
+the run ended `run10.log:84` `BUDGET: iteration limit reached: 6 of 6` **without shipping**, while
+its panel had passed every other id. Verified against the binary rather than the panel: the tree
+it refused reported `mean: 0` where the true value is `1/3`.
+
+**0.58.0 — allowing.** Run 12 shipped 16 ids, `DoD-6` among them, and I checked that build by
+execution: cancellation returned `0.3333333333333333` and the unterminated quote exited 3. The id
+passes when the defect is gone and fails when it is present, on the same PRD.
+
+### What is still unproven in this item
+
+**0.57.0's retraction path has never fired.** No run has produced a `never-was` verdict retracting
+a false security pin. Runs 5 and 10 observed `moved` and `removed`; `unknown` — and therefore
+quarantine — remains unobserved, and quarantine is the rule that makes "quarantine is not a pass"
+mean anything.
+
+**NEEDS REVIEW:** I am recording this item as proven from runs executed earlier in this same
+session rather than from a run constructed tonight for the purpose. The evidence is real and the
+line numbers are checkable, but the runs were not designed as the item's experiment — they are
+runs whose outcome happened to traverse both branches. If that is not the standard wanted, the
+item needs a purpose-built run and this section should be treated as evidence, not as a tick.
+
 ## Queue item 2 — .NET test-ID extraction, proven against real `dotnet test` output. 13 August 2026
 
 **The queue named this as the expected failure point. It is not one.** Verified against a real
