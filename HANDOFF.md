@@ -136,6 +136,56 @@ has ever deployed to a real droplet** — the ssh half is argv nobody has run. T
 the .NET adapter is treated: correct by construction, unverified in the world. The first real use
 should be a throwaway box, watched.
 
+## Run 13 oscillated, and the cause is the strongest argument A3 has ever had
+
+Observed live at segments 1–5 of case H. The loop entered a stable two-cycle:
+
+```
+segment 1: panel -> 3 findings
+segment 2: regression: src/summarise.test.ts::folds mean left-to-right ... IEEE-754 doubles
+segment 3: panel -> 4 findings
+segment 4: regression: the same test
+segment 5: panel -> 4 findings
+```
+
+**The builder wrote a test that asserts its own implementation, and the ratchet made it
+permanent:**
+
+```js
+it("folds mean left-to-right in row order using IEEE-754 doubles", () => {
+  expect(result.mean).toBe((0.1 + 0.2) / 2);
+});
+```
+
+The PRD says *"the arithmetic mean"*. That test says *"whatever my loop does"* — it names the
+implementation in its own title. It passed, it entered the ratchet, and it is now protected
+forever.
+
+Then the panel did its job. `DoD-6-adversarial-input`: *"src/summarise.ts:33 (`sum += n`, an
+unguarded fold) … a confidently wrong answer at exit 0."* The repair is compensated summation —
+**which breaks the protected test.** So the ratchet hard-resets the fix as a regression, the panel
+demands it again, and round it goes.
+
+**Both mechanisms are behaving exactly as specified.** The ratchet is monotonic on test
+*identity* and has no opinion on whether an id was worth having — `BRIEF.md`'s A3 section has said
+those words since it was written. This is that sentence happening in a live run.
+
+**It is the case for the held-out oracle, produced by the loop itself.** An oracle case is
+authored from the PRD before any code exists, so `mean` for `0.1, 0.2` would be asserted as the
+arithmetic mean rather than as whatever the fold returns, and the builder's self-serving test
+would never have become the authority. A3 was deferred for months on sequencing; run 12 showed
+the panel cannot close the hole, and run 13 shows the ratchet actively defends it.
+
+**Do not "fix" this by weakening the ratchet.** A test that has passed may never be allowed to
+fail again — that invariant is the only reason this loop terminates. The defect is not that the
+ratchet protected an id; it is that the id was allowed to encode an implementation as a
+requirement in the first place. The oracle is upstream of that, which is why it is the fix.
+
+**Open question worth an experiment, not a patch:** whether `gate-integrity` should refuse a test
+whose assertion is an expression over the input rather than a literal — `toBe((0.1 + 0.2) / 2)`
+recomputes the implementation instead of stating an expected value. It would have caught this one.
+It would also fail legitimate table-driven tests, so measure before building.
+
 ## Run 12 SHIPPED — and shipped a wrong answer past a 110,877-case audit
 
 Case G, `~/dare-dogfood/csvstat6`, same PRD, twelve iterations, 0.65.0. Log at
