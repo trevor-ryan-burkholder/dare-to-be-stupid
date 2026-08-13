@@ -175,7 +175,14 @@ race worktree, which `HANDOFF.md` records as never exercised and which **still d
 cannot break the race mechanism, but the origin's precondition is unmet and is now item 13's
 residue rather than being quietly dropped.
 
-### 14. R17 — metamorphic relations in the oracle — OPEN, **BLOCKED on item 7**
+### 14. R17 — metamorphic relations in the oracle — OPEN, **BLOCKED on item 7, and item 7 has now shown it is the point**
+**Item 7's interim finding promotes this from a prediction to a measured requirement.** The first
+armed oracle authored 19 cases and **all 19 assert exit codes only** — correctly, because
+`oracle-author.md` instructs exit-only whenever the spec does not fix byte-for-byte output, which
+a PRD almost never does. So A3 as it stands cannot see a wrong answer at a success exit code,
+which is the class of every headline defect this project has shipped. A metamorphic relation
+needs no output format and evades that rule entirely.
+
 Run 12's defect class: assert relations between runs (permute, scale, duplicate, subset,
 identity-merge), no reference implementation, no "same assumption twice." Schema extension in
 `oracle.mjs` plus a section in `templates/oracle-author.md`. Ordered after item 7 so relation

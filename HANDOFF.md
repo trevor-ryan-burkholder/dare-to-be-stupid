@@ -15,6 +15,53 @@ line in the same commit.
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
 
+### Item 7, interim — A3 armed for the first time, and its authoring rule makes it blind to the defect class this project keeps shipping
+
+**The run is still in flight; this finding does not depend on how it ends.** Phase 0b authored
+**19 held-out cases in 314s for 93,561 tokens** from run 8's exact PRD — the first time A3 has
+ever been armed. The cases are good: each cites a requirement and names the defect it hunts —
+quoted commas, embedded newlines, doubled quotes, a missing trailing newline, a trailing newline
+read as a spurious row.
+
+**All nineteen assert `expectExit` only. Not one asserts `expectStdout`.**
+
+| expected exit | cases |
+|---|---|
+| 0 | 11 |
+| 1 / 2 / 3 / 4 | 1 / 2 / 3 / 2 |
+| **asserting stdout** | **0** |
+
+**This is not the model underperforming. It is `templates/oracle-author.md` working exactly as
+written**, and the rule is quoted here because the fix has to argue with it:
+
+> *"`expectStdout` is compared exactly … If the specification does not fix the byte-for-byte
+> output — key order, spacing, number formatting — then **assert only `expectExit`** rather than
+> guessing a format. Guessing a format is how you fail a correct implementation."*
+
+That rule is defensible on its own terms — R13 named false failures as A3's main risk. But look
+at what it costs, because a PRD almost never fixes byte-for-byte JSON:
+
+**A3 exists to catch what the builder's own tests will not. Its authoring rule degrades it to an
+exit-code checker on any realistic specification — and every headline defect this project has
+shipped is a *wrong answer at a success exit code*:**
+
+- run 8's `SHIPPED` — the binary discards data, exit 0
+- run 9 — statistics over half the input, exit 0
+- run 12 — `mean: 0` where the truth is `1/3`, past a 110,877-case fuzz
+- improve3 — confident JSON at exit 0 on unreadable input
+
+**Not one of those would be caught by an oracle that only reads exit codes.** `DoD-6-adversarial-input`
+was added precisely because nothing else asks "does this program ever confidently report a wrong
+answer", and the held-out suite meant to answer it independently cannot.
+
+**This converts `PLAN.md` item 14 from a prediction into a measured requirement.** R17's
+metamorphic relations are exactly the escape: permute the input and the mean must not change,
+scale by k and it scales by k, duplicate the dataset and it is fixed. **A relation needs no
+byte-for-byte format**, so it evades the very rule that produced nineteen exit-code assertions,
+and it catches the wrong-answer class without guessing an output shape. Item 14 was ordered
+behind item 7 so relation cases would inherit a validated harness; item 7 has instead shown why
+item 14 is the point.
+
 ### 0.98.0 — the nested-dare denial now says it is a text match, and the rule is NOT weakened
 
 **Third bite in one session**, and the second of the three was a commit message describing the
