@@ -153,30 +153,24 @@ it('fails on a wrong stdout even when the exit code is right', () => {
 - [ ] **Step 4:** run — expect PASS.
 - [ ] **Step 5:** commit.
 
-### Status, 12 August 2026
+### Status: BUILT at 0.70.0–0.72.0. `DESIGN.md` §4.6
 
-**Done:** `scripts/oracle.mjs` (store, validation, judging, `runOracle`) with 17 tier-1 tests, and
-`templates/oracle-author.md`. **Both are inert — nothing calls them.**
+Tasks 1.1–1.4 are done and pushed. `scripts/oracle.mjs`, `templates/oracle-author.md`, the gate in
+`staticGates`, a `cli`-only `gate-policy.mjs` entry, authoring at Phase 0b, and a tier-3 check
+proving a real child returns cases the parser accepts.
 
-**Deliberately not done: the gate wiring.** `runOracle` fails when the store is missing, which is
-correct, and the store is written by an authoring child that does not exist yet. Wiring the gate
-before authoring lands would make **every run fail a gate nothing can satisfy** — the defect class
-this repository has now hit seven times. Task 1.3 and 1.4 must land together, in one commit, or
-not at all.
+**One design decision changed during the build and the earlier note here was wrong.** It said
+invocation belonged to the toolchain, following `health-probe.mjs` as a subprocess. It does not:
+this codebase already has **static gates as plain functions** (`integrityGate`,
+`observabilityGate`), and the oracle is one of those. No subprocess, no toolchain operation, no
+new command string. Invocation resolves from `package.json` `bin` inside `oracle.mjs`.
 
-**Two decisions taken while building, recorded so the next session does not re-derive them:**
+**`oracle.enabled` defaults to `false`.** The reasoning is §4.6's and it is not timidity: a case
+that invents a requirement the specification does not decide becomes a gate the builder can never
+satisfy, and it cannot tell an invention from a real requirement.
 
-- **Invocation belongs to the toolchain, not to the oracle.** `runOracle` takes a `command`
-  array; something must resolve "how do I invoke the built artifact". Follow `health-probe.mjs`:
-  make `oracle.mjs` runnable as a program, and let the node toolchain produce
-  `['node', <oracle.mjs>, '--dare', …, '--command', 'node', <bin from package.json>]`. A project
-  with no resolvable entry point must **fail with a message naming what was looked for**, not
-  decline — for a `cli` PRD that is a real defect, and run 10 found exactly that (an inert `bin`
-  no gate could see).
-- **`oracle` applies to `cli` only, for now.** Invoking with argv and comparing stdout is a CLI
-  shape. An `api` needs a different harness, and pretending otherwise would arm a gate that
-  cannot pass. Put it in `gate-policy.mjs` with that written reason rather than leaving it
-  universal-by-default.
+**Task 1.5 — the acceptance test — has not run**, and it is the only thing between here and
+calling A3 finished.
 
 ### Task 1.3 — authoring, at Phase 0, by a child that never sees the code
 

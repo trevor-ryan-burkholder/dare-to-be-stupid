@@ -643,6 +643,66 @@ same clean pass as a run that verified everything, which is §4's own rule about
 > the saving against. The store, the invalidation and the fail-closed half are built; the
 > optimisation waits for a run that demonstrates review is the dominant cost.
 
+### 4.6 The held-out oracle — the only check not downstream of the builder
+
+**Every other check in this document is downstream of the thing it judges.** The gates run what
+the builder wrote. The ratchet protects ids the builder named. The mutation gate mutates the
+builder's source against the builder's tests. `gate-integrity` reads scripts the builder authored.
+Even the cold panel reads a repository the builder shaped. A mistake shared between an
+implementation and its own tests is invisible to all of them.
+
+**Run 12 measured exactly that, and it is the reason A3 stopped being deferred.** The panel
+passed a binary reporting `mean: 0` where the true answer is 1/3, at exit 0. The reviewer was not
+lazy: it wrote an independent reference parser and summariser *from the PRD and data model* and
+differentially fuzzed **110,877 cases** against it. It could not have found the defect. The
+reference was derived from the same documents, so a property those documents never mention —
+floating-point associativity — is invisible to **both** implementations equally.
+
+**A differential fuzz against a reference built from the same spec is not an independent oracle.
+It is the same assumption, twice.**
+
+So `.dare/oracle.json` holds executable acceptance cases authored at **Phase 0b** — from the PRD
+alone, **before the design phase and before any code exists.** A child that has seen the code
+cannot write them.
+
+**Held out means *not supplied*, in §6.1's sense, and the distinction is stated rather than
+implied.** The store is under `.dare/`, so §6's positional rule makes it driver-owned and a
+builder may not write it. It is never rendered into a brief, a system prompt or a review prompt.
+That second half is a **discipline, not a barrier** — a builder executing arbitrary code can read
+the file, and `oracle.mjs` says so in its own header. Against satisficing, which is the threat
+model this whole document aims at, an artifact the builder was never handed is entirely
+sufficient: **it cannot build to a test it has not been shown.**
+
+**A3's deferral reason no longer holds.** It was deferred because "the builder would own whether
+the gate can fail" — the same objection §4.4 faced with Stryker's threshold, and answered there by
+writing the config into `.dare/` and passing it positionally. The same move applies.
+
+Four properties, each load-bearing:
+
+- **Everything fails closed.** A missing, unreadable or empty store fails the gate; failure to
+  author ends the run. A store that cannot be read is the one shape that looks exactly like an
+  oracle everything passed.
+- **A case that asserts nothing is refused at parse time.** It would execute, check nothing and
+  report success — the "test that cannot fail" of §4, reproduced *inside* the check built to be
+  independent of the builder's tests.
+- **Invocation resolves through `package.json` `bin`**, because that is what a user runs. Run 10
+  found a build whose declared bin was **inert** — zero bytes, exit 0, through a real
+  `npm install -g` — while every gate stayed green, each having invoked `node dist/cli.js`
+  directly. A project with no declared bin fails by name rather than having a plausible-looking
+  file guessed for it.
+- **`cli` only.** Invoking with argv and comparing stdout is a command-line shape; arming it on an
+  `api` or a `library` would be a gate that cannot pass, which is §4.2's defect class.
+
+**It is off by default (`oracle.enabled`), and that contradicts §13's rejection of `enabled`
+flags — deliberately.** §13's argument is about disabling a check *known to work*. This one has
+never judged a real build, and its failure mode is the worst available here: **a case that invents
+a requirement the specification does not decide becomes a gate the builder cannot satisfy for the
+rest of the run, and the builder cannot tell an invention from a real requirement.** That class
+has bitten seven times. The flag is a staging device, not an escape hatch, and what justifies
+removing it is one case-G run with it armed whose oracle failures were all genuine defects.
+`templates/oracle-author.md` aims squarely at this: when the specification is silent, the author
+is told to leave the case out and say so.
+
 ### 4.5 `DoD-6-adversarial-input` — the line that was bought with a ship
 
 Every other DoD line asks whether the code does what it was told. This one asks whether the

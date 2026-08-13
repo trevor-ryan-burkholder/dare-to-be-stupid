@@ -151,7 +151,27 @@ Three findings, and only the third was work:
    labelled *not supplied* with the framing argument that actually carries the weight. This is
    the highest-value application of the new vocabulary and it was not on the item's list.
 
-## A3. Held-out oracle — **DEFERRED. Sequencing, not impossibility. See `BORROWED.md` R13**
+## A3. Held-out oracle — **BUILT (0.70.0–0.72.0), armed by nobody yet. `DESIGN.md` §4.6**
+
+**Undeferred by dogfood run 12**, which measured the hole this item was always aimed at: the panel
+passed a binary reporting `mean: 0` where the answer is 1/3, at exit 0, after its reviewer wrote
+an independent reference implementation *from the PRD* and differentially fuzzed 110,877 cases
+against it. The reference shared the specification's blind spot exactly. **A differential fuzz
+against a reference built from the same spec is not an independent oracle; it is the same
+assumption twice.**
+
+What exists: `scripts/oracle.mjs` (store, validation, judging, invocation resolution),
+`templates/oracle-author.md` (Phase 0b, PRD only, before any code), the gate in `staticGates`
+armed by `oracle.enabled`, a `cli`-only entry in `gate-policy.mjs`, and a tier-3 check on the
+authoring contract.
+
+**`oracle.enabled` defaults to `false`** and the reasoning is in §4.6: the failure mode is a case
+inventing a requirement the spec does not decide, which becomes a gate the builder can never
+satisfy. What removes the flag is one case-G run with it armed whose oracle failures were all
+genuine defects. **That run has not happened.**
+
+The obstacle list below is kept because two of the three shaped the design, and the resolution of
+each is recorded after it.
 
 The hole is real, and this is still the only item aimed at it. The cold reviewer fixed the
 *review* half of self-judgment; the builder continues to author the tests the ratchet is built

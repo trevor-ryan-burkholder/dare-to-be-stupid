@@ -2350,7 +2350,7 @@ export function observabilityGate(cwd, options = {}) {
  * @returns {GateResult[]}
  */
 /**
- * The held-out oracle as a gate (A3, `DESIGN.md` §4.6).
+ * The held-out oracle as a gate (A3, `DESIGN.md` §4.6 — now written).
  *
  * Off unless `oracle.enabled`, because a case that invents a requirement the specification does
  * not decide becomes a gate the builder cannot satisfy — and it cannot tell an invention from a
