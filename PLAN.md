@@ -91,21 +91,21 @@ checked, and one `grep` contradicted it.
 
 ## Phase 1 — experiments. Spend money, watch, one variable at a time.
 
-### 6. Case H — the `unknown` pin verdict and quarantine — OPEN
+### 6. Case H — the `unknown` pin verdict and quarantine — OPEN, **PREPARED** (`DOGFOOD.md` operator queue)
 The last unobserved A4 path, and the rule *"quarantine is not a pass"* has never fired. PRD
 recipe ready in `DOGFOOD.md`. If `unknown` proves unreachable in practice, `DESIGN.md` §4.3
 needs rewriting rather than defending — which is why this is an experiment, not a test.
 **Done when:** a run records a quarantined element blocking `SHIPPED`, or the path is shown
 unreachable and the design text is corrected.
 
-### 7. First armed oracle run — OPEN
+### 7. First armed oracle run — OPEN, **PREPARED** (`DOGFOOD.md` operator queue; ordered first)
 A3 is BUILT (0.70.0–0.72.0) and armed by nobody. Enable `oracle.enabled` on a CLI-shaped target
 (case-G class). Under test: false-failure rate and the dispute path — the quarantine mechanism
 was designed before the happy path on purpose; this is the run that says whether that was right.
 **Done when:** a run completes with oracle cases judged and the outcome recorded in
 `HANDOFF.md`, whichever way it goes.
 
-### 8. R14 — the panel versus one reviewer at equal compute — OPEN
+### 8. R14 — the panel versus one reviewer at equal compute — OPEN, **PREPARED** (`DOGFOOD.md` operator queue)
 Config-only (`reviewers`, `ownership`, `effort`), run 6-vs-7 method. Evidence points both ways:
 run 12's correctness reviewer fuzzed 110,877 cases alone; run 10's *design* auditor caught the
 inert `bin`. **This gates item 10's shape:** if one reviewer at `max` matches the panel, the
@@ -113,7 +113,7 @@ parallel-panel half of the async rewrite is moot and the panel shrinks instead.
 **Done when:** two comparable runs differ only in panel shape and the cost/verdict delta is
 recorded.
 
-### 9. Case I — racing with live builders, current state — OPEN (verify first)
+### 9. Case I — racing with live builders, current state — OPEN (verify first), **PREPARED**
 Queue item 1 raced live builders and 0.83.0 fixed the landing. Decide whether a full case-I
 under current code is still owed; run it if yes, close it against the queue-item record if no.
 
@@ -121,7 +121,7 @@ under current code is still owed; run it if yes, close it against the queue-item
 
 ## Phase 2 — the repriced rewrite. After item 8.
 
-### 10. R21 — async driver: heartbeat, parallel panel, process groups — OPEN
+### 10. R21 — async driver: heartbeat, parallel panel, process groups — OPEN, **BLOCKED on item 8**
 One move (`execFileSync` → async spawn with process groups) closes three named opens: the
 hung-vs-working blindness, the sequential three-read panel (only if item 8 keeps the panel),
 and the orphan pipe (subsuming item 2's mechanism driver-wide). Constraints from
@@ -175,7 +175,7 @@ race worktree, which `HANDOFF.md` records as never exercised and which **still d
 cannot break the race mechanism, but the origin's precondition is unmet and is now item 13's
 residue rather than being quietly dropped.
 
-### 14. R17 — metamorphic relations in the oracle — OPEN
+### 14. R17 — metamorphic relations in the oracle — OPEN, **BLOCKED on item 7**
 Run 12's defect class: assert relations between runs (permute, scale, duplicate, subset,
 identity-merge), no reference implementation, no "same assumption twice." Schema extension in
 `oracle.mjs` plus a section in `templates/oracle-author.md`. Ordered after item 7 so relation
@@ -241,12 +241,12 @@ answer and closes the item just as well.
 (a) build the boundary-checked budget, default off; (b) build it with a measured default; or
 (c) refuse it in `DESIGN.md` with the argument above.
 
-### 18. Improve-mode cost concentration — OPEN
+### 18. Improve-mode cost concentration — OPEN, **PREPARED** (`DOGFOOD.md` operator queue)
 Segment one cost 7× segment two on a four-file repository. Measure on something mid-sized
 before improve mode meets a real codebase; outcome is either a fix or written budget guidance
 in `commands/dare.md`.
 
-### 19. Deploy's ssh half — OPEN
+### 19. Deploy's ssh half — OPEN, **PREPARED; NEEDS A REAL HOST**
 Argv nobody has run (`HANDOFF.md`, queue item 4 boundary). Live-verify it once, or mark it
 permanently unverified in `DESIGN.md` §10.1. The repo's rule does not allow a third state.
 
@@ -254,14 +254,21 @@ permanently unverified in `DESIGN.md` §10.1. The repo's rule does not allow a t
 
 ## Phase 4 — breadth, then the mirror.
 
-### 20. Dogfood cases A, B, C — OPEN
+### 20. Dogfood cases A, B, C — OPEN, **PREPARED** (run C first — TRX and the dotnet adapter)
 Breadth, not risk: the link shortener, the persistence SPA, and the .NET API — the last being
 the first run to exercise TRX extraction and the dotnet adapter end to end in anger.
 
-### 21. Improve mode pointed at this repository — OPEN, deliberately last
+### 21. Improve mode pointed at this repository — OPEN, **PREPARED; REFUSED HERE** (operator's call)
 Prerequisites named in `HANDOFF.md`: pin `hooks/guard.mjs` as a security element at run start
 (the positional rule does not cover it), `release-check` reachable as a gate (item 3 helps),
 and the `CLAUDE.md` scope note is the operator's call to suspend — nobody else's.
+
+**Status of the three at 0.96.0:** the guard is protected (0.88.0's `protected-guard`, positional
+and self-referential — the first prerequisite is met by a stronger mechanism than the one named).
+`release-check` gained the header check at 0.89.0 but **is still not a declared gate**, so a
+builder editing `scripts/` without bumping still breaks the install-cache invariant silently —
+that is the one engineering prerequisite left. The scope note is untouched and not mine to
+retire.
 
 ### 22. HANDOFF stratigraphy sweep — OPEN
 The file is newest-first with older "outstanding" and "do this next" strata below; reconcile or

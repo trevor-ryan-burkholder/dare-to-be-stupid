@@ -1,5 +1,10 @@
 # Dogfood runs — D, E, F and G exercised; E and F passed; run 8 SHIPPED. A, B, C, H, I remain
 
+> **The operator queue for `PLAN.md` items 6–9, 18–21 is at the bottom of this file** (13 August
+> 2026, prepared at 0.96.0). Each entry is a complete run: exact commands, exact config, the
+> states it may legitimately end in, and the evidence to keep. They spend real money over hours
+> and want a human watching, which is why they were prepared rather than performed.
+
 `BRIEF.md` D2 and `HANDOFF.md` item 9.
 
 > **Case D was run on 11 August 2026 and ended `BUDGET` in iteration 1.** It found three
@@ -542,3 +547,293 @@ still died with `Cannot find TestRunner plugin "vitest"`. `scripts/toolchains/no
 both packages with `-p` so the plugin lands in the same sandbox as the core looking for it.
 
 **A mutation failure is now a finding about the work, not about provisioning.** Read it as one.
+
+
+---
+
+# Operator queue — prepared 13 August 2026 at 0.96.0, all unrun
+
+Every entry below was prepared and deliberately **not** run: each spends real money over hours
+and wants somebody watching. They are ordered by information value, which is the ordering
+principle `PLAN.md` inherits — a result that can invalidate later construction comes first.
+
+**Common preamble for every run in this section.** Do these once, not per run:
+
+```bash
+cd ~/dev/dare-to-be-stupid
+git log --oneline -1                       # note the version under test
+npm run lint && npm run typecheck && npm test
+npm run test:integration
+DARE_LIVE=1 npm run test:live              # cheap, and it catches a broken contract before an hour of run does
+npm run release-check
+```
+
+Then, **before each individual run**:
+
+```bash
+ps -eo pid,etime,args | grep -E 'driver\.mjs|claude -p' | grep -v grep   # must be empty
+ls ~/dare-dogfood/<target>/.dare/lock.json 2>/dev/null                   # must not exist
+```
+
+And **during** every run, the standing rule that has already paid for itself twice: if something
+is obviously wrong, kill it and fix it rather than letting it finish. A run continued past a
+known defect produces evidence about software nobody will ship.
+
+**Killing a run correctly.** `SIGTERM` to the driver works on the first try, but its `claude -p`
+child is re-parented and survives — measured. So:
+
+```bash
+pkill -f 'scripts/driver.mjs'
+ps -eo pid,args | grep '[c]laude' | grep -v 'grep'    # kill any survivor by pid
+```
+
+**Evidence to keep from every run, without exception.** The whole `.dare/` directory, the full
+log, and the answer to "what does the binary actually do now", obtained by running it rather than
+by reading the panel. Runs 9, 10 and improve3 all produced a tree materially better than the
+verdict the run gave it, and that pattern is only visible from outside the panel.
+
+---
+
+## Item 7 — the first armed oracle run (`PLAN.md` item 7)
+
+**First, because A3 has been BUILT since 0.70.0–0.72.0 and armed by nobody, and because item 14
+is ordered behind it.** Under test: the false-failure rate and the dispute path. The quarantine
+mechanism was designed before the happy path on purpose; this is the run that says whether that
+was right.
+
+Target: a CLI-shaped project, which is the only capability the oracle is armed for.
+
+```bash
+mkdir -p ~/dare-dogfood/oracle1 && cd ~/dare-dogfood/oracle1
+git init && git commit --allow-empty -m 'initial'
+mkdir -p .dare
+cat > .dare/config.json <<'JSON'
+{
+  "maxIterations": 6,
+  "tokenCeiling": 15000000,
+  "costCeiling": 25,
+  "oracle": { "enabled": true }
+}
+JSON
+```
+
+Use the **case G** PRD from earlier in this file — the smallest thing that could ship, already
+proven to reach a ship at run 8 — so that the oracle is the only moved variable.
+
+```bash
+cd ~/dare-dogfood/oracle1
+node ~/dev/dare-to-be-stupid/scripts/driver.mjs 2>&1 | tee ~/dare-logs/oracle1.log
+```
+
+**Legitimate outcomes, all three of which are results:**
+
+| outcome | what it means |
+|---|---|
+| `SHIPPED` with oracle cases judged and passed | the happy path exists; record the authoring cost and the per-iteration cost |
+| a run blocked by an oracle case that is **right** | the held-out principle working; the best possible result |
+| a run blocked by an oracle case that is **wrong** | the false-failure rate is non-zero; the dispute path is now the subject, and this is why the run exists |
+
+**Evidence to collect, beyond the standard set:** `.dare/oracle/` in full (the authored cases are
+the artifact), the Phase 0b authoring cost in tokens and seconds, and for every oracle failure a
+hand-adjudication of whether the case was actually right. **A false oracle case that blocked a
+correct build is the finding; do not let it be summarised as "the oracle worked".**
+
+**What it gates:** `PLAN.md` item 14 (metamorphic relations) is deliberately ordered after this,
+so relation cases inherit a validated harness rather than a guess.
+
+---
+
+## Item 8 — the panel versus one reviewer at equal compute (`PLAN.md` item 8)
+
+**The highest-value experiment on the list, because it gates item 10's shape.** If one reviewer
+at `max` matches the panel, the parallel-panel half of the async rewrite is moot and the panel
+shrinks instead.
+
+Config-only, run-6-vs-7 method: **two runs, identical in every respect but panel shape.**
+
+Run A — the panel as it is today. No config change beyond the shared baseline.
+
+Run B — one reviewer owning everything:
+
+```json
+{
+  "reviewers": ["correctness"],
+  "ownership": { "correctness": ["PRD-*", "DoD-*"] },
+  "effort": { "review": "max" }
+}
+```
+
+Use the **same PRD** for both, and the same `maxIterations`, `tokenCeiling` and `costCeiling`.
+Case G's PRD again is the right choice: short enough to finish, and already known to ship.
+
+```bash
+# run A
+mkdir -p ~/dare-dogfood/panelA && cd ~/dare-dogfood/panelA && git init && git commit --allow-empty -m init
+node ~/dev/dare-to-be-stupid/scripts/driver.mjs 2>&1 | tee ~/dare-logs/panelA.log
+# run B, fresh tree, only .dare/config.json differs
+mkdir -p ~/dare-dogfood/panelB && cd ~/dare-dogfood/panelB && git init && git commit --allow-empty -m init
+node ~/dev/dare-to-be-stupid/scripts/driver.mjs 2>&1 | tee ~/dare-logs/panelB.log
+```
+
+**What to record, per run:** total review cost in dollars and tokens; review wall-clock; the
+verdict; and **every finding, listed**, so the two sets can be compared by hand rather than by
+count. Evidence already points both ways — run 12's correctness reviewer alone wrote a reference
+implementation and fuzzed 110,877 cases, and run 10's *design* auditor was the one that found the
+inert `bin`.
+
+**The question this answers is not "which verdict".** It is *did the panel find anything the solo
+reviewer did not, and was that thing worth the extra spend*. A tie on verdict with a difference in
+findings is the most likely and most informative result.
+
+**Do not lower reviewer effort to buy time.** `max` is what produced both of the findings above.
+
+**This run also owes `HANDOFF.md` a second number:** the review-cost delta from `panelCarry`
+(item 12, landed at 0.92.0 and unmeasured). Both runs will carry requirements across iterations;
+record the review cost of iterations where carrying happened against those where it did not.
+Grep the log for `panel carry:`.
+
+---
+
+## Item 6 — case H, the `unknown` pin verdict and quarantine (`PLAN.md` item 6)
+
+The last unobserved A4 path, and the rule *"quarantine is not a pass"* has never fired. **The
+recipe is already written above** under "Case H — the `unknown` pin verdict". Run it as written.
+
+**What makes this an experiment and not a test:** if `unknown` proves unreachable in practice,
+`DESIGN.md` §4.3 needs rewriting rather than defending. Both outcomes close the item.
+
+**Evidence:** `.dare/pins.json` across iterations, the security reviewer's verbatim verdict for
+the moved element, and the terminal state. The assertion under test is that a quarantined element
+**blocks `SHIPPED`** — if a run ships with one standing, that is a serious defect and the run
+should be stopped and reported rather than completed.
+
+---
+
+## Item 9 — case I, racing with live builders (`PLAN.md` item 9, **verify before running**)
+
+`PLAN.md` marks this "verify first", and that instruction is the item. Queue item 1 raced live
+builders and 0.83.0 fixed the landing; **read that record in `HANDOFF.md` before spending
+anything.** If it already answers case I under current code, close the item against it and do not
+run.
+
+If a run is still owed, the recipe is above under "Case I — worktree racing with a live builder".
+
+**One thing to watch that did not exist when case I was written:** since 0.93.0 each candidate is
+handed a distinct stall hypothesis (C5). Whether that produces distinguishable candidates is
+unmeasured, and this run is the first that could see it. Record each candidate's diff and whether
+it visibly followed its angle.
+
+**Also still true and still unmet:** `BRIEF.md` C5's own precondition — *a live test of a
+`claude -p` child inside a race worktree* — does not exist. This run would be the first time a
+builder child has ever run inside a race worktree at all.
+
+---
+
+## Item 18 — improve-mode cost concentration (`PLAN.md` item 18)
+
+Segment one cost **6.06M tokens against segment two's 0.83M — 7×** — on a four-file repository.
+At that ratio the first iteration alone would exhaust an ordinary ceiling on a real codebase.
+
+**Target: something mid-sized and real, not another toy.** Twenty to fifty source files with a
+genuine test suite. A checkout of a small open-source CLI is ideal; a copy of a project you do
+not mind mangling is fine. It must have meaningful git history or improve mode refuses.
+
+```bash
+cd ~/dare-dogfood/improve-mid
+mkdir -p .dare && cat > .dare/config.json <<'JSON'
+{ "maxIterations": 3, "tokenCeiling": 20000000, "costCeiling": 30 }
+JSON
+node ~/dev/dare-to-be-stupid/scripts/driver.mjs --improve 2>&1 | tee ~/dare-logs/improve-mid.log
+```
+
+**What to record:** per-segment token and dollar cost, in a table, against the four-file baseline
+above. The question is whether the 7× is a property of improve mode or of that particular tiny
+repository.
+
+**Outcome is either a fix or written budget guidance in `commands/dare.md`** — the item permits
+both, and "improve mode wants a ceiling this size per file" is a perfectly good result.
+
+---
+
+## Item 20 — dogfood cases A, B and C (`PLAN.md` item 20)
+
+**Breadth, not risk.** Recipes are above. Order: **C first**, because it is the only one that
+exercises TRX extraction and the dotnet adapter end to end in anger, and those have never met a
+real run. A and B are Node and are the best-covered path in the project.
+
+Case C additionally needs the .NET SDK on the host:
+
+```bash
+dotnet --version   # must succeed before the run, or the toolchain gate fails for the wrong reason
+```
+
+**Watch specifically:** that `extractTestIds` reads real TRX (the fixture tests pass, the live
+path never has), and that the dotnet adapter's declined operations — typecheck, e2e, mutation —
+are reported as declined rather than as failures.
+
+---
+
+## Item 19 — the deploy's ssh half (`PLAN.md` item 19)
+
+**Argv nobody has run.** `DESIGN.md` §10.1's rule allows exactly two end states: live-verified
+once, or marked permanently unverified. There is no third.
+
+**This needs a real host and is the operator's to supply.** The command, prepared:
+
+```json
+{
+  "deploy": {
+    "enabled": true,
+    "command": ["ssh", "<user>@<preview-host>", "cd /srv/preview && ./deploy.sh"],
+    "url": "https://<preview-host>/",
+    "smoke": [{ "path": "/health", "status": 200 }],
+    "timeoutMs": 600000
+  }
+}
+```
+
+**Preconditions the run cannot supply for itself:** key-based ssh auth with **no passphrase
+prompt** — an unattended run cannot answer one, and `runDeploy` reports exactly that case as a
+timeout — and a host key already in `known_hosts`, for the same reason. Verify both by hand
+first:
+
+```bash
+ssh -o BatchMode=yes <user>@<preview-host> true && echo 'ssh is unattended-ready'
+```
+
+The URL must not look like production; the config refuses it if it does.
+
+**If no such host exists**, the item's other end state is available and is a complete answer:
+mark the ssh path permanently unverified in `DESIGN.md` §10.1 and say why. **Marked here as
+needing a real host.**
+
+---
+
+## Item 21 — improve mode pointed at this repository (`PLAN.md` item 21, deliberately last)
+
+**Three prerequisites, and their status at 0.96.0:**
+
+| prerequisite | status |
+|---|---|
+| `hooks/guard.mjs` protected from the run | **done at 0.88.0** — `protected-guard` is positional and self-referential, covering the guard and its manifest |
+| `release-check` reachable so a builder cannot break the install-cache invariant | **partly** — 0.89.0's header check landed and `tools/release-check.mjs` is not a declared gate. A builder editing `scripts/` without bumping still breaks it silently |
+| the `CLAUDE.md` scope note suspended | **not done, and not mine to do.** The note says *"Do not run `/dare` against this repository"*. The operator has said the rule can be retired later; retiring it is a deliberate act |
+
+**The remaining engineering prerequisite** is the middle row: add `release-check` as a gate for
+this target, or accept that a run can break the plugin cache invariant without anything noticing.
+
+**Refused here, on instruction and on the standing scope note.** This entry is preparation only.
+
+---
+
+## What is owed back to `HANDOFF.md` when these run
+
+Two numbers this session could not produce and explicitly parked:
+
+1. **The `panelCarry` review-cost delta** (item 12). The mechanism landed at 0.92.0 and is safe by
+   construction; its *value* is unmeasured, and `BRIEF.md` A8's own correction says "review
+   becomes the dominant cost on a long run" is a prediction. Item 8's two runs are the natural
+   place to get it.
+2. **Whether ship-time mutation ever fires** (item 11). The path has never been reached by a real
+   run, and the cost figures behind it come from a nine-module synthetic fixture rather than from
+   any real suite.
