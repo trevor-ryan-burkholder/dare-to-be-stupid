@@ -1546,6 +1546,12 @@ export function driveRun(options) {
         closeIteration(iterationNumber, ['assumptions:malformed'], 0, loadState(dareDir).passing.length);
         continue;
       }
+      if (declared.recovered) {
+        // Accepted, and never quietly. The shape is not the one the template shows, and a
+        // builder drifting off a machine-parsed contract is worth seeing in the log before the
+        // drift reaches a shape the parser cannot recover at all.
+        effects.log('builder assumptions block was not in the documented shape; entries recovered from it');
+      }
       if (declared.discarded > 0) {
         // Announced rather than dropped quietly. A log that silently sheds entries reads
         // exactly like a log nothing was written to.

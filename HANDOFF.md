@@ -1,8 +1,13 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.105.0`. Measured at 0.105.0: `npm test` **1724 pass**,
-`npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
-`npm run release-check` **ok**. `npm run test:live` **27 of 27 across 11 files**.
+**State:** `main` at `0.106.0`. Measured at 0.106.0: `npm test` **1729 pass**,
+`npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Carried from
+0.105.0 and not re-run since: `npm run test:integration` **30 pass**.
+
+**`npm run test:live` last read 26 of 27, and the one failure was real.** It is written up below
+under 0.106.0; the parser defect it exposed is fixed and the same case now runs as a tier 1
+fixture. **The suite has not been re-run whole since that fix** — the repaired file was run in
+isolation, five times, and the shape it was failing on now parses.
 
 **This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
 `package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
@@ -13,6 +18,57 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.106.0 — the assumptions log dropped cited assumptions where nothing could count them
+
+**Found by a tier 3 failure I nearly filed as model variance.** `test/live/assumptions-contract`
+returned 26 of 27, on *"emits a parseable, cited block when the specification is genuinely
+ambiguous"*. It passed in isolation. It passed four more times. It failed the fifth. **One sample
+is not evidence of flakiness, and the failure message was useless on purpose**: the assertion read
+`assumptions.length >= 1` while `malformed` was empty and `discarded` was zero, which cannot
+distinguish three different defects.
+
+So I ran the same prompt six times and kept the raw replies. Two of them looked like this:
+
+```json
+{
+  "cites": "PRD-2.4",
+  "ambiguity": "...does not specify which status code to return for an expired link",
+  "assumed": "410 Gone — the link existed and was deliberately expired, not 404 Not Found"
+}
+```
+
+**A correct, cited, checkable assumption with no array wrapper.** `parseAssumptions` claimed a
+block only when the raw text contained `"assumptions"`, so this matched **no candidate at all**
+and returned the same `none` the parser returns for a message with no block in it. `malformed`
+empty. `discarded` zero. Log untouched. **Indistinguishable from the common, legitimate case of
+nothing being ambiguous** — which is this module's own stated nightmare, *"a log that silently
+sheds entries reads exactly like a log nothing was written to"*, except it shed them before
+reaching the counter that exists to report exactly that.
+
+**Rate, measured rather than assumed:** 2 of 6 on `claude-haiku-4-5`, and **6 of 6 correct on
+`claude-sonnet-5`** — the configured `builderModel`. So production was not losing assumptions;
+the cheap canary model was. That is the whole argument for the live tier using a weak model: it
+near-misses, and near-misses are what find a brittle parser. **Fixing the flake by strengthening
+the test's model would have deleted the evidence.**
+
+**The fix accepts the shape and refuses the silence.** A bare record, and a bare list, are
+recovered into the normal path; the citation bar then applies to them **unchanged**, so a
+recovered entry that cites nothing is discarded and counted exactly as it would be inside the
+wrapper. The wrapper carries no information — an object with `cites` and `assumed` is precisely
+as checkable by a reviewer inside brackets as outside them — and failing the iteration over
+punctuation costs a measured 5–9M tokens. `recovered` travels back to the driver, which now logs
+that the documented shape was not followed. **What is not on the table is the previous behaviour,
+which was neither strict nor lenient but blind.**
+
+An `assumptions` key present and not an array stays malformed regardless of what else the object
+carries, because that is a builder contradicting the contract rather than missing it.
+
+**The real reply is committed as `test/fixtures/assumptions/bare-object-haiku.txt`** and asserted
+in tier 1. The live tier found this; tier 1 now holds it, at no cost per run.
+
+**Not verified:** whether `claude-sonnet-5` ever emits the bare shape — six of six says only that
+it is not common. And the live suite has not been re-run whole since the fix.
 
 ### 0.99.0 — a CLI's brief demanded an API gate, found by reading a live run's brief
 

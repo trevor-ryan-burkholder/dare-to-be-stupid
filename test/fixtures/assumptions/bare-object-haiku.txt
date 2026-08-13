@@ -1,0 +1,11 @@
+I'm reading this as requiring **410 Gone**, not 404.
+
+An expired short link once existed but is now deliberately unavailable; 410 semantically fits that better than 404 (which suggests it never existed). They behave differently to caches and clients, and 410 is the more informative choice.
+
+```json
+{
+  "cites": "PRD-2.4",
+  "ambiguity": "requires not returning the original URL, but does not specify which status code to return for an expired link",
+  "assumed": "410 Gone — the link existed and was deliberately expired, not 404 Not Found"
+}
+```

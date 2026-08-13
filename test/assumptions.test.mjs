@@ -14,9 +14,10 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { after, describe, it } from 'node:test';
 
 import {
@@ -28,6 +29,9 @@ import {
   readAssumptions,
   renderAssumptions,
 } from '../scripts/assumptions.mjs';
+
+/** Real builder output, committed verbatim. See `DESIGN.md` §11 on why these are not written by hand. */
+const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'assumptions');
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -51,7 +55,7 @@ const GOOD = { cites: 'PRD-2.4', ambiguity: 'does not say 404 or 410', assumed: 
 describe('parseAssumptions', () => {
   it('reads a well-formed block', () => {
     const parsed = parseAssumptions(fenced({ assumptions: [GOOD] }));
-    assert.deepEqual(parsed, { assumptions: [GOOD], discarded: 0, malformed: '' });
+    assert.deepEqual(parsed, { assumptions: [GOOD], discarded: 0, malformed: '', recovered: false });
   });
 
   it('treats no block at all as no assumptions, not as a failure', () => {
@@ -61,6 +65,7 @@ describe('parseAssumptions', () => {
       assumptions: [],
       discarded: 0,
       malformed: '',
+      recovered: false,
     });
   });
 
@@ -119,6 +124,59 @@ describe('parseAssumptions', () => {
       assert.deepEqual(parsed.assumptions, []);
     });
   }
+
+  it('recovers a bare assumption object, which a real builder emits and which used to vanish', () => {
+    // The defect this whole shape allowance exists for. A block with the right fields and a
+    // real citation, missing only the array wrapper, matched no candidate at all — so the
+    // parser returned the same `none` it returns for a message containing no block, and a
+    // recorded fork was lost where nothing could count it. Measured at 2 of 6 replies on
+    // claude-haiku-4-5.
+    const raw = readFileSync(path.join(FIXTURES, 'bare-object-haiku.txt'), 'utf8');
+    const parsed = parseAssumptions(raw);
+    assert.equal(parsed.malformed, '');
+    assert.equal(parsed.discarded, 0);
+    assert.equal(parsed.recovered, true);
+    assert.deepEqual(parsed.assumptions, [
+      {
+        cites: 'PRD-2.4',
+        ambiguity:
+          'requires not returning the original URL, but does not specify which status code to return for an expired link',
+        assumed: '410 Gone — the link existed and was deliberately expired, not 404 Not Found',
+      },
+    ]);
+  });
+
+  it('recovers a bare list of assumptions, the other wrapper a builder can miss', () => {
+    const parsed = parseAssumptions(fenced([GOOD, { cites: 'PRD-9.9', assumed: 'utf-8' }]));
+    assert.equal(parsed.malformed, '');
+    assert.equal(parsed.recovered, true);
+    assert.equal(parsed.assumptions.length, 2);
+  });
+
+  it('holds the citation bar against a recovered block, which is not a lower bar', () => {
+    // Accepting the shape is not accepting the contents. A bare object that cites nothing is
+    // discarded exactly as it would be inside the wrapper, and counted the same way.
+    const parsed = parseAssumptions(fenced({ cites: '  ', assumed: 'something' }));
+    assert.equal(parsed.malformed, '');
+    assert.equal(parsed.recovered, true);
+    assert.deepEqual(parsed.assumptions, []);
+    assert.equal(parsed.discarded, 1);
+  });
+
+  it('leaves an ordinary json block alone, so recovery is not a net over everything fenced', () => {
+    // The widened candidate test keys on `cites` *and* `assumed` together for this reason. A
+    // builder pasting a config or a payload must not have it read as an assumption.
+    const parsed = parseAssumptions(fenced({ port: 8080, cites: 'not this shape' }));
+    assert.deepEqual(parsed, { assumptions: [], discarded: 0, malformed: '', recovered: false });
+  });
+
+  it('still fails an assumptions key that is present and not an array, whatever else is there', () => {
+    // A builder contradicting the contract rather than missing it. The top-level fields would
+    // otherwise make this recoverable, and it should not be.
+    const parsed = parseAssumptions(fenced({ assumptions: 'none', cites: 'PRD-1.1', assumed: '410' }));
+    assert.notEqual(parsed.malformed, '');
+    assert.deepEqual(parsed.assumptions, []);
+  });
 
   it('discards a non-object entry inside an otherwise valid block', () => {
     const parsed = parseAssumptions('```json\n{"assumptions": ["just a string", null]}\n```');

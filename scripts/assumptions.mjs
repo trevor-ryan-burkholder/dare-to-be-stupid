@@ -71,9 +71,72 @@ export class AssumptionsError extends Error {
  * @typedef {{
  *   assumptions: { cites: string, ambiguity: string, assumed: string }[],
  *   discarded: number,
- *   malformed: string
+ *   malformed: string,
+ *   recovered: boolean
  * }} ParsedAssumptions
  */
+
+/**
+ * Does this look like one assumption record, rather than json about something else?
+ *
+ * Both keys, both strings. `cites` alone is not distinctive enough to claim a block by — and
+ * an entry with no `assumed` fails the citation bar below anyway, so claiming it would buy a
+ * count and nothing else.
+ *
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function looksLikeAssumption(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = /** @type {Record<string, unknown>} */ (value);
+  return typeof record.cites === 'string' && typeof record.assumed === 'string';
+}
+
+/**
+ * Find the entry list inside a parsed block, accepting two shapes the template never showed.
+ *
+ * **This function exists because of a measured silent loss.** `parseAssumptions` used to claim a
+ * block only when the raw text contained `"assumptions"`, so a builder that emitted a *bare*
+ * assumption object — correct fields, real citation, no array wrapper — produced no candidate at
+ * all, and the parser returned the same `none` it returns for a message with no block in it.
+ * `malformed` empty, `discarded` zero, log untouched. A cited fork the builder had genuinely
+ * recorded was dropped where nothing could count it, and the result was indistinguishable from
+ * the common, legitimate case of nothing being ambiguous. Measured at **2 of 6** replies on
+ * `claude-haiku-4-5`; `claude-sonnet-5`, the configured `builderModel`, was 6 of 6, so this was
+ * costing information rather than currently losing it in production.
+ *
+ * The wrapper carries no information. A single object with `cites` and `assumed` is exactly as
+ * checkable by a reviewer as the same object inside an array, and the citation bar — the actual
+ * design — applies to it unchanged. Failing the iteration over the array brackets would spend a
+ * measured 5–9M tokens teaching a builder to punctuate. So the near miss is **accepted and
+ * flagged**: `recovered` travels back so the driver can say out loud that the contract was not
+ * followed. What is not on the table is the previous behaviour, which was neither strict nor
+ * lenient but blind.
+ *
+ * An `assumptions` key that is present and not an array stays malformed regardless of what else
+ * the object carries. That is a builder contradicting the contract rather than missing it.
+ *
+ * @param {unknown} parsed
+ * @returns {{ list: unknown[], recovered: boolean, malformed: string }}
+ */
+function assumptionList(parsed) {
+  if (Array.isArray(parsed)) {
+    return parsed.some(looksLikeAssumption)
+      ? { list: parsed, recovered: true, malformed: '' }
+      : { list: [], recovered: false, malformed: 'the assumptions block is a json array of something else' };
+  }
+  if (parsed === null || typeof parsed !== 'object') {
+    return { list: [], recovered: false, malformed: 'the assumptions block is not a json object' };
+  }
+  const record = /** @type {Record<string, unknown>} */ (parsed);
+  if ('assumptions' in record) {
+    return Array.isArray(record.assumptions)
+      ? { list: record.assumptions, recovered: false, malformed: '' }
+      : { list: [], recovered: false, malformed: 'the assumptions block has no "assumptions" array' };
+  }
+  if (looksLikeAssumption(record)) return { list: [record], recovered: true, malformed: '' };
+  return { list: [], recovered: false, malformed: 'the assumptions block has no "assumptions" array' };
+}
 
 /**
  * Read the builder's closing message for an assumptions block.
@@ -86,10 +149,14 @@ export class AssumptionsError extends Error {
  */
 export function parseAssumptions(raw) {
   /** @type {ParsedAssumptions} */
-  const none = { assumptions: [], discarded: 0, malformed: '' };
+  const none = { assumptions: [], discarded: 0, malformed: '', recovered: false };
 
   const blocks = [...raw.matchAll(/```(?:json)?\s*\n([\s\S]*?)```/g)].map((match) => match[1]);
-  const candidates = blocks.filter((block) => block.includes('"assumptions"'));
+  // Two ways to be an assumptions block: the documented wrapper, or the bare record shape a
+  // real builder was measured emitting. See `assumptionList` for what the second one cost.
+  const candidates = blocks.filter(
+    (block) => block.includes('"assumptions"') || (block.includes('"cites"') && block.includes('"assumed"')),
+  );
   // An absent block is the common case and is not a failure. Most iterations resolve nothing
   // ambiguous, and requiring a block on every one would guarantee filler.
   if (candidates.length === 0) return none;
@@ -102,13 +169,9 @@ export function parseAssumptions(raw) {
   } catch (error) {
     return { ...none, malformed: `the assumptions block is not valid json: ${/** @type {Error} */ (error).message}` };
   }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { ...none, malformed: 'the assumptions block is not a json object' };
-  }
-  const list = /** @type {Record<string, unknown>} */ (parsed).assumptions;
-  if (!Array.isArray(list)) {
-    return { ...none, malformed: 'the assumptions block has no "assumptions" array' };
-  }
+  const shaped = assumptionList(parsed);
+  if (shaped.malformed !== '') return { ...none, malformed: shaped.malformed };
+  const list = shaped.list;
 
   /** @type {{ cites: string, ambiguity: string, assumed: string }[]} */
   const kept = [];
@@ -131,7 +194,7 @@ export function parseAssumptions(raw) {
     }
     kept.push({ cites, ambiguity, assumed });
   }
-  return { assumptions: kept, discarded, malformed: '' };
+  return { assumptions: kept, discarded, malformed: '', recovered: shaped.recovered };
 }
 
 /**
