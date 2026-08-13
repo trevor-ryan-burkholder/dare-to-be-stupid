@@ -1676,7 +1676,43 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `tokenCeiling` | 4_000_000 | bounds *work*. Not a cap and not convertible to money — see §3.5 |
 | `costCeiling` | 50 | bounds *spend*, in USD, from the envelope's own `total_cost_usd`. Decimals allowed |
 | `childTimeoutMs` | 1_800_000 | bounds *wall-clock per child*, and it is the only one of the three that is a watchdog. `tokenCeiling` and `costCeiling` bind a child that returns; neither can see one that does not. Roughly 2.8x the longest child ever observed (§3.9) |
-| `gateTimeoutMs` | 2_700_000 | the same watchdog for gate commands, which hang the same way. **Not derived from measurement**, unlike the row above: no run has recorded a per-gate duration and mutation testing is the unmeasured slow one, so this is a backstop sized to be embarrassing to hit |
+| `gateTimeoutMs` | 2_700_000 | the same watchdog for gate commands, which hang the same way. **Not derived from measurement**, unlike the row above: no run has recorded a per-gate duration and mutation testing is the unmeasured slow one, so this is a backstop sized to be embarrassing to hit. When it fires, the driver also sweeps the descendants the gate leaked — see below |
+
+**A gate ceiling that fires also reaps what the gate left behind.** `execFileSync`'s timeout
+signals the direct child and nothing else, so until 0.89.0 a gate that backgrounded a dev
+server, a watcher or a test runner left that grandchild alive after the kill — measured, and
+holding its port and memory against every later iteration. `health-probe.mjs` had always done
+this properly for its own child by signalling a **process group**; gate commands never did.
+
+The group is found by **subtraction, not by detaching**. Membership of the driver's own process
+group is sampled before the command and again after the timeout, and the difference is killed;
+a leaked grandchild is in that group because nothing moved it out. The obvious alternative —
+spawn each gate `detached` into a group of its own and signal it — was measured and rejected:
+a detached child does not receive the `SIGINT` a terminal sends to its foreground process
+group, so Ctrl-C would stop reaching gates. That trades a rare orphan, one that only appears
+after a 45-minute ceiling, for a common one on the operator's most-used control. (`spawnSync`
+does honour `detached`, undocumented and verified, so the option existed and is not taken.)
+
+Three deliberate limits, each a case where killing more would be wrong:
+
+- **Timeouts only.** The deploy starts a server and then probes it, so sweeping the success
+  path would kill the thing the smoke check is about to talk to.
+- **Windows is a no-op.** There are no process groups there; the sweep reports nothing rather
+  than guessing, the same degradation `health-probe.mjs` already takes.
+- **An unreadable group sweeps nothing.** `null` from the sampler is not an empty set. Nothing
+  defaults to pass, pointed the other way: nothing defaults to killable.
+
+The killed pids are named in the gate's failure detail, which is copied verbatim into the
+builder's brief. "Killed after 45 minutes" and "killed after 45 minutes, and it had left a
+server running" are different diagnoses. Proved against real processes in
+`test/integration/gate-orphan.integration.test.mjs`; no unit test can see it, because what
+happens to an orphan after a kill is the operating system's contract and not ours (§11.1).
+
+**Not covered, and named rather than implied:** a gate killed by the *operator* rather than by
+the ceiling. Ctrl-C reaches the whole group and so takes the leak with it, but `kill` sent to
+the driver alone does not, and the driver cannot run a handler while blocked inside
+`execFileSync`. Closing that is part of the async driver conversion, where a free event loop
+makes signal forwarding possible at all.
 | `reviewers` | `["security","correctness","design"]` | the specialized cold panel (§1.1); each owns its DoD lines |
 | `ownership` | see §1.1 | reviewer → id patterns (`*` is the only wildcard). Must cover every required id, or the run refuses to start |
 | `requireUnanimous` | true | every panel member must return pass on its lines |

@@ -31,12 +31,20 @@ rather than `[]` when `lastGoodCommit` is null; `scripts/toolchains/node.mjs:142
 not contain the other sentence. The plan compiled this from the `HANDOFF.md` finding without
 checking the commit that answered it on the same day.
 
-### 2. Gate commands leak orphaned grandchildren — OPEN
+### 2. Gate commands leak orphaned grandchildren — DONE (0.89.0)
 `HANDOFF.md` ("the real hang"): 0.81.0's timeout bounds the hang but the grandchild survives,
 holding its port and memory against every later iteration. The proper fix is already in this
 repository — `health-probe.mjs` spawns detached and signals the **process group**. Gates do not.
 **Done when:** a tier-2 test with a deliberately leaked grandchild shows the group killed after
 timeout.
+
+**Landed, and not by detaching.** The group is found by *subtraction* — membership of the
+driver's own group sampled before the command and after the timeout. Detaching was measured and
+rejected: it costs the operator's Ctrl-C, trading a rare orphan for a common one. Tier 2 is 30
+pass, with a bystander case proving the sweep is a set difference and not a group signal.
+`DESIGN.md` §10 carries the reasoning and the three limits. **Residual, named:** a gate killed by
+`kill` to the driver rather than by the ceiling still leaks; that needs the free event loop item
+10 buys.
 
 ### 3. `release-check` refuses a bump that leaves the HANDOFF header behind — OPEN
 The header went stale by fourteen versions once, then again by three (0.86.0–0.88.0) directly

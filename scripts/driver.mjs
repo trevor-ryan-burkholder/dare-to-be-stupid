@@ -648,9 +648,16 @@ export function runGates(gates, options) {
     // cosmetic: this detail is copied into the brief the builder is handed. Told `exit 1` for
     // a suite that hung, a builder goes hunting a broken assertion that does not exist. The
     // gate still fails, because a gate that cannot finish is a gate that cannot run.
+    // A reaped list is named rather than swallowed. A gate that leaked a dev server and had it
+    // killed is a different diagnosis from one that merely ran long, and the pids are what an
+    // operator would otherwise have to go find in `ps`. Empty means the sweep ran and the gate
+    // left nothing behind, which is also worth saying.
+    const reaped = outcome.reaped ?? [];
+    const swept =
+      reaped.length === 0 ? '' : ` Killed ${reaped.length} leaked descendant(s) it left behind: ${reaped.join(', ')}.`;
     const detail =
       outcome.timedOut === true
-        ? `gate ${gate.name} did not finish within ${options.timeoutMs}ms and was killed. Nothing it printed is a result`
+        ? `gate ${gate.name} did not finish within ${options.timeoutMs}ms and was killed. Nothing it printed is a result.${swept}`
         : failureDetail(outcome);
     results.push({
       name: gate.name,
@@ -3041,16 +3048,126 @@ export function requiredIdsFor(prd) {
  * the field of every test double would be bookkeeping rather than safety. The real `shell`
  * always sets it, and `runDeploy` tests it for `true` rather than for truthiness.
  *
- * @typedef {{ ok: boolean, status: number, stdout: string, stderr: string, timedOut?: boolean }} ShellResult
+ * `reaped` is the pids of leaked descendants killed after a timeout (see `sweepLeakedGroup`).
+ * Optional for the same reason, and empty is different from absent: `[]` means the sweep ran
+ * and found nothing, absent means no sweep was possible.
+ *
+ * @typedef {{ ok: boolean, status: number, stdout: string, stderr: string, timedOut?: boolean, reaped?: number[] }} ShellResult
  */
 
 /**
+ * Every pid sharing this process's process group, or `null` when that cannot be established.
+ *
+ * `null` is load-bearing and is not an empty set. The caller uses this to decide what to
+ * **kill**, so an unreadable answer must mean "sweep nothing" rather than "nothing is there".
+ * The same reasoning as nothing-defaults-to-pass, pointed the other way: nothing defaults to
+ * killable.
+ *
+ * Windows has no process groups, so this returns `null` there and the sweep is a no-op — the
+ * same degradation `health-probe.mjs` already takes for its own group signal.
+ *
+ * `ps` is itself a child in this group and would appear in the second snapshot as a process
+ * that was not in the first. It is excluded by name rather than left to the `ESRCH` catch,
+ * because by the time we parse the output `execFileSync` has reaped it and its pid is free
+ * for reuse — a microsecond-wide window in which the catch would not fire and the kill would
+ * land on whatever inherited the number.
+ *
+ * @returns {Set<number> | null}
+ */
+function processGroupMembers() {
+  if (process.platform === 'win32') return null;
+  try {
+    const out = execFileSync('ps', ['-eo', 'pid=,pgid=,comm='], {
+      stdio: 'pipe',
+      encoding: 'utf8',
+      timeout: 10_000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    /** @type {{ pid: number, pgid: number, comm: string }[]} */
+    const rows = [];
+    for (const line of out.split('\n')) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 3) continue;
+      const pid = Number(parts[0]);
+      const pgid = Number(parts[1]);
+      if (!Number.isInteger(pid) || !Number.isInteger(pgid)) continue;
+      rows.push({ pid, pgid, comm: parts.slice(2).join(' ') });
+    }
+    const self = rows.find((row) => row.pid === process.pid);
+    if (self === undefined) return null;
+    return new Set(rows.filter((row) => row.pgid === self.pgid && row.comm !== 'ps').map((row) => row.pid));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Kill whatever joined this process group while a command was running, and report it.
+ *
+ * **The defect this closes** (`HANDOFF.md`, "the real hang"): `execFileSync`'s timeout signals
+ * the direct child and nothing else. A gate that backgrounds a dev server, a watcher or a test
+ * runner leaves that grandchild alive after the kill, holding its port and its memory against
+ * every later iteration — measured, with the grandchild still running after the timeout fired.
+ * `health-probe.mjs` has always done this properly for its own child by signalling a **process
+ * group**; gates never did.
+ *
+ * **Why the group is found by subtraction rather than by `detached: true`.** The obvious fix is
+ * to spawn each gate into its own group and signal that. It was measured and rejected: a
+ * detached child does not receive the `SIGINT` a terminal sends to its foreground process
+ * group, so Ctrl-C would stop reaching gates. That trades a rare orphan — one that only appears
+ * after a 45-minute ceiling — for a common one, on the operator's most-used control. `spawnSync`
+ * does honour `detached` (undocumented, and verified), so the option was available and is not
+ * taken.
+ *
+ * A leaked grandchild **inherits the driver's own process group**, because nothing detached it.
+ * So the membership of that group, sampled before the command and again after it, differs by
+ * exactly the command's survivors. No signals move, and Ctrl-C behaves as it always has.
+ *
+ * Called only on a **timeout**, which is narrower than it could be and deliberately so: the
+ * deploy starts a server and then probes it, so a sweep on the success path would kill the
+ * thing the smoke check is about to talk to.
+ *
+ * @param {Set<number> | null} before membership sampled before the command started
+ * @returns {number[]} pids killed, newest-arrival order not guaranteed
+ */
+function sweepLeakedGroup(before) {
+  if (before === null) return [];
+  const after = processGroupMembers();
+  if (after === null) return [];
+  /** @type {number[]} */
+  const killed = [];
+  for (const pid of after) {
+    if (pid === process.pid || before.has(pid)) continue;
+    try {
+      process.kill(pid, 'SIGKILL');
+      killed.push(pid);
+    } catch {
+      // Already gone between the snapshot and the signal. Not an error: the sweep's job is
+      // that nothing survives, not that it personally did the killing.
+    }
+  }
+  return killed;
+}
+
+/**
+ * Really shell out. Exported for tier 2 only.
+ *
+ * Every unit test drives the gate runners through an injected double, which is what makes the
+ * loop's decisions testable without spending anything — and is exactly why no unit test can
+ * see this function's behaviour. The orphan sweep is a claim about what the operating system
+ * does to processes after `execFileSync` gives up, so it can only be checked against real
+ * ones. `§11.1`'s argument, again: an assertion about the array you build says nothing about
+ * what the callee does with it.
+ *
  * @param {string} command
  * @param {string[]} args
  * @param {{ cwd: string, env?: Record<string, string | undefined>, input?: string, timeoutMs?: number }} options
  * @returns {ShellResult}
  */
-function shell(command, args, options) {
+export function shell(command, args, options) {
+  // Only sampled when a ceiling exists, because the sweep only runs when one fires. A caller
+  // with no timeout cannot time out, so the `ps` would be pure cost.
+  const before = options.timeoutMs === undefined ? null : processGroupMembers();
   try {
     const stdout = execFileSync(command, args, {
       cwd: options.cwd,
@@ -3072,6 +3189,11 @@ function shell(command, args, options) {
     const failure = /** @type {{ status?: number, code?: string, signal?: string, stdout?: string, stderr?: string, message: string }} */ (
       error
     );
+    // `ETIMEDOUT`, and nothing else, for the same reason the `timedOut` flag below uses it: a
+    // command that failed on its own merits took its children with it or never had any, and
+    // sweeping the group after an ordinary non-zero exit would kill processes this driver
+    // never started.
+    const timedOut = options.timeoutMs !== undefined && failure.code === 'ETIMEDOUT';
     return {
       ok: false,
       // A killed child reports `status: null`, so without the flag a timeout arrives here as
@@ -3085,7 +3207,10 @@ function shell(command, args, options) {
       // the first version of this line used it and silently never fired. `signal` is no good
       // either: a command that kills *itself* with SIGTERM reports `signal: 'SIGTERM'` and
       // must not be read as a timeout. The error code is the only exact discriminator.
-      timedOut: options.timeoutMs !== undefined && failure.code === 'ETIMEDOUT',
+      timedOut,
+      // Absent rather than empty when no sweep ran, so a reader can tell "swept, found
+      // nothing" from "never looked".
+      ...(timedOut ? { reaped: sweepLeakedGroup(before) } : {}),
     };
   }
 }

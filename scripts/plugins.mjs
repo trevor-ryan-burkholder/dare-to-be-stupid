@@ -24,7 +24,11 @@ import { execFileSync } from 'node:child_process';
  * driver's real `shell` always sets it, and every consumer tests it for `true` rather than for
  * truthiness.
  *
- * @typedef {{ ok: boolean, status: number, stdout: string, stderr: string, timedOut?: boolean }} RunResult
+ * `reaped` carries the pids of leaked descendants the real shell killed after a timeout
+ * (`sweepLeakedGroup` in `driver.mjs`). Optional, because every test double and
+ * `defaultRunner` omit it, and absent means no sweep was possible rather than nothing found.
+ *
+ * @typedef {{ ok: boolean, status: number, stdout: string, stderr: string, timedOut?: boolean, reaped?: number[] }} RunResult
  */
 /** @typedef {(command: string, args: string[], options: { cwd: string, timeoutMs?: number }) => RunResult} Runner */
 /**

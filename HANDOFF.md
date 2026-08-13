@@ -1,9 +1,9 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.88.0`. Measured at 0.88.0: `npm test` **1603 pass**, `npm run lint` and
-`npm run typecheck` clean, `npm run release-check` **ok**. `npm run test:integration` and
-`npm run test:live` last measured at 0.85.0 — **28 pass** and **20 of 20 across 6 files**
-respectively; treat those two counts as 0.85.0's until they are re-run.
+**State:** `main` at `0.89.0`. Measured at 0.89.0: `npm test` **1606 pass**,
+`npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
+`npm run release-check` **ok**. `npm run test:live` was last measured at **0.85.0** — 20 of 20
+across 6 files — and has not run since; treat that one count as 0.85.0's until it is re-run.
 
 **This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
 `package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
@@ -14,6 +14,47 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### Item 2 — the orphaned grandchild. DONE at 0.89.0, and the obvious fix was the wrong one
+
+**What was measured before anything was written**, because the fix this file had already named
+turned out to be a trap:
+
+| experiment | result |
+|---|---|
+| `execFileSync` + timeout, gate leaks a grandchild | grandchild **alive** after the kill — the open item, reproduced |
+| `spawnSync` with `detached: true` | **honoured**, though undocumented: the child's pgid equals its own pid |
+| detached + `kill(-pid)` after the timeout | grandchild **dead** — the named fix works |
+| `SIGINT` to the driver's foreground group, child **not** detached | grandchild **dies** |
+| `SIGINT` to the driver's foreground group, child **detached** | grandchild **SURVIVES** |
+
+The last row is why the named fix is not the one that shipped. Detaching each gate into its own
+process group buys a sweep after a 45-minute ceiling and **costs the operator's Ctrl-C**, which
+is the control they actually use. That is a rare orphan traded for a common one.
+
+**What shipped instead: subtraction.** A leaked grandchild inherits the driver's *own* process
+group, because nothing detached it. So sample the group before the command, sample it again
+after the timeout, and kill the difference. No signals move, Ctrl-C behaves exactly as it always
+has, and the sweep is exact rather than a blanket signal. `sweepLeakedGroup` and
+`processGroupMembers` in `driver.mjs`; `DESIGN.md` §10 carries the reasoning and the three
+deliberate limits (timeouts only, Windows no-op, unreadable group sweeps nothing).
+
+The killed pids are named in the gate's failure detail, because that string is copied verbatim
+into the builder's brief and a leak is a different diagnosis from a slow suite.
+
+**One finding from the test, worth more than the item.** The first version of the tier-2 test
+failed while the product was correct. It checked liveness with `process.kill(pid, 0)`, which
+**succeeds against a zombie** — a `SIGKILL`ed process whose parent has already exited stays in
+the pid table until something reaps it. Measured directly: `kill(0)` said alive for a pid `ps`
+was no longer listing at all, milliseconds apart. Any future test that asserts a process died
+must consult `ps` state, not `kill(0)`, or it will report a working sweep as a leak.
+
+**Not verified:** no live run has yet hit a gate ceiling with a real leaked server, so this is
+proved against a synthetic sleeper rather than against `npm run dev`. The operator-kill path is
+**not** covered and is named in `DESIGN.md` rather than implied — `kill` to the driver alone
+still leaks, and closing it needs item 10's free event loop.
+
+Gates: lint, typecheck, tier 1 **1606 pass**, tier 2 **30 pass** (was 28).
 
 ### Item 1 — the mutation gate's baseline message. CLOSED as already done at 0.87.0
 

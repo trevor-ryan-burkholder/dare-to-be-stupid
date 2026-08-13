@@ -397,10 +397,55 @@ describe('runGates', () => {
       });
       assert.equal(outcome.ok, false);
       assert.equal(outcome.results[0].ok, false);
+      // The double is a plain runner with no `reaped` field, which is the "no sweep was
+      // possible" case, and it must add nothing to the sentence.
       assert.equal(
         outcome.results[0].detail,
-        'gate test did not finish within 2700000ms and was killed. Nothing it printed is a result',
+        'gate test did not finish within 2700000ms and was killed. Nothing it printed is a result.',
       );
+    });
+
+    // The orphan sweep, from the reporting side. Whether processes actually die is tier 2's
+    // question (`test/integration/gate-orphan.integration.test.mjs`) — this is only that the
+    // driver says so, because a gate failure detail is copied verbatim into the brief the
+    // builder is handed, and "killed after 45 minutes" and "killed after 45 minutes, and it
+    // had left a server running" are different diagnoses.
+    it('names the leaked descendants it killed, when there were any', () => {
+      const outcome = runGates([{ name: 'e2e', command: ['npx', 'playwright', 'test'], required: true }], {
+        cwd: '/repo',
+        timeoutMs: 1000,
+        run: () => ({ ok: false, status: 1, stdout: '', stderr: '', timedOut: true, reaped: [4242, 4243] }),
+      });
+      assert.equal(
+        outcome.results[0].detail,
+        'gate e2e did not finish within 1000ms and was killed. Nothing it printed is a result. ' +
+          'Killed 2 leaked descendant(s) it left behind: 4242, 4243.',
+      );
+    });
+
+    it('says nothing about a sweep that ran and found nothing, rather than reporting zero', () => {
+      // An empty sweep is the ordinary case and a sentence for it would be noise in every
+      // timeout detail the builder ever reads.
+      const outcome = runGates([{ name: 'e2e', command: ['npx', 'playwright', 'test'], required: true }], {
+        cwd: '/repo',
+        timeoutMs: 1000,
+        run: () => ({ ok: false, status: 1, stdout: '', stderr: '', timedOut: true, reaped: [] }),
+      });
+      assert.equal(
+        outcome.results[0].detail,
+        'gate e2e did not finish within 1000ms and was killed. Nothing it printed is a result.',
+      );
+    });
+
+    it('does not report a sweep for a gate that failed on its own merits', () => {
+      // A non-zero exit is not a timeout, and the sweep does not run for one. A gate that
+      // simply failed must not read as one that leaked.
+      const outcome = runGates([{ name: 'lint', command: ['npm', 'run', 'lint'], required: true }], {
+        cwd: '/repo',
+        timeoutMs: 1000,
+        run: () => ({ ok: false, status: 1, stdout: 'two problems', stderr: '', timedOut: false }),
+      });
+      assert.equal(outcome.results[0].detail, 'two problems');
     });
 
     it('keeps running the gates after the one that hung', () => {
