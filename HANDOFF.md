@@ -4,12 +4,15 @@
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
-**`npm run test:live` last read 26 of 27, and the one failure was real.** It is written up below
-under 0.106.0; the parser defect it exposed is fixed and the same case now runs as a tier 1
-fixture. **The suite has not been re-run whole since that fix.** What was run is the repaired file
-alone: **five times before the fix — four passing, one failing — and six times after, all six
-passing.** Those are different measurements and the difference is the evidence; do not let them
-collapse into "it was run a few times".
+**`npm run test:live` at 0.110.0: 27 of 27 across 11 files, 0 failures.** The suite has now been
+run whole since the 0.106.0 fix, and the caveat this line carried for four versions is closed.
+
+**Keep the history, because it is the evidence and not a footnote.** The suite read **26 of 27**
+before 0.106.0 and **the one failure was real** — a builder emitting a correct, cited assumption
+as a bare object, which the parser dropped where nothing could count it. The repaired file was
+then run alone **five times before the fix (four passing, one failing) and six times after (all
+six passing)**, and now the whole suite agrees. Those are three different measurements; do not let
+them collapse into "it was run a few times".
 
 **This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
 `package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
