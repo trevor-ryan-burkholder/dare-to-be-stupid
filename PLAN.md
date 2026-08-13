@@ -98,12 +98,23 @@ needs rewriting rather than defending — which is why this is an experiment, no
 **Done when:** a run records a quarantined element blocking `SHIPPED`, or the path is shown
 unreachable and the design text is corrected.
 
-### 7. First armed oracle run — OPEN, **PREPARED** (`DOGFOOD.md` operator queue; ordered first)
+### 7. First armed oracle run — DONE (run `oracle1`, BUDGET, oracle judged 19/19)
 A3 is BUILT (0.70.0–0.72.0) and armed by nobody. Enable `oracle.enabled` on a CLI-shaped target
 (case-G class). Under test: false-failure rate and the dispute path — the quarantine mechanism
 was designed before the happy path on purpose; this is the run that says whether that was right.
 **Done when:** a run completes with oracle cases judged and the outcome recorded in
 `HANDOFF.md`, whichever way it goes.
+
+**Done.** Ended `BUDGET` at 18.06M/15M tokens, $13.83. The oracle armed, judged, and reported
+**19 of 19 passed** — false-failure rate **0**, the outcome R13 feared most and did not get. The
+tree is genuinely correct on run 12's inputs (bigint numerator; `mean` of `1e16,1,-1e16` is
+`1/3`).
+
+**The finding is a measurement.** All 19 cases assert exit codes only — correctly, per the
+template. Planting run 12's exact defect into a copy of the tree produces `{"mean": null}` at exit
+0 and **all 19 cases still pass**. The held-out suite cannot see the defect class that defines
+every headline failure this project has shipped. **Item 14 is the missing half, not an
+enhancement.** Dispute/quarantine remains unexercised — nothing disputed a case.
 
 ### 8. R14 — the panel versus one reviewer at equal compute — OPEN, **PREPARED** (`DOGFOOD.md` operator queue)
 Config-only (`reviewers`, `ownership`, `effort`), run 6-vs-7 method. Evidence points both ways:

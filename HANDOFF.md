@@ -42,7 +42,52 @@ a list that never had it.
 execution and invisible to 1687 unit tests — the `.hypothesis/` cache, the ssh rate-limit, and
 this. A brief is output nobody asserts on, and it is handed to the one reader who will act on it.
 
-### Item 7, interim — A3 armed for the first time, and its authoring rule makes it blind to the defect class this project keeps shipping
+### Item 7 — DONE. A3's first armed run, and the suite is provably blind to wrong answers
+
+**Run `oracle1`, 13 August 2026.** Run 8's exact PRD, `oracle.enabled: true` the only moved
+variable. Ended **BUDGET** — `18,062,568 of 15,000,000` tokens, **$13.83**, 1 iteration recorded,
+53 ids passing. The 3.06M overshoot is the documented property, not a defect: a child's cost is
+unknowable until it returns, and iteration 2's builder alone spent 9.5M.
+
+**The oracle armed, ran, and judged: `19 held-out case(s) passed`.** It never appears in the log
+because a passing gate logs nothing — the silence was mine to misread, not a fault. **False
+failures: 0 of 19**, which is the outcome R13 feared most and did not get.
+
+**The binary it judged is genuinely good.** Verified by execution, not by the panel: the builder
+used a **bigint numerator** for the mean, and the tree answers `0.3333333333333333` for
+`1e16, 1, -1e16` and `1e+308` for `1e308, 1e308` — the two inputs that defeated run 12.
+
+**And now the finding, which is a measurement rather than an argument.** All 19 cases assert
+`expectExit` only; none asserts `expectStdout`. That is `templates/oracle-author.md` working as
+written — *"if the specification does not fix the byte-for-byte output … assert only
+`expectExit`"* — and a PRD almost never fixes JSON formatting. To find out what that costs, the
+tree was copied and its `meanToNumber(numerator, exponent, …)` replaced with run 12's exact naive
+accumulation, `numbers.reduce((a, b) => a + b, 0) / count`:
+
+```
+1e308, 1e308  ->  {"mean": null}     exit 0
+19 held-out case(s) passed
+```
+
+**A binary that reports `null` as the mean of two finite numbers, at a success exit code, passes
+the entire held-out suite.** That is `DoD-6-adversarial-input`'s exact question — *does this
+program ever confidently report a wrong answer* — and the suite built to answer it independently
+cannot. Every headline defect this project has shipped is in that class: run 8's ship discarding
+data at exit 0, run 9's statistics over half its input, run 12's `mean: 0`, improve3's confident
+JSON on unreadable input.
+
+**Item 14 is therefore not an enhancement, it is the missing half.** A metamorphic relation
+asserts *between* runs — permute and the mean is unchanged, scale by k and it scales by k — so it
+needs no byte-for-byte format and slips the very rule that produced nineteen exit-code
+assertions. The sabotage above fails a permutation-invariance relation instantly.
+
+**Also measured:** oracle authoring cost **314s / 93,561 tokens**, and the builder prompt grew
+**17,567 → 42,372 characters** between iterations 1 and 2 — §3.9's silent degradation, visible
+because `childStartLine` prints the count every time.
+
+**Not verified:** the dispute and quarantine paths. Nothing disputed a case, so the mechanism
+designed before the happy path is still unexercised. A run with a *false* oracle case remains
+owed.
 
 **The run is still in flight; this finding does not depend on how it ends.** Phase 0b authored
 **19 held-out cases in 314s for 93,561 tokens** from run 8's exact PRD — the first time A3 has
