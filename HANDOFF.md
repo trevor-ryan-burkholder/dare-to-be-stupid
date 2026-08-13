@@ -10,6 +10,65 @@ line was written; treat its status as unknown rather than green.
 is the first line anyone reads and it was the least true. If you change the version, change this
 line in the same commit.
 
+## THE TOP BLOCKER, named by the operator: a run hangs for hours and nothing notices
+
+**13 August 2026, stated directly:** *"when there's a run it'll hang sometimes and sit there for
+hours until I say something. You should always catch a stalled or stale run."*
+
+This is not a new observation, it is the one this file has been circling. §"the panel is three
+whole-repository reads" already records the mechanism: **children run under `execFileSync`, which
+blocks the event loop for the entire call.** No heartbeat can be emitted while one is in flight,
+so *hung* and *working* are the same picture for as long as it takes. Run 10's builders averaged
+470s each and its slowest race candidate ran 651s, which means a nine-minute silence is normal and
+an infinite one looks identical to it.
+
+**What is bounded today, after 0.79.0:** the deploy command (10 min), the smoke probe (own
+deadline), the health probe (`probeTimeoutMs`, 30s). **What is bounded by nothing:** every
+`claude -p` child, and every gate command. `tokenCeiling` and `costCeiling` only bind a child that
+*returns* — they are accounting, not a watchdog, and this is the distinction that makes the
+ceilings read as protection when they are not.
+
+Being worked now. The mechanism is the one 0.79.0 just proved against a real binary: `shell` takes
+a `timeoutMs` and reports `ETIMEDOUT` distinctly from an ordinary failure.
+
+## 0.79.0 — the deploy command was the one call in the driver bounded by nothing
+
+Recorded here as unfixed on 13 August and found by writing rather than by running. Now fixed:
+`deploy.timeoutMs`, ten minutes by default, validated as a positive integer **even while the
+section is disabled**, because a timeout that was written down and is nonsense is wrong the moment
+it is written and ship time is the worst moment to discover it.
+
+The deploy body moved out of the effects closure into an exported `runDeploy`, so an injected
+shell can drive it. Until now the only way to exercise it was to compose it by hand, and the one
+thing nobody composed by hand was a command that never returns.
+
+**Tier 2 earned its keep again, immediately, and this is the finding worth keeping.** The first
+implementation keyed the timeout on `error.killed` — which is what the *asynchronous* child_process
+API sets. `execFileSync` leaves it `undefined`, so the detector was dead code that could never
+fire, and **the unit tests could not see it**: they assert the *reporting*, which was correct, not
+the *detection*, which was not. Measured against a real `execFileSync` rather than assumed:
+
+| case | `code` | `signal` | `status` |
+|---|---|---|---|
+| timeout | **`ETIMEDOUT`** | `SIGTERM` | `null` |
+| ordinary non-zero exit | `undefined` | `null` | `7` |
+| command kills **itself** | `undefined` | **`SIGTERM`** | `null` |
+| missing binary | `ENOENT` | — | `null` |
+
+**So `signal` is not a discriminator either.** A deploy script that terminates itself would have
+been reported as a hang, sending an operator to hunt an `ssh` that was never there. Only
+`ETIMEDOUT` separates them, and there is a tier-2 test for that specific false positive.
+
+Third time this project has learned the same lesson: **an assertion about the arguments you build
+says nothing about what the callee does with them.** §11.1 exists for this and was right again.
+
+`ShellResult.timedOut` is optional rather than required — seven existing doubles inject a shell for
+`changedSince`'s git seam, which cannot hang on a remote machine. The real `shell` always sets it
+and `runDeploy` tests it for `true`, not for truthiness.
+
+Gates: lint, typecheck, **tier 1 1539 pass, tier 2 23 pass, tier 3 19 of 19 pass** — tier 3 run
+because `spawnClaude` defaults to this `shell`.
+
 ## Verified from run 10's artifacts: the advisory pipeline works end to end
 
 Never recorded before, and checked against produced artifacts rather than assumed. §4.1's whole
