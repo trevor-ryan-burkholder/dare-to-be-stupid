@@ -1,0 +1,239 @@
+/**
+ * A3 — the held-out oracle (`BRIEF.md` A3, `COMPLETION.md` Phase 1).
+ *
+ * **Why this exists, in one measurement.** Dogfood run 12 shipped a binary reporting `mean: 0`
+ * where the true mean is 1/3, at exit 0. The cold reviewer that passed it was not lazy: it wrote
+ * an independent reference parser and summariser *from the PRD and data model* and differentially
+ * fuzzed **110,877 cases** against it. It still missed the defect, and it could not have found
+ * it — the reference was derived from the same documents, so a property those documents never
+ * mention (floating-point associativity) is invisible to *both* implementations equally.
+ *
+ * **A differential fuzz against a reference built from the same spec is not an independent
+ * oracle. It is the same assumption, twice.** Every other check in this design is downstream of
+ * the builder: the gates run what the builder wrote, the ratchet protects ids the builder named,
+ * and the mutation gate mutates the builder's source against the builder's tests. This is the one
+ * artifact written *before* any code exists and never shown to the thing it judges.
+ *
+ * **Held out means not supplied, and the distinction is §6.1's.** The cases live under `.dare/`,
+ * so §6's positional rule makes them driver-owned — a builder may not write them. They are also
+ * never rendered into a brief, a system prompt or a review prompt. That second half is a
+ * *discipline*, not a barrier: a builder executing arbitrary code can read the file, and this
+ * module does not pretend otherwise. Against satisficing — the threat model this whole design
+ * aims at — an artifact the builder was never handed is entirely sufficient, because it cannot
+ * build to a test it has not been shown.
+ *
+ * **A3 was deferred on the grounds that "the builder would own whether the gate can fail".** That
+ * objection was answered for Stryker at §4.4 by writing the threshold into `.dare/` and passing
+ * it positionally. The same move applies here, and the deferral no longer holds.
+ */
+
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+
+/** @typedef {{ path: string, content: string }} OracleFile */
+/**
+ * @typedef {{
+ *   id: string, files: OracleFile[], argv: string[],
+ *   expectExit: number | null, expectStdout: string | null, why: string
+ * }} OracleCase
+ */
+
+/** The store, driver-owned by §6's positional rule. */
+export const ORACLE_FILE = 'oracle.json';
+
+/** Where cases are materialised. Inside `.dare/` so a builder cannot pre-create the inputs. */
+const SCRATCH = 'oracle-scratch';
+
+/** Thrown when the oracle cannot be trusted. Never caught into a pass. */
+export class OracleError extends Error {
+  /** @param {string} message */
+  constructor(message) {
+    super(message);
+    this.name = 'OracleError';
+  }
+}
+
+/**
+ * Validate one case. Every failure here is a refusal, never a skip.
+ *
+ * A case with no expectation at all is the dangerous shape: it executes, asserts nothing, and
+ * reports a pass — which is exactly the "test that cannot fail" the mutation gate exists to
+ * catch, reproduced inside the check meant to be independent of it.
+ *
+ * @param {unknown} value
+ * @param {number} index
+ * @returns {OracleCase}
+ */
+function requireCase(value, index) {
+  const where = `oracle case ${index}`;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new OracleError(`${where} is not an object`);
+  }
+  const c = /** @type {Record<string, unknown>} */ (value);
+  const id = typeof c.id === 'string' && c.id.trim() !== '' ? c.id : null;
+  if (id === null) throw new OracleError(`${where} has no id`);
+  if (!Array.isArray(c.argv) || c.argv.some((a) => typeof a !== 'string')) {
+    throw new OracleError(`${id} has no argv, or an argv entry that is not a string`);
+  }
+  const files = Array.isArray(c.files) ? c.files : [];
+  for (const file of files) {
+    const f = /** @type {Record<string, unknown>} */ (file);
+    if (typeof f?.path !== 'string' || typeof f?.content !== 'string') {
+      throw new OracleError(`${id} has a file entry without a string path and content`);
+    }
+    // A case that writes outside the scratch directory is refused rather than sanitised: an
+    // oracle able to scribble on the tree it judges is not an oracle.
+    if (path.isAbsolute(f.path) || f.path.split(/[\\/]/).includes('..')) {
+      throw new OracleError(`${id} names a file outside its scratch directory: ${f.path}`);
+    }
+  }
+  const expectExit = typeof c.expectExit === 'number' && Number.isInteger(c.expectExit) ? c.expectExit : null;
+  const expectStdout = typeof c.expectStdout === 'string' ? c.expectStdout : null;
+  if (expectExit === null && expectStdout === null) {
+    throw new OracleError(`${id} expects nothing: a case that asserts neither an exit code nor stdout cannot fail`);
+  }
+  return {
+    id,
+    files: files.map((f) => ({ path: String(/** @type {OracleFile} */ (f).path), content: String(/** @type {OracleFile} */ (f).content) })),
+    argv: /** @type {string[]} */ (c.argv),
+    expectExit,
+    expectStdout,
+    why: typeof c.why === 'string' ? c.why : '',
+  };
+}
+
+/**
+ * Read the cases a child emitted, from the last fenced json block.
+ *
+ * Last-to-first, for `parseCapabilityDeclaration`'s reason: a block echoed from the instructions
+ * must never win over the answer.
+ *
+ * @param {string} text
+ * @returns {OracleCase[]}
+ */
+export function parseOracleCases(text) {
+  const blocks = [...text.matchAll(/```(?:json)?\s*\n([\s\S]*?)```/g)].map((m) => m[1]);
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    /** @type {unknown} */
+    let parsed;
+    try {
+      parsed = JSON.parse(blocks[i]);
+    } catch {
+      continue;
+    }
+    const list = Array.isArray(parsed)
+      ? parsed
+      : /** @type {Record<string, unknown>} */ (parsed)?.cases;
+    if (!Array.isArray(list)) continue;
+    if (list.length === 0) throw new OracleError('the oracle author returned an empty case list');
+    return list.map(requireCase);
+  }
+  throw new OracleError('no parseable json block of oracle cases was returned');
+}
+
+/**
+ * @param {string} dareDir
+ * @param {OracleCase[]} cases
+ * @returns {string} the path written
+ */
+export function writeOracle(dareDir, cases) {
+  if (cases.length === 0) throw new OracleError('refusing to write an empty oracle');
+  mkdirSync(dareDir, { recursive: true });
+  const file = path.join(dareDir, ORACLE_FILE);
+  writeFileSync(file, `${JSON.stringify({ version: 1, cases }, null, 2)}\n`, 'utf8');
+  return file;
+}
+
+/**
+ * @param {string} dareDir
+ * @returns {OracleCase[]}
+ */
+export function readOracle(dareDir) {
+  const file = path.join(dareDir, ORACLE_FILE);
+  if (!existsSync(file)) throw new OracleError('no held-out cases: the oracle was never authored');
+  /** @type {unknown} */
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(file, 'utf8'));
+  } catch (error) {
+    throw new OracleError(`the oracle store will not parse: ${/** @type {Error} */ (error).message}`);
+  }
+  const list = /** @type {Record<string, unknown>} */ (parsed)?.cases;
+  if (!Array.isArray(list) || list.length === 0) throw new OracleError('the oracle store holds no cases');
+  return list.map(requireCase);
+}
+
+/**
+ * Judge one executed case.
+ *
+ * Both expectations are checked when both are present, and stdout is compared after trimming
+ * trailing whitespace only — a missing newline is a formatting difference, and failing a correct
+ * program over one would be the unsatisfiable-gate defect this repository keeps rediscovering.
+ *
+ * @param {OracleCase} expected
+ * @param {{ status: number, stdout: string }} actual
+ * @returns {{ ok: boolean, detail: string }}
+ */
+export function judgeOracleCase(expected, actual) {
+  if (expected.expectExit !== null && actual.status !== expected.expectExit) {
+    return { ok: false, detail: `${expected.id}: expected exit ${expected.expectExit}, got ${actual.status}` };
+  }
+  if (expected.expectStdout !== null && actual.stdout.trimEnd() !== expected.expectStdout.trimEnd()) {
+    return {
+      ok: false,
+      detail: `${expected.id}: stdout differs. expected ${JSON.stringify(expected.expectStdout.trimEnd().slice(0, 200))}, got ${JSON.stringify(actual.stdout.trimEnd().slice(0, 200))}`,
+    };
+  }
+  return { ok: true, detail: `${expected.id}: as expected` };
+}
+
+/**
+ * Run every held-out case against the built artifact.
+ *
+ * @param {{
+ *   dareDir: string, root: string, command: string[],
+ *   run: (command: string, args: string[], options: { cwd: string }) =>
+ *     { ok: boolean, status: number, stdout: string, stderr: string },
+ * }} options
+ * @returns {{ name: string, ok: boolean, status: number, detail: string }}
+ */
+export function runOracle(options) {
+  /** @type {OracleCase[]} */
+  let cases;
+  try {
+    cases = readOracle(options.dareDir);
+  } catch (error) {
+    // Missing, unparseable or empty all fail. An oracle that cannot be read is the one shape
+    // that reads exactly like an oracle everything passed.
+    return { name: 'oracle', ok: false, status: 1, detail: /** @type {Error} */ (error).message };
+  }
+  const scratch = path.join(options.dareDir, SCRATCH);
+  /** @type {string[]} */
+  const failures = [];
+  try {
+    for (const testCase of cases) {
+      rmSync(scratch, { recursive: true, force: true });
+      mkdirSync(scratch, { recursive: true });
+      for (const file of testCase.files) {
+        const target = path.join(scratch, file.path);
+        mkdirSync(path.dirname(target), { recursive: true });
+        writeFileSync(target, file.content, 'utf8');
+      }
+      const [command, ...fixed] = options.command;
+      const result = options.run(command, [...fixed, ...testCase.argv], { cwd: scratch });
+      const verdict = judgeOracleCase(testCase, result);
+      if (!verdict.ok) failures.push(verdict.detail);
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+  if (failures.length > 0) {
+    return {
+      name: 'oracle',
+      ok: false,
+      status: 1,
+      detail: `${failures.length} of ${cases.length} held-out case(s) failed - ${failures.join('; ')}`,
+    };
+  }
+  return { name: 'oracle', ok: true, status: 0, detail: `${cases.length} held-out case(s) passed` };
+}
