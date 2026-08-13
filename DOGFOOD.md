@@ -243,6 +243,20 @@ scenario dotnet-api
 /dare "A small HTTP service that stores and returns short notes, in C#."
 ```
 
+**Staged and verified ready, 13 August, everything but the launch.** `dotnet 8.0.423` present;
+`~/dare-dogfood/dotnet-api` initialised with a git repo and a `.dare/`; `schemathesis` present at
+`~/.local/bin`, which matters because a .NET **API** arms R18's gate — the first time that gate
+will run outside a fixture. The adapter declines `types`, `e2e` and `mutation` **by name**, so
+none of those can fail for the wrong reason.
+
+**Budgeted at 60M / \$80 / 8 iterations, revised up from 18M / \$30 / 6 before launch.** 18M was
+staged earlier the same day, *before* the afternoon's measurement that an iteration costs 5–9M and
+that three separate runs given 15M all died at iteration 2 with findings still being produced. 18M
+buys two or three iterations, which is enough to prove TRX extraction and the adapter resolve, and
+**not** enough for a panel to converge on anything. Since the point of this case is the adapter
+"end to end in anger", it gets enough rope to be angry with. It is still well under the 100–150M a
+plausible ship needs, because a ship is not what this case is for.
+
 **This is the highest-information run on the page**, because more of it is untested than
 anything else. Watch four things specifically:
 
