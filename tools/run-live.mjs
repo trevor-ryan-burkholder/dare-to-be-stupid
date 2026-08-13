@@ -28,7 +28,12 @@ import process from 'node:process';
 
 const separator = path.delimiter;
 
-/** Entries npm injected, which the operator's shell would never have. */
+/**
+ * Entries npm injected, which the operator's shell would never have.
+ *
+ * @param {string} entry
+ * @returns {boolean}
+ */
 const injected = (entry) => entry.split(/[\\/]/).includes('node_modules');
 
 const cleaned = (process.env.PATH ?? '')
