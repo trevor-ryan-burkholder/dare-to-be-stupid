@@ -136,7 +136,70 @@ has ever deployed to a real droplet** — the ssh half is argv nobody has run. T
 the .NET adapter is treated: correct by construction, unverified in the world. The first real use
 should be a throwaway box, watched.
 
-## Queue item 1 — worktree racing. Attempt 1 failed to arm; the reason is a real constraint. 13 August 2026
+## Queue item 1 — racing EXECUTED live, and the winner cannot land. 13 August 2026
+
+**The first live race this project has ever run.** `~/dare-logs/race2.log`, segment 3, on
+`~/dare-dogfood/race1` with `race.enabled: true, n: 3, after: 1, maxIterations: 10`.
+
+**What actually happened, from the log:**
+
+```
+builder: returned after 169s, 1616722 tokens
+builder: returned after 224s, 2012851 tokens
+builder: returned after 651s, 3822352 tokens
+race: 2 candidates passed every gate; candidate 1 won on the smallest diff
+      (2250 line(s) across 4 file(s)); error: Your local changes to the following
+      files would be overwritten by merge:
+	docs/architecture.md
+Please commit your changes or stash them before you merge.
+Aborting
+```
+
+**What worked, and it is most of the mechanism:**
+
+- **Three real children spawned**, sequentially, 169s / 224s / 651s, each on an identical
+  18,071-character brief — one brief per candidate, as §13.6 specifies.
+- **Each was gated independently.** Two of three passed every gate; one did not and was
+  disqualified rather than ranked, which is the "no vote" rule.
+- **The winner was chosen on real numbers** — smallest diff, 2,250 lines across 4 files. The
+  tie-break ran on measured churn, not on an opinion, and no cold chooser was involved.
+- **Worktree cleanup worked.** `git worktree list` afterwards shows only the main tree. The
+  leaked-worktree failure §13.6 warns about — one abandoned race breaking every later race — did
+  not occur.
+
+**What is broken, and it is fatal to the feature:**
+
+`applyWinner`'s `git merge --ff-only` **ran against a dirty main working tree and git refused.**
+The blocking file was `docs/architecture.md`; `git status` at that moment also showed
+`docs/api-contract.md`, `e2e/wc2.spec.ts`, `src/bin.ts` modified and `.stryker-tmp/` untracked.
+
+**This is not bad luck, it is the normal state of the tree.** A race is armed by a *stalled*
+iteration, and a stalled iteration is one whose work was not committed — the driver commits at
+`closeIteration`, so at the moment the race lands, the main tree still carries whatever the
+previous builder wrote plus any gate debris. **Racing therefore cannot land a winner in the
+situation it is designed to be used in.** The design's own promise — *"the main tree has not
+moved, so the merge is a pointer move"* — is false: the main tree has not *committed*, which is a
+different thing, and `--ff-only` cares about the working tree, not just the ref.
+
+The run did not fail: it logged the error and continued into segment 4 with an ordinary builder,
+so the cost is a wasted race (3 builders, ~7.4M tokens) rather than a dead run. **That is the
+worst shape for a defect — expensive, silent, and indistinguishable from a race that simply had
+no winner** unless you read the line.
+
+**NEEDS REVIEW — the fix is a design decision, not a patch.** `applyWinner` could commit or stash
+the main tree before merging, but *what* it is committing is the losing builder's work, and
+committing that silently would put unreviewed changes on the branch the winner is about to
+fast-forward. Cleaning the tree instead discards work the ratchet has not judged. Neither is
+obviously right, and I have not built either — this was not a build session.
+
+**Also observed:** attempt 1 (`race1.log`, `after: 2`, `maxIterations: 6`) never armed, and the
+reason is a constraint worth keeping. `shouldRace` refuses when fewer than two iterations remain —
+*"a race needs one to run and one to land the winner"* — so `after: 2` in a six-iteration budget
+leaves a single two-iteration window in which both stalls must land. Combined with
+`recordProgress` resetting the counter whenever the ratchet grows, a converging run never arms it.
+**The rule: `maxIterations >= race.after + 3`, and the stall has to arrive early.**
+
+
 
 **Racing still has not executed with a live builder.** Attempt 1 (`~/dare-logs/race1.log`,
 `~/dare-dogfood/race1`, `race.enabled: true, n: 3, after: 2, maxIterations: 6`) never armed it,
