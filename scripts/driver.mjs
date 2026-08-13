@@ -1829,7 +1829,7 @@ export function driveRun(options) {
  * Found by reading a real repository's `git ls-files .dare` before deliberately triggering a
  * hard reset. Both files were tracked there.
  */
-const DARE_IGNORED_PATHS = [
+export const DARE_IGNORED_PATHS = [
   '.dare/state.json',
   '.dare/lessons.json',
   '.dare/briefs/',
@@ -1842,6 +1842,10 @@ const DARE_IGNORED_PATHS = [
   '.dare/pins.json',
   '.dare/assumptions.json',
   '.dare/review.json',
+  // Added at 0.68.0 and its ignore entry forgotten until 0.77.0, which is §4.3's defect
+  // reproduced by the person who documented it: an artifact tracked by git is restored by
+  // `git reset --hard`, so the record of how a run ended would be replaced by an older run's.
+  '.dare/outcome.json',
   // Not `.dare/` state, and here for a reason measured in dogfood run 4. The operator redirects
   // the run's output into the repository — `DOGFOOD.md` said to — so `git add -A` tracked it, and
   // the hard reset in iteration 2 **reverted the log to its state at `lastGoodCommit`**. That

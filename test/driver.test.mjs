@@ -53,6 +53,9 @@ import {
   assertOwnershipCovers,
   claudeArgs,
   formatGateFailure,
+  DARE_IGNORED_PATHS,
+  OUTCOME_FILE,
+  REVIEW_RECORD,
   isColdPhase,
   combinePanel,
   inspectCiWorkflows,
@@ -3599,6 +3602,33 @@ describe('isColdPhase and --safe-mode', () => {
       const settings = JSON.parse(args[args.indexOf('--settings') + 1]);
       const guarded = Array.isArray(settings.hooks?.PreToolUse) && settings.hooks.PreToolUse.length > 0;
       assert.equal(guarded || args.includes('--safe-mode'), true, `${phase} has neither guard nor isolation`);
+    }
+  });
+});
+
+describe('every .dare artifact the driver writes is ignored by git', () => {
+  // §4.3: the pin store was tracked once, and a `git reset --hard` restoring an older copy
+  // silently discards a pin earned since that commit. The all-or-nothing *check* was fixed then;
+  // the *list* is still maintained by hand, and at 0.68.0 it drifted again — outcome.json was
+  // added without its entry, by the person who had documented the hazard that morning.
+  //
+  // So the list is asserted against the constants the writers actually use. An artifact whose
+  // name lives in a constant cannot be added without this failing.
+  it('covers every named artifact constant', () => {
+    for (const name of [OUTCOME_FILE, REVIEW_RECORD]) {
+      assert.equal(
+        DARE_IGNORED_PATHS.includes(`.dare/${name}`),
+        true,
+        `.dare/${name} is written by the driver and would be tracked, so a reset would restore an older copy`,
+      );
+    }
+  });
+
+  it('does not ignore the operator-owned files, which are theirs to commit', () => {
+    // config.json is edited by the operator outside a run and is reasonable to version. The rule
+    // is about artifacts the *driver* writes and the ratchet could roll back, not about .dare/.
+    for (const theirs of ['.dare/config.json', '.dare/capabilities.json']) {
+      assert.equal(DARE_IGNORED_PATHS.includes(theirs), false, `${theirs} is the operator's to track`);
     }
   });
 });
