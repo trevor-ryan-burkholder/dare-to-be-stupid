@@ -186,7 +186,7 @@ race worktree, which `HANDOFF.md` records as never exercised and which **still d
 cannot break the race mechanism, but the origin's precondition is unmet and is now item 13's
 residue rather than being quietly dropped.
 
-### 14. R17 — metamorphic relations in the oracle — OPEN, **BLOCKED on item 7, and item 7 has now shown it is the point**
+### 14. R17 — metamorphic relations in the oracle — DONE (0.100.0)
 **Item 7's interim finding promotes this from a prediction to a measured requirement.** The first
 armed oracle authored 19 cases and **all 19 assert exit codes only** — correctly, because
 `oracle-author.md` instructs exit-only whenever the spec does not fix byte-for-byte output, which
@@ -198,6 +198,14 @@ Run 12's defect class: assert relations between runs (permute, scale, duplicate,
 identity-merge), no reference implementation, no "same assumption twice." Schema extension in
 `oracle.mjs` plus a section in `templates/oracle-author.md`. Ordered after item 7 so relation
 cases inherit a validated harness.
+
+**Done, and built the same day item 7 unblocked it.** `relation: { kind, files, argv }` on any
+case — a second real invocation judged against the first, with `same-stdout`, `same-exit` and
+`differs`; the last is the deny path, because a constant-printing program satisfies every
+same-stdout relation. Fail-closed on unknown kinds, missing argv and scratch escapes. The
+template teaches all five shapes with a worked permutation example that a unit test parses *and*
+verifies is a real permutation. **Tier 3 confirmed a live child writes relation cases: 27 of 27.**
+**Not verified:** no run has had a relation judge real code yet.
 
 ### 15. R18 — the API-shaped oracle — DONE (0.94.0), the dry-run half
 The `docs` gate already mandates an API contract for `api` projects; make the machine-readable

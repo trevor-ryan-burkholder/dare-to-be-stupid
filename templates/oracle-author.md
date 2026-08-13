@@ -75,5 +75,59 @@ Rules the parser enforces, so a case breaking one is discarded and your effort w
   then **assert only `expectExit`** rather than guessing a format. Guessing a format is how you
   fail a correct implementation.
 
+## Relations — how to assert a wrong *answer*, not just a wrong exit code
+
+**Read this before you decide a case can only assert `expectExit`.** The rule above is real —
+guessing an output format fails correct programs — but it has a measured cost. The first run that
+ever armed this suite authored nineteen cases, every one asserting an exit code alone, all
+correctly by that rule. Planting a classic floating-point accumulation defect into the program
+those cases judged made it print `{"mean": null}` for two ordinary finite numbers, at exit 0, and
+**all nineteen cases still passed.**
+
+A **relation** escapes the trap, because it never names an output. It asserts how *two* runs of
+the program relate to each other, so it holds whatever formatting the program chooses:
+
+```json
+{
+  "id": "R-1",
+  "files": [{ "path": "in.csv", "content": "v\n1e16\n1\n-1e16\n" }],
+  "argv": ["in.csv"],
+  "relation": {
+    "kind": "same-stdout",
+    "files": [{ "path": "in.csv", "content": "v\n1e16\n-1e16\n1\n" }],
+    "argv": ["in.csv"]
+  },
+  "why": "PRD-1.1: a column summary does not depend on row order. Reordering the same three values must not change the output. A running sum that loses precision answers 0 for one order and 0.333 for the other."
+}
+```
+
+`kind` is one of:
+
+| kind | holds when | catches |
+|---|---|---|
+| `same-stdout` | both runs print the same thing | order-dependence, accumulation error, anything that should be invariant |
+| `same-exit` | both runs exit the same way | an error path that depends on something it should not |
+| `differs` | the two runs print **different** things | a program that ignores its input and prints a constant |
+
+**The five shapes worth reaching for**, in rough order of how often they find something:
+
+1. **Permute** — reorder the rows. A summary must not move. `same-stdout`.
+2. **Duplicate** — repeat the whole input. Anything order- and count-independent must not move;
+   if the output includes a count it will, so use this on a projection that excludes it, or use
+   `same-exit`.
+3. **Scale** — multiply every number by a constant. The output changes, so this is usually
+   `differs`: a program that prints the same summary for scaled data is not reading the data.
+4. **Subset** — remove rows. `differs`, for the same reason.
+5. **Identity-merge** — combine a file with an empty one, or append a row that is then excluded.
+   The result must be unchanged. `same-stdout`.
+
+**Include `relation` on at least a third of your cases where the domain admits one.** A relation
+needs no reference implementation, so unlike a differential test it cannot encode the same
+assumption twice — which is precisely how a 110,877-case fuzz once missed the defect it was built
+to find. And a relation may sit alongside `expectExit` on the same case; both are checked.
+
+**`differs` is the one people forget.** Every `same-stdout` relation in the world is satisfied by
+a program that prints a constant and never opens the file.
+
 Between eight and twenty cases. Fewer than eight and you have restated the obvious; more than
 twenty and you are padding with variations that share a failure mode.

@@ -18,11 +18,14 @@ import { after, describe, it } from 'node:test';
 
 import {
   OracleError,
+  RELATION_KINDS,
   judgeOracleCase,
+  judgeOracleRelation,
   parseOracleCases,
+  parseRelation,
   readOracle,
-  runOracle,
   resolveArtifactCommand,
+  runOracle,
   writeOracle,
 } from '../scripts/oracle.mjs';
 import { PHASE_PERMISSIONS, claudeArgs, oracleGate, staticGates } from '../scripts/driver.mjs';
@@ -43,12 +46,15 @@ after(() => {
 });
 
 /** @param {Partial<import('../scripts/oracle.mjs').OracleCase>} [over] */
+/** @param {Partial<import('../scripts/oracle.mjs').OracleCase>} [over] */
 const aCase = (over = {}) => ({
   id: 'O-1',
   files: [{ path: 'in.csv', content: 'a\n1\n' }],
   argv: ['in.csv'],
   expectExit: 0,
   expectStdout: '{"columns":[]}',
+  /** @type {import('../scripts/oracle.mjs').OracleRelation | null} */
+  relation: null,
   why: 'because',
   ...over,
 });
@@ -273,5 +279,155 @@ describe('the oracle author is its own persona', () => {
 
   it('thinks at max, because it writes the one artifact judged against the spec', () => {
     assert.equal(defaultConfig().effort['oracle-author'], 'max');
+  });
+});
+
+// R17, and item 7 measured why it is needed. The first armed oracle authored nineteen cases,
+// every one asserting an exit code alone - correctly, because the template says to assert only
+// expectExit when the specification does not fix byte-for-byte output. Planting run 12's naive
+// accumulation into that run's tree then produced {"mean": null} for two finite inputs at exit 0
+// and all nineteen cases still passed.
+describe('metamorphic relations', () => {
+  describe('parseRelation', () => {
+    it('accepts absence, because most cases are ordinary', () => {
+      assert.equal(parseRelation('O-1', undefined), null);
+      assert.equal(parseRelation('O-1', null), null);
+    });
+
+    it('accepts each known kind and keeps the second run intact', () => {
+      for (const kind of RELATION_KINDS) {
+        const r = parseRelation('O-1', { kind, files: [{ path: 'b.csv', content: 'a\n2\n' }], argv: ['b.csv'] });
+        assert.equal(r?.kind, kind);
+        assert.deepStrictEqual(r?.argv, ['b.csv']);
+        assert.equal(r?.files[0].content, 'a\n2\n');
+      }
+    });
+
+    // Fail-closed. A relation quietly dropped is a case that asserts nothing while looking like
+    // it asserts something.
+    it('refuses an unknown kind rather than ignoring it', () => {
+      assert.throws(() => parseRelation('O-1', { kind: 'vibes', files: [], argv: ['x'] }), /unknown kind/);
+    });
+
+    it('refuses a relation with no argv for its second run', () => {
+      assert.throws(() => parseRelation('O-1', { kind: 'same-stdout', files: [] }), /argv array/);
+    });
+
+    it('refuses a relation escaping its scratch directory, like the primary run', () => {
+      assert.throws(
+        () => parseRelation('O-1', { kind: 'same-stdout', files: [{ path: '../x', content: 'y' }], argv: ['x'] }),
+        /outside its scratch directory/,
+      );
+      assert.throws(
+        () => parseRelation('O-1', { kind: 'same-stdout', files: [{ path: '/etc/passwd', content: 'y' }], argv: ['x'] }),
+        /outside its scratch directory/,
+      );
+    });
+  });
+
+  describe('judgeOracleRelation', () => {
+    /** @param {string} kind @returns {import('../scripts/oracle.mjs').OracleRelation} */
+    const rel = (kind) => ({ kind: /** @type {any} */ (kind), files: [], argv: ['b.csv'] });
+    /** @param {string} stdout @param {number} [status] */
+    const out = (stdout, status = 0) => ({ status, stdout });
+
+    it('passes same-stdout when two runs agree, whatever they printed', () => {
+      // The point: no literal appears anywhere. The assertion survives a spec that never fixes
+      // key order, spacing or number formatting.
+      const v = judgeOracleRelation('O-1', rel('same-stdout'), out('{"mean":2}\n'), out('{"mean":2}'));
+      assert.equal(v.ok, true, v.detail);
+    });
+
+    it('fails same-stdout when they disagree, and shows both', () => {
+      const v = judgeOracleRelation('O-1', rel('same-stdout'), out('{"mean":0}'), out('{"mean":0.333}'));
+      assert.equal(v.ok, false);
+      assert.equal(v.detail.includes('same-stdout violated'), true, v.detail);
+      assert.equal(v.detail.includes('0.333'), true, v.detail);
+    });
+
+    it('passes same-exit on matching codes and fails on differing ones', () => {
+      assert.equal(judgeOracleRelation('O-1', rel('same-exit'), out('', 3), out('x', 3)).ok, true);
+      const v = judgeOracleRelation('O-1', rel('same-exit'), out('', 0), out('', 3));
+      assert.equal(v.ok, false);
+      assert.equal(v.detail.includes('first exited 0, second exited 3'), true, v.detail);
+    });
+
+    // The deny path of the other two. A program that ignores its input satisfies every
+    // same-stdout relation ever written.
+    it('fails differs when a program ignored its input entirely', () => {
+      const v = judgeOracleRelation('O-1', rel('differs'), out('{"columns":[]}'), out('{"columns":[]}'));
+      assert.equal(v.ok, false);
+      assert.equal(v.detail.includes('the input was ignored'), true, v.detail);
+    });
+
+    it('passes differs when the two runs genuinely differ', () => {
+      assert.equal(judgeOracleRelation('O-1', rel('differs'), out('a'), out('b')).ok, true);
+    });
+  });
+
+  // The assertion this whole feature exists for, in miniature: permutation invariance catches
+  // an accumulation defect that no exit-code assertion can see. The naive sum of
+  // [1e16, 1, -1e16] is 0; permuted to [1e16, -1e16, 1] it is 1, so the means differ while both
+  // runs exit 0.
+  it('catches an accumulation defect that exit codes cannot see', () => {
+    const naiveMean = (/** @type {number[]} */ xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    const first = { status: 0, stdout: JSON.stringify({ mean: naiveMean([1e16, 1, -1e16]) }) };
+    const second = { status: 0, stdout: JSON.stringify({ mean: naiveMean([1e16, -1e16, 1]) }) };
+    assert.equal(first.status, second.status, 'both runs exit 0, so no exit assertion could fire');
+    const v = judgeOracleRelation('P-1', { kind: 'same-stdout', files: [], argv: ['b.csv'] }, first, second);
+    assert.equal(v.ok, false, 'permutation invariance must catch what the exit code cannot');
+  });
+
+  it('runs the relation as a second real invocation, in its own scratch', () => {
+    const dareDir = path.join(makeTempDir(), '.dare');
+    writeOracle(dareDir, [
+      aCase({
+        id: 'P-1',
+        expectStdout: null,
+        files: [{ path: 'in.csv', content: 'v\n1\n2\n' }],
+        relation: { kind: 'same-stdout', files: [{ path: 'in.csv', content: 'v\n2\n1\n' }], argv: ['in.csv'] },
+      }),
+    ]);
+    /** @type {string[][]} */
+    const invocations = [];
+    const result = runOracle({
+      dareDir,
+      root: path.dirname(dareDir),
+      command: ['node', 'cli.js'],
+      run: (_c, args) => {
+        invocations.push(args);
+        // Same output both times: an order-independent summary, which passes.
+        return { ok: true, status: 0, stdout: '{"mean":1.5}', stderr: '' };
+      },
+    });
+    assert.equal(result.ok, true, result.detail);
+    assert.equal(invocations.length, 2, 'a relation case must invoke the program twice');
+  });
+
+  it('fails the gate when the second run breaks the relation', () => {
+    const dareDir = path.join(makeTempDir(), '.dare');
+    writeOracle(dareDir, [
+      aCase({
+        id: 'P-1',
+        expectStdout: null,
+        relation: { kind: 'same-stdout', files: [{ path: 'in.csv', content: 'v\n2\n1\n' }], argv: ['in.csv'] },
+      }),
+    ]);
+    let call = 0;
+    const result = runOracle({
+      dareDir,
+      root: path.dirname(dareDir),
+      command: ['node', 'cli.js'],
+      run: () => ({ ok: true, status: 0, stdout: call++ === 0 ? '{"mean":0}' : '{"mean":0.333}', stderr: '' }),
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.detail.includes('same-stdout violated'), true, result.detail);
+  });
+
+  it('still refuses a case that asserts nothing at all', () => {
+    assert.throws(
+      () => parseOracleCases('```json\n{"cases":[{"id":"X","files":[],"argv":["a"],"why":"w"}]}\n```'),
+      /asserts neither an exit code, nor stdout, nor a relation/,
+    );
   });
 });

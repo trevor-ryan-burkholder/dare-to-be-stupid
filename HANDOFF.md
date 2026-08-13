@@ -1,9 +1,8 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.99.0`. Measured at 0.99.0: `npm test` **1687 pass**,
+**State:** `main` at `0.100.0`. Measured at 0.100.0: `npm test` **1706 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
-`npm run release-check` **ok**. `npm run test:live` **27 of 27 across 11 files** at 0.96.0;
-0.97.0 touches no spawn path or template contract.
+`npm run release-check` **ok**. `npm run test:live` **27 of 27 across 11 files**.
 
 **This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
 `package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
@@ -41,6 +40,49 @@ a list that never had it.
 **The lesson is the one this file keeps relearning.** Three defects this session were found by
 execution and invisible to 1687 unit tests — the `.hypothesis/` cache, the ssh rate-limit, and
 this. A brief is output nobody asserts on, and it is handed to the one reader who will act on it.
+
+### Item 14 — DONE at 0.100.0. Metamorphic relations, built the same day item 7 proved they were needed
+
+**Built out of order, and the reason is that item 7 changed its status.** Item 14 was ordered
+behind item 7 so its cases would inherit a validated harness. Item 7 instead measured that the
+harness, validated, is blind to the defect class that defines every headline failure here — so
+item 14 stopped being an enhancement and became the missing half. It needs no run to prove, and
+it was built while item 8's first run was in flight.
+
+**The schema.** A case may now carry a `relation`: `{ kind, files, argv }`, a **second real
+invocation** in its own scratch directory, judged against the first. Three kinds:
+
+| kind | holds when | catches |
+|---|---|---|
+| `same-stdout` | both runs print the same thing | order-dependence, accumulation error |
+| `same-exit` | both runs exit the same | an error path depending on something it should not |
+| `differs` | the two runs print **different** things | a program that ignores its input |
+
+**`differs` is the deny path and it earns its place**: every `same-stdout` relation ever written
+is satisfied by a program that prints a constant and never opens the file.
+
+**Why this escapes the rule that produced nineteen exit-code assertions:** a relation never names
+an output, so it holds whatever formatting the program chooses, and the template's warning about
+guessing a format simply does not apply. It also needs no reference implementation, so it cannot
+encode the same assumption twice — which is exactly how run 12's 110,877-case differential fuzz
+missed the defect it was built to find.
+
+Fail-closed throughout: an unknown `kind`, a missing second `argv`, or a relation file escaping
+the scratch directory all throw rather than being dropped, because a relation quietly discarded
+is a case that asserts nothing while looking like it asserts something. A case with no
+`expectExit`, no `expectStdout` **and** no `relation` is still refused.
+
+**The template half is not optional and is tested live.** A schema no author writes cases against
+is dead code. `templates/oracle-author.md` now teaches the five shapes — permute, duplicate,
+scale, subset, identity-merge — with a worked permutation example, and a unit test parses that
+example through the real parser *and* checks it is a genuine permutation rather than a
+plausible-looking one. **Tier 3 then asked a real child, and it wrote relation cases: 27 of 27
+across 11 files.**
+
+**Not verified:** no *run* has yet had a relation case judge real code. The decisive unit test
+demonstrates the mechanism against the naive accumulation directly — the means of
+`[1e16, 1, -1e16]` and its permutation differ while both exit 0 — but a live run finding a real
+defect this way is still owed.
 
 ### Item 7 — DONE. A3's first armed run, and the suite is provably blind to wrong answers
 

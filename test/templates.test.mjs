@@ -13,6 +13,8 @@
  */
 
 import assert from 'node:assert/strict';
+
+import { RELATION_KINDS, parseRelation } from '../scripts/oracle.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 
 import { renderTemplate, requiredIdsFor } from '../scripts/driver.mjs';
@@ -673,5 +675,50 @@ describe('the improve-author template', () => {
     const untested = IMPROVE.indexOf('Behaviour the tests assert nothing about');
     assert.equal(wrongAnswers > 0, true, 'the search order does not mention wrong answers at exit 0');
     assert.equal(wrongAnswers < untested, true, 'wrong answers are not ranked above untested behaviour');
+  });
+});
+
+// R17 / item 14. A schema nobody writes cases against is dead code, so the template half is as
+// load-bearing as the harness half. Item 7 measured the gap this closes: nineteen exit-code-only
+// cases passed a binary printing {"mean": null} for two finite inputs at exit 0.
+describe('the oracle author is taught metamorphic relations', () => {
+  const ORACLE = readTemplate('oracle-author.md');
+
+  it('names every relation kind the parser accepts, and no others', () => {
+    for (const kind of RELATION_KINDS) {
+      assert.equal(ORACLE.includes(`\`${kind}\``), true, `the template never mentions ${kind}`);
+    }
+  });
+
+  it('teaches the five shapes by name', () => {
+    for (const shape of ['Permute', 'Duplicate', 'Scale', 'Subset', 'Identity-merge']) {
+      assert.equal(ORACLE.includes(shape), true, `the template never teaches ${shape}`);
+    }
+  });
+
+  it('gives a worked relation example the parser would accept', () => {
+    const blocks = jsonBlocks(ORACLE).filter((b) => b.includes('"relation"'));
+    assert.equal(blocks.length > 0, true, 'no relation example at all');
+    const parsed = JSON.parse(blocks[0]);
+    const relation = parseRelation(parsed.id, parsed.relation);
+    assert.equal(relation?.kind, 'same-stdout');
+    assert.equal(relation?.argv.length > 0, true);
+    // The example must be a genuine permutation - same values, different order - or it teaches
+    // the wrong thing while looking right.
+    const rows = (/** @type {string} */ t) => t.trim().split('\n').slice(1).sort();
+    assert.deepStrictEqual(rows(parsed.files[0].content), rows(parsed.relation.files[0].content));
+    assert.notEqual(parsed.files[0].content, parsed.relation.files[0].content);
+  });
+
+  it('warns that same-stdout alone is satisfied by a program that ignores its input', () => {
+    // The deny path, stated to the author rather than left to be discovered.
+    assert.equal(ORACLE.includes('prints a constant and never opens the file'), true);
+  });
+
+  it('says why a relation beats a differential test', () => {
+    // Whitespace-normalised: the phrase wraps across lines and asserting the raw substring
+    // would fail on a reflow that changed nothing about the instruction.
+    const flat = ORACLE.replace(/\s+/g, ' ');
+    assert.equal(flat.includes('cannot encode the same assumption twice'), true);
   });
 });

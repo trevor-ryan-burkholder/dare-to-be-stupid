@@ -32,11 +32,72 @@ import path from 'node:path';
 
 /** @typedef {{ path: string, content: string }} OracleFile */
 /**
+ * A second invocation this case's output is compared *against*, rather than to a literal.
+ *
+ * **R17, and item 7 measured why it is needed.** The first armed oracle authored nineteen cases
+ * and every one of them asserted an exit code alone — correctly, because `oracle-author.md` says
+ * to assert only `expectExit` when the specification does not fix byte-for-byte output, and a
+ * PRD almost never fixes JSON formatting. The cost was then measured directly: planting run 12's
+ * naive accumulation into that run's tree produced `{"mean": null}` for two finite inputs at exit
+ * 0, and **all nineteen cases still passed**. `DoD-6-adversarial-input` asks whether a program
+ * ever confidently reports a wrong answer, and the suite meant to answer it independently could
+ * not.
+ *
+ * A relation escapes that rule because it never names an output. It asserts how two runs relate:
+ * permute the rows and a summary must not move; duplicate the file and it must not move; feed
+ * different data and it must. No reference implementation, so no risk of encoding the same
+ * assumption twice — which is exactly how run 12's 110,877-case differential fuzz missed the
+ * defect it was built to find.
+ *
+ * @typedef {{ kind: 'same-stdout' | 'same-exit' | 'differs', files: OracleFile[], argv: string[] }} OracleRelation
+ */
+/**
  * @typedef {{
  *   id: string, files: OracleFile[], argv: string[],
- *   expectExit: number | null, expectStdout: string | null, why: string
+ *   expectExit: number | null, expectStdout: string | null, relation: OracleRelation | null, why: string
  * }} OracleCase
  */
+
+/** The comparisons a relation case may assert. Anything else is refused rather than guessed. */
+export const RELATION_KINDS = ['same-stdout', 'same-exit', 'differs'];
+
+/**
+ * Validate a relation block, fail-closed.
+ *
+ * Absent is fine — most cases are ordinary. Present-but-wrong is an error rather than a silent
+ * drop, because a relation quietly discarded is a case that asserts nothing while looking like it
+ * asserts something, which is the shape this whole file exists to refuse.
+ *
+ * @param {string} id
+ * @param {unknown} value
+ * @returns {OracleRelation | null}
+ */
+export function parseRelation(id, value) {
+  if (value === undefined || value === null) return null;
+  const r = /** @type {Record<string, unknown>} */ (value);
+  if (typeof r.kind !== 'string' || !RELATION_KINDS.includes(r.kind)) {
+    throw new OracleError(`${id} has a relation of unknown kind ${JSON.stringify(r.kind)}. Known: ${RELATION_KINDS.join(', ')}`);
+  }
+  if (!Array.isArray(r.argv) || r.argv.some((a) => typeof a !== 'string')) {
+    throw new OracleError(`${id}'s relation needs an argv array of strings for its second run`);
+  }
+  const files = Array.isArray(r.files) ? r.files : [];
+  for (const file of files) {
+    const f = /** @type {Record<string, unknown>} */ (file);
+    if (typeof f?.path !== 'string' || typeof f?.content !== 'string') {
+      throw new OracleError(`${id}'s relation has a file entry without a string path and content`);
+    }
+    // Same containment rule as the primary run, and for the same reason.
+    if (path.isAbsolute(f.path) || f.path.split(/[\\/]/).includes('..')) {
+      throw new OracleError(`${id}'s relation names a file outside its scratch directory: ${f.path}`);
+    }
+  }
+  return {
+    kind: /** @type {OracleRelation['kind']} */ (r.kind),
+    files: files.map((f) => ({ path: String(/** @type {OracleFile} */ (f).path), content: String(/** @type {OracleFile} */ (f).content) })),
+    argv: /** @type {string[]} */ (r.argv),
+  };
+}
 
 /** The store, driver-owned by §6's positional rule. */
 export const ORACLE_FILE = 'oracle.json';
@@ -89,8 +150,13 @@ function requireCase(value, index) {
   }
   const expectExit = typeof c.expectExit === 'number' && Number.isInteger(c.expectExit) ? c.expectExit : null;
   const expectStdout = typeof c.expectStdout === 'string' ? c.expectStdout : null;
-  if (expectExit === null && expectStdout === null) {
-    throw new OracleError(`${id} expects nothing: a case that asserts neither an exit code nor stdout cannot fail`);
+  const relation = parseRelation(id, c.relation);
+  // A relation is a third way to assert something, so it satisfies the same rule the other two
+  // do: a case must be capable of failing. Nothing here defaults to pass.
+  if (expectExit === null && expectStdout === null && relation === null) {
+    throw new OracleError(
+      `${id} expects nothing: a case that asserts neither an exit code, nor stdout, nor a relation cannot fail`,
+    );
   }
   return {
     id,
@@ -98,6 +164,7 @@ function requireCase(value, index) {
     argv: /** @type {string[]} */ (c.argv),
     expectExit,
     expectStdout,
+    relation,
     why: typeof c.why === 'string' ? c.why : '',
   };
 }
@@ -188,6 +255,49 @@ export function judgeOracleCase(expected, actual) {
 }
 
 /**
+ * Judge a relation: how two runs of the same program must relate to each other.
+ *
+ * Never compared against a literal, which is the whole point — the assertion holds whatever the
+ * program prints, so it survives a specification that does not fix JSON formatting. Trailing
+ * whitespace is trimmed on both sides for `judgeOracleCase`'s reason: a missing newline is a
+ * formatting difference and failing a correct program over one is the unsatisfiable-gate defect.
+ *
+ * `differs` is the deny path of the other two, and it earns its place: a program that ignores
+ * its input entirely satisfies every same-stdout relation ever written.
+ *
+ * @param {string} id
+ * @param {OracleRelation} relation
+ * @param {{ status: number, stdout: string }} first
+ * @param {{ status: number, stdout: string }} second
+ * @returns {{ ok: boolean, detail: string }}
+ */
+export function judgeOracleRelation(id, relation, first, second) {
+  const a = first.stdout.trimEnd();
+  const b = second.stdout.trimEnd();
+  if (relation.kind === 'same-exit') {
+    return first.status === second.status
+      ? { ok: true, detail: `${id}: both runs exited ${first.status}` }
+      : { ok: false, detail: `${id}: same-exit violated - first exited ${first.status}, second exited ${second.status}` };
+  }
+  if (relation.kind === 'same-stdout') {
+    return a === b
+      ? { ok: true, detail: `${id}: both runs printed the same thing` }
+      : {
+          ok: false,
+          detail:
+            `${id}: same-stdout violated - first printed ${JSON.stringify(a.slice(0, 160))}, ` +
+            `second printed ${JSON.stringify(b.slice(0, 160))}`,
+        };
+  }
+  return a !== b
+    ? { ok: true, detail: `${id}: the two runs differ, as required` }
+    : {
+        ok: false,
+        detail: `${id}: differs violated - both runs printed ${JSON.stringify(a.slice(0, 160))}, so the input was ignored`,
+      };
+}
+
+/**
  * How to invoke the thing the oracle judges.
  *
  * A CLI's entry point is what `package.json` declares as `bin`, because that is what a user
@@ -259,6 +369,23 @@ export function runOracle(options) {
       const result = options.run(command, [...fixed, ...testCase.argv], { cwd: scratch });
       const verdict = judgeOracleCase(testCase, result);
       if (!verdict.ok) failures.push(verdict.detail);
+
+      // R17. The second invocation, in a scratch directory rebuilt from the relation's own
+      // files, so neither run can see the other's inputs. Judged even when the first assertion
+      // already failed: two independent facts about the program, and suppressing the second
+      // would hide a relation violation behind an exit-code mismatch.
+      if (testCase.relation !== null) {
+        rmSync(scratch, { recursive: true, force: true });
+        mkdirSync(scratch, { recursive: true });
+        for (const file of testCase.relation.files) {
+          const target = path.join(scratch, file.path);
+          mkdirSync(path.dirname(target), { recursive: true });
+          writeFileSync(target, file.content, 'utf8');
+        }
+        const second = options.run(command, [...fixed, ...testCase.relation.argv], { cwd: scratch });
+        const related = judgeOracleRelation(testCase.id, testCase.relation, result, second);
+        if (!related.ok) failures.push(related.detail);
+      }
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
