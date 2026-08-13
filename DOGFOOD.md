@@ -92,7 +92,7 @@ outside a unit test:
 | `.dare/assumptions.json` filling | 0.30.0 | **proven from run 3 onward.** The citation bar at 0.45.0 was set by a live tier-3 failure, not by reasoning |
 | the mutation gate | 0.31.0 | provisioning closed at 0.43.0, threshold `break: 60` at 0.47.0 — **and it was still crashing rather than running until 0.65.0.** Stryker's tsconfig preprocessor imports `typescript` from its own npx install, where it is absent; run 10 lost three of six iterations to it |
 | `.dare/runs/NNN/` archiving | 0.28.0 | **fired live in run 4** — `.dare/runs/003/`, carrying `assumptions.json` beside `briefs/` and `run.json` |
-| the .NET toolchain | 0.32.0 | commands verified against a real SDK; **never driven by a run**, and no SDK on this machine |
+| the .NET toolchain | 0.32.0 | **all five commands executed against SDK 8.0.423** (13 Aug); **never driven by a run** — item 20 case C. The old "no SDK on this machine" note was stale: the SDK is installed |
 | the TRX reporter | 0.33.0 | only ever seen xunit output from a scaffolded solution |
 | per-toolchain guidance | 0.34.0 | proven selected and archived; never proven *read* |
 | a race with a live builder | 0.13.0 | **never once executed.** `race.enabled` is `false`; only the git half is tier-2 tested. Case I |

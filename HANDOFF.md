@@ -15,6 +15,32 @@ line in the same commit.
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
 
+### The .NET adapter's other four commands, executed. 13 August 2026
+
+Queue item 2 proved the **unit** command and TRX extraction against a real SDK. The other four
+had never been run. All five now have, against `dotnet 8.0.423` on a scaffolded `sln` + xunit
+solution, spelled exactly as the adapter spells them rather than retyped:
+
+| operation | argv | result |
+|---|---|---|
+| `restore` | `dotnet restore` | exit 0 |
+| `build` | `dotnet build` | exit 0 |
+| `security-audit` | `dotnet restore --force -warnaserror:NU1901,NU1902,NU1903,NU1904` | exit 0 — the `-warnaserror:` form MSBuild accepts, not `-p:` |
+| `unit` | `dotnet test --logger "trx;LogFileName=…" --results-directory <dareDir>` | exit 0, **TRX written where the ratchet looks** |
+| `lint` | `dotnet format --verify-no-changes` | exit 0 |
+
+Round-tripped as well: a deliberately failing second test, through the real `parseReport`, giving
+`passed Api.Tests.UnitTest1.Test1` and `failed Api.Tests.UnitTest2.DeliberatelyFails`.
+
+**One thing worth knowing for case C:** every command fails `MSB1003: Specify a project or
+solution file` when the root holds neither a `.sln` nor a `.csproj`. The adapter's own detector
+looks for exactly those, so the shapes agree — but a run whose builder scaffolds projects into
+subdirectories *without* a root solution would fail all five gates with an error about none of
+them. Worth watching in case C rather than diagnosing from scratch.
+
+**The stale claim, in two files:** *"no SDK on this machine"*. It is installed, and a previous
+session had already used it. Fixed in `DOGFOOD.md` and in the "do this next" stratum.
+
 ### Item 23 — the closing consistency pass. DONE, docs only
 
 **Two user-facing gaps, both silent, both from work landed in the last day.**
@@ -1547,7 +1573,8 @@ makes the mutation gate apply again) but **design is not evidence.** The next ru
 > test-file-evidence hazard it names was decided in the same sweep that found this list —
 > `isTestEvidence` refuses to carry a requirement evidenced only by a test.
 > **Items 2 and 4 are still exactly true**: no builder child has ever run inside a race worktree,
-> and the .NET adapter is still `DONE` on argv nobody has executed. Both are in `DOGFOOD.md`'s
+> and the .NET adapter has still never been driven by a *run* (its argv is now executed — see the
+> note on item 4 below). Both are in `DOGFOOD.md`'s
 > operator queue.
 
 1. **A fresh case G run** (`DOGFOOD.md`), on a new scenario repo, not a resume. It is the first run
@@ -1567,6 +1594,12 @@ makes the mutation gate apply again) but **design is not evidence.** The next ru
    the carry would let a source regression slip through unre-litigated.
 4. **The .NET adapter is `DONE` on argv nobody has executed.** No SDK on this machine. Every
    contract test passes regardless. Do not trust it until an SDK exists.
+   > **Reconciled 13 August 2026: the SDK does exist — `dotnet 8.0.423` — and this note was
+   > stale in two files.** Queue item 2 executed the *unit* command against it; on 13 August the
+   > remaining four (`restore`, `build`, `security-audit` with its `-warnaserror:` form, and
+   > `lint` via `dotnet format --verify-no-changes`) were executed too, all exit 0 on a clean
+   > solution, with the TRX landing where the ratchet looks and a mixed pass/fail round-tripping
+   > through `parseReport`. **Still true and unchanged: never driven by a run** (item 20 case C).
 
 ## What happened on 12 August
 
