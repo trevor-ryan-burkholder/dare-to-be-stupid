@@ -1602,7 +1602,12 @@ runs without it and a warning is printed, because this is context for a reviewer
 already defaults to fail, and a corrupt hint file must not kill a healthy run.
 
 **This is a new output contract owned by another binary's behaviour, so it needs a tier-3 check**
-(§11.1). `test/live/assumptions-contract.live.test.mjs` is written and **has never been run**.
+(§11.1). `test/live/assumptions-contract.live.test.mjs` was written and unrun for a long time; it
+was **run on 13 August 2026 and it found a defect** — a builder emitting a correct, cited
+assumption as a bare object with no array wrapper, which the parser dropped where nothing could
+count it (0.106.0). Measured 2 of 6 on `claude-haiku-4-5` and 0 of 6 on `claude-sonnet-5`. The
+cheap model is the canary here, and strengthening the test's model to stop the failure would have
+deleted the evidence.
 
 ### 8.4 Per-toolchain guidance — idioms, not commands
 

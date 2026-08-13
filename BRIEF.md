@@ -166,7 +166,7 @@ Three findings, and only the third was work:
    labelled *not supplied* with the framing argument that actually carries the weight. This is
    the highest-value application of the new vocabulary and it was not on the item's list.
 
-## A3. Held-out oracle — **BUILT (0.70.0–0.72.0), armed by nobody yet. `DESIGN.md` §4.6**
+## A3. Held-out oracle — **BUILT (0.70.0–0.72.0); first armed run 13 Aug 2026 (`oracle1`), oracle judged 19/19. `DESIGN.md` §4.6**
 
 **Undeferred by dogfood run 12**, which measured the hole this item was always aimed at: the panel
 passed a binary reporting `mean: 0` where the answer is 1/3, at exit 0, after its reviewer wrote
@@ -417,7 +417,7 @@ gate. And **"where there is no invariant, do not invent one"**, without which th
 reads as "always write properties"; a property over a domain with no invariant is an example
 test with extra machinery, and the ratchet then makes it permanent.
 
-## A8. Requirement-level monotonicity — **PARTLY DONE (0.29.0); the carry optimisation deferred**
+## A8. Requirement-level monotonicity — **DONE (0.29.0); the carry optimisation landed at 0.92.0, measured delta 8%**
 
 Once a cold reviewer passes a requirement with evidence, record it keyed to that evidence
 location. Re-review only when the evidenced file changes; otherwise carry the prior cold pass
