@@ -1,9 +1,7 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.78.0`. Measured 13 August: `npm test` **1531 pass**,
-`npm run test:integration` **18 pass**, `npm run release-check` **ok — no shipped file changed
-since e32e9b7**. `npm run test:live` is **19 checks across 5 files and was not re-run** when this
-line was written; treat its status as unknown rather than green.
+**State:** `main` at `0.85.0`. Measured 13 August: `npm test` **1591 pass**,
+`npm run test:integration` **28 pass**, `npm run release-check` **ok**. `npm run test:live` **20 of 20 pass across 6 files**, run at 0.85.0.
 
 **This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
 `package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
@@ -38,6 +36,44 @@ so a run can still spend hours inside ceilings that each individually hold. Whet
 ceiling of its own is an open question - `maxIterations` bounds it in iterations, which is the
 honest unit for a loop, and a wall-clock cap that fires mid-iteration would leave a tree nothing
 has judged.
+
+## 0.85.0 — improve mode: the repository is the input, and it is verified live
+
+**The command had three input shapes and all three were product-shaped** — a PRD to build, an idea
+to specify, or nothing at all. None can express *"this repository already exists, find what is
+wrong with it"*, which is what you want when pointing the loop at working code. `--improve` is the
+fourth shape, optionally with an area to focus on, and **everything downstream is unchanged**: same
+`PRD.md`, same `PRD-<section>.<n>` ids, same panel, same DoD. The loop needed a new way in, not a
+new mode.
+
+`templates/improve-author.md` runs in the **`prd` phase**, which already carries `Read`/`Glob`/
+`Grep` — so no new permissions entry and no new effort key. Its four load-bearing rules are each a
+defect this project already paid for:
+
+| rule | the defect it prevents |
+|---|---|
+| every requirement cites `file:line` for current behaviour | an ungrounded requirement is an unsatisfiable gate — the most expensive class here |
+| three to eight requirements, no more | each costs an iteration; forty half-done finishes none |
+| **never rename, move or delete an existing passing test** | the ratchet reads a renamed test as a *lost* one and hard-resets the repair **forever**. Looks completely harmless |
+| no rewrites, migrations, restructurings | no falsifying observation, and it licenses a diff that touches everything |
+
+Refused on a repository with no meaningful history, reusing `hasMeaningfulHistory` rather than
+adding a second detector.
+
+**Verified by execution, and this is the part that matters.**
+`test/live/improve-contract.live.test.mjs` builds a tiny repository with one planted defect of the
+class the template ranks first — `src/sum.mjs` silently drops unparseable lines and prints a total
+at exit 0 — beside a README and `package.json` that are fine, because a template that finds a
+defect in everything is as useless as one that finds none. A real child returned **3–8 numbered
+requirements, cited `src/sum.mjs:<line>`, and reported the wrong-answer defect.** Tier 3 is now
+**20 checks, 20 pass**.
+
+**Not yet done, and worth knowing:** no *run* has used improve mode end to end. The authoring
+contract is proven; whether the resulting PRD converges through the loop is unmeasured, and the
+honest first test is a small throwaway repository rather than anything that matters.
+`CLAUDE.md`'s scope note still forbids pointing the loop at this repository. **The operator has
+said that rule can be retired later** — it has not been retired yet, and retiring it is a
+deliberate act, not a side effect.
 
 ## 0.84.0 — abandoned race worktrees heal at the start, and the consequence is now executed
 
