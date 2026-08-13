@@ -37,7 +37,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 /**
  * @typedef {{
  *   maxIterations: number, stallLimit: number, tokenCeiling: number, costCeiling: number,
- *   childTimeoutMs: number, gateTimeoutMs: number,
+ *   childTimeoutMs: number, gateTimeoutMs: number, maxChildTurns: number,
  *   reviewers: string[], ownership: Record<string, string[]>, requireUnanimous: boolean,
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, styleModel: string, lessonModel: string,
@@ -125,6 +125,16 @@ export function defaultConfig() {
     // is a guess sized to be embarrassing to hit. What would refine it is one run that logs
     // each gate's wall-clock; until that exists this is a backstop, not a budget.
     gateTimeoutMs: 2_700_000,
+    // The fourth bound, and the only one that is **off by default**. `--max-turns` caps a
+    // child's agentic turns, and unlike every ceiling above it there is no honest arithmetic
+    // from a token or dollar budget to a number of turns — so any default here would be a
+    // number nobody measured, wearing the authority of one. `gateTimeoutMs` above is at least
+    // labelled a guess; this would not even be that.
+    //
+    // The dollar half of the same defence is derived and always on: `childBudget` in
+    // `driver.mjs` passes `--max-budget-usd` from what the run has left. Zero here means the
+    // flag is not passed at all. An operator who has measured their own turn counts can set it.
+    maxChildTurns: 0,
     reviewers: ['security', 'correctness', 'design'],
     ownership: Object.fromEntries(Object.entries(DEFAULT_OWNERSHIP).map(([reviewer, ids]) => [reviewer, [...ids]])),
     requireUnanimous: true,
@@ -196,6 +206,23 @@ const KNOWN_REVIEWERS = new Set(['security', 'correctness', 'design']);
 function requirePositiveInteger(value, key) {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
     throw new ConfigError(`${key} must be a positive integer; got ${JSON.stringify(value)}.`);
+  }
+  return value;
+}
+
+/**
+ * A count that is allowed to be zero, where zero means **off** rather than "none allowed".
+ *
+ * Separate from `requirePositiveInteger` on purpose: for a ceiling, zero would be a ceiling of
+ * nothing and must be refused, and conflating the two would let `maxIterations: 0` through.
+ *
+ * @param {unknown} value
+ * @param {string} key
+ * @returns {number}
+ */
+function requireCountOrZero(value, key) {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new ConfigError(`${key} must be a non-negative integer, where 0 means off; got ${JSON.stringify(value)}.`);
   }
   return value;
 }
@@ -339,6 +366,7 @@ export function validateConfig(input) {
   if ('tokenCeiling' in source) merged.tokenCeiling = requirePositiveInteger(source.tokenCeiling, 'tokenCeiling');
   if ('costCeiling' in source) merged.costCeiling = requirePositiveNumber(source.costCeiling, 'costCeiling');
   if ('childTimeoutMs' in source) merged.childTimeoutMs = requirePositiveInteger(source.childTimeoutMs, 'childTimeoutMs');
+  if ('maxChildTurns' in source) merged.maxChildTurns = requireCountOrZero(source.maxChildTurns, 'maxChildTurns');
   if ('gateTimeoutMs' in source) merged.gateTimeoutMs = requirePositiveInteger(source.gateTimeoutMs, 'gateTimeoutMs');
   if ('requireUnanimous' in source) {
     merged.requireUnanimous = requireBoolean(source.requireUnanimous, 'requireUnanimous');

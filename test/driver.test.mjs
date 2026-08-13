@@ -54,6 +54,7 @@ import {
   appendBlooper,
   assertNotNested,
   assertOwnershipCovers,
+  childBudget,
   claudeArgs,
   formatGateFailure,
   DARE_IGNORED_PATHS,
@@ -693,6 +694,33 @@ describe('parseClaudeEnvelope', () => {
   });
 });
 
+describe('childBudget', () => {
+  // Values, not truthiness. The number handed to a child is the whole point of the function.
+  it('gives a child everything the run has left', () => {
+    assert.deepStrictEqual(childBudget({ costCeiling: 50, maxChildTurns: 0 }, 12.25), { maxBudgetUsd: 37.75 });
+  });
+
+  it('gives the whole ceiling to the first child, which has spent nothing', () => {
+    assert.deepStrictEqual(childBudget({ costCeiling: 50, maxChildTurns: 0 }, 0), { maxBudgetUsd: 50 });
+  });
+
+  it('rounds to four decimals rather than claiming precision the upstream stop lacks', () => {
+    assert.deepStrictEqual(childBudget({ costCeiling: 1, maxChildTurns: 0 }, 0.123456789), { maxBudgetUsd: 0.8765 });
+  });
+
+  it('never hands out zero, even to a run that has overspent', () => {
+    // Zero is the shape a parser is most likely to read as "unset". A run that is out of money
+    // must produce a child that stops at once, not one that is accidentally unbounded.
+    assert.deepStrictEqual(childBudget({ costCeiling: 10, maxChildTurns: 0 }, 999), { maxBudgetUsd: 0.0001 });
+    assert.deepStrictEqual(childBudget({ costCeiling: 10, maxChildTurns: 0 }, 10), { maxBudgetUsd: 0.0001 });
+  });
+
+  it('adds the turn cap only when the operator configured one', () => {
+    assert.deepStrictEqual(childBudget({ costCeiling: 8, maxChildTurns: 30 }, 3), { maxBudgetUsd: 5, maxTurns: 30 });
+    assert.equal('maxTurns' in childBudget({ costCeiling: 8, maxChildTurns: 0 }, 3), false);
+  });
+});
+
 describe('claudeArgs and the permission policy', () => {
   it('asks for json and pins the model', () => {
     const args = claudeArgs({ model: 'claude-sonnet-5', phase: 'builder' });
@@ -701,6 +729,50 @@ describe('claudeArgs and the permission policy', () => {
     assert.deepStrictEqual(args.slice(0, 4), ['-p', '--output-format', 'json', '--settings']);
     assert.equal(args[5], '--model');
     assert.equal(args.includes('claude-sonnet-5'), true);
+  });
+
+  // BORROWED.md R16, and case D's measured defect: one builder spent ten times the ceiling
+  // before returning, because `tokenCeiling` and `costCeiling` are read off an envelope and
+  // therefore bind only a child that came back.
+  describe('the in-flight budget flags', () => {
+    it('passes the dollar allowance it was given', () => {
+      const args = claudeArgs({ model: 'm', phase: 'builder', maxBudgetUsd: 12.5 });
+      const at = args.indexOf('--max-budget-usd');
+      assert.notEqual(at, -1, args.join(' '));
+      assert.equal(args[at + 1], '12.5');
+    });
+
+    it('omits both flags when neither was asked for', () => {
+      // A caller that did not ask for a bound must get the behaviour it always had. Passing
+      // `0` instead would be the dangerous shape: a falsy amount is what a parser is most
+      // likely to read as "unset", which would unbound an out-of-money run's child.
+      const args = claudeArgs({ model: 'm', phase: 'builder' });
+      assert.equal(args.includes('--max-budget-usd'), false);
+      assert.equal(args.includes('--max-turns'), false);
+    });
+
+    it('omits the turn cap while passing the dollar one, which is the default shape', () => {
+      const args = claudeArgs({ model: 'm', phase: 'builder', maxBudgetUsd: 3 });
+      assert.equal(args.includes('--max-budget-usd'), true);
+      assert.equal(args.includes('--max-turns'), false);
+    });
+
+    it('passes the turn cap when the operator set one', () => {
+      const args = claudeArgs({ model: 'm', phase: 'builder', maxBudgetUsd: 3, maxTurns: 40 });
+      const at = args.indexOf('--max-turns');
+      assert.notEqual(at, -1, args.join(' '));
+      assert.equal(args[at + 1], '40');
+    });
+
+    it('keeps both flags before --allowedTools, which is variadic', () => {
+      // The defect this whole function is arranged around: anything after `--allowedTools` is
+      // read as one more tool name. A flag added later in the array would re-arm it.
+      const args = claudeArgs({ model: 'm', phase: 'review', maxBudgetUsd: 3, maxTurns: 40 });
+      const tools = args.indexOf('--allowedTools');
+      assert.notEqual(tools, -1, 'this phase should have an allowedTools list to sit behind');
+      assert.equal(args.indexOf('--max-budget-usd') < tools, true, args.join(' '));
+      assert.equal(args.indexOf('--max-turns') < tools, true, args.join(' '));
+    });
   });
 
   it('keeps the prompt out of argv entirely, for every phase', () => {

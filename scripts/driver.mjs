@@ -779,6 +779,49 @@ export function airtimeRemaining(progress, config) {
   return { iterationsLeft, tokensLeft, usdLeft, fractionLeft: Math.min(byIterations, byTokens, byUsd) };
 }
 
+/**
+ * The lowest allowance worth handing a child, in dollars.
+ *
+ * A child spawned with `0` is the dangerous case: a falsy amount is exactly the shape a
+ * command-line parser is most likely to read as "unset", which would hand an out-of-money run
+ * an *unbounded* child. So the floor is a real, tiny number that stops a child at once rather
+ * than a zero that might not stop it at all.
+ */
+const MIN_CHILD_BUDGET_USD = 0.0001;
+
+/**
+ * What one child is allowed to spend, derived from what the run has left.
+ *
+ * **The defect this closes** (`BORROWED.md` R16, case D): `tokenCeiling` and `costCeiling` are
+ * read off a returned envelope, so both bind a child that **came back**. A child in flight was
+ * bounded only by `childTimeoutMs`, and the overshoot bound was therefore "one child" — which
+ * run 6 priced at 14M tokens, and one measured builder spent **ten times the ceiling** before
+ * returning. Accounting cannot bound a thing it can only see afterwards.
+ *
+ * `--max-budget-usd` is the in-flight bound the accounting cannot be. The envelope's own
+ * `total_cost_usd` stays authoritative for what the run has spent; this only stops the child.
+ *
+ * **Only the dollar half is derived, and only the dollar half is on by default.** There is no
+ * honest arithmetic from a token or dollar ceiling to a number of agentic turns, and this
+ * project does not ship thresholds it cannot justify — `gateTimeoutMs` is labelled a guess in
+ * its own comment rather than dressed as a measurement. So `--max-turns` is an operator lever
+ * (`maxChildTurns`, default `0` = not passed) rather than an invented constant.
+ *
+ * The stop is approximate, by the flag's own documentation, and a child stopped mid-write
+ * returns not-ok — which the loop already treats as a builder failure, the correct path.
+ *
+ * @param {{ costCeiling: number, maxChildTurns: number }} config
+ * @param {number} spentUsd what the run has already spent
+ * @returns {{ maxBudgetUsd: number, maxTurns?: number }}
+ */
+export function childBudget(config, spentUsd) {
+  const left = config.costCeiling - spentUsd;
+  // Four decimals because the flag takes dollars and a child's cost is measured in cents; more
+  // precision would be a claim about accuracy the upstream stop does not have.
+  const maxBudgetUsd = Math.max(MIN_CHILD_BUDGET_USD, Number(left.toFixed(4)));
+  return config.maxChildTurns > 0 ? { maxBudgetUsd, maxTurns: config.maxChildTurns } : { maxBudgetUsd };
+}
+
 // ---------------------------------------------------------------------------
 // claude -p children (DESIGN.md §3)
 // ---------------------------------------------------------------------------
@@ -1034,12 +1077,25 @@ export function childEnvironment(env) {
  * It also retires two quieter hazards: `ARG_MAX` for a prompt carrying a whole template
  * plus the PRD, and a prompt that happens to begin with `--`.
  *
- * @param {{ model: string, systemPrompt?: string, phase: string, effort?: string }} options
+ * @param {{ model: string, systemPrompt?: string, phase: string, effort?: string,
+ *   maxBudgetUsd?: number, maxTurns?: number }} options
  * @returns {string[]}
  */
 export function claudeArgs(options) {
   const policy = permissionsFor(options.phase);
   const args = ['-p', '--output-format', 'json', '--settings', childSettings(), '--model', options.model];
+  // The in-flight budget bound (`childBudget`). Placed here, before the variadic
+  // `--allowedTools`, for the reason the whole function is arranged around: anything after
+  // that flag is read as one more tool name.
+  //
+  // Both are omitted when absent rather than passed as `0`, because a caller that did not ask
+  // for a bound must get the behaviour it has always had. `--max-budget-usd` is documented in
+  // `claude --help`; **`--max-turns` is not, in 2.1.228, and is accepted anyway** — probed
+  // against the real binary, which answers "Input must be provided" for it and "unknown
+  // option" for a flag that genuinely does not exist. An undocumented flag is a weaker
+  // contract than a documented one, which is exactly why it is off by default.
+  if (options.maxBudgetUsd !== undefined) args.push('--max-budget-usd', String(options.maxBudgetUsd));
+  if (options.maxTurns !== undefined) args.push('--max-turns', String(options.maxTurns));
   // Reasoning effort, per phase. Verified against a live child rather than read from help
   // text: `low` and `max` are both accepted by `claude -p` and visibly move the thinking-token
   // count. It is placed before the variadic `--allowedTools` for the same reason the prompt is
@@ -3267,6 +3323,7 @@ export function runDeploy(deploy, options) {
  *
  * @param {{ prompt: string, model: string, systemPrompt?: string, phase: string, effort?: string, cwd: string,
  *   env: Record<string, string | undefined>, contextLimit?: number, timeoutMs?: number,
+ *   maxBudgetUsd?: number, maxTurns?: number,
  *   run?: (command: string, args: string[],
  *     options: { cwd: string, env?: Record<string, string | undefined>, input?: string, timeoutMs?: number }) =>
  *     ShellResult }} options
@@ -3390,6 +3447,17 @@ export function main(argv, io = {}) {
   const mode = styleMode(env);
 
   /**
+   * Dollars handed to children so far, for deriving the *next* child's in-flight allowance.
+   *
+   * `driveRun` owns `RunProgress` and this function cannot see it, but it does not need to:
+   * every child spawns through `runChild` below, so summing here sums the same envelopes.
+   * The alternative — threading `RunProgress` out through every effect signature — would put
+   * the ceiling's arithmetic in two places that could disagree, which is worse than a local
+   * total that cannot.
+   */
+  let handedOutUsd = 0;
+
+  /**
    * Run one `claude -p` child, bracketed by the only progress an operator ever gets.
    *
    * Children are spawned with `execFileSync`, so the event loop is blocked for the whole
@@ -3410,6 +3478,7 @@ export function main(argv, io = {}) {
     const measured = measurePrompt({ systemPrompt: options.systemPrompt, prompt: options.prompt });
     write(verbatim(childStartLine(options.phase, options.model, measured.characters, config.childTimeoutMs)));
     const startedAt = Date.now();
+    const allowance = childBudget(config, handedOutUsd);
     const result = spawnClaude({
       ...options,
       contextLimit: config.contextBudget.maxCharacters,
@@ -3417,7 +3486,14 @@ export function main(argv, io = {}) {
       // is checked inside `spawnClaude`: every child in the loop passes through this one
       // door, so a phase added later cannot forget the ceiling.
       timeoutMs: config.childTimeoutMs,
+      ...allowance,
     });
+    // Counted here because **every** child in the loop passes through this function — the
+    // authoring phases, the design phase, the builder, the panel, and each race candidate.
+    // So this total is the run's total, summed over the same envelopes `driveRun` charges
+    // against the ceiling; it is not a second opinion about spend, it is the same arithmetic
+    // reaching the place that needs it before the next child is spawned rather than after.
+    handedOutUsd += result.costUsd;
     write(verbatim(childEndLine(options.phase, result, Math.round((Date.now() - startedAt) / 1000))));
     return result;
   };

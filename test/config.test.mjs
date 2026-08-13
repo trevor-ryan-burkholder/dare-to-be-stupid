@@ -44,6 +44,9 @@ describe('defaultConfig', () => {
       stallLimit: 4,
       tokenCeiling: 4000000,
       costCeiling: 50,
+      // Zero means the flag is not passed at all. There is no arithmetic from a dollar
+      // ceiling to a number of turns, so a non-zero default would be an invented threshold.
+      maxChildTurns: 0,
       reviewers: ['security', 'correctness', 'design'],
       ownership: {
         security: ['DoD-2-security'],

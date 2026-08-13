@@ -1,9 +1,9 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.89.0`. Measured at 0.89.0: `npm test` **1606 pass**,
-`npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
-`npm run release-check` **ok**. `npm run test:live` was last measured at **0.85.0** — 20 of 20
-across 6 files — and has not run since; treat that one count as 0.85.0's until it is re-run.
+**State:** `main` at `0.90.0`. Measured at 0.90.0: `npm test` **1629 pass**,
+`npm run test:integration` **30 pass**, `npm run test:live` **23 of 23 across 10 files**,
+`npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. All four tiers
+re-measured at this version; nothing here is inherited from an older one.
 
 **This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
 `package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
@@ -14,6 +14,43 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### Item 4 — a child is bounded in flight at last. DONE at 0.90.0, tier 3 watched it stop
+
+`childBudget(config, spentUsd)` returns `costCeiling` minus everything handed to children so
+far, floored at `$0.0001` and rounded to four decimals; `claudeArgs` passes it as
+`--max-budget-usd`. `runChild` supplies it, and keeps the running total itself — **every** child
+in the loop spawns through that one function, including each race candidate, so summing there
+sums the same envelopes `driveRun` charges. Threading `RunProgress` out through every effect
+signature would have put the ceiling's arithmetic in two places that could disagree.
+
+**The floor is the interesting number.** Zero is what a parser is likeliest to read as *unset*,
+which would hand an out-of-money run an unbounded child — the exact failure the flag exists to
+prevent, produced by the fix for it. A tiny real number stops a child; a zero might not.
+
+**`--max-turns` is shipped as an operator lever, off by default, and the reason is honesty.**
+There is no arithmetic from a token or dollar ceiling to a number of agentic turns, so any
+default would be a number nobody measured wearing the authority of one — `gateTimeoutMs` at
+least admits in its own comment that it is a guess; this would not even be that. `maxChildTurns`
+defaults to `0`, meaning the flag is not passed.
+
+**Two things measured against the binary rather than read from documentation.**
+`--max-budget-usd` is in `claude --help` for **2.1.228**. `--max-turns` is **not**, and is
+accepted anyway: the parser answers *"Input must be provided"* for it and *"unknown option"* for
+a flag that genuinely does not exist. An undocumented flag is a weaker contract than a
+documented one, which is the second reason it is off by default, and the live test asserts the
+day it disappears rather than letting it fail runs.
+
+**Tier 3 observed the stop, which is the item's whole point.** A real child bounded at the floor
+returned **not-ok with empty text** — a stopped child has no verdict, and half a verdict is not a
+smaller one. The companion case, an amply-funded child answering normally, is what stops this
+file from "passing" by breaking every run. Tier 3 is now **23 of 23 across 10 files**, up from
+20 of 20 across 6.
+
+**Not verified:** no *run* has yet been stopped by this flag in anger, so the interaction between
+a budget-stopped builder and the next iteration's brief is reasoned rather than observed. The
+approximation in the upstream stop is also unmeasured — how far past the number a child can get
+is the flag's business and nothing here checks it.
 
 ### Item 3 — `release-check` now refuses a stale header. DONE, no version bump
 

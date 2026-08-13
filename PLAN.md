@@ -57,7 +57,7 @@ an unreadable header refusing rather than passing. Verified against the real rep
 staling the header and watching the command refuse. **No version bump:** `tools/` is not a
 shipped path, which is why the checker lives there.
 
-### 4. Per-child budget flags (`BORROWED.md` R16) — OPEN
+### 4. Per-child budget flags (`BORROWED.md` R16) — DONE (0.90.0)
 `costCeiling` (0.79.0+) is run-level accounting on returned envelopes; nothing bounds a child in
 flight except time. Derive a per-child allowance from the remaining ceilings at spawn and pass
 `--max-budget-usd` / `--max-turns`. A child stopped by budget returns not-ok, which the loop
@@ -65,6 +65,12 @@ already treats correctly as a builder failure.
 **Touches `claudeArgs` → tier 3 is mandatory, not optional** (`CLAUDE.md`'s rule).
 **Done when:** flags appear in argv derived from remaining budget; a tier-3 check observes a
 child actually stopped by the flag.
+
+**Landed at 0.90.0, and tier 3 watched the stop.** A real child bounded at the `$0.0001` floor
+returned not-ok with empty text. Tier 3 is now 23 of 23 across 10 files. `--max-budget-usd` is
+derived and always on; **`--max-turns` ships off by default** (`maxChildTurns: 0`) because no
+honest arithmetic gets from a dollar ceiling to a turn count, and because it is undocumented in
+`claude --help` 2.1.228 — accepted by the parser, verified, but a weaker contract.
 
 ### 5. R15's phrasing paragraph in `templates/reviewer-system.md` — OPEN (verified absent at 0.88.0)
 `BORROWED.md` R14/R15: a finding phrased as an input gets fixed as an input (runs 12 and 13,
