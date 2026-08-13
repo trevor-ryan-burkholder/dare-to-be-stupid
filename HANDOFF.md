@@ -41,6 +41,18 @@ a list that never had it.
 execution and invisible to 1687 unit tests — the `.hypothesis/` cache, the ssh rate-limit, and
 this. A brief is output nobody asserts on, and it is handed to the one reader who will act on it.
 
+### The reviewer-name audit, and a negative result worth recording
+
+After 0.103.0 the obvious question was whether security pinning was the *only* thing keyed to a
+reviewer's **name** rather than to a property. Auditing every `'security'` comparison and every
+`reviewer ===` in `scripts/`: **it was.** The only other occurrences are `config.mjs`'s default
+list and `KNOWN_REVIEWERS`, which are validation rather than behaviour, and A4's escalation runs
+under its own `security-escalation` phase with no dependence on who reviewed anything.
+
+Recorded because a negative result from a deliberate audit is worth having — the next person to
+suspect this class can skip the search — and because the same audit shape found **two** further
+unsatisfiable DoD ids an hour earlier. Same method, opposite outcome.
+
 ### Item 8 — DONE. The panel versus one reviewer, measured. R14's answer is "cheaper, and not obviously worse — but do not shrink it on this"
 
 Two runs, run 8's PRD, byte-identical but for `reviewers`, `ownership` and `effort`. Both ended

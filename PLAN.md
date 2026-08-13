@@ -154,6 +154,39 @@ be the first race whose candidates carry distinct stall hypotheses (C5).
 ## Phase 2 — the repriced rewrite. After item 8.
 
 ### 10. R21 — async driver: heartbeat, parallel panel, process groups — OPEN, **UNBLOCKED: item 8 says keep the panel and parallelise it**
+
+**Item 8's answer, which is what it was waiting for: keep the panel, parallelise it.** One
+reviewer is 2.6× cheaper, but the panel's dominant cost is *wall clock* — `3×` where it could be
+`max()` — and the solo arm's only observed advantage was depth on an id both owned, while the
+panel's only extra finding was false. Parallelising recovers most of the gap without giving up a
+heterogeneous read.
+
+**Deliberately not started this session, and the reason is a judgement rather than a budget.**
+`driveRun` is a synchronous `for(;;)` loop over synchronous effects; making the spawn path async
+turns every effect, `driveRun`, `main`, and every test that drives them into promises. `BORROWED.md`
+R21 says *"land it alone"*, and beginning it late in a long session with a run in flight is how a
+driver ends up half-converted. **This is a fresh-session task.** The plan, so it starts from a
+specification rather than from scratch:
+
+1. **`shell` first, alone.** `execFileSync` → `spawn` returning a promise, same `ShellResult`
+   shape including `timedOut` and `reaped`. Keep `sweepLeakedGroup`: subtraction still works, and
+   with a free event loop a `detached` variant finally becomes *available* — but only if the
+   driver forwards `SIGINT`/`SIGTERM` to the child, which is the thing item 2 could not do and
+   the reason it chose subtraction. Decide that explicitly; do not inherit it.
+2. **Propagate outward, no behaviour change.** `runGates`, `spawnClaude`, `runDeploy`, the
+   effects object, `driveRun`, `main`. Tests become `await`. Nothing new is added in this step —
+   if the suite does not pass unchanged, stop.
+3. **Then the heartbeat**, which is the operator's named top blocker and is free once the loop
+   is unblocked: a periodic line while a child runs, so *hung* and *working* stop looking alike.
+4. **Then the parallel panel**, and only here. `BORROWED.md` R21's constraint is absolute:
+   **collect all children, then parse and charge in declared reviewer order regardless of
+   completion order.** Determinism is a preserved property; a panel whose verdict depends on
+   which reviewer finished first is a different program.
+5. **Document the widened overshoot** where the ceiling is documented. The bound grows from "one
+   child" to "children in flight" — three during review. Measured this session: a single child
+   overshot by 3.06M tokens (oracle1), so three in flight is not a small change.
+
+**Tier 3 on the spawn path, and no gate logic in the same commit.**
 One move (`execFileSync` → async spawn with process groups) closes three named opens: the
 hung-vs-working blindness, the sequential three-read panel (only if item 8 keeps the panel),
 and the orphan pipe (subsuming item 2's mechanism driver-wide). Constraints from
