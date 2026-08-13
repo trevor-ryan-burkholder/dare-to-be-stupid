@@ -409,12 +409,17 @@ disagrees — because a candidate that defends its hypothesis instead of the obj
 failure this design refuses everywhere else. `selectWinner` is untouched and a race candidate
 record has no field an angle could travel in; a test asserts both.
 
-**Disagreement with the origin, and the origin is stricter.** `PLAN.md` says the precondition is
-"racing lands winners since 0.83.0". `BRIEF.md` C5 says *"Ordered behind a live test of the
-race's builder half"* — a real `claude -p` child inside a race worktree — which this file records
-as never exercised and which **still does not exist**. C5 was built anyway because it is
-prompt-only and cannot break the race mechanism, but the precondition is unmet and stays open:
-**nothing has ever run a builder child inside a race worktree.**
+**Correction, later the same day: the paragraph that stood here was wrong.** It said nothing had
+ever run a builder child inside a race worktree, citing `BRIEF.md` C5. **Queue item 1, recorded
+in this very file, is exactly that run** — three real children in worktrees at 169s / 224s / 651s,
+each on its own 18,071-character brief, each gated independently, the winner chosen on measured
+churn. C5's precondition was met by a live *run* rather than the live *test* it asked for, after
+C5 was written.
+
+I reached the wrong conclusion by trusting `BRIEF.md`'s summary over this file's record — which is
+the stratigraphy trap item 22 exists for, committed by the same session that swept for it. **What
+is genuinely still owed is narrower and is item 9's remaining content: no live race has ever
+*landed* a winner.**
 
 **Not verified:** no run has raced with hypotheses. Whether distinct angles produce distinguishable
 candidates is R9's claim and remains unmeasured — the brief-level facts are tested, the effect is not.

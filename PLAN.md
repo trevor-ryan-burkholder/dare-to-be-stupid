@@ -128,6 +128,14 @@ recorded.
 Queue item 1 raced live builders and 0.83.0 fixed the landing. Decide whether a full case-I
 under current code is still owed; run it if yes, close it against the queue-item record if no.
 
+**Verified, and it is still owed — narrowly.** Queue item 1 is a live case I in substance: three
+real builder children raced in worktrees, were gated independently, and a winner was selected on
+churn. It is **not** closable against that record, because the run died at the one step that
+matters for "current state": `applyWinner` refused against a dirty main tree. 0.83.0's stash fix
+and 0.84.0's start-of-race sweep are covered by tier 2 against real git, but **no live race has
+ever landed a winner**, and that is the whole of what case I now tests. Since 0.93.0 it would also
+be the first race whose candidates carry distinct stall hypotheses (C5).
+
 ---
 
 ## Phase 2 — the repriced rewrite. After item 8.
@@ -178,13 +186,17 @@ at the one race call site. Fixed and driver-owned, because section E is closed a
 an opinion about a race is one step from a model adjudicating one. The brief tells the candidate
 outright that nothing scores it against its angle.
 
-**Disagreement with the origin, recorded rather than resolved.** This item says the precondition
-is "racing lands winners since 0.83.0". `BRIEF.md` C5 says something different and stricter:
-*"Ordered behind a live test of the race's builder half"* — a real `claude -p` child inside a
-race worktree, which `HANDOFF.md` records as never exercised and which **still does not exist**
-(`test/live/` has no such file). C5 was built anyway on the grounds that it is prompt-only and
-cannot break the race mechanism, but the origin's precondition is unmet and is now item 13's
-residue rather than being quietly dropped.
+**Correction, 13 August 2026 — my earlier note here was wrong.** It said C5's precondition, *"a
+real `claude -p` child inside a race worktree"*, had never been exercised. It has: **queue item 1
+ran the first live race**, three real children in worktrees at 169s / 224s / 651s, each on its own
+brief, each gated independently, the winner chosen on measured churn. The claim came from reading
+`BRIEF.md` C5, which predates that run — the same stratigraphy trap item 22 exists for, caught
+here by reading the record instead of the summary.
+
+**What is genuinely still owed is narrower:** no live race has ever *landed* a winner. Queue item
+1 selected one and `git merge --ff-only` refused against a dirty main tree; 0.83.0 fixed that with
+a stash and tier 2 covers it against real git, but the two halves have never run together. That
+is item 9's remaining content.
 
 ### 14. R17 — metamorphic relations in the oracle — DONE (0.100.0)
 **Item 7's interim finding promotes this from a prediction to a measured requirement.** The first
