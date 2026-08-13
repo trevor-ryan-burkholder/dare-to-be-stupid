@@ -86,7 +86,7 @@ import {
   verifySecurityPin,
   writePins,
 } from './pins.mjs';
-import { archivePreviousRun, buildRunManifest, writeRunManifest } from './run-manifest.mjs';
+import { RUN_MANIFEST, archivePreviousRun, buildRunManifest, writeRunManifest } from './run-manifest.mjs';
 import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
 import { MUTATION_CONFIG, MUTATION_CONFIG_CONTENTS } from './toolchains/node.mjs';
 import { CONDITIONAL_GATE_OPERATIONS, gatesFor, resolveToolchain } from './toolchains/index.mjs';
@@ -1903,6 +1903,11 @@ export const DARE_IGNORED_PATHS = [
   // some other run's pid into the file this run is holding, and the next run would then refuse
   // to start on the word of a process that has not existed for days.
   `.dare/${RUN_LOCK_FILE}`,
+  // The run manifest, missing until 0.86.0 — the third instance of this exact defect after
+  // `state.json` and `outcome.json`, and the first found by watching a live run rather than by
+  // reading. `?? .dare/run.json` sat in the target's `git status` one `git add -A` from being
+  // committed into the repository the run is supposed to be shipping.
+  `.dare/${RUN_MANIFEST}`,
   // Not `.dare/` state, and here for a reason measured in dogfood run 4. The operator redirects
   // the run's output into the repository — `DOGFOOD.md` said to — so `git add -A` tracked it, and
   // the hard reset in iteration 2 **reverted the log to its state at `lastGoodCommit`**. That

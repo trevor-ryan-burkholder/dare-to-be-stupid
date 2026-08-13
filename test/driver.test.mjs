@@ -24,6 +24,7 @@ import { readAssumptions } from '../scripts/assumptions.mjs';
 import { MUTATION_CONFIG_CONTENTS } from '../scripts/toolchains/node.mjs';
 import { pinSecurityElement, quarantinePin, readPins, writePins } from '../scripts/pins.mjs';
 import { RUN_LOCK_FILE } from '../scripts/run-lock.mjs';
+import { RUN_MANIFEST } from '../scripts/run-manifest.mjs';
 import { DEFAULT_OWNERSHIP, defaultConfig } from '../scripts/config.mjs';
 import {
   DriverError,
@@ -3871,7 +3872,11 @@ describe('every .dare artifact the driver writes is ignored by git', () => {
   // So the list is asserted against the constants the writers actually use. An artifact whose
   // name lives in a constant cannot be added without this failing.
   it('covers every named artifact constant', () => {
-    for (const name of [OUTCOME_FILE, REVIEW_RECORD, RUN_LOCK_FILE]) {
+    // RUN_MANIFEST was missing until 0.86.0 and was found the way the previous two were: by
+    // watching a live run leave `?? .dare/run.json` in `git status`, one `git add -A` away from
+    // being tracked. Third instance of the same defect, and the list is still the enumeration
+    // it has always been — the test is what makes it self-correcting, not the list.
+    for (const name of [OUTCOME_FILE, REVIEW_RECORD, RUN_LOCK_FILE, RUN_MANIFEST]) {
       assert.equal(
         DARE_IGNORED_PATHS.includes(`.dare/${name}`),
         true,
