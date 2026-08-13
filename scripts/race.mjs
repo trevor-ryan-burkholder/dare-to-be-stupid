@@ -243,6 +243,75 @@ export function removeWorktrees(options) {
 }
 
 /**
+ * Does this path look like a worktree a race created?
+ *
+ * Matched on the directory name `createWorktrees` writes — `dare-race-01` and up — rather than
+ * on the parent, so a sweep still recognises one whose parent was renamed or partially cleaned.
+ * A worktree of the operator's called `dare-race-07` would be caught by this; that name is ours
+ * and the collision is accepted rather than unnoticed.
+ *
+ * @param {string} worktreePath
+ * @returns {boolean}
+ */
+function looksLikeRaceWorktree(worktreePath) {
+  return /^dare-race-\d+$/.test(path.basename(worktreePath));
+}
+
+/**
+ * Remove race worktrees left behind by a previous run, before starting a new race.
+ *
+ * **This runs at race *start*, and the timing is the design.** `removeWorktrees` runs on the
+ * driver's paths out, which covers every ordinary ending and none of the important one: killing a
+ * driver mid-race with `-9` left three worktrees at `/tmp/dare-race-55237-4/` on 13 August 2026,
+ * and `git worktree add` refuses a directory it already knows about — so one abandoned race breaks
+ * every later race in that repository, and the error names a directory rather than the race that
+ * left it behind. No `finally` and no signal handler survives `SIGKILL`, so cleanup at the end
+ * cannot be the whole answer. Self-healing at the start is the shape that survives.
+ *
+ * **The run lock is what makes this safe rather than merely likely to be safe.** One driver per
+ * repository (§3.5) means that at the moment a race begins, any race worktree already registered
+ * here cannot belong to a live race in this repository — there is no other driver to own it.
+ *
+ * A list that cannot be read is reported as a problem, not treated as an empty list: "nothing to
+ * sweep" and "could not look" are different answers and only one of them is evidence.
+ *
+ * @param {{ cwd: string, run: Runner }} options
+ * @returns {{ removed: string[], problems: string[] }}
+ */
+export function sweepRaceWorktrees(options) {
+  /** @type {string[]} */
+  const removed = [];
+  /** @type {string[]} */
+  const problems = [];
+
+  const listed = options.run('git', ['worktree', 'list', '--porcelain'], { cwd: options.cwd });
+  if (!listed.ok) {
+    problems.push(`could not list worktrees before racing: ${(listed.stderr || listed.stdout).trim()}`);
+    return { removed, problems };
+  }
+
+  const stale = listed.stdout
+    .split('\n')
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => line.slice('worktree '.length).trim())
+    .filter((entry) => entry.length > 0 && looksLikeRaceWorktree(entry));
+
+  for (const entry of stale) {
+    const result = options.run('git', ['worktree', 'remove', '--force', entry], { cwd: options.cwd });
+    if (result.ok) {
+      removed.push(entry);
+      continue;
+    }
+    problems.push(`abandoned race worktree ${entry} could not be removed: ${(result.stderr || result.stdout).trim()}`);
+  }
+
+  // Always, even when nothing was listed: an entry whose directory is already gone is invisible
+  // to the loop above and still refuses the next `worktree add` on that path.
+  options.run('git', ['worktree', 'prune'], { cwd: options.cwd });
+  return { removed, problems };
+}
+
+/**
  * Fast-forward the main tree onto the winning candidate's commit.
  *
  * `--ff-only` is the whole safety argument. The winner's commit descends from the commit the

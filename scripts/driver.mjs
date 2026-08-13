@@ -53,7 +53,15 @@ import { OracleError, parseOracleCases, resolveArtifactCommand, runOracle, write
 import { checkNoConcurrentRun } from './preflight.mjs';
 import { RUN_LOCK_FILE, claimRunLock, clearRunLock } from './run-lock.mjs';
 import { installQualityPlugins } from './plugins.mjs';
-import { applyWinner, createWorktrees, parseNumstat, removeWorktrees, selectWinner, shouldRace } from './race.mjs';
+import {
+  applyWinner,
+  createWorktrees,
+  parseNumstat,
+  removeWorktrees,
+  selectWinner,
+  shouldRace,
+  sweepRaceWorktrees,
+} from './race.mjs';
 import { parseReport } from './reporters/index.mjs';
 import {
   evaluateIteration,
@@ -3721,6 +3729,12 @@ export function main(argv, io = {}) {
     const base = shell('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim();
     const parentDir = path.join(os.tmpdir(), `dare-race-${process.pid}-${iteration}`);
     mkdirSync(parentDir, { recursive: true });
+    // Before creating anything, clear whatever a killed race left registered. Cleanup on the
+    // way out cannot cover `-9`, and `git worktree add` refuses a path git already knows about,
+    // so without this one abandoned race breaks every later race in the repository.
+    const swept = sweepRaceWorktrees({ cwd, run: shell });
+    for (const entry of swept.removed) write(verbatim(`race: removed an abandoned worktree at ${entry}`));
+    for (const problem of swept.problems) write(verbatim(`race: ${problem}`));
     const created = createWorktrees({ cwd, run: shell, n: config.race.n, base, parentDir });
     for (const problem of created.problems) write(verbatim(problem));
 

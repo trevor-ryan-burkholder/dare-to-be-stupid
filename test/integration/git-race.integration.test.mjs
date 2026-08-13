@@ -22,7 +22,14 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { defaultRunner } from '../../scripts/plugins.mjs';
-import { applyWinner, createWorktrees, parseNumstat, removeWorktrees, worktreeName } from '../../scripts/race.mjs';
+import {
+  applyWinner,
+  createWorktrees,
+  parseNumstat,
+  removeWorktrees,
+  sweepRaceWorktrees,
+  worktreeName,
+} from '../../scripts/race.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -273,5 +280,53 @@ describe('landing a winner on the dirty tree a race actually finds', () => {
     assert.equal(git(repo, ['stash', 'list']), '');
 
     removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: created.worktrees });
+  });
+});
+
+// Killing a driver mid-race with -9 left three worktrees at /tmp/dare-race-55237-4/ on 13 August
+// 2026. The claim worth proving against real git is the *consequence*: that an abandoned worktree
+// makes the next race fail on a directory git already knows about, and that the sweep restores
+// the repository to a state where racing works again. Neither half is visible to a unit test,
+// because both belong to git's administrative area rather than to our argv.
+describe('a race abandoned by a killed driver', () => {
+  it('really does break the next race, and the sweep really does repair it', () => {
+    const repo = makeRepo();
+    const base = git(repo, ['rev-parse', 'HEAD']);
+    const parentDir = worktreeParent(repo, 'abandoned');
+
+    // A race that was killed: worktrees created, never removed.
+    const abandoned = createWorktrees({ cwd: repo, run: defaultRunner, n: 2, base, parentDir });
+    assert.equal(abandoned.worktrees.length, 2);
+    assert.equal(git(repo, ['worktree', 'list']).split('\n').length, 3);
+
+    // The next race asks for the same directory names under the same parent, exactly as a rerun
+    // in the same shell would.
+    const blocked = createWorktrees({ cwd: repo, run: defaultRunner, n: 2, base, parentDir });
+    assert.equal(blocked.worktrees.length, 0, 'the second race started despite the abandoned worktrees');
+    assert.equal(blocked.problems.length, 2);
+
+    const swept = sweepRaceWorktrees({ cwd: repo, run: defaultRunner });
+    assert.deepStrictEqual(swept.problems, []);
+    assert.equal(swept.removed.length, 2);
+    assert.equal(git(repo, ['worktree', 'list']).split('\n').length, 1, 'the sweep left an entry behind');
+
+    // And now the race that was blocked can start.
+    const recovered = createWorktrees({ cwd: repo, run: defaultRunner, n: 2, base, parentDir });
+    assert.equal(recovered.worktrees.length, 2, 'racing did not recover after the sweep');
+    removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: recovered.worktrees });
+  });
+
+  it('leaves a worktree that is not ours exactly where it is', () => {
+    const repo = makeRepo();
+    const base = git(repo, ['rev-parse', 'HEAD']);
+    const mine = path.join(path.dirname(repo), `${path.basename(repo)}-operator-work`);
+    temporaryDirs.push(mine);
+    git(repo, ['worktree', 'add', '--detach', mine, base]);
+
+    const swept = sweepRaceWorktrees({ cwd: repo, run: defaultRunner });
+
+    assert.deepStrictEqual(swept.removed, []);
+    assert.deepStrictEqual(swept.problems, []);
+    assert.equal(git(repo, ['worktree', 'list']).includes('operator-work'), true, 'the sweep removed a worktree that was not a race candidate');
   });
 });

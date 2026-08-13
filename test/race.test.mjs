@@ -24,6 +24,7 @@ import {
   removeWorktrees,
   selectWinner,
   shouldRace,
+  sweepRaceWorktrees,
   worktreeName,
 } from '../scripts/race.mjs';
 
@@ -323,6 +324,103 @@ describe('worktree lifecycle', () => {
   it('names worktrees predictably', () => {
     assert.equal(worktreeName(1), 'dare-race-01');
     assert.equal(worktreeName(12), 'dare-race-12');
+  });
+});
+
+// Killing a driver mid-race with -9 left three worktrees at /tmp/dare-race-55237-4/, detached at
+// the base commit, and `git worktree list` showed four entries afterwards. `git worktree add`
+// refuses a directory it already knows about, so one abandoned race breaks every later race in
+// that repository, and the error names a directory rather than the race that left it behind.
+//
+// removeWorktrees runs on the driver's paths out, not on a signal, and no signal handler survives
+// SIGKILL anyway. So the sweep runs at race *start* instead: self-healing rather than
+// cleanup-dependent, which is the only shape that survives a kill nothing can catch.
+//
+// The run lock (0.82.0) is what makes this provable rather than merely likely. One driver per
+// repository means that at the moment a race begins, every dare-race worktree already registered
+// is by definition not owned by a live race here.
+describe('sweepRaceWorktrees', () => {
+  const PORCELAIN = [
+    'worktree /repo',
+    'HEAD abc',
+    'branch refs/heads/main',
+    '',
+    'worktree /tmp/dare-race-55237-4/dare-race-01',
+    'HEAD abc',
+    'detached',
+    '',
+    'worktree /tmp/dare-race-55237-4/dare-race-02',
+    'HEAD abc',
+    'detached',
+    '',
+  ].join('\n');
+
+  /**
+   * @param {{ list?: { ok: boolean, stdout: string }, remove?: boolean }} answers
+   */
+  function runnerFor(answers = {}) {
+    /** @type {string[][]} */
+    const calls = [];
+    /** @type {import('../scripts/race.mjs').Runner} */
+    const run = (command, args) => {
+      calls.push([command, ...args]);
+      if (args[0] === 'worktree' && args[1] === 'list') {
+        const list = answers.list ?? { ok: true, stdout: PORCELAIN };
+        return { ok: list.ok, status: list.ok ? 0 : 1, stdout: list.stdout, stderr: list.ok ? '' : 'not a git repository' };
+      }
+      if (args[0] === 'worktree' && args[1] === 'remove' && answers.remove === false) {
+        return { ok: false, status: 1, stdout: '', stderr: 'is dirty, use --force' };
+      }
+      return { ok: true, status: 0, stdout: '', stderr: '' };
+    };
+    return { calls, run };
+  }
+
+  it('removes every abandoned race worktree it finds', () => {
+    const { run } = runnerFor();
+    const swept = sweepRaceWorktrees({ cwd: '/repo', run });
+    assert.deepStrictEqual(swept.removed, ['/tmp/dare-race-55237-4/dare-race-01', '/tmp/dare-race-55237-4/dare-race-02']);
+    assert.deepStrictEqual(swept.problems, []);
+  });
+
+  // The benign neighbour, and the one that matters most: this runs against the operator's real
+  // repository, where a worktree of their own must survive untouched.
+  it('leaves the main worktree and anything not ours completely alone', () => {
+    const { calls, run } = runnerFor({
+      list: {
+        ok: true,
+        stdout: ['worktree /repo', 'branch refs/heads/main', '', 'worktree /home/me/feature-branch', 'branch refs/heads/feature', ''].join('\n'),
+      },
+    });
+    const swept = sweepRaceWorktrees({ cwd: '/repo', run });
+    assert.deepStrictEqual(swept.removed, []);
+    assert.equal(
+      calls.some((call) => call.includes('remove')),
+      false,
+      'a worktree that is not a race candidate was removed',
+    );
+  });
+
+  it('prunes afterwards, so an administrative entry cannot block the next race on its own', () => {
+    const { calls, run } = runnerFor();
+    sweepRaceWorktrees({ cwd: '/repo', run });
+    assert.deepStrictEqual(calls[calls.length - 1], ['git', 'worktree', 'prune']);
+  });
+
+  it('reports a removal it could not perform rather than reporting a clean sweep', () => {
+    const { run } = runnerFor({ remove: false });
+    const swept = sweepRaceWorktrees({ cwd: '/repo', run });
+    assert.deepStrictEqual(swept.removed, []);
+    assert.equal(swept.problems.length, 2);
+    assert.equal(swept.problems[0].includes('dare-race-01'), true, swept.problems[0]);
+  });
+
+  it('reports a list it could not read, instead of concluding there is nothing to sweep', () => {
+    const { run } = runnerFor({ list: { ok: false, stdout: '' } });
+    const swept = sweepRaceWorktrees({ cwd: '/repo', run });
+    assert.deepStrictEqual(swept.removed, []);
+    assert.equal(swept.problems.length, 1);
+    assert.equal(swept.problems[0].includes('not a git repository'), true, swept.problems[0]);
   });
 });
 

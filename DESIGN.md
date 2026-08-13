@@ -1988,6 +1988,16 @@ The constraints are the design:
   leaked worktree is not cosmetic: `git worktree add` refuses a directory it already knows
   about, so one abandoned race breaks every later race, and the error names a directory
   rather than the race that left it behind.
+- **And the sweep runs at race *start*, because cleanup on the way out cannot cover `SIGKILL`.**
+  Killing a driver mid-race with `-9` left three worktrees at `/tmp/dare-race-55237-4/` on 13
+  August 2026; no `finally` and no signal handler survives that. `sweepRaceWorktrees` removes
+  every `dare-race-NN` worktree already registered before creating any, then prunes — an entry
+  whose directory is already gone is invisible to a removal loop and still refuses the next
+  `worktree add` on that path. **The run lock (§3.5) is what makes this safe rather than merely
+  likely to be safe:** one driver per repository means a race worktree present when a race begins
+  cannot belong to a live race here. Tier 2 proves the consequence rather than asserting it — an
+  abandoned race really does make the next `createWorktrees` return zero worktrees, and the sweep
+  really does restore it.
 - The winner lands by `git merge --ff-only`. The winner's commit descends from the commit the
   race started at, so the merge is a pointer move; if that is ever untrue it fails loudly
   rather than inventing a merge commit nobody reviewed.
