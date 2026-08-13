@@ -34,6 +34,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 /** @typedef {{ enabled: boolean, maxPerBrief: number }} LessonsConfig */
 /** @typedef {{ maxCharacters: number }} ContextBudgetConfig */
 /** @typedef {{ enabled: boolean }} OracleConfig */
+/** @typedef {{ enabled: boolean }} PanelCarryConfig */
 /**
  * @typedef {{
  *   maxIterations: number, stallLimit: number, tokenCeiling: number, costCeiling: number,
@@ -42,6 +43,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, styleModel: string, lessonModel: string,
  *   qualityPlugins: string[], effort: Record<string, string>, oracle: OracleConfig,
+ *   panelCarry: PanelCarryConfig,
  *   deploy: DeployConfig, extractTests: boolean,
  *   chaos: number, realityCheck: RealityCheckConfig, dareMe: DareMeConfig, race: RaceConfig,
  *   advisory: AdvisoryConfig, lessons: LessonsConfig, contextBudget: ContextBudgetConfig
@@ -135,6 +137,14 @@ export function defaultConfig() {
     // `driver.mjs` passes `--max-budget-usd` from what the run has left. Zero here means the
     // flag is not passed at all. An operator who has measured their own turn counts can set it.
     maxChildTurns: 0,
+    // A8's carry (BRIEF.md A8, DESIGN.md §4.3). A requirement a cold reviewer already passed
+    // with file:line evidence, whose evidenced file has not changed, is not re-argued on an
+    // iteration that is going to fail anyway.
+    //
+    // On by default because it can only ever *skip work on a failing iteration*: a narrowed
+    // panel that says pass triggers the full panel before any ship, so nothing carried can
+    // reach a ship decision. The saving is real and the guarantee is unchanged.
+    panelCarry: { enabled: true },
     reviewers: ['security', 'correctness', 'design'],
     ownership: Object.fromEntries(Object.entries(DEFAULT_OWNERSHIP).map(([reviewer, ids]) => [reviewer, [...ids]])),
     requireUnanimous: true,
@@ -446,6 +456,14 @@ export function validateConfig(input) {
     rejectUnknownKeys(oracle, new Set(['enabled']), 'oracle');
     merged.oracle = {
       enabled: 'enabled' in oracle ? requireBoolean(oracle.enabled, 'oracle.enabled') : defaults.oracle.enabled,
+    };
+  }
+
+  if ('panelCarry' in source) {
+    const carry = requireObject(source.panelCarry, 'panelCarry');
+    rejectUnknownKeys(carry, new Set(['enabled']), 'panelCarry');
+    merged.panelCarry = {
+      enabled: 'enabled' in carry ? requireBoolean(carry.enabled, 'panelCarry.enabled') : defaults.panelCarry.enabled,
     };
   }
 

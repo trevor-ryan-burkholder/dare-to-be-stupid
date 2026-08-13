@@ -47,6 +47,9 @@ describe('defaultConfig', () => {
       // Zero means the flag is not passed at all. There is no arithmetic from a dollar
       // ceiling to a number of turns, so a non-zero default would be an invented threshold.
       maxChildTurns: 0,
+      // On by default: it can only skip work on an iteration that is going to fail, because a
+      // narrowed panel that passes triggers the full panel before any ship.
+      panelCarry: { enabled: true },
       reviewers: ['security', 'correctness', 'design'],
       ownership: {
         security: ['DoD-2-security'],

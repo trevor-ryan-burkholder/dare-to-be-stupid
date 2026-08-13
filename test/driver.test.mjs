@@ -54,7 +54,9 @@ import {
   appendBlooper,
   assertNotNested,
   assertOwnershipCovers,
+  carriedReport,
   childBudget,
+  narrowedPanelPlan,
   shipTimeMutationScope,
   claudeArgs,
   formatGateFailure,
@@ -3433,6 +3435,79 @@ describe('red-evidence', () => {
 // ---------------------------------------------------------------------------
 // Run state must never enter the target repository's history
 // ---------------------------------------------------------------------------
+
+describe('narrowedPanelPlan', () => {
+  const ASSIGNMENTS = [
+    { reviewer: 'security', ids: ['DoD-2-security'] },
+    { reviewer: 'correctness', ids: ['PRD-1.1', 'PRD-1.2', 'DoD-1-requirements'] },
+    { reviewer: 'design', ids: ['DoD-5-design'] },
+  ];
+  const REQUIRED = ['DoD-2-security', 'PRD-1.1', 'PRD-1.2', 'DoD-1-requirements', 'DoD-5-design'];
+
+  /** @param {string} id @returns {import('../scripts/pins.mjs').RequirementPin} */
+  const pin = (id) => ({ id, evidence: `src/${id}.mjs:4`, file: `src/${id}.mjs`, fingerprint: 'abc', pinnedAt: 2 });
+
+  it('drops carried ids from the reviewers that own them', () => {
+    const plan = narrowedPanelPlan(ASSIGNMENTS, [pin('PRD-1.1')], REQUIRED);
+    assert.equal(plan.narrowed, true);
+    assert.deepStrictEqual(
+      plan.assignments.find((a) => a.reviewer === 'correctness')?.ids,
+      ['PRD-1.2', 'DoD-1-requirements'],
+    );
+    assert.deepStrictEqual(plan.carried.map((p) => p.id), ['PRD-1.1']);
+  });
+
+  it('drops a reviewer whose every id is carried, which is where the saving is', () => {
+    const plan = narrowedPanelPlan(ASSIGNMENTS, [pin('DoD-5-design')], REQUIRED);
+    assert.equal(
+      plan.assignments.some((a) => a.reviewer === 'design'),
+      false,
+      'a reviewer with nothing left to judge should not be spawned',
+    );
+    assert.equal(plan.assignments.length, 2);
+  });
+
+  it('refuses to narrow when every required id is carried', () => {
+    // A run that shipped on pins alone, with no fresh cold read at all, would have replaced the
+    // one component of this architecture that nothing else substitutes for.
+    const plan = narrowedPanelPlan(ASSIGNMENTS, REQUIRED.map(pin), REQUIRED);
+    assert.equal(plan.narrowed, false);
+    assert.deepStrictEqual(plan.assignments, ASSIGNMENTS);
+    assert.deepStrictEqual(plan.carried, []);
+  });
+
+  it('refuses to narrow when nothing is carried, and hands back the plan untouched', () => {
+    const plan = narrowedPanelPlan(ASSIGNMENTS, [], REQUIRED);
+    assert.equal(plan.narrowed, false);
+    assert.deepStrictEqual(plan.assignments, ASSIGNMENTS);
+  });
+
+  it('ignores a pin for an id this run does not require', () => {
+    // A pin left by an earlier objective whose requirement is gone must not shrink anything,
+    // and must certainly not count toward "everything is carried".
+    const plan = narrowedPanelPlan(ASSIGNMENTS, [pin('PRD-9.9')], REQUIRED);
+    assert.equal(plan.narrowed, false);
+    assert.deepStrictEqual(plan.carried, []);
+  });
+});
+
+describe('carriedReport', () => {
+  it('shapes carried pins as a passing report that names where each pass came from', () => {
+    const report = carriedReport([
+      { id: 'PRD-1.1', evidence: 'src/a.mjs:4', file: 'src/a.mjs', fingerprint: 'x', pinnedAt: 3 },
+    ]);
+    assert.equal(report.verdict, 'pass');
+    assert.deepStrictEqual(report.problems, []);
+    assert.deepStrictEqual(report.advisories, []);
+    assert.equal(report.requirements.length, 1);
+    assert.equal(report.requirements[0].id, 'PRD-1.1');
+    assert.equal(report.requirements[0].status, 'pass');
+    assert.equal(report.requirements[0].evidence, 'src/a.mjs:4');
+    // It must read as a prior pass being carried, never as a fresh judgement.
+    assert.equal(report.requirements[0].detail.includes('carried from the cold pass at iteration 3'), true);
+    assert.equal(report.requirements[0].detail.includes('has not changed since'), true);
+  });
+});
 
 describe('shipTimeMutationScope', () => {
   // The 0.56.0 contradiction: the ship-withheld objective says "prove the test suite can fail"

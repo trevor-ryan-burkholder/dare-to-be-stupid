@@ -1716,23 +1716,67 @@ export function driveRun(options) {
 
     // ---- Phase 5: review ------------------------------------------------
     // Each member is asked only about the ids it owns, and must return every one of them.
+
+    // A8's carry (`BRIEF.md` A8, deferred half). A requirement a cold reviewer already passed
+    // with `file:line` evidence, whose evidenced file has not changed since, does not need
+    // arguing again on an iteration that is going to fail anyway.
+    //
+    // **It is a pre-filter, never a replacement, and that is the load-bearing half.** A8's own
+    // wording is that *the full panel still runs before a `SHIPPED` verdict*, and the reason is
+    // concrete: carry enough ids and a whole reviewer is skipped, and run 10's ship was saved by
+    // the **design** auditor noticing an inert `bin` that no requirement asked about. A run that
+    // shipped without that reviewer looking at the final tree would have carried away the one
+    // thing this architecture has that no gate can do. So a narrowed panel that says `pass`
+    // buys nothing but speed on the way to a full panel, which then decides.
+    const carriedPins =
+      effects.readSource === undefined || !config.panelCarry.enabled
+        ? []
+        : pins.requirements.filter((pin) => verifyRequirementPin(pin, /** @type {(f: string) => string | null} */ (effects.readSource)) === 'carry');
+    const plan = narrowedPanelPlan(panelPlan.assignments, carriedPins, requiredIds);
+
+    /**
+     * Run one panel over a set of assignments.
+     *
+     * @param {{ reviewer: string, ids: string[] }[]} assignments
+     * @returns {{ done: true, reports: ReviewerReport[] } | { done: false, outcome: RunOutcome }}
+     */
+    const runPanel = (assignments) => {
+      /** @type {ReviewerReport[]} */
+      const collected = [];
+      for (const { reviewer, ids } of assignments) {
+        const result = effects.review(reviewer, ids);
+        const exhausted = charge(result);
+        // A reviewer that died is not a reviewer that found problems. Scoring it as a
+        // failing audit would hand the builder "output could not be parsed" as though it
+        // were a finding, and burn the remaining iterations against a wall.
+        if (!result.ok) return { done: false, outcome: landCleanly(result, iterationNumber, `${reviewer} audit`) };
+        // Ending here abandons the reviewers that have not run. That is correct: a panel is
+        // only unanimous if every member answered, so a partial panel cannot ship anyway.
+        if (exhausted) return { done: false, outcome: finish('BUDGET', ceilingReason()) };
+        collected.push(
+          parseReviewerReport(result.text, { requiredIds: ids, minConfidence: config.advisory.minConfidence }),
+        );
+      }
+      return { done: true, reports: collected };
+    };
+
+    const first = runPanel(plan.assignments);
+    if (!first.done) return first.outcome;
     /** @type {ReviewerReport[]} */
-    const reports = [];
-    for (const { reviewer, ids } of panelPlan.assignments) {
-      const result = effects.review(reviewer, ids);
-      const exhausted = charge(result);
-      // A reviewer that died is not a reviewer that found problems. Scoring it as a
-      // failing audit would hand the builder "output could not be parsed" as though it
-      // were a finding, and burn the remaining iterations against a wall.
-      if (!result.ok) return landCleanly(result, iterationNumber, `${reviewer} audit`);
-      // Ending here abandons the reviewers that have not run. That is correct: a panel is
-      // only unanimous if every member answered, so a partial panel cannot ship anyway.
-      if (exhausted) return finish('BUDGET', ceilingReason());
-      reports.push(
-        parseReviewerReport(result.text, { requiredIds: ids, minConfidence: config.advisory.minConfidence }),
-      );
+    let reports = plan.carried.length === 0 ? first.reports : [...first.reports, carriedReport(plan.carried)];
+    let panel = combinePanel(reports, { requireUnanimous: config.requireUnanimous, requiredIds });
+
+    if (plan.narrowed && panel.verdict === 'pass') {
+      // The pre-filter said yes, so the answer now costs what it always cost. Nothing that
+      // reaches a ship decision was carried.
+      effects.log(`panel carry: ${plan.carried.length} requirement(s) were carried, and the full panel now runs before any ship`);
+      const full = runPanel(panelPlan.assignments);
+      if (!full.done) return full.outcome;
+      reports = full.reports;
+      panel = combinePanel(reports, { requireUnanimous: config.requireUnanimous, requiredIds });
+    } else if (plan.narrowed) {
+      effects.log(`panel carry: skipped re-review of ${plan.carried.length} requirement(s) whose evidence has not changed`);
     }
-    const panel = combinePanel(reports, { requireUnanimous: config.requireUnanimous, requiredIds });
 
     // Written before anything acts on it, so a record exists whichever way the run then goes.
     recordPanelVerdict(dareDir, {
@@ -2745,6 +2789,66 @@ export function formatGateFailure(failed, maxLines = 60) {
     if (lines.length > maxLines) out.push(`    ... ${lines.length - maxLines} more line(s) not shown`);
   }
   return out;
+}
+
+/**
+ * The panel plan with already-carried requirements removed, plus what was carried.
+ *
+ * **Two refusals to narrow, and both are the point.**
+ *
+ * *Nothing left to ask.* If every required id is carried, the panel is run in full. A run that
+ * shipped without a single fresh cold read, purely on pins recorded earlier, would have replaced
+ * the architecture's one irreplaceable component with a cache.
+ *
+ * *A reviewer emptied.* A reviewer whose ids are all carried is dropped from the narrowed pass,
+ * which is exactly the saving — and exactly why the caller re-runs the full panel before any
+ * ship. Run 10's ship was saved by the **design** auditor spotting an inert `bin`, which no
+ * requirement asked about.
+ *
+ * @param {{ reviewer: string, ids: string[] }[]} assignments
+ * @param {import('./pins.mjs').RequirementPin[]} carriedPins
+ * @param {string[]} requiredIds
+ * @returns {{ assignments: { reviewer: string, ids: string[] }[], carried: import('./pins.mjs').RequirementPin[], narrowed: boolean }}
+ */
+export function narrowedPanelPlan(assignments, carriedPins, requiredIds) {
+  const carried = carriedPins.filter((pin) => requiredIds.includes(pin.id));
+  if (carried.length === 0 || carried.length >= requiredIds.length) {
+    return { assignments, carried: [], narrowed: false };
+  }
+  const carriedIds = new Set(carried.map((pin) => pin.id));
+  const narrowedAssignments = assignments
+    .map((assignment) => ({ reviewer: assignment.reviewer, ids: assignment.ids.filter((id) => !carriedIds.has(id)) }))
+    .filter((assignment) => assignment.ids.length > 0);
+  // Every reviewer emptied at once, with ids still uncarried somewhere: an ownership map that
+  // does not cover what it should. Fail safe by not narrowing rather than by shipping a panel
+  // of nobody.
+  if (narrowedAssignments.length === 0) return { assignments, carried: [], narrowed: false };
+  return { assignments: narrowedAssignments, carried, narrowed: true };
+}
+
+/**
+ * The carried requirements, shaped as a reviewer report so `combinePanel` needs no special case.
+ *
+ * These are not new judgements and must never read as one. Each is a **prior cold-panel pass**,
+ * with the evidence that earned it, whose evidenced file `verifyRequirementPin` has just
+ * confirmed unchanged. Any change to that file unpins; a missing target is a fail, never a
+ * carried pass (`BRIEF.md` A8).
+ *
+ * @param {import('./pins.mjs').RequirementPin[]} carried
+ * @returns {ReviewerReport}
+ */
+export function carriedReport(carried) {
+  return {
+    verdict: 'pass',
+    requirements: carried.map((pin) => ({
+      id: pin.id,
+      status: /** @type {'pass'} */ ('pass'),
+      evidence: pin.evidence,
+      detail: `carried from the cold pass at iteration ${pin.pinnedAt}; ${pin.evidence} has not changed since`,
+    })),
+    advisories: [],
+    problems: [],
+  };
 }
 
 /**

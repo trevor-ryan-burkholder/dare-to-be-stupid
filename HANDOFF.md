@@ -1,9 +1,9 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.91.0`. Measured at 0.91.0: `npm test` **1635 pass**,
+**State:** `main` at `0.92.0`. Measured at 0.92.0: `npm test` **1641 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**. `npm run test:live` **23 of 23 across 10 files** at 0.90.0 and
-not re-run since — nothing in 0.91.0 touches a spawn path or a template contract.
+not re-run since — nothing in 0.91.0–0.92.0 touches a spawn path or a template contract.
 
 **This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
 `package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
@@ -14,6 +14,31 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### Item 12 — A8's carry. Mechanism DONE at 0.92.0; the measured delta is owed and cannot come from here
+
+`narrowedPanelPlan` removes already-carried requirement ids from the panel plan; `carriedReport`
+shapes the carried pins as a passing reviewer report so `combinePanel` needs no special case, each
+entry saying outright *"carried from the cold pass at iteration N"* rather than posing as a fresh
+judgement. `panelCarry.enabled` defaults **on**.
+
+**Why on-by-default is safe, and it rests entirely on one property:** carrying can only skip work
+on an iteration that was going to fail. A narrowed panel that returns `pass` triggers the **full**
+panel, which then decides. Two further refusals to narrow: everything carried (a run shipping on
+pins alone, with no fresh cold read, would have replaced the irreplaceable component with a
+cache), and every reviewer emptied (an ownership map not covering what it should).
+
+**The concrete thing being protected is run 10.** Carry enough ids and a whole reviewer is
+dropped, and run 10's ship was saved by the **design** auditor noticing an inert `bin` that no
+requirement asked about. A8's own wording — *"the full panel still runs before a `SHIPPED`
+verdict"* — is that, and it is why the carry is a pre-filter rather than a replacement.
+
+**NOT DONE, and it is half the Done-when:** the measured review-cost delta. `BRIEF.md` A8's own
+correction says no run has reached the panel twice and that "review becomes the dominant cost on
+a long run" is a *prediction*. Nothing unattended can produce that number — it needs a dogfood run.
+**Parked with items 7/8/20; the first run that reaches the panel repeatedly owes this file a
+number.** Until then the mechanism is safe-by-construction and of unproven value, which is what
+the docs now say.
 
 ### Item 11 — ship-time mutation. DONE at 0.91.0, and the proposal was wrong in one place
 

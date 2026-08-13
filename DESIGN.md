@@ -1678,6 +1678,30 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `childTimeoutMs` | 1_800_000 | bounds *wall-clock per child*, and it is the only one of the three that is a watchdog. `tokenCeiling` and `costCeiling` bind a child that returns; neither can see one that does not. Roughly 2.8x the longest child ever observed (§3.9) |
 | `gateTimeoutMs` | 2_700_000 | the same watchdog for gate commands, which hang the same way. **Not derived from measurement**, unlike the row above: no run has recorded a per-gate duration and mutation testing is the unmeasured slow one, so this is a backstop sized to be embarrassing to hit. When it fires, the driver also sweeps the descendants the gate leaked — see below |
 
+**A8's carry is a pre-filter, and calling it that is the whole safety argument.** Carrying skips
+re-review of requirements whose evidence is pinned and unchanged. Two refusals to narrow, and a
+third guarantee, each of them protecting something concrete:
+
+- **Every id carried → no narrowing.** A run that shipped on pins alone, with no fresh cold read
+  at all, would have replaced the one component of this architecture that nothing substitutes for.
+- **Every reviewer emptied → no narrowing.** That means an ownership map that does not cover what
+  it should; fail safe rather than convene a panel of nobody.
+- **A narrowed panel that says `pass` triggers the full panel**, which then decides. Carry enough
+  ids and a whole reviewer is skipped — and run 10's ship was saved by the **design** auditor
+  noticing an inert `bin` that no requirement asked about. The saving lands on failing iterations,
+  which on a long run is where the iterations are; the one shipping iteration pays in full.
+
+Carried requirements enter `combinePanel` as a synthetic report so nothing needs a special case,
+and each entry says outright that it was *carried from the cold pass at iteration N*, never
+phrased as a fresh judgement. Invalidation is unchanged and fail-closed (`BRIEF.md` A8): any
+change to the evidenced file unpins, and a missing target is a **fail**, never a carried pass.
+
+**Unmeasured, and labelled so.** `BRIEF.md` A8's own correction notes that "review becomes the
+dominant cost on a long run" is a prediction rather than a measurement, and no run has yet
+reported a review-cost delta from carrying. The mechanism is safe by construction — it can only
+skip work on an iteration that was going to fail — but its *value* is owed a number from the
+first dogfood run that reaches the panel repeatedly.
+
 **Ship-time mutation: the driver runs the gate rather than asking for something impossible.**
 When the panel passes and nothing else has shown the suite can fail, the objective used to be
 *"prove the test suite can fail"*, naming *"changing any first-party source"* as the escape —
@@ -1772,6 +1796,7 @@ the ceiling. Ctrl-C reaches the whole group and so takes the leak with it, but `
 the driver alone does not, and the driver cannot run a handler while blocked inside
 `execFileSync`. Closing that is part of the async driver conversion, where a free event loop
 makes signal forwarding possible at all.
+| `panelCarry.enabled` | true | A8's carry: a requirement a cold reviewer already passed with `file:line` evidence, whose evidenced file has not changed, is not re-argued on an iteration that is going to fail anyway. **A pre-filter only** — a narrowed panel that passes triggers the full panel before any ship, so nothing carried ever reaches a ship decision |
 | `maxChildTurns` | **0** (off) | `--max-turns` on each child. Zero means the flag is not passed. **No default is offered because none can be derived**: there is no arithmetic from a token or dollar ceiling to a number of agentic turns, and a made-up number would wear the authority of a measured one |
 | `reviewers` | `["security","correctness","design"]` | the specialized cold panel (§1.1); each owns its DoD lines |
 | `ownership` | see §1.1 | reviewer → id patterns (`*` is the only wildcard). Must cover every required id, or the run refuses to start |

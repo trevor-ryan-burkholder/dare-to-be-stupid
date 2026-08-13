@@ -142,12 +142,20 @@ run 9). Two named pre-checks: whole-tree mutation cost at ship time, and that it
 a ship that never earned mutation on its own changes. **Not while any run is testing ship
 logic.**
 
-### 12. A8 carry — skip re-review of pinned requirements — OPEN
+### 12. A8 carry — skip re-review of pinned requirements — DONE (0.92.0), delta unmeasured
 The deferred half of A8. The baseline that was missing now exists: runs reach the panel
 repeatedly and run 13's oscillation is costed. Invalidation stays fail-closed as specified in
 `BRIEF.md` A8; the full panel still precedes `SHIPPED`.
 **Done when:** an unchanged-evidence requirement is carried, a changed-evidence one is
 re-reviewed, both tested, and the measured review-cost delta lands in `HANDOFF.md`.
+
+**Mechanism landed; the measured delta is NOT and cannot be from here.** `narrowedPanelPlan` +
+`carriedReport`, `panelCarry.enabled` on by default, with two refusals to narrow (everything
+carried, every reviewer emptied) and the guarantee that a narrowed `pass` triggers the **full**
+panel before any ship — because run 10's design auditor is exactly what carrying could skip.
+Invalidation unchanged and fail-closed. **The review-cost delta needs a run that reaches the
+panel twice, which is dogfood-class; it is parked with items 7/8/20 and owed to `HANDOFF.md`
+from the first such run.**
 
 ### 13. C5 — differentiated race candidates — OPEN
 Precondition met (racing lands winners since 0.83.0). One distinct stall hypothesis per
