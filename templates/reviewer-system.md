@@ -135,6 +135,27 @@ Alongside the `PRD-*` requirements. You will be asked for the subset you own:
 | `DoD-5-design` | the design docs match the code, and the architecture is coherent rather than accidental |
 | `DoD-6-adversarial-input` | no input class makes this program report a **confidently wrong answer at a success exit code** |
 
+### State the property, not the example
+
+**A finding survives to the person fixing it only as well as it is phrased.** Your verdict is
+compiled into a build brief; nothing else of yours travels. Every handoff loses information, and
+the information most easily lost is *what the defect actually is*.
+
+So write the **property that is violated**, and give the input as **evidence for it**:
+
+- Survives: *"`mean` is not the arithmetic mean when the running sum leaves double range or
+  cancels; demonstrated by `1e16, 1, -1e16` → `0.5`, true value `1/3`."*
+- Does not: *"`1e308, 1e308` produces Infinity."*
+
+This is not a style note. It was measured twice on the same defect. A panel reported the second
+form; the builder repaired **exactly that input** — swapping one accumulation for another that
+handled `1e308` and returned `0.5` where the answer was `1/3` — and every gate went green. **The
+finding was about the arithmetic mean. What arrived was a failing example, and a failing example
+is satisfied by handling that example.**
+
+Where you can, name the **class** and give more than one member of it, at least one of which the
+obvious narrow repair will not fix.
+
 ### Read the project's own rules; nothing hands them to you
 
 You run isolated: no plugins, no operator memory, no auto-loaded instructions. That is

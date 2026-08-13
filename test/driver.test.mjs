@@ -1339,7 +1339,7 @@ describe('driveRun', () => {
    * @param {string[]} [seedPassing]
    * @param {string[]} [requiredIds]
    */
-  function run(overrides, configOverrides = {}, seedPassing = [], requiredIds = ['PRD-1.1']) {
+  function run(overrides, configOverrides = {}, seedPassing = [], requiredIds = ['PRD-1.1'], unitCommand = 'npx vitest run --reporter=json') {
     const root = makeTempDir();
     const dareDir = path.join(root, '.dare');
     if (seedPassing.length > 0) {
@@ -1366,6 +1366,7 @@ describe('driveRun', () => {
       rootDir: root,
       requiredIds,
       task: 'build the thing',
+      unitCommand,
       effects: effectsWith(overrides),
     });
     return { outcome, dareDir, root };
@@ -2111,9 +2112,16 @@ describe('driveRun', () => {
         },
       },
       { maxIterations: 2 },
+      [],
+      ['PRD-1.1'],
+      'npx some-runner run --reporter=json',
     );
     assert.equal(briefs[1].includes('make the test suite run and pass'), true);
-    assert.equal(briefs[1].includes('npx vitest run'), true);
+    // Derived, not hardcoded. An audit found this sentence written three times and correct
+    // once; on a non-Node toolchain the hardcoded copies gave wrong runner advice at the exact
+    // moment the builder was being corrected for using the wrong runner.
+    assert.equal(briefs[1].includes('npx some-runner run --reporter=json'), true);
+    assert.equal(briefs[1].includes('npx vitest run'), false, 'the runner is still hardcoded');
   });
 
   it('hands the regression back in the next brief, above everything else', () => {

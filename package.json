@@ -1,6 +1,6 @@
 {
   "name": "dare-to-be-stupid",
-  "version": "0.75.0",
+  "version": "0.76.0",
   "private": true,
   "type": "module",
   "description": "A Claude Code plugin: /dare hands a PRD to an autonomous loop that designs, builds, gates, reviews and ships until it passes an enterprise definition of done, or the budget dies.",
@@ -13,7 +13,7 @@
     "typecheck": "tsc -p jsconfig.json",
     "test": "node --test \"test/*.test.mjs\"",
     "test:integration": "node --test --test-concurrency=1 \"test/integration/*.test.mjs\"",
-    "test:live": "node --test --test-concurrency=1 \"test/live/*.test.mjs\"",
+    "test:live": "node tools/run-live.mjs",
     "test:all": "npm test && npm run test:integration",
     "release-check": "node tools/release-check.mjs"
   },

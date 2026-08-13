@@ -109,22 +109,21 @@ nothing else. Do not improve anything on the way past. Do not refactor the thing
 A regression has already cost a hard reset and thrown away every other change in that
 iteration. A second one costs another.
 
-## The gates run vitest and Playwright, whichever runner you prefer
+## The gates collect tests with one specific command, whichever runner you prefer
 
 This is the one place the "use whatever tools you like" rule does not apply, because the
 ratchet reads the runner's report rather than its exit code:
 
-- unit tests are collected by `npx vitest run --reporter=json`
-- browser tests are collected by `npx playwright test`
+{{unitLine}}
+{{e2eLine}}
 
-Both are installed for you. A test written for a runner these two cannot collect is
-invisible to the ratchet — `node:test`, mocha and tape all produce a report with **zero
-tests**, which is not evidence that anything passed. Nothing enters the ratchet, the
-iteration scores nothing, and you will be handed the same objective again no matter how
-green `npm test` looked to you.
+Whatever is needed is installed for you. **A test written for a runner that command cannot
+collect is invisible to the ratchet** — it produces a report with **zero tests**, which is not
+evidence that anything passed. Nothing enters the ratchet, the iteration scores nothing, and you
+will be handed the same objective again no matter how green your own test script looked to you.
 
-Define the `test` script in `package.json` however you like. Just make sure the suite it
-runs is the suite vitest collects, so a green run and a green gate mean the same thing.
+Define the `test` script in your manifest however you like. Just make sure the suite it runs is
+the suite **that command** collects, so a green run and a green gate mean the same thing.
 
 ## Tests assert values
 

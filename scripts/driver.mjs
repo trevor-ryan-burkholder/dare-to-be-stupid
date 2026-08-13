@@ -1072,6 +1072,7 @@ export function appendBlooper(dareDir, event) {
  *   rootDir: string,
  *   requiredIds: string[],
  *   task: string,
+ *   unitCommand?: string | null,
  *   gateNames?: string[],
  *   alreadySpent?: { tokens: number, costUsd: number },
  *   effects: Effects,
@@ -1491,8 +1492,9 @@ export function driveRun(options) {
         reason:
           'no test passed on the previous iteration. An empty result is not evidence that nothing regressed, so the ' +
           'ratchet cannot advance on it and nothing else can be judged. Check the runner before rewriting the ' +
-          'tests: the gate collects them with `npx vitest run`, so a suite written for a runner vitest cannot ' +
-          'collect reports zero tests however green `npm test` looks',
+          `tests: the gate collects them with \`${options.unitCommand ?? 'the toolchain unit command'}\`, so a suite ` +
+          'written for a runner that command cannot collect reports zero tests however green your own test ' +
+          'script looks',
       };
       closeIteration(iterationNumber, ['ratchet:no-passing-tests'], score, 0);
       continue;
@@ -2826,9 +2828,40 @@ export function renderTemplate(name, values) {
  * @returns {string}
  */
 export function builderSystemPrompt(cwd) {
-  const base = template('builder-system.md');
+  // The runner sentence is derived, not written down. An audit found this file and the
+  // `no-tests` objective both hardcoding vitest while `firstIterationTask` correctly derived it
+  // — three places stating one contract, two of them wrong for any toolchain but Node. On .NET
+  // the `no-tests` copy was worse than stale: it gave wrong runner advice at the exact moment
+  // the builder was being corrected for using the wrong runner.
+  //
+  // Every greenfield failure this project has recorded is this sentence (§8, run 6's 978
+  // seconds and 14M tokens on a `node --test` suite the gate collected nothing from), so it is
+  // now stated once, from `gateSummary`, and rendered.
+  const base = renderTemplate('builder-system.md', runnerLines(cwd));
   if (!hasFrontend(cwd)) return base;
   return `${base}\n\n---\n\n${template('frontend-direction.md')}`;
+}
+
+/**
+ * The two runner sentences, from the toolchain that will actually run.
+ *
+ * A gate the toolchain declines contributes an honest sentence saying so rather than being
+ * omitted: a list that silently shrinks from two entries to one reads exactly like a project
+ * that only ever had one, which is §3.8's rule about declined operations.
+ *
+ * @param {string} cwd
+ * @returns {{ unitLine: string, e2eLine: string }}
+ */
+function runnerLines(cwd) {
+  /** @param {string} name @param {string} what */
+  const line = (name, what) => {
+    const gate = gateSummary(cwd, path.join(cwd, '.dare')).gates.find((g) => g.name === name);
+    const command = gate === undefined ? null : gate.command.join(' ');
+    return command === null
+      ? `- ${what} are not collected on this toolchain, so none can enter the ratchet`
+      : `- ${what} are collected by \`${command}\``;
+  };
+  return { unitLine: line('unit', 'unit tests'), e2eLine: line('e2e', 'browser tests') };
 }
 
 /**
@@ -3605,6 +3638,9 @@ export function main(argv, io = {}) {
     gateNames,
     alreadySpent: preLoop,
     task: firstIterationTask(unitGateCommand(cwd, dareDir)),
+    // The same command, threaded so the `no-tests` objective names what the gate actually runs
+    // rather than a Node-shaped guess. Three places state this contract; all three now derive it.
+    unitCommand: unitGateCommand(cwd, dareDir),
     effects: {
       build: (brief) =>
         runChild({

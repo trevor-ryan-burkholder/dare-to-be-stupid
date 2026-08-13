@@ -160,8 +160,6 @@ describe('the builder template', () => {
     ['toBeTruthy', 'a concrete example of an assertion that proves nothing'],
     ['route handler', 'where guards belong'],
     ['Anything under `.dare/`, at any depth', 'what it may not touch, stated positionally'],
-    ['npx vitest run --reporter=json', 'the runner the unit gate collects with'],
-    ['npx playwright test', 'the runner the e2e gate collects with'],
     ['invisible to the ratchet', 'what a suite the gates cannot collect is worth'],
   ];
   for (const [needle, what] of required) {
@@ -169,6 +167,22 @@ describe('the builder template', () => {
       assert.equal(BUILDER.includes(needle), true, `builder template lost: ${needle}`);
     });
   }
+
+  it('leaves the runner to be derived, and names no runner itself', () => {
+    // It used to hardcode `npx vitest run --reporter=json` and `npx playwright test`. An audit
+    // found this sentence written in three places and correct in one: `firstIterationTask`
+    // derived it, while this template and the `no-tests` objective both asserted Node. On .NET
+    // the objective was worse than stale - it gave wrong runner advice at the exact moment the
+    // builder was being corrected for using the wrong runner.
+    //
+    // Every greenfield failure this project has recorded is this sentence, so the check is now
+    // that the template states no runner at all and carries the placeholders instead.
+    assert.equal(BUILDER.includes('{{unitLine}}'), true, 'the unit runner is no longer rendered');
+    assert.equal(BUILDER.includes('{{e2eLine}}'), true, 'the e2e runner is no longer rendered');
+    for (const hardcoded of ['npx vitest', 'npx playwright', 'node:test', 'mocha']) {
+      assert.equal(BUILDER.includes(hardcoded), false, `builder template hardcodes a runner: ${hardcoded}`);
+    }
+  });
 
   it('ties gold-plating to the ratchet rather than to taste', () => {
     // The reason this rule is load-bearing here and merely good advice elsewhere: a
@@ -590,5 +604,25 @@ describe('renderTemplate', () => {
     assert.equal(rendered.includes('src/a.ts:1'), true);
     assert.equal(rendered.includes('const guard = true;'), true);
     assert.equal(/\{\{[a-zA-Z]+\}\}/.test(rendered), false);
+  });
+});
+
+describe('the reviewer states properties rather than examples', () => {
+  // R15, from a Stanford multi-agent study whose stated mechanism is that each handoff risks
+  // losing relevant information. This loop has one handoff it cannot remove - panel finding to
+  // build brief to builder - and run 13 measured the loss twice on the same defect: the panel
+  // reported "1e308, 1e308 produces Infinity", the builder repaired exactly that input, and
+  // returned 0.5 where the answer was 1/3 with every gate green.
+  it('tells the reviewer to give the property and use the input as evidence', () => {
+    assert.equal(REVIEWER.includes('State the property, not the example'), true);
+    // Whitespace-normalised: the phrase wraps across lines in the template, and asserting the
+    // raw substring would fail on a reflow that changed nothing about the instruction.
+    const flat = REVIEWER.replace(/\s+/g, ' ');
+    assert.equal(flat.includes('a failing example is satisfied by handling that example'), true);
+  });
+
+  it('asks for more than one member of the class where possible', () => {
+    // One example invites one repair. The narrow fix is the failure mode being defended against.
+    assert.equal(REVIEWER.includes('at least one of which the'), true);
   });
 });
