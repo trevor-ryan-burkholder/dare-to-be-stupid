@@ -172,7 +172,23 @@ history that reached `SHIPPED` were given **150M** and **160M** ceilings and shi
 | you want | ceiling |
 |---|---|
 | an experiment that reaches the panel once | 15M — two iterations, and it will end `BUDGET` |
-| a run that can plausibly ship | **100–150M**, `maxIterations: 12` |
+| a run that can plausibly ship | **100–150M**, and see the iteration correction below |
+
+**Correct the iteration cap, not the token ceiling — measured by `ship1`, 13 August.** That run
+was given 150M / \$200 / 12 iterations and ended `BUDGET` on *"iteration limit reached: 12 of 12"*
+having spent **76.6M tokens (51%) and \$79 (40%)**. At ~6.4M per iteration, **`maxIterations: 12`
+cannot consume more than about 77M**, so pairing it with a 150M ceiling buys a ceiling that can
+never bind. Raising the tokens would have changed nothing.
+
+**Use ~20 iterations for a run that must ship**, and size tokens as `iterations × 6–9M`. `ship1`
+ended **two findings from done, one of them derivative** — still clearing findings on its final
+iteration, cut off by a counter rather than by exhaustion. The two historical ships landed at
+iterations 2 and 7, which is why 12 looked generous; it is generous only when the build converges
+fast.
+
+**Read the `% of budget remaining` line as the *tightest* of the three limits**, not as tokens.
+`airtimeRemaining` returns `min(byIterations, byTokens, byUsd)` deliberately. An 8%-per-iteration
+cadence on a 12-iteration run is `1/12` and says nothing about spend.
 
 **Money does not track tokens.** Two runs of the same PRD hours apart priced at **$0.766/M** and
 **$1.065/M** — a 39% swing driven by cache-read share. Set `costCeiling` from what you are willing

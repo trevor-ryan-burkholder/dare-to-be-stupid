@@ -21,10 +21,33 @@ line in the same commit.
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
 
-### `ship1`, in flight — what a properly budgeted run actually looks like
+### `ship1` — `BUDGET` at 12 of 12, and it ran out of **iterations**, not money
 
-**Written while the run is alive, and marked as such.** These are observations at iteration 4 of
-12, not an outcome. The final entry replaces this one.
+**Final: `BUDGET`, "iteration limit reached: 12 of 12", 4h45m, 76,561,979 tokens, \$79.19,
+ratchet 95 passing, worktree clean, 5 assumptions recorded.**
+
+**It spent 51% of its token ceiling and 40% of its dollars.** The binding constraint was
+`maxIterations`, and nothing else was close. `airtimeRemaining` had been saying so the whole time
+— it returns `min(byIterations, byTokens, byUsd)`, *"the tightest of the three, so the counter
+reports the limit that will actually end the run rather than the most flattering one"* — and the
+8%-per-iteration cadence I read all evening as token burn was `1/12`. **The counter was honest;
+the reading was not.** Recorded because the misreading is the easy one to repeat.
+
+**It was two findings from shipping and one of those was derivative.** Iteration 11 cleared
+`PRD-1.2`, `DoD-5` and `DoD-6` in a single pass, taking the panel from 4 findings to 2 — and of
+those, `DoD-1` fails *only because* `PRD-3.3` does. So it ended on **one real defect**: an
+ordering bug where the whole-file unterminated-quote scan runs before the header is examined, so a
+file with an empty first line does not exit 4.
+
+**The operator lesson, and it corrects this afternoon's guidance.** At ~6.4M tokens per iteration,
+`maxIterations: 12` can only ever consume ~77M — so pairing 12 iterations with a 150M ceiling
+buys a ceiling that cannot bind. **If a run needs to ship, raise `maxIterations`, not
+`tokenCeiling`.** The two historical ships landed at iterations 2 and 7, which is why 12 looked
+generous; `ship1` shows what happens when a build converges slowly but genuinely — it was still
+making progress on its last iteration and got cut off by a counter, not by exhaustion.
+
+**Everything below was written while it was alive** and is left as it stood, because the in-flight
+observations are what the design questions were actually answered by.
 
 **The budget question is answered: it was arithmetic, not decay.** Given 150M / $200 / 12
 iterations — the sizing the two historical ships used — `ship1` reached iteration 4 having spent
