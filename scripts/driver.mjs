@@ -2065,6 +2065,20 @@ const DARE_IGNORE_CONFIG_NOTE = [
 ];
 
 /**
+ * Directories a gate's tooling creates in the tree, which the driver must never commit.
+ *
+ * Not the same list as `DARE_IGNORED_PATHS`: those are the driver's own artifacts, and these
+ * belong to tools the driver invokes. Both end the same way if they are tracked — `git add -A`
+ * every iteration, then a hard reset restoring an older copy — which is why they share a
+ * mechanism even though they have different owners.
+ *
+ * `.hypothesis/` earned its place by execution: the first ever run of the schemathesis gate
+ * left one behind. The list is an enumeration, and enumeration has cost this repository three
+ * fixes already, so each entry arrives with the run that found it rather than by guesswork.
+ */
+export const TOOL_CACHE_PATHS = ['node_modules/', '.hypothesis/'];
+
+/**
  * What `.gitignore` should become, or null when it already covers `.dare/`.
  *
  * This is the fix for a genuine hole rather than tidiness. The driver commits with
@@ -2087,8 +2101,16 @@ export function dareIgnoreUpdate(existing) {
   // passed, nothing was appended, and `pins.json` stayed trackable. An all-or-nothing check on
   // a list that later grows is a check that stops covering its own list.
   const missing = DARE_IGNORED_PATHS.filter((entry) => !lines.includes(entry) && !lines.includes(`/${entry}`));
-  const needsNodeModules = !lines.includes('node_modules/') && !lines.includes('node_modules');
-  if (missing.length === 0 && !needsNodeModules) return null;
+  // Caches a *gate* leaves in the tree, which the driver would then commit with `git add -A`.
+  // `node_modules/` was the first; `.hypothesis/` is the second, and it was found the way the
+  // first three `.dare/` artifacts were — by execution, when the schemathesis gate was run for
+  // the first time and left a `.hypothesis/` directory behind in this very repository. Same
+  // defect class as `state.json`, `outcome.json` and `run.json`, arriving from a tool rather
+  // than from us: the driver does not commit machine state into the repository under test.
+  const missingCaches = TOOL_CACHE_PATHS.filter(
+    (entry) => !lines.includes(entry) && !lines.includes(entry.replace(/\/$/, '')),
+  );
+  if (missing.length === 0 && missingCaches.length === 0) return null;
 
   /** @type {string[]} */
   const stanza = [];
@@ -2096,8 +2118,8 @@ export function dareIgnoreUpdate(existing) {
   if (missing.length > 0 && !existing.includes('.dare/config.json is deliberately NOT ignored')) {
     stanza.push(...DARE_IGNORE_CONFIG_NOTE);
   }
-  if (needsNodeModules) {
-    stanza.push('', '# The driver commits with `git add -A` every iteration.', 'node_modules/');
+  if (missingCaches.length > 0) {
+    stanza.push('', '# The driver commits with `git add -A` every iteration.', ...missingCaches);
   }
   stanza.push('');
 

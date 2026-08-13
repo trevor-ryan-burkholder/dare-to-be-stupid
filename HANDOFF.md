@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.94.0`. Measured at 0.94.0: `npm test` **1655 pass**,
+**State:** `main` at `0.95.0`. Measured at 0.95.0: `npm test` **1659 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**. `npm run test:live` **23 of 23 across 10 files** at 0.90.0 and
 not re-run since. **Note:** 0.94.0 edits `templates/architect.md`, which is a template but not
@@ -15,6 +15,27 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.95.0 — the schemathesis gate leaves a cache in the tree, and 0.94.0 committed one here
+
+**Found by execution, immediately, in this repository.** Verifying the schemathesis argv left a
+`.hypothesis/` directory behind, and the 0.94.0 commit tracked it — three files of unicode tables
+and a generated example, committed into the plugin.
+
+It is the **fourth** instance of one defect class, after `state.json`, `outcome.json` and
+`run.json`: something writes machine state into the tree the driver commits with `git add -A`
+every iteration, and a later hard reset then restores an older copy of it. The difference is the
+owner. Those three were the driver's own artifacts; this one belongs to a **tool the driver
+invokes**, and no amount of care about `.dare/` would have caught it.
+
+So `TOOL_CACHE_PATHS` now sits beside `DARE_IGNORED_PATHS` in the same `.gitignore` mechanism —
+`node_modules/`, which was always there under an ad-hoc boolean, and `.hypothesis/`, which earned
+its place by being found. Both spellings, slashed and not, count as already covered.
+
+**It is still an enumeration and that is said in the comment**, because enumeration is what cost
+the first three fixes. What makes this one tolerable is that entries arrive with the run that
+found them rather than by guessing what a future tool might write. The next gate tool this
+project adopts should be assumed to litter until watched.
 
 ### Item 15 — R18's plumbing. DONE at 0.94.0, and the argv was executed rather than read
 

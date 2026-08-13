@@ -3,3 +3,6 @@ node_modules/
 
 # Run state for a `dare` run, never this repo's own (see CLAUDE.md scope note).
 .dare/
+
+# Left behind by the schemathesis gate when its argv was verified. A tool cache, never ours.
+.hypothesis/

@@ -55,6 +55,7 @@ import {
   assertNotNested,
   assertOwnershipCovers,
   carriedReport,
+  TOOL_CACHE_PATHS,
   childBudget,
   narrowedPanelPlan,
   shipTimeMutationScope,
@@ -4204,5 +4205,36 @@ describe('a failing gate reports both streams', () => {
   it('still reports a lone stream unlabelled', () => {
     assert.equal(detailOf({ stdout: '', stderr: 'boom' }), 'boom');
     assert.equal(detailOf({ stdout: 'boom', stderr: '' }), 'boom');
+  });
+});
+
+// Found by execution, which is the only way the first three were found too. Running the
+// schemathesis gate for the first time left a `.hypothesis/` directory in the repository, and
+// the driver commits with `git add -A` every iteration - so it would have been tracked on the
+// next one, and a later hard reset would restore an older copy of a tool's cache.
+describe('a gate tool cache is ignored, like node_modules before it', () => {
+  it('adds every tool cache to a .gitignore that has none', () => {
+    const updated = dareIgnoreUpdate('');
+    assert.notEqual(updated, null);
+    for (const cache of TOOL_CACHE_PATHS) {
+      assert.equal(String(updated).includes(cache), true, `${cache} was not ignored:\n${updated}`);
+    }
+  });
+
+  it('adds only the cache that is missing, rather than duplicating one already there', () => {
+    const updated = String(dareIgnoreUpdate('node_modules/\n'));
+    assert.equal(updated.includes('.hypothesis/'), true, updated);
+    assert.equal(updated.split('node_modules/').length - 1, 1, `node_modules was duplicated:\n${updated}`);
+  });
+
+  it('accepts the unslashed spelling as already covering it', () => {
+    // `.hypothesis` and `.hypothesis/` are the same instruction to git, and appending the other
+    // form would be noise in a file the operator also reads.
+    const updated = dareIgnoreUpdate('.dare/\nnode_modules\n.hypothesis\n');
+    assert.equal(updated, null);
+  });
+
+  it('names both cache paths and nothing invented', () => {
+    assert.deepStrictEqual(TOOL_CACHE_PATHS, ['node_modules/', '.hypothesis/']);
   });
 });
