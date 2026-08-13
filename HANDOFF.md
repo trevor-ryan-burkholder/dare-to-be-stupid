@@ -3,6 +3,32 @@
 **State:** `main` at `0.64.0`. `npm test` 1433 pass, `npm run test:integration` 12 pass,
 `npm run test:live` 11 of 11 armed and green. `npm run release-check` clean.
 
+## Verified from run 10's artifacts: the advisory pipeline works end to end
+
+Never recorded before, and checked against produced artifacts rather than assumed. §4.1's whole
+path is live: the reviewer emits `advisory-` entries with `severity`, `confidence` and
+`file:line`; the parser accepts them; the confidence filter admits them; and
+`.dare/briefs/iter-002.md` and `iter-005.md` render an **`### Advisory findings`** section headed
+
+> *"Suggestions, not requirements. They do not decide whether this run ships. Address them only
+> where doing so does not widen the diff the objective above calls for."*
+
+Nine advisories at iteration 1 and eight at iteration 4, **every one at or above 0.7 with real
+evidence**, so nothing was silently dropped by the threshold either.
+
+Two of them are worth reading as evidence about the panel rather than about csvstat:
+
+- *"`tests/fixtures/overflow.csv` contains exactly `a\n1e308\n1e308\n` — the input that
+  reproduces the `mean: null` defect — but it is untracked in git and no file references it.
+  **Someone constructed the reproducing input, left the fixture behind, and shipped neither a
+  test nor a fix.**"* The reviewer caught the builder's own abandoned evidence that it knew.
+- *"The security-audit gate is never run in CI… so the clean-audit property `DoD-2-security`
+  depends on is enforced only by whoever remembers to run gate 6 locally."* A real gap between
+  what `CLAUDE.md` claims the gates are and what the workflow executes.
+
+**The ceiling §4.1 describes also held:** advisories never moved a verdict, and because they can
+only be addressed on an iteration that was failing anyway, they cost nothing extra.
+
 ## Open: the panel is three whole-repository reads run one after another
 
 **Deferred on 12 August 2026 — investigate later.** Recorded now because the measurement exists
