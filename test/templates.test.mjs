@@ -15,6 +15,7 @@
 import assert from 'node:assert/strict';
 
 import { RELATION_KINDS, parseRelation } from '../scripts/oracle.mjs';
+import { GATE_POLICY } from '../scripts/gate-policy.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 
 import { renderTemplate, requiredIdsFor } from '../scripts/driver.mjs';
@@ -720,5 +721,39 @@ describe('the oracle author is taught metamorphic relations', () => {
     // would fail on a reflow that changed nothing about the instruction.
     const flat = ORACLE.replace(/\s+/g, ' ');
     assert.equal(flat.includes('cannot encode the same assumption twice'), true);
+  });
+});
+
+// Found by item 8's experiment: panelA's design auditor failed a correct CLI on
+// DoD-4-docs-observability for having no health endpoint, while the observability *gate* says a
+// CLI has none by design (DESIGN.md 857: "a CLI's exit code is its health check"). A required id
+// no correct CLI can satisfy is an unsatisfiable gate - the most expensive defect class here -
+// and an intermittent one, because it fires only when an auditor reads the line literally.
+describe("DoD-4's observability half is conditioned on project shape", () => {
+  it('no longer demands a health endpoint unconditionally', () => {
+    const flat = REVIEWER.replace(/\s+/g, ' ');
+    assert.equal(
+      flat.includes('for a project that listens on a port'),
+      true,
+      'the DoD-4 row states the observability half unconditionally again',
+    );
+  });
+
+  it('tells the reviewer a non-listening project is judged on documentation alone', () => {
+    const flat = REVIEWER.replace(/\s+/g, ' ');
+    assert.equal(flat.includes('The documentation half alone decides this id'), true);
+    assert.equal(flat.includes('a CLI, a library, a batch job'), true);
+  });
+
+  it("mirrors the gate policy's own reasoning rather than inventing a second rule", () => {
+    // If these two ever disagree, a run fails a line its own gate said did not apply.
+    const flat = REVIEWER.replace(/\s+/g, ' ');
+    assert.equal(flat.includes("a CLI's exit code is its health check"), true);
+    assert.deepStrictEqual(GATE_POLICY.observability.appliesTo, ['api', 'network-service']);
+  });
+
+  it('routes a genuine logging concern to an advisory instead of a fail', () => {
+    // Nothing is silenced; it is moved to the channel that cannot block a compliant build.
+    assert.equal(REVIEWER.includes('advisory-'), true);
   });
 });

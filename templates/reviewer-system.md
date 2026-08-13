@@ -131,9 +131,34 @@ Alongside the `PRD-*` requirements. You will be asked for the subset you own:
 | `DoD-1-requirements` | every numbered PRD requirement passed |
 | `DoD-2-security` | dependency audit is clean, and negative-case auth is enforced at the handler or API layer |
 | `DoD-3-ci` | a real CI workflow exists and runs build, lint, types, unit and e2e |
-| `DoD-4-docs-observability` | README and `docs/api-contract.md` exist and are not stubs; structured logging is present; a health endpoint responds |
+| `DoD-4-docs-observability` | README and `docs/api-contract.md` exist and are not stubs; **and, for a project that listens on a port**, structured logging is present and a health endpoint responds — see below |
 | `DoD-5-design` | the design docs match the code, and the architecture is coherent rather than accidental |
 | `DoD-6-adversarial-input` | no input class makes this program report a **confidently wrong answer at a success exit code** |
+
+### The observability half of `DoD-4` applies only to something that listens
+
+**A command-line tool has no health endpoint, and must not be failed for lacking one.** The
+project's own gate policy says so — the `observability` gate is armed for `api` and
+`network-service` and nothing else, on the stated reasoning that *a CLI's exit code is its health
+check*. The line above used to demand a health endpoint unconditionally, and a real audit duly
+failed a correct CLI for not having one.
+
+That is an **unsatisfiable requirement**, which is the most expensive defect class this project
+has: a gate no correct repository can pass does not enforce quality, it stops the loop. Worse,
+this one is intermittent — it fires only when an auditor reads the line literally, so the same
+specification ships one day and is blocked the next.
+
+So decide the shape first, from the repository rather than from an assumption:
+
+- **Listens on a port** — an HTTP API, a service, anything with a bound socket. Both halves
+  apply. Absent structured logging or a dead health endpoint is a fail.
+- **Does not listen** — a CLI, a library, a batch job. **The documentation half alone decides
+  this id.** Structured logging is not required, a health endpoint is not required, and their
+  absence is not a finding. If the logging genuinely looks like a problem, say so as an
+  `advisory-` entry, which is exactly what advisories are for.
+
+Say which shape you concluded and why, in the entry. A reader must be able to check the judgement
+that decided which half of the rule applied.
 
 ### State the property, not the example
 

@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.100.0`. Measured at 0.100.0: `npm test` **1706 pass**,
+**State:** `main` at `0.101.0`. Measured at 0.101.0: `npm test` **1710 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**. `npm run test:live` **27 of 27 across 11 files**.
 
@@ -40,6 +40,40 @@ a list that never had it.
 **The lesson is the one this file keeps relearning.** Three defects this session were found by
 execution and invisible to 1687 unit tests — the `.hypothesis/` cache, the ssh rate-limit, and
 this. A brief is output nobody asserts on, and it is handed to the one reader who will act on it.
+
+### 0.101.0 — `DoD-4` was unsatisfiable for a CLI, and item 8's experiment found it
+
+**Found by running the experiment, not by reading the template.** panelA's design auditor failed
+a correct CLI on `DoD-4-docs-observability`:
+
+> *"The documentation half passes; the observability half is absent … FAILING - structured
+> logging: there is none, in any form."*
+
+It was right about the facts and wrong to fail. `reviewer-system.md:134` stated the id as
+*"structured logging is present; a health endpoint responds"* with **no capability conditioning**,
+while `DESIGN.md:857` arms the `observability` **gate** for `api` and `network-service` only, on
+the stated reasoning that *a CLI's exit code is its health check*. The gate exempts a CLI; the
+reviewer line did not.
+
+**`DoD-4` is a required id, so this is an unsatisfiable requirement** — the defect class this
+project names as having cost it more than any other. And it is the intermittent kind: it fires
+only when an auditor reads the line literally, so run 8's CLI shipped and this one was blocked on
+the same wording. An unsatisfiable gate that fails sometimes is worse than one that fails always,
+because it reads as a real finding.
+
+The template now decides the shape first — listens on a port, or does not — and for a CLI, a
+library or a batch job **the documentation half alone decides the id**, with a genuine logging
+concern routed to `advisory-`, which is the channel that cannot block a compliant build. The
+reviewer must say which shape it concluded, so the judgement is checkable. A test asserts the
+wording *and* that it still agrees with `GATE_POLICY.observability.appliesTo`, because two rules
+about one question are two rules that can drift.
+
+**The JSON contract is unchanged** (`CLAUDE.md`'s rule for this file): only the DoD table row and
+surrounding prose moved, and the template's embedded example still parses through the real parser.
+
+**This is item 8 paying for itself before it has even reported.** The experiment was run to price
+the panel; what it produced first was a live unsatisfiable-gate defect that no unit test could
+see, because no unit test asks a real auditor to read the line.
 
 ### Item 14 — DONE at 0.100.0. Metamorphic relations, built the same day item 7 proved they were needed
 
