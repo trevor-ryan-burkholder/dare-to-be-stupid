@@ -1,9 +1,10 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.93.0`. Measured at 0.93.0: `npm test` **1650 pass**,
+**State:** `main` at `0.94.0`. Measured at 0.94.0: `npm test` **1655 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**. `npm run test:live` **23 of 23 across 10 files** at 0.90.0 and
-not re-run since — nothing in 0.91.0–0.93.0 touches a spawn path or a template contract.
+not re-run since. **Note:** 0.94.0 edits `templates/architect.md`, which is a template but not
+one with a machine-parsed output contract, so tier 3 was not re-armed for it.
 
 **This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
 `package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
@@ -14,6 +15,33 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### Item 15 — R18's plumbing. DONE at 0.94.0, and the argv was executed rather than read
+
+`docs/openapi.yaml` is now required for the `api` capability, at **one** canonical path. Not a
+list of accepted names: the architect writes it, the `docs` gate requires it and the fuzzer argv
+reads it, and a set of alternatives is three chances for those to drift into a gate that passes
+while the fuzzer tests nothing.
+
+`schemathesis` joins the registry, optional (warns rather than ending a run, the knip/semgrep
+precedent) and **armed by the `api` capability** — the general form of arming that R7 wants,
+sitting beside the older ad-hoc `frontendOnly`; collapsing the two is left as its own item and
+said so in a comment rather than half-done.
+
+**`--dry-run` is the discovery that makes this a gate at all.** A schema fuzzer normally needs a
+running application, which this loop only has behind a deploy that is off by default. `--dry-run`
+validates the schema and exercises input generation without making a request. Measured against
+schemathesis **3.39.16**, both directions: a well-formed schema exits **0**, one with an invalid
+parameter type exits **1**.
+
+**Not built, and the gap is named rather than implied:** conformance fuzzing against a live app.
+A green here means the contract is machine-valid and generatable. It does **not** mean the
+application obeys it.
+
+**Not verified:** no run has had an `api` capability with this gate armed, so the interaction
+between the architect writing the schema in Phase 1 and the gate reading it has never happened.
+The install path (`pip install --user schemathesis`) worked on this machine and is unproven
+elsewhere — which is exactly why the plugin is optional.
 
 ### Item 13 — C5, differentiated race candidates. DONE at 0.93.0, on an unmet precondition
 

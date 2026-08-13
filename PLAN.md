@@ -181,11 +181,19 @@ identity-merge), no reference implementation, no "same assumption twice." Schema
 `oracle.mjs` plus a section in `templates/oracle-author.md`. Ordered after item 7 so relation
 cases inherit a validated harness.
 
-### 15. R18 — the API-shaped oracle — OPEN
+### 15. R18 — the API-shaped oracle — DONE (0.94.0), the dry-run half
 The `docs` gate already mandates an API contract for `api` projects; make the machine-readable
 half (OpenAPI) required and arm a schema-driven property fuzzer at gate time via the
 quality-plugin registry (knip/semgrep degrade-to-warning precedent). Extends held-out judging to
 the shape the CLI oracle cannot reach.
+
+**Landed.** `docs/openapi.yaml` required for the `api` capability (one canonical path);
+`schemathesis` registered, optional, armed by capability; the architect template told to write
+the schema so it can be generated from. **The argv was executed, not read** — schemathesis
+3.39.16, `run --dry-run -c all <schema>`: valid schema exit 0, invalid parameter type exit 1.
+**What is NOT built:** conformance fuzzing against a *running* application. `--dry-run` proves
+the contract is machine-valid and generatable, not that the app obeys it; the live half needs a
+started server and is unowned.
 
 ### 16. R19 — OS sandbox under the builder — OPEN
 Adopt Claude Code's native sandbox for builder children as a second floor under the guard, with

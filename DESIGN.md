@@ -1678,6 +1678,29 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `childTimeoutMs` | 1_800_000 | bounds *wall-clock per child*, and it is the only one of the three that is a watchdog. `tokenCeiling` and `costCeiling` bind a child that returns; neither can see one that does not. Roughly 2.8x the longest child ever observed (§3.9) |
 | `gateTimeoutMs` | 2_700_000 | the same watchdog for gate commands, which hang the same way. **Not derived from measurement**, unlike the row above: no run has recorded a per-gate duration and mutation testing is the unmeasured slow one, so this is a backstop sized to be embarrassing to hit. When it fires, the driver also sweeps the descendants the gate leaked — see below |
 
+**The API-shaped oracle's plumbing (R18).** The `docs` gate has always required
+`docs/api-contract.md` for every project shape. For an `api` capability the **machine-readable**
+half is now required too, at exactly `docs/openapi.yaml` — one path, not a list of accepted
+names, because three things have to agree about that file (the architect that writes it, the
+`docs` gate that requires it, and the fuzzer argv that reads it) and alternatives are three
+chances to drift into a gate that passes while the fuzzer tests nothing.
+
+`schemathesis` joins the quality-plugin registry, **armed by the `api` capability** rather than
+by the ad-hoc `frontendOnly` flag beside it — the general form R7 asks for, with collapsing
+`frontendOnly` into it left as a separate item. Optional, so an unprovisionable Python tool warns
+instead of ending a run, which is the precedent `knip` and `semgrep` set.
+
+**`--dry-run` is what makes it a gate at all**, and every element of the argv was executed
+against schemathesis 3.39.16 rather than read: a well-formed schema exits 0 and one with an
+invalid parameter type exits 1. It validates the schema and exercises input generation *without
+making a request*, so it needs no running application — a gate that needed one would have to
+start it, which is the deploy's job and is off by default.
+
+**What a green from it does not mean**, stated so nobody reads more into it: it proves the
+contract is machine-valid and that inputs can be generated from it. It does **not** prove the
+application conforms to the contract. That is the live half, it needs a running app, and it is
+not built.
+
 **Race candidates now differ by more than sampling (C5 / R9).** The candidate brief has always
 said *"another candidate is trying a different one"* and nothing made it true: every candidate
 received the same objective, and `raceCandidate` carried `{ index, of }`. Each candidate is now

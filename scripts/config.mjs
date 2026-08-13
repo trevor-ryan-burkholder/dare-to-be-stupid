@@ -157,7 +157,7 @@ export function defaultConfig() {
     // impeccable is required and fails a run it cannot provision; knip and semgrep are
     // optional and degrade to a warning, because neither is worth killing a run over on a
     // machine without python3 or a reachable registry (DESIGN.md §5.1).
-    qualityPlugins: ['impeccable', 'knip', 'semgrep'],
+    qualityPlugins: ['impeccable', 'knip', 'semgrep', 'schemathesis'],
     effort: {
       builder: 'medium',
       prd: 'medium',

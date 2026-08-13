@@ -2598,6 +2598,32 @@ export function oracleGate(cwd, dareDir, options = {}) {
 }
 
 /**
+ * The one path an OpenAPI document may live at.
+ *
+ * **One path, not a list of accepted names.** Three things have to agree about this file — the
+ * architect that writes it, the `docs` gate that requires it, and the fuzzer argv in
+ * `plugins.mjs` that reads it — and a set of alternatives is three chances for them to drift
+ * apart, with the failure being a gate that passes while the fuzzer tests nothing. A project
+ * that already keeps its schema elsewhere pays one `git mv`.
+ */
+export const OPENAPI_DOC = 'docs/openapi.yaml';
+
+/**
+ * The project's OpenAPI document, or `null`.
+ *
+ * Substantiality is checked the same way the prose contract's is, and for the same reason: a
+ * two-line `openapi: 3.1.0` stub satisfies a presence check while describing nothing, and a
+ * fuzzer handed an empty schema generates nothing and exits 0.
+ *
+ * @param {string} cwd
+ * @returns {string | null} the absolute path, or null
+ */
+export function openApiDocument(cwd) {
+  const file = path.join(cwd, OPENAPI_DOC);
+  return isSubstantial(file, 120) ? file : null;
+}
+
+/**
  * @param {string} cwd
  * @param {{ run?: import('./plugins.mjs').Runner, capabilities?: string[] | null, probeTimeoutMs?: number, dareDir?: string, oracle?: boolean }} [options]
  * @returns {GateResult[]}
@@ -2607,6 +2633,13 @@ export function staticGates(cwd, options = {}) {
 
   const readme = isSubstantial(path.join(cwd, 'README.md'), 200);
   const contract = isSubstantial(path.join(cwd, 'docs', 'api-contract.md'), 200);
+  // R18. The prose contract has always been required for every shape; for an `api` the
+  // **machine-readable** half is required too, and that is the whole of this item's plumbing.
+  // A schema-driven fuzzer needs a schema, and the artifact it needs was already mandatory —
+  // just not in a form a tool can read. Authored at design time from the PRD, before any code
+  // exists, which is the same independence the CLI oracle gets from Phase 0b.
+  const wantsOpenApi = (options.capabilities ?? []).includes('api');
+  const openApi = wantsOpenApi ? openApiDocument(cwd) : null;
 
   const ciOk = ci.workflows.length > 0 && ci.missing.length === 0;
 
@@ -2629,17 +2662,23 @@ export function staticGates(cwd, options = {}) {
           ? 'no workflow under .github/workflows'
           : `workflows exist but never run: ${ci.missing.join(', ')}${notRequired}`,
     },
-    {
-      name: 'docs',
-      ok: readme && contract,
-      status: readme && contract ? 0 : 1,
-      detail:
-        readme && contract
-          ? 'README.md and docs/api-contract.md present and non-stub'
-          : `missing or stubbed: ${[!readme && 'README.md', !contract && 'docs/api-contract.md']
-              .filter(Boolean)
-              .join(', ')}`,
-    },
+    (() => {
+      const missing = [
+        !readme && 'README.md',
+        !contract && 'docs/api-contract.md',
+        wantsOpenApi && openApi === null && `${OPENAPI_DOC} (required for an api: a schema-driven fuzzer needs a schema)`,
+      ].filter(Boolean);
+      const ok = missing.length === 0;
+      const found = openApi === null ? '' : `, ${path.relative(cwd, openApi)}`;
+      return {
+        name: 'docs',
+        ok,
+        status: ok ? 0 : 1,
+        detail: ok
+          ? `README.md and docs/api-contract.md present and non-stub${found}`
+          : `missing or stubbed: ${missing.join(', ')}`,
+      };
+    })(),
     observabilityGate(cwd, options),
     // The gates judge the builder; this one judges the gates. `npm run lint` is only worth
     // running while `lint` still means something, and the builder writes what it means.
@@ -4085,7 +4124,12 @@ export function main(argv, io = {}) {
       [
         ...commandGates(dir, treeDare),
         ...provisioning.gates
+          // Two arming questions, and they should be one. `frontendOnly` is the older ad-hoc
+          // flag; `capability` is the general form (BORROWED.md R7), and collapsing the first
+          // into the second is a separate item. A gate whose capability is absent is not run
+          // and not warned about: it does not apply, which is different from failing.
           .filter((gate) => !gate.frontendOnly || hasFrontend(dir))
+          .filter((gate) => gate.capability === undefined || capabilities.includes(gate.capability))
           .map((gate) => ({ name: `quality:${gate.plugin}`, command: gate.command, required: true })),
       ],
       capabilities,

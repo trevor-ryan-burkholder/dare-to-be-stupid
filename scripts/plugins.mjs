@@ -33,7 +33,7 @@ import { execFileSync } from 'node:child_process';
 /** @typedef {(command: string, args: string[], options: { cwd: string, timeoutMs?: number }) => RunResult} Runner */
 /**
  * @typedef {{
- *   name: string, required: boolean, frontendOnly: boolean,
+ *   name: string, required: boolean, frontendOnly: boolean, capability?: string,
  *   detect: string[], install: string[], gate: string[] | null, note: string
  * }} PluginSpec
  */
@@ -76,6 +76,30 @@ export const KNOWN_PLUGINS = {
     // gold-plating the builder brief already forbids without anything checking.
     gate: ['npx', 'knip', '--include', 'files,dependencies'],
     note: 'dead file and unused dependency detector; enforces the no-gold-plating rule the builder brief states',
+  },
+  schemathesis: {
+    name: 'schemathesis',
+    required: false,
+    frontendOnly: false,
+    // R18. Armed by the `api` capability, the way `impeccable` should eventually be armed by
+    // `web-ui` (BORROWED.md R7) rather than by the ad-hoc `frontendOnly` flag beside it.
+    capability: 'api',
+    detect: ['schemathesis', '--version'],
+    // Python, like semgrep, which is exactly what the plugin registry exists for: an optional
+    // gate that degrades to a warning when the tool cannot be provisioned.
+    install: ['python3', '-m', 'pip', 'install', '--user', '--quiet', 'schemathesis'],
+    // **`--dry-run`, and that is the whole reason this can be a gate at all.** It validates the
+    // schema and exercises data generation *without making a request*, so it needs no running
+    // application - and a gate that needed one would have to start it, which is the deploy's
+    // job and is off by default. Verified against schemathesis 3.39.16 rather than read: a
+    // well-formed schema exits 0 and one with an invalid parameter type exits 1.
+    //
+    // What it therefore does and does not check, stated so nobody reads more into a green:
+    // it proves the contract is machine-valid and that inputs can be generated from it. It
+    // does **not** prove the application conforms to it - that is the live half, and it needs
+    // a running app this gate does not have.
+    gate: ['schemathesis', 'run', '--dry-run', '-c', 'all', 'docs/openapi.yaml'],
+    note: 'schema-driven property fuzzer over the OpenAPI contract; validates generation without a live app (DESIGN.md §5, BORROWED.md R18)',
   },
   semgrep: {
     name: 'semgrep',
@@ -133,7 +157,7 @@ export function resolvePlugin(name) {
  * @param {{ cwd: string, plugins: string[], runner?: Runner }} options
  * @returns {{
  *   installed: string[], skipped: string[], warnings: string[],
- *   gates: { plugin: string, command: string[], frontendOnly: boolean }[]
+ *   gates: { plugin: string, command: string[], frontendOnly: boolean, capability?: string }[]
  * }}
  * @throws {PluginInstallError} when a required plugin cannot be provisioned
  */
@@ -147,7 +171,7 @@ export function installQualityPlugins(options) {
   const skipped = [];
   /** @type {string[]} */
   const warnings = [];
-  /** @type {{ plugin: string, command: string[], frontendOnly: boolean }[]} */
+  /** @type {{ plugin: string, command: string[], frontendOnly: boolean, capability?: string }[]} */
   const gates = [];
 
   for (const name of plugins) {
@@ -178,7 +202,15 @@ export function installQualityPlugins(options) {
     // directory containing a PRD and nothing else, and the answer is always no. That
     // disarmed the design gate for every greenfield run — which is the entire use case.
     // The caller re-asks each iteration, against the tree as it actually is.
-    gates.push({ plugin: spec.name, command: spec.gate, frontendOnly: spec.frontendOnly });
+    // Spread rather than always present, so a gate with no capability keeps exactly the shape
+    // it has always had. `capability: undefined` is a different object from no key at all, and
+    // the callers that compare these are asserting values rather than truthiness.
+    gates.push({
+      plugin: spec.name,
+      command: spec.gate,
+      frontendOnly: spec.frontendOnly,
+      ...(spec.capability === undefined ? {} : { capability: spec.capability }),
+    });
   }
 
   return { installed, skipped, warnings, gates };

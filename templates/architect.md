@@ -15,6 +15,7 @@ Into `docs/`:
 | `architecture.md` | components, what each owns, the boundaries between them, and what crosses each boundary |
 | `api-contract.md` | every endpoint or public interface: method, path, request shape, response shape, **and every error response** |
 | `data-model.md` | entities, fields with types, relationships, and which constraints are enforced where |
+| `openapi.yaml` | **required when this project exposes an HTTP API**, and only then. The same contract as the row above, machine-readable: OpenAPI 3.x, every path, every parameter with a typed schema, every response with its schema. A gate generates test inputs from it, so a stub describing nothing fails |
 
 At the repository root:
 
@@ -89,3 +90,22 @@ picks none hands the decision to a builder that will pick differently in each it
 The final read: could a competent stranger implement this without asking you a question?
 If a boundary is ambiguous, an unattended builder will resolve it differently every
 iteration, and each resolution is a regression waiting for the ratchet.
+
+## If this project exposes an HTTP API
+
+`docs/openapi.yaml` is **required**, at exactly that path, in addition to `api-contract.md`. It
+is not a duplicate: the prose file is for a person and the schema is for a machine, and a
+schema-driven fuzzer runs against it at gate time to generate inputs the requirements never
+mention.
+
+Write it so it can be generated from:
+
+- every parameter carries a `schema` with a real type, and constraints where the domain has them
+  (`minimum`, `maxLength`, `enum`, `format`). A parameter typed only as `string` generates noise.
+- every response carries a `content` schema with `required` listed. A response with no schema
+  cannot be checked against anything.
+- every error response the prose contract names appears here too, with its status code.
+
+A two-line file with `openapi: 3.1.0` and an empty `paths` is worse than none: it satisfies a
+presence check, generates no test cases, and exits zero. The gate treats a document that thin as
+missing.

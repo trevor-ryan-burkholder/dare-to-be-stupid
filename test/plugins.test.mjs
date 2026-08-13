@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
+import { OPENAPI_DOC } from '../scripts/driver.mjs';
 import { KNOWN_PLUGINS, PluginInstallError, installQualityPlugins, resolvePlugin } from '../scripts/plugins.mjs';
 
 /** @type {string[]} */
@@ -177,5 +178,36 @@ describe('resolvePlugin', () => {
   it('marks impeccable required and frontend-only', () => {
     assert.equal(KNOWN_PLUGINS.impeccable.required, true);
     assert.equal(KNOWN_PLUGINS.impeccable.frontendOnly, true);
+  });
+});
+
+// R18. The API-shaped oracle's plumbing: a schema-driven fuzzer, armed by the `api`
+// capability, degrading to a warning like knip and semgrep rather than blocking a run.
+describe('the schemathesis plugin', () => {
+  const spec = KNOWN_PLUGINS.schemathesis;
+
+  it('is optional, so an unprovisionable Python tool warns rather than ending a run', () => {
+    assert.equal(spec.required, false);
+  });
+
+  it('is armed by the api capability rather than by the ad-hoc frontend flag', () => {
+    assert.equal(spec.capability, 'api');
+    assert.equal(spec.frontendOnly, false);
+  });
+
+  // Every element of this argv was executed against schemathesis 3.39.16, which is the rule
+  // HANDOFF.md's argv defect bought: a correct-looking array is worth nothing until the other
+  // binary has parsed it. A well-formed schema exits 0; one with an invalid parameter type
+  // exits 1.
+  it('runs --dry-run, which is what lets it be a gate with no application running', () => {
+    assert.deepStrictEqual(spec.gate, ['schemathesis', 'run', '--dry-run', '-c', 'all', 'docs/openapi.yaml']);
+  });
+
+  it('reads the one canonical schema path, so the docs gate and the fuzzer cannot drift', () => {
+    assert.equal(spec.gate?.includes(OPENAPI_DOC), true, `${spec.gate?.join(' ')} does not name ${OPENAPI_DOC}`);
+  });
+
+  it('installs the same way semgrep does, which is the precedent for a Python gate', () => {
+    assert.deepStrictEqual(spec.install, ['python3', '-m', 'pip', 'install', '--user', '--quiet', 'schemathesis']);
   });
 });

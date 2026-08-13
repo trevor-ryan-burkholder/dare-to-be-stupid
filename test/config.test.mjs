@@ -63,7 +63,7 @@ describe('defaultConfig', () => {
       prdModel: 'claude-sonnet-5',
       styleModel: 'claude-fable-5',
       lessonModel: 'claude-sonnet-5',
-      qualityPlugins: ['impeccable', 'knip', 'semgrep'],
+      qualityPlugins: ['impeccable', 'knip', 'semgrep', 'schemathesis'],
       effort: {
         builder: 'medium',
         prd: 'medium',
