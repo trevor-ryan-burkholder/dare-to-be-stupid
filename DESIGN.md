@@ -86,6 +86,17 @@ the next build task, nothing else proceeds. Monotonic. A test that has passed is
 allowed to fail again. This is the single mechanism that turns an infinite loop into a
 terminating one. **Build it first.**
 
+**A ratcheted test can encode a defect, and 0.109.0 makes that sayable.** Measured in `ship1`:
+the builder wrote a test early asserting the exact behaviour the panel later called a bug, so
+every attempt to satisfy the review broke the test, reset, and destroyed the iteration —
+reported each time as an ordinary regression, indistinguishable from a builder that slipped
+once. The driver now counts regressions per id **within the run** and, on a repeat, says so and
+tells the builder the one legal move: **rewrite the assertions inside the test, never its name.**
+A test id is the reporter's test *name*, so renaming or deleting drops the id and reads as a
+regression like any other. **The ratchet is not weakened** — the id must still keep passing.
+What changed is that the builder is no longer expected to rediscover the escape while being
+reset every time it tries.
+
 ---
 
 ## 2. The pipeline (full)

@@ -1155,6 +1155,47 @@ export function appendBlooper(dareDir, event) {
   return file;
 }
 
+/**
+ * What to tell a builder that has broken the same test twice.
+ *
+ * **Measured in `ship1` on 13 August 2026, and it is the reason this exists.** The ratcheted
+ * test `parseCsv > an unterminated quote at EOF ends the field at EOF` asserted precisely the
+ * behaviour the panel's `DoD-6` called a defect — an EOF flush that pushes a pending record
+ * without testing `inQuotes`, losing a data row at exit 0. The builder wrote that test early,
+ * encoding the bug as a specification, and the ratchet then made it permanent. Every attempt to
+ * satisfy the panel broke it, reset, and destroyed the iteration. Twice, silently: the log said
+ * `regression:` and one test name, exactly as it does for a builder that slipped once.
+ *
+ * **A repeat is a different fact from a first offence** and the loop could not say so. That is
+ * this project's named worst failure — a degradation that never reports anything.
+ *
+ * The note does **not** weaken the ratchet, and could not: a test id is the reporter's test
+ * *name*, so the assertions inside an `it(...)` may be rewritten while the id keeps passing,
+ * and renaming or deleting it drops the id and reads as a regression like any other. That is
+ * the only legal move out of this position, it already existed, and nothing told the builder
+ * about it. Monotonicity is untouched; what changes is that the builder is no longer expected
+ * to rediscover the escape while being reset every time it tries.
+ *
+ * Counted **within the run**. `bloopers.log` outlives a run, and an identical regression from
+ * a run that ended yesterday is not evidence about this one.
+ *
+ * @param {Map<string, number>} counts regressions seen so far this run, before this reset
+ * @param {string[]} regressions the ids that just regressed
+ * @returns {string} empty when nothing has regressed before
+ */
+export function repeatedRegressionNote(counts, regressions) {
+  const repeats = regressions
+    .filter((id) => (counts.get(id) ?? 0) >= 1)
+    .map((id) => `${id} (${(counts.get(id) ?? 0) + 1} times)`);
+  if (repeats.length === 0) return '';
+  return (
+    `${repeats.join(', ')} has now regressed more than once in this run. A test that keeps breaking on the ` +
+    'way to satisfying a review finding may itself be asserting the behaviour the finding calls defective. ' +
+    'You may rewrite the assertions inside such a test. You may not rename or delete it: the ratchet keys on ' +
+    'the test name, so a renamed or removed test reads as a regression exactly like a broken one'
+  );
+}
+
 // ---------------------------------------------------------------------------
 // The loop
 // ---------------------------------------------------------------------------
@@ -1256,6 +1297,16 @@ export function driveRun(options) {
   const pins = readPins(dareDir);
   let builderTokens = 0;
   let builderRuns = 0;
+
+  /**
+   * How many times each test id has regressed **in this run**. See `repeatedRegressionNote`.
+   *
+   * In memory rather than read back from `bloopers.log`, which outlives a run: an identical
+   * regression from a run that ended yesterday says nothing about whether this one is stuck.
+   *
+   * @type {Map<string, number>}
+   */
+  const regressionCounts = new Map();
 
   /** @type {import('./brief.mjs').Objective} */
   let objective = {
@@ -1619,12 +1670,19 @@ export function driveRun(options) {
       if (decision.target !== null) hardReset({ cwd: rootDir, commit: decision.target });
       effects.event?.({ kind: 'reset', regressions: decision.regressions.length });
       effects.log(`regression: ${decision.regressions.join(', ')}`);
+      // Counted before the tally is updated, so the first repeat reads "2 times".
+      const repeatNote = repeatedRegressionNote(regressionCounts, decision.regressions);
+      for (const id of decision.regressions) {
+        regressionCounts.set(id, (regressionCounts.get(id) ?? 0) + 1);
+      }
+      if (repeatNote !== '') effects.log(`repeated regression: ${repeatNote}`);
       objective = {
         kind: 'regression',
         headline: 'Restore the tests listed below. Change nothing else.',
         reason:
           `the ratchet is monotonic and ${decision.regressions.length} test(s) that passed earlier no longer pass, ` +
-          'so the tree was reset to the last commit that held them',
+          'so the tree was reset to the last commit that held them' +
+          (repeatNote === '' ? '' : `. ${repeatNote}`),
         regressions: decision.regressions,
       };
       closeIteration(iterationNumber, decision.regressions, score, state.passing.length);

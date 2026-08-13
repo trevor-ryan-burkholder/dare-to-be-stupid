@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.108.0`. Measured at 0.108.0: `npm test` **1744 pass**,
+**State:** `main` at `0.109.0`. Measured at 0.109.0: `npm test` **1751 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -75,6 +75,15 @@ enforcement; **the first one has an escape that does not cover this case.**
 iterations and 42% of budget left, and has failed twice. If it burns the rest oscillating, that is
 the finding; if it finds the move, the finding is that a correct fix required making a test name
 false.
+
+**Answered in code at 0.109.0, and `ship1` will not benefit from it** — that process loaded 0.105.0
+at start-up and holds it. The driver now counts regressions per id **within the run** and, on a
+repeat, logs `repeated regression:` and appends the note to the builder's objective: rewrite the
+assertions inside the test, never its name. **Counted within the run on purpose** — `bloopers.log`
+outlives a run, and an identical regression from yesterday is not evidence about today.
+**Monotonicity is untouched;** the id must still keep passing. What changed is that the loop can
+now tell a builder in a loop apart from a builder that slipped, which it could not do while
+watching itself do this twice.
 
 **The ratchet fired on iteration 5, live, and the whole sequence worked.** The builder broke a
 previously-passing test — `src/csv.test.ts::parseCsv > an unterminated quote at EOF ends the field

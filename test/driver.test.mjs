@@ -58,6 +58,7 @@ import {
   TOOL_CACHE_PATHS,
   armingNote,
   overlayGates,
+  repeatedRegressionNote,
   childBudget,
   isSecurityId,
   isTestEvidence,
@@ -2300,6 +2301,36 @@ describe('driveRun', () => {
     assert.notEqual(outcome.state, 'SHIPPED');
   });
 
+  it('says so out loud when the same test regresses a second time', () => {
+    // The wiring, not the string. `repeatedRegressionNote` is unit-tested above and that proves
+    // nothing about whether the loop ever calls it — which is the shape of the guard defect,
+    // correct for eleven versions and never invoked. Two iterations, the same missing id both
+    // times, is the `ship1` position that made this necessary.
+    /** @type {string[]} */
+    const logs = [];
+    run(
+      { log: (line) => logs.push(line), readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE] },
+      { maxIterations: 2 },
+      ['test/a.test.js::works'],
+    );
+    const repeats = logs.filter((line) => line.startsWith('repeated regression:'));
+    assert.equal(repeats.length, 1, `expected exactly one repeat notice, got ${JSON.stringify(logs)}`);
+    assert.equal(repeats[0].includes('test/a.test.js::works (2 times)'), true, repeats[0]);
+    assert.equal(repeats[0].includes('may not rename or delete it'), true, repeats[0]);
+  });
+
+  it('does not cry repeat on a single reset, however loud the first one was', () => {
+    /** @type {string[]} */
+    const logs = [];
+    run(
+      { log: (line) => logs.push(line), readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE] },
+      { maxIterations: 1 },
+      ['test/a.test.js::works'],
+    );
+    assert.equal(logs.some((line) => line.startsWith('regression:')), true, 'expected the ordinary reset line');
+    assert.equal(logs.some((line) => line.startsWith('repeated regression:')), false, JSON.stringify(logs));
+  });
+
   it('really restores the working tree on a regression, not just the log line', () => {
     // The blooper log and the ratchet state can both look right while the reset never
     // happened. This asserts the file on disk went back to the last good commit.
@@ -2952,6 +2983,40 @@ describe('requiredIdsFor', () => {
     // question about whether the program tells the truth, not about security or design.
     const covered = Object.values(DEFAULT_OWNERSHIP).flat();
     assert.equal(covered.includes('DoD-6-adversarial-input'), true);
+  });
+});
+
+describe('repeatedRegressionNote', () => {
+  const ID = 'src/csv.test.ts::parseCsv > an unterminated quote at EOF ends the field at EOF';
+
+  it('says nothing on a first offence, which is an ordinary regression', () => {
+    // The deny path. A builder that slipped once must not be told it is in a loop, and a
+    // message that fires on everything is a message nobody reads.
+    assert.equal(repeatedRegressionNote(new Map(), [ID]), '');
+  });
+
+  it('names the id and the count once the same test breaks twice', () => {
+    // Counted before the tally is updated, so the first repeat reads "2 times" rather than 1.
+    const note = repeatedRegressionNote(new Map([[ID, 1]]), [ID]);
+    assert.equal(note.includes(`${ID} (2 times)`), true, note);
+  });
+
+  it('offers the only legal move: rewrite the assertions, never the name', () => {
+    // A test id is the reporter's test name, so renaming or deleting drops the id and reads as
+    // a regression like any other. The escape existed and nothing told the builder about it.
+    const note = repeatedRegressionNote(new Map([[ID, 2]]), [ID]);
+    assert.equal(note.includes('rewrite the assertions inside'), true, note);
+    assert.equal(note.includes('may not rename or delete it'), true, note);
+  });
+
+  it('reports only the ids that actually repeated, not the whole reset', () => {
+    const note = repeatedRegressionNote(new Map([[ID, 1]]), [ID, 'other.test.ts::fresh > thing']);
+    assert.equal(note.includes(ID), true, note);
+    assert.equal(note.includes('fresh > thing'), false, note);
+  });
+
+  it('is silent when a reset carries no ids at all', () => {
+    assert.equal(repeatedRegressionNote(new Map([[ID, 3]]), []), '');
   });
 });
 
