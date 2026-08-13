@@ -246,9 +246,17 @@ Segment one cost 7× segment two on a four-file repository. Measure on something
 before improve mode meets a real codebase; outcome is either a fix or written budget guidance
 in `commands/dare.md`.
 
-### 19. Deploy's ssh half — OPEN, **PREPARED; NEEDS A REAL HOST**
+### 19. Deploy's ssh half — DONE (live-verified 13 Aug against a real droplet)
 Argv nobody has run (`HANDOFF.md`, queue item 4 boundary). Live-verify it once, or mark it
 permanently unverified in `DESIGN.md` §10.1. The repo's rule does not allow a third state.
+
+**Verified, the first of the two allowed end states.** The operator supplied a DigitalOcean
+droplet (Ubuntu 22.04.5); `runDeploy` was driven against it through all five paths — happy,
+remote non-zero exit, wrong expected status, absent path, and a hang that the ceiling killed with
+the passphrase/host-key hint. Recorded in `DESIGN.md` §10.1 with two operational findings a real
+host produced: `ufw`'s default `22/tcp LIMIT IN` rate-limits ssh to six connections per thirty
+seconds and yields `Connection refused` when tripped, and a fresh droplet refuses connections
+during cloud-init. Both look exactly like a broken deploy and neither is one.
 
 ---
 

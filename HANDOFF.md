@@ -15,6 +15,39 @@ line in the same commit.
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
 
+### Item 19 — the deploy's ssh half, live-verified. 13 August 2026
+
+The operator supplied a DigitalOcean droplet (Ubuntu 22.04.5, key already installed) and the item
+closed the same hour. `DESIGN.md` §10.1's rule allowed two end states — verified once, or marked
+permanently unverified — and this is the first one.
+
+**Unattended-readiness checked before anything else**, because it is the precondition a run
+cannot supply for itself: `ssh -o BatchMode=yes` makes a passphrase prompt impossible, and the
+host key was pinned with `ssh-keyscan` first. Then `runDeploy` — the real function, not a
+reimplementation — was driven against the real host through five paths:
+
+| path | result |
+|---|---|
+| deploy + smoke, both good | `ok=true`, 1 smoke check passed, 4.1s |
+| remote command exits non-zero | `the deploy command failed: exit 7` |
+| smoke expects the wrong status | `/health: expected 404, answered 200` |
+| smoke path absent | `/nope: expected 200, answered 404` |
+| remote command hangs (`sleep 300`, 8s ceiling) | killed at 8017ms, with the passphrase/host-key hint |
+
+**Two findings only a real host produces, and both look exactly like a broken deploy.** `ufw`'s
+default `22/tcp LIMIT IN` rate-limits ssh to six connections per thirty seconds; tripping it —
+which `ssh-keyscan` plus two retries did — returns `Connection refused`. And a freshly created
+droplet refuses connections during cloud-init. An operator reading a failed deploy should suspect
+both before suspecting the argv.
+
+**One change made to the operator's host and stated rather than buried:** `ufw allow 80/tcp`. The
+droplet's firewall permitted 22, 2375 and 2376 only, so the smoke check timed out while the
+server answered `200` on localhost. That is the sort of failure the smoke check exists to catch,
+and it caught it.
+
+**Not verified:** the deploy has still never run inside a real loop run — this drove `runDeploy`
+directly. `deploy.enabled` remains `false` by default.
+
 ### The .NET adapter's other four commands, executed. 13 August 2026
 
 Queue item 2 proved the **unit** command and TRX extraction against a real SDK. The other four

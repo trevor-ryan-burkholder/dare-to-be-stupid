@@ -1957,6 +1957,27 @@ against a real child rather than asserting the array (§11.1).
 
 ### 10.1 Deploy — synchronous, fixed-host, and verified before the tag
 
+> **The ssh path is live-verified as of 13 August 2026, against a real DigitalOcean droplet
+> (Ubuntu 22.04.5).** `DESIGN.md`'s own rule allowed exactly two end states for it — verified
+> once, or marked permanently unverified — and this is the first. `runDeploy` was driven against
+> the real host through all five paths:
+>
+> | path | result |
+> |---|---|
+> | deploy + smoke, both good | `ok=true`, 1 smoke check passed, 4.1s |
+> | remote command exits non-zero | `the deploy command failed: exit 7` |
+> | smoke expects the wrong status | `/health: expected 404, answered 200` |
+> | smoke path absent | `/nope: expected 200, answered 404` |
+> | remote command hangs | ceiling fired at 8017ms with the passphrase/host-key hint |
+>
+> **Two operational findings that only a real host produces.** `ufw`'s default `22/tcp LIMIT IN`
+> rate-limits SSH to six connections per thirty seconds, and tripping it yields
+> `Connection refused` — a deploy that reconnects can be throttled into looking like a broken
+> deploy. And a freshly created droplet refuses connections for a while during cloud-init, which
+> looks identical. Neither is a defect in this code; both are things an operator reading a failed
+> deploy should suspect before the argv.
+
+
 **Built at 0.61.0–0.63.0.** Before that, two sentences in this section were false — an empty
 `deploy.command` was documented as auto-detecting `vercel.json`, `netlify.toml` or a
 `Dockerfile`, and Phase 6 was documented as pushing; neither was ever implemented — and what did
