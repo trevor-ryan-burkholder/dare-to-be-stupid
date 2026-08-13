@@ -136,6 +136,69 @@ has ever deployed to a real droplet** — the ssh half is argv nobody has run. T
 the .NET adapter is treated: correct by construction, unverified in the world. The first real use
 should be a throwaway box, watched.
 
+## Queue item 2 — .NET test-ID extraction, proven against real `dotnet test` output. 13 August 2026
+
+**The queue named this as the expected failure point. It is not one.** Verified against a real
+SDK-scaffolded solution rather than a fixture, at `~/dare-dogfood/dotnet-probe`.
+
+**Environment, checked rather than assumed:** `dotnet 8.0.423` at `/usr/share/dotnet/sdk`, with
+`console` and `xunit` templates available. That is the same version `DESIGN.md` §3.8.1 says the
+adapter's commands were verified against. The README line claiming no SDK exists was stale and is
+fixed.
+
+**What ran:** `dotnet new sln/classlib/xunit`, a two-function `Calc` class, five test methods
+including a two-case `[Theory]`, then **the driver's exact unit command** read out of the adapter
+rather than retyped:
+
+```
+dotnet test --logger trx;LogFileName=unit.trx --results-directory <root>/.dare
+```
+
+It produced a real 9,831-byte `unit.trx`. Feeding it to `extractTestIds` the way `driver.mjs:1475`
+does — one report string at a time, not the array I first tried:
+
+```
+ids extracted: 7
+   Core.Tests.CalcTests.AddsNegatives
+   Core.Tests.CalcTests.AddsTable(a: 0, b: 0, e: 0)
+   Core.Tests.CalcTests.AddsTable(a: 1, b: 1, e: 2)
+   Core.Tests.CalcTests.AddsTwoPositives
+   Core.Tests.CalcTests.DetectsNegative
+   Core.Tests.CalcTests.DetectsNonNegative
+   Core.Tests.UnitTest1.Test1
+STABLE across rootDir change: true
+```
+
+**Both `[Theory]` cases appear as distinct ids** carrying their parameters, which is correct — they
+are two results. And the set is **identical under a different `rootDir`**, which is §11.2's named
+hazard: TRX records `storage` as an absolute path *lowercased by the runner*, so an id built from
+it would differ on every machine and the ratchet would read every test as new. It is built from
+`testName`, and that holds.
+
+**The failure direction, measured rather than reasoned.** One assertion was broken deliberately
+(`Assert.Equal(-99, …)`) and the suite re-run:
+
+```
+Failed! - Failed: 1, Passed: 6, Total: 7
+passed: 6 | failed: 1
+  FAILED -> Core.Tests.CalcTests.AddsNegatives
+the failing id is NOT counted as passing: true
+```
+
+A reporter that only ever reports success is what §11 exists to distrust; this one distinguishes.
+
+**One correction to my own method.** My first attempt passed `[trxText]` — an array — and got
+`report matches none of the known reporters`, which I nearly filed as the predicted defect. The
+driver passes **one string per call**. The throw was correct behaviour on malformed input and the
+malformed input was mine. Third time in this session I have nearly reported my own misuse as a
+finding, which is an argument for reading the call site before believing a reproduction.
+
+**Still unproven for .NET, and this is the honest remainder:** no run has driven the adapter. The
+extraction is the piece the queue flagged as most likely to fail silently, and it does not — but
+`build`, `lint`, `security-audit` and the `ci` inspection have still never been executed by the
+loop against a .NET tree, and `types`, `e2e` and `mutation` are declared `notApplicable` with
+stated reasons that no run has exercised either.
+
 ## Queue item 4 — deploy, proven to its boundary. 13 August 2026
 
 **No host was provisioned, so the ssh transport remains unexecuted.** Everything on this side of
