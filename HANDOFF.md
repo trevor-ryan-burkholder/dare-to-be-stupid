@@ -136,6 +136,71 @@ has ever deployed to a real droplet** — the ssh half is argv nobody has run. T
 the .NET adapter is treated: correct by construction, unverified in the world. The first real use
 should be a throwaway box, watched.
 
+## Queue item 4 — deploy, proven to its boundary. 13 August 2026
+
+**No host was provisioned, so the ssh transport remains unexecuted.** Everything on this side of
+it was run rather than asserted, against a real listening server on `127.0.0.1:8731`.
+
+**The smoke probe, real socket, real output:**
+
+```
+3 smoke check(s) passed against http://127.0.0.1:8731                         exit 0
+1 of 1 smoke check(s) failed - /nope: expected 200, answered 404              exit 1
+1 of 1 smoke check(s) failed - /sick: health endpoint reported itself as "down"  exit 1
+1 of 1 smoke check(s) failed - /health: connect ECONNREFUSED 127.0.0.1:9      exit 1
+no smoke checks were given, so nothing was verified                          exit 1
+```
+
+The third line matters most: **a 200 with a body admitting distress fails**, so the check is not
+merely comparing numbers. The fourth returned in under two seconds rather than hanging. The fifth
+is the one that would otherwise be silent — an empty check list reports failure rather than a pass
+over nothing.
+
+**The config boundary, every case exercised through `validateConfig`:**
+
+| input | outcome |
+|---|---|
+| `enabled` with no `command` | REFUSED — "there is nothing to run" |
+| `enabled` with no `url` | REFUSED — "a deploy that is not asked whether it worked" |
+| `enabled` with no `smoke` | REFUSED — "a deploy nothing checks cannot fail" |
+| `command` as a string | REFUSED — names the array it wants |
+| `url` containing `production` | REFUSED — same `riskyRemoteWord` that refuses a prod git remote |
+| `url` not http(s) | REFUSED — `ssh://box/app` |
+| smoke entry without `status` | REFUSED — "did anything answer is satisfied by a 500" |
+| **disabled** and incomplete | **accepted** — an unused section must not fail runs that never deploy |
+| complete and valid | accepted, argv preserved as `["ssh","deploy@box","/srv/app/deploy.sh"]` |
+
+**The driver's deploy effect, composed exactly as `main()` builds it and executed:**
+
+```
+deploy ok, smoke ok   -> {"ok":true,"detail":"1 smoke check(s) passed against http://127.0.0.1:8731"}
+deploy ok, smoke FAIL -> {"ok":false,"detail":"1 of 1 smoke check(s) failed - /nope: expected 200, answered 404"}
+deploy command FAILS  -> {"ok":false,"detail":"the deploy command failed: 7"}
+```
+
+A non-zero deploy command is distinguished from a deploy that ran and failed its smoke, and both
+are distinguished from success — which is what the withholding logic keys on.
+
+### Where the untested surface starts, precisely
+
+Everything above ran. **What has never executed is one line:** `shell(command, args, { cwd })`
+where `command` is `ssh`. Specifically unproven —
+
+- **that `ssh` inherits the operator's agent and known_hosts through `process.env`.** The driver
+  passes `options.env ?? process.env` and never sets `SSH_AUTH_SOCK` itself, so this is inherited
+  rather than arranged, and an unattended run with a passphrase-locked key would block on a
+  prompt no one can answer. **Nothing times out a deploy command.**
+- **that a remote failure surfaces as a non-zero exit** rather than ssh succeeding while the
+  remote script fails — the `dotnet list package --vulnerable` shape (§3.8.1), where a wrapper
+  exits 0 over a failure underneath.
+- **the real-host round trip**: deploy, then a smoke check against a URL served by something the
+  deploy actually changed, rather than a server this session started.
+
+**NEEDS REVIEW:** the missing timeout is a real hazard I found by writing this up rather than by
+running anything, and I have not fixed it — a hung `ssh` stalls the run indefinitely with no
+ceiling, since `tokenCeiling` and `costCeiling` only bind children that return. It is one line to
+add and I have left it alone because this was not a build session.
+
 ## Run 13 oscillated, and the cause is the strongest argument A3 has ever had
 
 Observed live at segments 1–5 of case H. The loop entered a stable two-cycle:
