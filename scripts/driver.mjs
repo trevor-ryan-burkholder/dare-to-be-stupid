@@ -2992,10 +2992,19 @@ export function requiredIdsFor(prd) {
 }
 
 /**
+ * `timedOut` is optional because most seams that accept a `run` double — `changedSince`'s git
+ * diff, the gate runners — call commands that cannot hang on a remote machine, and requiring
+ * the field of every test double would be bookkeeping rather than safety. The real `shell`
+ * always sets it, and `runDeploy` tests it for `true` rather than for truthiness.
+ *
+ * @typedef {{ ok: boolean, status: number, stdout: string, stderr: string, timedOut?: boolean }} ShellResult
+ */
+
+/**
  * @param {string} command
  * @param {string[]} args
- * @param {{ cwd: string, env?: Record<string, string | undefined>, input?: string }} options
- * @returns {{ ok: boolean, status: number, stdout: string, stderr: string }}
+ * @param {{ cwd: string, env?: Record<string, string | undefined>, input?: string, timeoutMs?: number }} options
+ * @returns {ShellResult}
  */
 function shell(command, args, options) {
   try {
@@ -3006,20 +3015,78 @@ function shell(command, args, options) {
       // Only the Claude children send anything; gates and git calls pass no input and are
       // left on the inherited stdin they have always had.
       ...(options.input === undefined ? {} : { input: options.input }),
+      // Absent by default, so every existing caller keeps the unbounded wait it has always
+      // had. Only the deploy asks for a ceiling, because only the deploy runs a command
+      // whose other end is a machine that can decide to say nothing forever.
+      ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
       stdio: 'pipe',
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
     });
-    return { ok: true, status: 0, stdout, stderr: '' };
+    return { ok: true, status: 0, stdout, stderr: '', timedOut: false };
   } catch (error) {
-    const failure = /** @type {{ status?: number, stdout?: string, stderr?: string, message: string }} */ (error);
+    const failure = /** @type {{ status?: number, code?: string, signal?: string, stdout?: string, stderr?: string, message: string }} */ (
+      error
+    );
     return {
       ok: false,
+      // A killed child reports `status: null`, so without the flag a timeout arrives here as
+      // a plain `exit 1` and reads as a command that ran and failed. Those need opposite
+      // responses from an operator and must not be collapsed into one message.
       status: typeof failure.status === 'number' ? failure.status : 1,
       stdout: failure.stdout ?? '',
       stderr: failure.stderr ?? failure.message,
+      // `ETIMEDOUT`, and nothing else, measured against a real `execFileSync` rather than
+      // assumed. `killed` is undefined here — that flag belongs to the asynchronous API, and
+      // the first version of this line used it and silently never fired. `signal` is no good
+      // either: a command that kills *itself* with SIGTERM reports `signal: 'SIGTERM'` and
+      // must not be read as a timeout. The error code is the only exact discriminator.
+      timedOut: options.timeoutMs !== undefined && failure.code === 'ETIMEDOUT',
     };
   }
+}
+
+/**
+ * Run the configured deploy and check that what came up answers correctly.
+ *
+ * Separate from `main()` so it can be driven by an injected shell. Until 0.79.0 this was a
+ * closure inside the effects object, which meant the only way to exercise it was to compose
+ * it by hand — and the one thing nobody composed by hand was a command that never returns.
+ *
+ * Credentials reach the command through the operator's environment (`shell` passes
+ * `process.env`) and the driver runs it in its own process, so nothing about the deploy ever
+ * enters a prompt. That is an invariant, not an accident (DESIGN.md §10.1).
+ *
+ * @param {import('./config.mjs').DeployConfig} deploy
+ * @param {{ cwd: string, log?: (line: string) => void, shell?: (command: string, args: string[], options: { cwd: string, timeoutMs?: number }) => ShellResult }} options
+ * @returns {{ ok: boolean, detail: string }}
+ */
+export function runDeploy(deploy, options) {
+  if (!deploy.enabled) return { ok: true, detail: 'no deploy configured' };
+  const log = options.log ?? (() => {});
+  const run = options.shell ?? shell;
+  const [command, ...args] = deploy.command;
+  log(`deploying: ${command} ${args.join(' ')}`);
+  const deployed = run(command, args, { cwd: options.cwd, timeoutMs: deploy.timeoutMs });
+  if (!deployed.ok) {
+    if (deployed.timedOut === true) {
+      return {
+        ok: false,
+        detail:
+          `the deploy command did not finish within ${deploy.timeoutMs}ms and was killed: ${command} ${args.join(' ')}. ` +
+          'An unattended run cannot answer a prompt, so a passphrase or a host-key question looks exactly like this',
+      };
+    }
+    return { ok: false, detail: `the deploy command failed: ${deployed.stderr.trim() || `exit ${deployed.status}`}` };
+  }
+  const probeArgs = ['--url', deploy.url];
+  for (const check of deploy.smoke) probeArgs.push('--expect', `${check.path}=${check.status}`);
+  log(`smoke: ${deploy.smoke.length} check(s) against ${deploy.url}`);
+  const smoked = run('node', [HEALTH_PROBE, ...probeArgs], { cwd: options.cwd });
+  // Exit code, like every other check here. A non-zero probe is a failure whatever it
+  // printed, and an empty stdout still fails rather than defaulting to pass.
+  if (!smoked.ok) return { ok: false, detail: smoked.stdout.trim() || 'the smoke check failed and said nothing' };
+  return { ok: true, detail: smoked.stdout.trim() || 'smoke checks passed' };
 }
 
 /**
@@ -3813,27 +3880,9 @@ export function main(argv, io = {}) {
         );
       },
       // Deploy is **not** part of `ship`. It runs before the ship decision so a failure can
-      // withhold the tag; see the call site in `driveRun`. Credentials reach it through the
-      // operator's environment (`shell` passes `process.env`) and the driver runs it in its
-      // own process, so nothing about the deploy ever enters a prompt. That is an invariant,
-      // not an accident (DESIGN.md §10.1).
-      deploy: () => {
-        if (!config.deploy.enabled) return { ok: true, detail: 'no deploy configured' };
-        const [command, ...args] = config.deploy.command;
-        write(verbatim(`deploying: ${command} ${args.join(' ')}`));
-        const deployed = shell(command, args, { cwd });
-        if (!deployed.ok) {
-          return { ok: false, detail: `the deploy command failed: ${deployed.stderr.trim() || `exit ${deployed.status}`}` };
-        }
-        const probeArgs = ['--url', config.deploy.url];
-        for (const check of config.deploy.smoke) probeArgs.push('--expect', `${check.path}=${check.status}`);
-        write(verbatim(`smoke: ${config.deploy.smoke.length} check(s) against ${config.deploy.url}`));
-        const smoked = shell('node', [HEALTH_PROBE, ...probeArgs], { cwd });
-        // Exit code, like every other check here. A non-zero probe is a failure whatever it
-        // printed, and an empty stdout still fails rather than defaulting to pass.
-        if (!smoked.ok) return { ok: false, detail: smoked.stdout.trim() || 'the smoke check failed and said nothing' };
-        return { ok: true, detail: smoked.stdout.trim() || 'smoke checks passed' };
-      },
+      // withhold the tag; see the call site in `driveRun`. The body lives in `runDeploy` so
+      // it can be driven by an injected shell (DESIGN.md §10.1).
+      deploy: () => runDeploy(config.deploy, { cwd, log: (line) => write(verbatim(line)) }),
       now: () => new Date().toISOString(),
       log: (line) => write(verbatim(line)),
       event: (styleEvent) => write(render(styleEvent, { mode })),

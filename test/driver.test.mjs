@@ -45,6 +45,7 @@ import {
   parseDriverArgs,
   recordRedEvidence,
   redEvidenceGate,
+  runDeploy,
   unprovenIds,
   requiredIdsFor,
   staticGates,
@@ -1374,6 +1375,79 @@ describe('driveRun', () => {
     });
     return { outcome, dareDir, root };
   }
+
+  // The deploy command was the only call in the driver bounded by nothing. `tokenCeiling` and
+  // `costCeiling` bind children that return, and `runSmoke` carries its own deadline, so a
+  // deploy that never returns stalled the whole run with no ceiling and no signal. `ssh`
+  // waiting on a passphrase prompt nobody can answer is the ordinary way to reach it.
+  describe('a deploy command that never returns', () => {
+    /** @type {import('../scripts/config.mjs').DeployConfig} */
+    const deploy = {
+      enabled: true,
+      command: ['ssh', 'deploy@box', '/srv/app/deploy.sh'],
+      url: 'http://127.0.0.1:8731',
+      smoke: [{ path: '/health', status: 200 }],
+      timeoutMs: 1000,
+    };
+
+    it('hands the configured timeout to the shell rather than trusting it to return', () => {
+      /** @type {Record<string, unknown>[]} */
+      const seen = [];
+      runDeploy(deploy, {
+        cwd: '/repo',
+        shell: (command, args, options) => {
+          seen.push({ command, timeoutMs: options.timeoutMs });
+          return { ok: true, status: 0, stdout: 'ok', stderr: '', timedOut: false };
+        },
+      });
+      assert.deepStrictEqual(seen[0], { command: 'ssh', timeoutMs: 1000 });
+    });
+
+    it('names the timeout instead of reporting an ordinary failure, because the two need different fixes', () => {
+      const result = runDeploy(deploy, {
+        cwd: '/repo',
+        shell: () => ({ ok: false, status: 1, stdout: '', stderr: '', timedOut: true }),
+      });
+      assert.equal(result.ok, false);
+      assert.match(result.detail, /did not finish within 1000ms/);
+    });
+
+    it('does not run the smoke checks against a host the deploy never reached', () => {
+      let calls = 0;
+      runDeploy(deploy, {
+        cwd: '/repo',
+        shell: () => {
+          calls += 1;
+          return { ok: false, status: 1, stdout: '', stderr: '', timedOut: true };
+        },
+      });
+      assert.equal(calls, 1);
+    });
+
+    // The benign neighbour. A deploy that ran and failed is a different fact from one that
+    // hung, and collapsing them would send the operator looking for the wrong thing.
+    it('still reports an ordinary non-zero exit as a failure, not as a timeout', () => {
+      const result = runDeploy(deploy, {
+        cwd: '/repo',
+        shell: () => ({ ok: false, status: 7, stdout: '', stderr: 'host key verification failed', timedOut: false }),
+      });
+      assert.equal(result.ok, false);
+      assert.equal(result.detail, 'the deploy command failed: host key verification failed');
+    });
+
+    it('leaves a disabled deploy alone, so the ceiling costs nothing to runs that never deploy', () => {
+      let calls = 0;
+      const result = runDeploy({ ...deploy, enabled: false }, {
+        cwd: '/repo',
+        shell: () => {
+          calls += 1;
+          return { ok: true, status: 0, stdout: '', stderr: '', timedOut: false };
+        },
+      });
+      assert.deepStrictEqual(result, { ok: true, detail: 'no deploy configured' });
+      assert.equal(calls, 0);
+    });
+  });
 
   // 0.63.0. Until then the deploy lived inside `ship()` — after the dare/GRAND-PRIZE tag was
   // already written — and its failure was printed and ignored, so a run could announce a

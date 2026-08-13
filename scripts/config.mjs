@@ -26,7 +26,7 @@ import { DEFAULT_MAX_PROMPT_CHARACTERS } from './context-budget.mjs';
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 /** @typedef {{ path: string, status: number }} SmokeCheck */
-/** @typedef {{ enabled: boolean, command: string[], url: string, smoke: SmokeCheck[] }} DeployConfig */
+/** @typedef {{ enabled: boolean, command: string[], url: string, smoke: SmokeCheck[], timeoutMs: number }} DeployConfig */
 /** @typedef {{ after: number }} RealityCheckConfig */
 /** @typedef {{ enabled: boolean }} DareMeConfig */
 /** @typedef {{ enabled: boolean, n: number, after: number }} RaceConfig */
@@ -140,7 +140,13 @@ export function defaultConfig() {
     // an escape hatch. What would justify flipping the default: one case-G run with it on, whose
     // oracle failures were all genuine defects rather than inventions.
     oracle: { enabled: false },
-    deploy: { enabled: false, command: [], url: '', smoke: [] },
+    // Ten minutes, and the number matters less than the fact that one exists. The deploy
+    // command was the only call in the driver with no ceiling on it: `tokenCeiling` and
+    // `costCeiling` bind children that return, and `runSmoke` carries its own deadline, so a
+    // deploy that never returns stalled the run indefinitely with nothing to look at. An `ssh`
+    // waiting on a passphrase prompt no unattended run can answer is the ordinary route there.
+    // Generous enough for a remote build, finite either way.
+    deploy: { enabled: false, command: [], url: '', smoke: [], timeoutMs: 600_000 },
     extractTests: true,
     chaos: 1,
     realityCheck: { after: 3 },
@@ -392,7 +398,7 @@ export function validateConfig(input) {
 
   if ('deploy' in source) {
     const deploy = requireObject(source.deploy, 'deploy');
-    rejectUnknownKeys(deploy, new Set(['enabled', 'command', 'url', 'smoke']), 'deploy');
+    rejectUnknownKeys(deploy, new Set(['enabled', 'command', 'url', 'smoke', 'timeoutMs']), 'deploy');
     // An argv array, not a string. `split(' ')` destroyed any quoted argument, so
     // `ssh box 'cd /srv && ./deploy.sh'` arrived as six mangled tokens; the old shape is
     // refused by name rather than coerced, because silently re-interpreting a pre-0.61.0
@@ -407,6 +413,11 @@ export function validateConfig(input) {
     const command = 'command' in deploy ? requireStringArray(deploy.command, 'deploy.command') : [...defaults.deploy.command];
     const url = 'url' in deploy ? requireString(deploy.url, 'deploy.url') : defaults.deploy.url;
     const smoke = 'smoke' in deploy ? requireSmokeChecks(deploy.smoke) : [...defaults.deploy.smoke];
+    // Checked even while the section is disabled, unlike command/url/smoke below. Those are
+    // absent until the feature is used; a timeout that was written down and is nonsense is
+    // wrong the moment it is written, and finding that out at ship time is finding it out at
+    // the worst moment.
+    const timeoutMs = 'timeoutMs' in deploy ? requirePositiveInteger(deploy.timeoutMs, 'deploy.timeoutMs') : defaults.deploy.timeoutMs;
     // Nothing is required of a section that is switched off — refusing a half-written one
     // would fail runs that never deploy. Everything is required the moment it is used,
     // because a deploy nothing can check reports success whatever it did, which is the stub
@@ -430,7 +441,7 @@ export function validateConfig(input) {
         throw new ConfigError('deploy.enabled is true but deploy.smoke is empty: a deploy nothing checks cannot fail');
       }
     }
-    merged.deploy = { enabled, command, url, smoke };
+    merged.deploy = { enabled, command, url, smoke, timeoutMs };
   }
 
   if ('realityCheck' in source) {

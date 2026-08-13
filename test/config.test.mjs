@@ -69,7 +69,7 @@ describe('defaultConfig', () => {
         'oracle-author': 'max',
       },
       oracle: { enabled: false },
-      deploy: { enabled: false, command: [], url: '', smoke: [] },
+      deploy: { enabled: false, command: [], url: '', smoke: [], timeoutMs: 600000 },
       extractTests: true,
       chaos: 1,
       realityCheck: { after: 3 },
@@ -108,7 +108,30 @@ describe('defaultConfig', () => {
   // nothing. See DESIGN.md §10.1.
   describe('the deploy contract', () => {
     it('defaults to an argv array, a blank url and no smoke checks', () => {
-      assert.deepStrictEqual(defaultConfig().deploy, { enabled: false, command: [], url: '', smoke: [] });
+      assert.deepStrictEqual(defaultConfig().deploy, { enabled: false, command: [], url: '', smoke: [], timeoutMs: 600000 });
+    });
+
+    // The deploy command was the one call in the driver with no ceiling on it. `tokenCeiling`
+    // and `costCeiling` bind children that return; a deploy that never returns is bounded by
+    // nothing, and `ssh` prompting for a passphrase nobody can answer is the ordinary way to
+    // reach that. Ten minutes is generous for a remote build and finite, which is the property
+    // that matters.
+    it('bounds the deploy command by default rather than leaving it to run forever', () => {
+      assert.equal(defaultConfig().deploy.timeoutMs, 600000);
+    });
+
+    it('refuses a timeout that is zero, negative or not a number, because none of those bound anything', () => {
+      for (const bad of [0, -1, 1.5, 'ten minutes', null]) {
+        assert.throws(
+          () => validateConfig({ deploy: { timeoutMs: bad } }),
+          /deploy\.timeoutMs/,
+          `deploy.timeoutMs accepted ${JSON.stringify(bad)}`,
+        );
+      }
+    });
+
+    it('accepts an operator-supplied timeout, so a slow remote build is not forced to fail', () => {
+      assert.equal(validateConfig({ deploy: { timeoutMs: 1_800_000 } }).deploy.timeoutMs, 1_800_000);
     });
 
     it('refuses a string command, naming the array it wants instead', () => {
@@ -168,7 +191,7 @@ describe('defaultConfig', () => {
 
     it('leaves a disabled deploy alone, so an incomplete section is not an error until it is used', () => {
       // Refusing an unused half-written section would fail runs that never deploy.
-      assert.deepStrictEqual(validateConfig({ deploy: { enabled: false } }).deploy, { enabled: false, command: [], url: '', smoke: [] });
+      assert.deepStrictEqual(validateConfig({ deploy: { enabled: false } }).deploy, { enabled: false, command: [], url: '', smoke: [], timeoutMs: 600000 });
     });
   });
 
