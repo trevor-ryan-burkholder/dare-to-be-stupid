@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.104.0`. Measured at 0.104.0: `npm test` **1721 pass**,
+**State:** `main` at `0.105.0`. Measured at 0.105.0: `npm test` **1724 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**. `npm run test:live` **27 of 27 across 11 files**.
 
@@ -40,6 +40,37 @@ a list that never had it.
 **The lesson is the one this file keeps relearning.** Three defects this session were found by
 execution and invisible to 1687 unit tests — the `.hypothesis/` cache, the ssh rate-limit, and
 this. A brief is output nobody asserts on, and it is handed to the one reader who will act on it.
+
+### 0.105.0 — C2 archiving destroyed the evidence it exists to preserve. Fifth instance, first that is not merely pollution
+
+**Found by checking a success message instead of believing it.** `caseH`'s second run printed
+`archived the previous run to .dare/runs/001`. The directory was not there.
+
+`archivePreviousRun` had worked perfectly — it moved eight files: the previous run's
+`outcome.json`, `review.json`, `run.json`, `assumptions.json` and four briefs. `.dare/runs/` was
+**untracked and un-ignored**, so `git add -A` committed all eight, and the next hard reset — to a
+commit predating the archive — deleted every one. Reconstructed from the reflog rather than
+guessed: `47ff38a` and `8ac3ba5` each carry eight files under that path, and the reset to
+`047b680` discarded them.
+
+**Fifth instance of one defect**, after `state.json`, `outcome.json`, `run.json` and
+`.hypothesis/`. **The first that is not pollution.** Those were artifacts nothing reads back or
+that the driver rewrites next iteration. This directory is the *only* copy of a previous run's
+evidence, and archiving exists precisely to make run history forensic (§7.2). The first time it
+ran in anger, the thing it protects was destroyed by the mechanism it protects against.
+
+**Why it slipped a list that was called self-correcting.** `DARE_IGNORED_PATHS` is checked by a
+test against the constants the writers use — and that test iterated over *filenames*. The archive
+is a **directory**, named per run, so no filename constant ever matched it. The test now includes
+`${RUN_ARCHIVE_DIR}/`, and a third case asserts that a `.gitignore` written by an older build
+gains the entry rather than keeping an incomplete list forever.
+
+**The eight files were recovered** from the reflog into scratch, so phase 1's evidence survives:
+`BUDGET`, 19,604,175 tokens, $14.60, 56 ids passing.
+
+**The generalisation worth keeping:** four of these five were found by execution and one by
+auditing after the fourth. None was ever found by a unit test, because the defect is not in what
+the code writes — it is in what git does to it afterwards.
 
 ### 0.104.0 — 0.103.0's fix was not retroactive, and testing the *consequence* found the gap
 

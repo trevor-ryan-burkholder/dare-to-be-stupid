@@ -24,7 +24,7 @@ import { readAssumptions } from '../scripts/assumptions.mjs';
 import { MUTATION_CONFIG_CONTENTS } from '../scripts/toolchains/node.mjs';
 import { pinSecurityElement, quarantinePin, readPins, writePins } from '../scripts/pins.mjs';
 import { RUN_LOCK_FILE } from '../scripts/run-lock.mjs';
-import { RUN_MANIFEST } from '../scripts/run-manifest.mjs';
+import { RUN_ARCHIVE_DIR, RUN_MANIFEST } from '../scripts/run-manifest.mjs';
 import { DEFAULT_OWNERSHIP, defaultConfig } from '../scripts/config.mjs';
 import {
   DriverError,
@@ -4203,7 +4203,10 @@ describe('every .dare artifact the driver writes is ignored by git', () => {
     // watching a live run leave `?? .dare/run.json` in `git status`, one `git add -A` away from
     // being tracked. Third instance of the same defect, and the list is still the enumeration
     // it has always been — the test is what makes it self-correcting, not the list.
-    for (const name of [OUTCOME_FILE, REVIEW_RECORD, RUN_LOCK_FILE, RUN_MANIFEST]) {
+    // RUN_ARCHIVE_DIR is the fifth, and it is a *directory* rather than a file — which is how it
+    // slipped past a list of filenames. Measured in caseH: eight archived files were committed
+    // by `git add -A` and then destroyed by a hard reset to a commit that predated them.
+    for (const name of [OUTCOME_FILE, REVIEW_RECORD, RUN_LOCK_FILE, RUN_MANIFEST, `${RUN_ARCHIVE_DIR}/`]) {
       assert.equal(
         DARE_IGNORED_PATHS.includes(`.dare/${name}`),
         true,
@@ -4417,5 +4420,33 @@ describe('a security id can never be carried past a panel', () => {
     // away a saving for a hazard that touches one id.
     const plan = narrowedPanelPlan(ASSIGNMENTS, [pin('DoD-2-security'), pin('PRD-1.1')], REQUIRED);
     assert.deepStrictEqual(plan.carried.map((p) => p.id), ['PRD-1.1']);
+  });
+});
+
+// The fifth instance of one defect, and the first that destroyed evidence rather than merely
+// polluting a tree. archivePreviousRun moves the previous run's outcome, review, manifest,
+// assumptions and briefs into .dare/runs/NNN so a second run cannot overwrite them. Untracked and
+// un-ignored, git add -A committed all eight files and the next hard reset deleted every one -
+// confirmed from caseH's reflog, where two discarded commits each carried eight files under that
+// path.
+describe('the per-run archive is ignored, or archiving destroys what it preserves', () => {
+  it('ignores the archive directory, not just the files inside it', () => {
+    // A directory entry, because the archive's contents are named per run and a list of
+    // filenames is exactly what it slipped past.
+    assert.equal(DARE_IGNORED_PATHS.includes(`.dare/${RUN_ARCHIVE_DIR}/`), true);
+  });
+
+  it('writes it into a fresh .gitignore', () => {
+    const updated = String(dareIgnoreUpdate(''));
+    assert.equal(updated.includes(`.dare/${RUN_ARCHIVE_DIR}/`), true, updated);
+  });
+
+  it('adds it to a .gitignore written by an older build that lacks it', () => {
+    // The self-correcting half. A repository carrying an older stanza must gain the entry
+    // rather than keep an incomplete list forever, which is the defect 0.77.0 already paid for.
+    const older = ['.dare/state.json', '.dare/briefs/', '.dare/outcome.json', 'node_modules/'].join('\n');
+    const updated = dareIgnoreUpdate(older);
+    assert.notEqual(updated, null, 'an older stanza was left incomplete');
+    assert.equal(String(updated).includes(`.dare/${RUN_ARCHIVE_DIR}/`), true);
   });
 });

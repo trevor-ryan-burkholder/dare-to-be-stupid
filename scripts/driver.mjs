@@ -87,7 +87,7 @@ import {
   verifySecurityPin,
   writePins,
 } from './pins.mjs';
-import { RUN_MANIFEST, archivePreviousRun, buildRunManifest, writeRunManifest } from './run-manifest.mjs';
+import { RUN_ARCHIVE_DIR, RUN_MANIFEST, archivePreviousRun, buildRunManifest, writeRunManifest } from './run-manifest.mjs';
 import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
 import { MUTATION_CONFIG, MUTATION_CONFIG_CONTENTS } from './toolchains/node.mjs';
 import { CONDITIONAL_GATE_OPERATIONS, gatesFor, resolveToolchain } from './toolchains/index.mjs';
@@ -2055,6 +2055,19 @@ export const DARE_IGNORED_PATHS = [
   '.dare/pins.json',
   '.dare/assumptions.json',
   '.dare/review.json',
+  // The per-run archive, and the **fifth** instance of this defect — measured, not reasoned.
+  // `archivePreviousRun` moves the previous run's outcome, review, manifest, assumptions and
+  // briefs here so a second run cannot overwrite them. Untracked and un-ignored, `git add -A`
+  // committed all eight files, and the next hard reset — to a commit that predated the archive
+  // — deleted every one. Confirmed in `caseH` from the reflog: `47ff38a` and `8ac3ba5` each
+  // carried eight files under this path, and the reset to `047b680` discarded them.
+  //
+  // **Worse than the four before it.** Those were pollution: an artifact nothing reads back, or
+  // one the driver rewrites next iteration. This directory is the *only* copy of a previous
+  // run's evidence, and archiving exists precisely to make run history forensic. The first time
+  // it ran in anger, the thing it was protecting was destroyed by the mechanism it was
+  // protecting against.
+  `.dare/${RUN_ARCHIVE_DIR}/`,
   // Added at 0.68.0 and its ignore entry forgotten until 0.77.0, which is §4.3's defect
   // reproduced by the person who documented it: an artifact tracked by git is restored by
   // `git reset --hard`, so the record of how a run ended would be replaced by an older run's.
