@@ -39,6 +39,38 @@ ceiling of its own is an open question - `maxIterations` bounds it in iterations
 honest unit for a loop, and a wall-clock cap that fires mid-iteration would leave a tree nothing
 has judged.
 
+## 0.83.0 — racing can land a winner now, and the NEEDS REVIEW below had a false dilemma in it
+
+The entry below framed this as a design decision between **committing the loser's work** (puts
+unreviewed changes on the branch) and **cleaning the tree** (discards work the ratchet has not
+judged). **Both are wrong, and reading `createWorktrees` settles it in one line:**
+
+```js
+options.run('git', ['worktree', 'add', '--detach', dir, options.base], { cwd: options.cwd });
+// where base = git rev-parse HEAD
+```
+
+**Every candidate is detached at the committed `HEAD`. No candidate ever saw the uncommitted
+changes.** Each one's gates passed against `base + its own diff`. Landing the winner on top of
+those changes produces `base + winner + something nothing gated` — a tree no evidence in the run
+describes. So keeping them is not the cautious option; **it is the one that ships unjudged code.**
+That is a stronger argument than "the ratchet has not judged this", and it only exists because the
+call site was read instead of reasoned about.
+
+The tree is therefore set aside, and nothing is destroyed: `git stash push --include-untracked`
+preserves everything except ignored paths, which is exactly what keeps `.dare/` out of it. Not
+popped after a successful merge — re-applying ungated changes on top of the winner rebuilds the
+tree this avoids. Popped when the merge fails anyway, because a failed race must leave the tree as
+it found it. A stash that cannot be taken refuses the merge rather than proceeding.
+
+Tier 2 reproduces the live failure against a real repository — modified tracked file plus untracked
+debris — because whether stashing clears a tree enough for `--ff-only` is **git's** contract, not
+one my argv assertions can reach.
+
+**Still true and still unfixed: killing a race with `-9` leaks worktrees**, and the lock added at
+0.82.0 has the same hole — neither a `finally` nor a signal handler survives `SIGKILL`. The right
+shape is probably a sweep at race start rather than a handler at race end.
+
 ## 0.80.0–0.82.0 — the stall blocker, closed on three fronts
 
 **0.80.0, every `claude -p` child.** `childTimeoutMs`, 30 minutes, against a longest-ever-observed
@@ -308,11 +340,14 @@ driver's own paths out, not on a signal, which is §13.6's named hazard arriving
 not anticipate. Recovered with `git worktree remove --force`; an operator who kills a race must do
 this or every later race in that repository fails on a directory git already knows about.
 
-**NEEDS REVIEW — the fix is a design decision, not a patch.** `applyWinner` could commit or stash
-the main tree before merging, but *what* it is committing is the losing builder's work, and
-committing that silently would put unreviewed changes on the branch the winner is about to
-fast-forward. Cleaning the tree instead discards work the ratchet has not judged. Neither is
-obviously right, and I have not built either — this was not a build session.
+**FIXED at 0.83.0, and the dilemma stated here was false — see the 0.83.0 entry above.** This
+paragraph read: *"`applyWinner` could commit or stash the main tree before merging, but what it is
+committing is the losing builder's work... Cleaning the tree instead discards work the ratchet has
+not judged. Neither is obviously right."* Both options were wrong for a reason neither of them
+names: every candidate is detached at the committed `HEAD`, so **no candidate ever saw those
+changes**, and landing the winner on top of them produces a tree nothing gated. Kept here because
+the mistake is instructive — the dilemma dissolved on reading the call site, which is the rule this
+file keeps writing down and this entry did not follow.
 
 ### Attempt 1 never armed, and the arithmetic is the constraint worth keeping
 
