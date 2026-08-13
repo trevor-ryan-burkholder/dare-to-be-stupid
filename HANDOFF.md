@@ -29,6 +29,20 @@ iterations — the sizing the two historical ships used — `ship1` reached iter
 **25% of its ceiling**, ~8.4M per iteration, squarely inside the 5–9M band measured on the three
 15M runs that all died at iteration 2. Nothing about the loop had degraded; the ceilings had.
 
+**The ratchet fired on iteration 5, live, and the whole sequence worked.** The builder broke a
+previously-passing test — `src/csv.test.ts::parseCsv > an unterminated quote at EOF ends the field
+at EOF` — and the loop hard reset on one regression, extracted a lesson (9s, 34K tokens), and went
+on to iteration 6 with **77 ids** in the passing set and `lastGoodCommit` intact. Monotonicity is
+the product, and this is the first time in this file it has been recorded catching something on a
+real build rather than in a test.
+
+**A near-alarm worth writing down so nobody else raises it.** `.dare/runs/` does not exist in this
+run's tree, and after 0.105.0 the reflex is to assume a reset ate it. It did not:
+`archivePreviousRun` archives the **previous** run when a new one starts, and `ship1` is the first
+run in that directory. **Absence here is correct.** Check the mechanism before reporting the
+defect — 0.105.0's real instance was confirmed from the reflog, not inferred from an empty
+directory.
+
 **Iteration 2 produced no panel at all** because a gate failed first — the cheap path working
 exactly as designed, and worth recording because it is invisible in any token total.
 
