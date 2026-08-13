@@ -105,8 +105,24 @@ git --version
 **Do not install the plugin to dogfood it. Run the working tree directly:**
 
 ```bash
-node /path/to/dare-to-be-stupid/scripts/driver.mjs PRD.md --yes > ~/dare-logs/runN.log 2>&1
+set -o pipefail   # or the terminal-state exit code becomes tee's, which is always 0
+mkdir -p ~/dare-logs
+node /path/to/dare-to-be-stupid/scripts/driver.mjs PRD.md --yes 2>&1 | tee ~/dare-logs/runN.log
 ```
+
+**`tee`, not `>`.** A plain redirect sends *everything* to the file, so anyone watching the
+terminal — or opening the pane of a backgrounded run — sees an empty screen for hours. The
+run is narrating the whole time: the launch banner, `SEGMENT THREE OF EIGHT`,
+`67 PERCENT OF OUR BROADCAST DAY REMAINS`, the terminal stamp. All of it lands in a file nobody
+is looking at, and the run appears hung when it is working.
+
+**`set -o pipefail` is not optional.** Without it the pipeline reports `tee`'s status, which is
+0 whatever the driver did, and **every run looks like it shipped.** The terminal state is read
+from the exit code: 0 is `SHIPPED`, non-zero is everything else.
+
+The style layer itself needs nothing: `styleMode` keys off `DARE_STYLE` alone and never asks
+whether stdout is a terminal, so the voice survives a pipe, a redirect and a captured buffer
+identically. `DARE_STYLE=plain` is the only thing that turns it off.
 
 This instruction used to say the opposite — install at the version under test and check the pin —
 and that is how you walk into the trap it was warning about. The install cache is keyed by
