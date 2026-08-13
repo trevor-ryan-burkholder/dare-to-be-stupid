@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.109.0`. Measured at 0.109.0: `npm test` **1751 pass**,
+**State:** `main` at `0.110.0`. Measured at 0.110.0: `npm test` **1751 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -77,6 +77,24 @@ enforcement; **the first one has an escape that does not cover this case.**
 iterations and 42% of budget left, and has failed twice. If it burns the rest oscillating, that is
 the finding; if it finds the move, the finding is that a correct fix required making a test name
 false.
+
+**CONCLUDED ON ITERATION 11, and the builder found a better move than the one I documented.**
+It broke its own lock **without touching the test.** `src/csv.test.ts` is untouched, still
+asserting that an unterminated quote at EOF ends the field there; the refusal was added *above*
+the parser, and the ratchet gained `src/cli.test.ts::main > PRD-2.1: a record left inside an
+unterminated quote at EOF is refused, not silently merged`. Passing set **77 → 91**. Findings
+**4 → 2**, with `PRD-1.2` (float cancellation), `DoD-5` and `DoD-6` all cleared in one iteration.
+
+**The test and the finding were never about the same layer**, which is why both could be
+satisfied. So the position was never a true lock — it had at least two exits, and the safer one
+was invisible to everybody including me.
+
+**That is a correction to 0.109.0, applied at 0.110.0.** My note offered "rewrite the assertions"
+as *the* escape. Leading with that points a stuck builder at the one move that can gut a test
+while keeping its id green — exactly what A6 and `integrity.mjs` exist to catch — when the
+layering move usually exists and produces a better design. The note now offers the layer first and
+the rewrite only as a fallback, and a test asserts that **ordering**, not just the presence of
+both.
 
 **Answered in code at 0.109.0, and `ship1` will not benefit from it** — that process loaded 0.105.0
 at start-up and holds it. The driver now counts regressions per id **within the run** and, on a

@@ -3001,11 +3001,17 @@ describe('repeatedRegressionNote', () => {
     assert.equal(note.includes(`${ID} (2 times)`), true, note);
   });
 
-  it('offers the only legal move: rewrite the assertions, never the name', () => {
-    // A test id is the reporter's test name, so renaming or deleting drops the id and reads as
-    // a regression like any other. The escape existed and nothing told the builder about it.
+  it('offers the layering escape before the rewrite, which is the order the evidence gave', () => {
+    // ship1's builder broke its own lock without touching the test: it added the refusal above
+    // the parser and the ratchet gained a new id, 77 -> 91 passing. Leading with "rewrite the
+    // assertions" points a stuck builder at the one move that can gut a test while keeping its
+    // id green, which is what A6 exists to catch.
     const note = repeatedRegressionNote(new Map([[ID, 2]]), [ID]);
-    assert.equal(note.includes('rewrite the assertions inside'), true, note);
+    const layer = note.indexOf('a layer the test does not constrain');
+    const rewrite = note.indexOf('rewrite the assertions inside');
+    assert.notEqual(layer, -1, note);
+    assert.notEqual(rewrite, -1, note);
+    assert.equal(layer < rewrite, true, `the rewrite escape is offered before the safer one: ${note}`);
     assert.equal(note.includes('may not rename or delete it'), true, note);
   });
 

@@ -1171,10 +1171,22 @@ export function appendBlooper(dareDir, event) {
  *
  * The note does **not** weaken the ratchet, and could not: a test id is the reporter's test
  * *name*, so the assertions inside an `it(...)` may be rewritten while the id keeps passing,
- * and renaming or deleting it drops the id and reads as a regression like any other. That is
- * the only legal move out of this position, it already existed, and nothing told the builder
- * about it. Monotonicity is untouched; what changes is that the builder is no longer expected
- * to rediscover the escape while being reset every time it tries.
+ * and renaming or deleting it drops the id and reads as a regression like any other.
+ * Monotonicity is untouched; what changes is that the builder is no longer expected to
+ * rediscover the escape while being reset every time it tries.
+ *
+ * **The ordering of the two escapes is evidence, not taste, and the first draft had it backwards.**
+ * `ship1`'s builder eventually broke its own lock on iteration 11 — and it did **not** rewrite the
+ * test. `src/csv.test.ts` was left untouched, still asserting that an unterminated quote at EOF
+ * ends the field there; the refusal was added *above* the parser, and the ratchet gained
+ * `src/cli.test.ts::main > PRD-2.1: a record left inside an unterminated quote at EOF is refused,
+ * not silently merged`. The passing set went 77 → 91. Both the test and the finding were
+ * satisfied because they were never actually about the same layer.
+ *
+ * So the layering move is offered **first** and the rewrite only as a fallback. Leading with
+ * "rewrite the assertions" points a stuck builder at the one move that can gut a test while
+ * keeping its id green — precisely what A6 and `integrity.mjs` exist to catch — when the safer
+ * move usually exists and produces a better design.
  *
  * Counted **within the run**. `bloopers.log` outlives a run, and an identical regression from
  * a run that ended yesterday is not evidence about this one.
@@ -1191,8 +1203,11 @@ export function repeatedRegressionNote(counts, regressions) {
   return (
     `${repeats.join(', ')} has now regressed more than once in this run. A test that keeps breaking on the ` +
     'way to satisfying a review finding may itself be asserting the behaviour the finding calls defective. ' +
-    'You may rewrite the assertions inside such a test. You may not rename or delete it: the ratchet keys on ' +
-    'the test name, so a renamed or removed test reads as a regression exactly like a broken one'
+    'First look for a layer the test does not constrain: a finding about end-to-end behaviour can often be ' +
+    'satisfied above the unit the test pins, leaving that unit and its test alone. Only if the finding and ' +
+    'the test genuinely contradict each other, rewrite the assertions inside the test. You may not rename or ' +
+    'delete it either way: the ratchet keys on the test name, so a renamed or removed test reads as a ' +
+    'regression exactly like a broken one'
   );
 }
 
