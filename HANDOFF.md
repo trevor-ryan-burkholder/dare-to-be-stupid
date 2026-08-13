@@ -1,8 +1,9 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.96.0`. Measured at 0.96.0: `npm test` **1664 pass**,
+**State:** `main` at `0.97.0`. Measured at 0.97.0: `npm test` **1681 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
-`npm run release-check` **ok**, `npm run test:live` **27 of 27 across 11 files**.
+`npm run release-check` **ok**. `npm run test:live` **27 of 27 across 11 files** at 0.96.0;
+0.97.0 touches no spawn path or template contract.
 
 **This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
 `package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
@@ -13,6 +14,33 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### Item 22 — the stratigraphy sweep, and it found a hazard the sweep itself had warned about
+
+Six stale strata in this file are now reconciled in place rather than struck, each with a dated
+note saying what answered it. Kept rather than deleted, because the diagnosis that earned a fix
+is worth more than the fix's announcement — the orphan measurement, the ship-time-mutation
+proposal, and the A8 split all read better as "here is what we believed, here is what happened".
+
+**What the sweep actually bought is not tidiness.** Buried at the A8 pin-fingerprint entry was a
+sentence written before the carry existed: *"Decide the test-file-evidence case before building
+the carry."* Item 12 built the carry at 0.92.0 **without** that decision, which armed the exact
+hazard the note describes — run 3 really did pin `PRD-3.1` to a test file, a requirement pin
+fingerprints the whole evidenced file, and so the source satisfying a requirement could regress
+while `tests/perf.test.js` sat untouched, the fingerprint held, and nothing re-reviewed it.
+
+Decided and fixed in the same commit. `isTestEvidence` refuses to carry any requirement whose
+evidence names a test. Such a requirement is still pinned, still invalidated, still fail-closed;
+only the saving is withheld. The pattern is **deliberately broad** because the two errors are not
+symmetric: refusing to carry costs one re-review of one requirement, and wrongly carrying hides a
+source regression for the rest of the run. It is not blind, though — an earlier case-insensitive
+.NET clause ate `src/attest.cs`, which is ordinary source, and both directions are now tested.
+
+**The lesson this file should keep:** a plan compiled from a findings stratum inherits the moment
+that stratum was written (item 1), and a *hazard* recorded in one can be armed later by somebody
+reading only the top (item 12). Two of the five Phase 0 items were already done before the plan
+was written and one Phase 3 item shipped a known hazard — all three found by reading this file
+rather than the plan.
 
 ### Item 16 — the OS sandbox. DONE at 0.96.0, off by default, and confinement is unproven here
 
@@ -464,6 +492,12 @@ minutes."* It was treated there as a health-probe concern. **It is a general pro
 the driver runs**, and it was unbounded until 0.81.0. That is now the strongest evidence the gate
 ceiling was worth adding, and it arrived after the fact rather than before it.
 
+> **Reconciled 13 August 2026 (stratigraphy sweep, `PLAN.md` item 22): CLOSED at 0.89.0.** A gate
+> ceiling now sweeps the descendants the gate leaked, by sampling the driver's own process-group
+> membership before and after and killing the difference. Detaching — the fix this paragraph
+> implies — was measured and **rejected**: it costs the operator's Ctrl-C. See the top of this
+> file. The paragraph below is kept as the diagnosis that earned the fix.
+
 **Still open, and named rather than fixed: the orphan survives the timeout.** `execFileSync`'s
 timeout signals the direct child; the grandchild in the run above was still alive afterwards
 (`27476`). So 0.81.0 converts an indefinite hang into a bounded, named failure — which is the
@@ -732,6 +766,13 @@ arm the gate. Run 9's builder did the only other reasonable thing — it wrote a
 `node.mjs` filters changed files through `TEST_LIKE_RE`, so a test file can never arm the
 mutation gate whatever git reports about it. Iteration 3 eventually touched source and iteration
 4 shipped.
+
+> **Reconciled 13 August 2026: BUILT at 0.91.0, and this proposal was wrong in one place.** Both
+> named pre-checks were run as measurements, and the second one changed the design: the
+> **whole-tree** form below *does* launder a ship. One untested module scores `0.00` and exits 1
+> alone, and passes at 84.85% overall, exit 0, beside eight tested ones, because
+> `thresholds.break` is a percentage. What shipped is scoped to **the run's own diff since its
+> start commit**. See the top of this file.
 
 **The proposal, not yet built: let the driver run the mutation gate itself.** When the panel
 passes and the changed set is empty, the driver mutates the whole first-party source once,
@@ -1472,6 +1513,16 @@ makes the mutation gate apply again) but **design is not evidence.** The next ru
 
 ## Do this next
 
+> **Reconciled 13 August 2026 (stratigraphy sweep). This list is from before run 8 and three of
+> its four items have moved.** Item 1 happened: **run 8 was this project's first `SHIPPED`**, and
+> the independent audit of that ship found the binary discards data at exit 0 — both halves are
+> the finding. Item 3 is decided and built: A8's carry landed at 0.92.0 as a *pre-filter*, and the
+> test-file-evidence hazard it names was decided in the same sweep that found this list —
+> `isTestEvidence` refuses to carry a requirement evidenced only by a test.
+> **Items 2 and 4 are still exactly true**: no builder child has ever run inside a race worktree,
+> and the .NET adapter is still `DONE` on argv nobody has executed. Both are in `DOGFOOD.md`'s
+> operator queue.
+
 1. **A fresh case G run** (`DOGFOOD.md`), on a new scenario repo, not a resume. It is the first run
    with 0.56–0.58 live, and it answers whether a ship still happens when a ship must now be earned.
    The previous scenarios are at `~/dare-dogfood/csvstat` and `csvstat2`; logs go **outside the
@@ -2101,6 +2152,14 @@ not re-litigated. Harmless today because A8's carry half is unbuilt — the fail
 fires when the target stops resolving. **Decide the test-file-evidence case before building the
 carry.**
 
+> **Reconciled 13 August 2026 — and this paragraph was the most valuable thing in the sweep.**
+> The carry was built at 0.92.0 **without** this decision being made, which armed exactly the
+> hazard described here. Found by item 22's sweep of this file and fixed in the same commit:
+> `isTestEvidence` in `driver.mjs` refuses to carry any requirement whose evidence names a test
+> file. Such a requirement is still pinned, still invalidated, still fail-closed — only the
+> saving is withheld. The pattern is deliberately broad, because refusing to carry costs one
+> re-review while wrongly carrying hides a source regression for the rest of the run.
+
 Second reason to doubt the saving: three of five requirement pins cite `src/http/router.js`, the
 busiest file in the tree, and all three therefore share one fingerprint. On this project the carry
 would invalidate almost every iteration and save nearly nothing.
@@ -2214,6 +2273,12 @@ was detected, logged and fed back. What was missing was the one fact needed to a
 
 ## Outstanding
 
+> **Reconciled 13 August 2026 (stratigraphy sweep).** This section predates run 4. **A run has
+> reached the panel and the ratchet has caught a real regression** — case E passed at run 4 on a
+> real 93-id state, and run 8 shipped. What is still true from it: no builder child has ever run
+> inside a race worktree. Read the top of this file for current state; read this for the shape of
+> the questions, which is still the best statement of them.
+
 **A run that reaches the panel, and a ratchet that catches a real regression.** The first
 real runs died before either. Both stopped in iteration 1 with `passing: 0`, so no id ever
 entered the ratchet, no reset was ever reachable, and the reviewers were never called. The
@@ -2221,6 +2286,11 @@ regression behaviour is the reason the whole design exists and it has still only
 exercised against temporary repositories built by the test suite. With the runner mismatch
 fixed, this is the next thing a run should be able to demonstrate — give it enough budget to
 reach a second iteration.
+
+> **Reconciled 13 August 2026: still true, and now repriced rather than merely accepted.** The
+> heartbeat is one of three symptoms `BORROWED.md` R21 shows to be the same synchronous-driver
+> fact; `PLAN.md` item 10 is that conversion and is **blocked on item 8**, which decides whether
+> the parallel-panel third of it is worth anything.
 
 **A phase still cannot tick, but it now says so.** Children run under `execFileSync`, which
 blocks the event loop for the whole call, so a periodic heartbeat is impossible without
@@ -2924,6 +2994,11 @@ Finding worth recording: the first version of those tests all failed, because th
 harness reports zero test ids, the ratchet correctly rejects that, and Phase 4b is below the
 ratchet. Every component behaved as designed — which is the same shape as the 10 August runs,
 and a reminder that "the code never ran" and "the code failed" look identical from a red tick.
+
+> **Reconciled 13 August 2026: the carry landed at 0.92.0**, as a pre-filter that never reaches a
+> ship decision — a narrowed panel returning `pass` triggers the full panel. The DoD line below is
+> now met for source-evidenced requirements and deliberately **not** for test-evidenced ones.
+> The *measured* review-cost delta is still owed and is parked with `DOGFOOD.md`'s item 8.
 
 **A8 partly built, and the split is deliberate.** Built: the shared mechanism, the store,
 invalidation on any change to the evidenced file, and the fail-closed half — a requirement whose

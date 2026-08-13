@@ -270,9 +270,17 @@ builder editing `scripts/` without bumping still breaks the install-cache invari
 that is the one engineering prerequisite left. The scope note is untouched and not mine to
 retire.
 
-### 22. HANDOFF stratigraphy sweep — OPEN
+### 22. HANDOFF stratigraphy sweep — DONE (0.97.0), and it found an armed hazard
 The file is newest-first with older "outstanding" and "do this next" strata below; reconcile or
 strike the layers the top has since answered. Same class as the 13 August doc pass, one file.
+
+**Done — six strata reconciled in place, not struck.** And it paid for itself: buried in the A8
+entry was *"decide the test-file-evidence case before building the carry"*, written before the
+carry existed. **Item 12 built the carry at 0.92.0 without deciding it**, arming the hazard.
+Fixed in the same commit — `isTestEvidence` refuses to carry a requirement evidenced only by a
+test file. Two of five Phase 0 items were already done before this plan was written, and one
+Phase 3 item shipped a known hazard; all three were found by reading `HANDOFF.md` rather than
+the plan.
 
 ### 23. Closing consistency pass — OPEN
 `DESIGN.md` and `CLAUDE.md` describe what the code does; this file's statuses all terminal;

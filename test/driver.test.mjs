@@ -57,6 +57,7 @@ import {
   carriedReport,
   TOOL_CACHE_PATHS,
   childBudget,
+  isTestEvidence,
   narrowedPanelPlan,
   shipTimeMutationScope,
   claudeArgs,
@@ -3483,6 +3484,33 @@ describe('narrowedPanelPlan', () => {
     assert.deepStrictEqual(plan.assignments, ASSIGNMENTS);
   });
 
+  // HANDOFF.md recorded this hazard before the carry existed and said "decide the test-file-
+  // evidence case before building the carry". 0.92.0 built the carry without deciding it; this
+  // is the decision. Run 3 really did pin PRD-3.1 to a test file, and a requirement pin
+  // fingerprints the whole evidenced file - so source satisfying the requirement could regress
+  // while the test file sat untouched, the fingerprint held, and nobody re-reviewed it.
+  it('never carries a requirement whose only evidence is a test file', () => {
+    const testPin = {
+      id: 'PRD-1.1',
+      evidence: 'tests/perf.test.js:12',
+      file: 'tests/perf.test.js',
+      fingerprint: 'abc',
+      pinnedAt: 2,
+    };
+    const plan = narrowedPanelPlan(ASSIGNMENTS, [testPin], REQUIRED);
+    assert.equal(plan.narrowed, false);
+    assert.deepStrictEqual(plan.carried, []);
+  });
+
+  it('still carries a source requirement standing beside a test-evidenced one', () => {
+    // Refusing the whole carry because one pin is test-evidenced would throw away the saving
+    // for a hazard that only touches that pin.
+    const testPin = { id: 'PRD-1.1', evidence: 'tests/a.test.js:1', file: 'tests/a.test.js', fingerprint: 'x', pinnedAt: 1 };
+    const plan = narrowedPanelPlan(ASSIGNMENTS, [testPin, pin('PRD-1.2')], REQUIRED);
+    assert.equal(plan.narrowed, true);
+    assert.deepStrictEqual(plan.carried.map((p) => p.id), ['PRD-1.2']);
+  });
+
   it('ignores a pin for an id this run does not require', () => {
     // A pin left by an earlier objective whose requirement is gone must not shrink anything,
     // and must certainly not count toward "everything is carried".
@@ -4236,5 +4264,46 @@ describe('a gate tool cache is ignored, like node_modules before it', () => {
 
   it('names both cache paths and nothing invented', () => {
     assert.deepStrictEqual(TOOL_CACHE_PATHS, ['node_modules/', '.hypothesis/']);
+  });
+});
+
+describe('isTestEvidence', () => {
+  // Deliberately broad, and the asymmetry is the argument: refusing to carry costs one
+  // re-review, while wrongly carrying hides a source regression behind an untouched test file
+  // for the rest of the run.
+  const tests = [
+    'tests/perf.test.js',
+    'test/a.spec.ts',
+    'src/__tests__/thing.js',
+    'e2e/checkout.ts',
+    'spec/models/user.rb',
+    'src/deep/nested/test/helper.mjs',
+    'Api.Tests.cs',
+    'src/WidgetTest.cs',
+  ];
+  for (const file of tests) {
+    it(`refuses to carry evidence in ${file}`, () => {
+      assert.equal(isTestEvidence(file), true);
+    });
+  }
+
+  // Blocking everything is not passing. These are the neighbours a careless pattern eats, and
+  // every one of them is ordinary source a requirement may legitimately be evidenced by.
+  const source = [
+    'src/latest.mjs',
+    'src/protest/handler.js',
+    'src/contest.ts',
+    'lib/testing-library-adapter.js',
+    'src/attest.cs',
+    'app/services/greatest.rb',
+  ];
+  for (const file of source) {
+    it(`carries evidence in ${file}, which is source`, () => {
+      assert.equal(isTestEvidence(file), false);
+    });
+  }
+
+  it('handles a Windows-shaped path, because contributors are on three platforms', () => {
+    assert.equal(isTestEvidence('tests\\perf.test.js'), true);
   });
 });

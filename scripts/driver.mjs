@@ -2877,6 +2877,39 @@ export function formatGateFailure(failed, maxLines = 60) {
 }
 
 /**
+ * Does this evidence path point at a test rather than at the thing being tested?
+ *
+ * **The hazard, recorded in `HANDOFF.md` before the carry existed and armed the moment it did.**
+ * Run 3 pinned `PRD-3.1` to a *test file*. A requirement pin fingerprints the whole evidenced
+ * file, so if that file is `tests/perf.test.js`, the **source** satisfying the requirement can
+ * regress while the test file sits untouched, the fingerprint holds, and the requirement is
+ * carried without re-review. That note ends *"decide the test-file-evidence case before building
+ * the carry"*, and 0.92.0 built the carry without deciding it. This is the decision.
+ *
+ * A requirement evidenced only by a test is **never carried**. It is still pinned, still
+ * invalidated, and still fail-closed when its target vanishes — only the saving is withheld.
+ *
+ * **Deliberately broad, and the asymmetry is why.** Refusing to carry costs one re-review of one
+ * requirement. Wrongly carrying hides a source regression behind an untouched test file for the
+ * rest of the run. A pattern that over-matches is therefore the safe direction, and it covers the
+ * shapes the toolchains actually produce — `*.test.*` and `*.spec.*`, a `test`/`tests`/`spec`/
+ * `__tests__`/`e2e` directory anywhere in the path, and .NET's `*Tests.cs` convention.
+ *
+ * @param {string} file a repo-relative path from a pin's evidence
+ * @returns {boolean}
+ */
+export function isTestEvidence(file) {
+  const normalised = file.replace(/\\/g, '/');
+  if (/(^|\/)(?:__tests__|tests?|spec|e2e)\//i.test(normalised)) return true;
+  if (/\.(?:test|spec)\.[cm]?[jt]sx?$/i.test(normalised)) return true;
+  // Case-*sensitive*, and preceded by a separator or a lower-case character. .NET's convention
+  // is `WidgetTests.cs` or `Api.Tests.cs`, with a capital T. An earlier case-insensitive version
+  // of this line ate `src/attest.cs`, which is ordinary source whose name merely ends in the
+  // letters. Broad is the safe direction; blind is not.
+  return /(?:[a-z0-9]|[._-])Tests?\.(?:cs|fs|vb)$/.test(normalised);
+}
+
+/**
  * The panel plan with already-carried requirements removed, plus what was carried.
  *
  * **Two refusals to narrow, and both are the point.**
@@ -2896,7 +2929,7 @@ export function formatGateFailure(failed, maxLines = 60) {
  * @returns {{ assignments: { reviewer: string, ids: string[] }[], carried: import('./pins.mjs').RequirementPin[], narrowed: boolean }}
  */
 export function narrowedPanelPlan(assignments, carriedPins, requiredIds) {
-  const carried = carriedPins.filter((pin) => requiredIds.includes(pin.id));
+  const carried = carriedPins.filter((pin) => requiredIds.includes(pin.id) && !isTestEvidence(pin.file));
   if (carried.length === 0 || carried.length >= requiredIds.length) {
     return { assignments, carried: [], narrowed: false };
   }
