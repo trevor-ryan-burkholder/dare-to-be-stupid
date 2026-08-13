@@ -393,8 +393,9 @@ records in `HANDOFF.md`; the short version:
 
 - **worktree racing with a live builder.** `race.enabled` is `false`; only the git half is
   covered, by tier 2. The half that costs money has never executed once.
-- **the .NET adapter driven by a run.** Its commands were verified against a real SDK; no run
-  has ever used them, and there is no SDK on the development machine.
+- **the .NET adapter driven by a run.** Its commands were verified against a real SDK (8.0.423);
+  no run has ever used them. **The SDK is installed on this machine as of 13 August 2026** — the
+  line here previously said there was none, which was true when written and had gone stale.
 - **the ship condition added at 0.56.0–0.58.0.** See `HANDOFF.md`.
 - **deploy against a real host.** Built at 0.61.0–0.63.0 and covered by tier 2 against a real
   listening server, but **no run has ever deployed anything to a real droplet.** The ssh half is
