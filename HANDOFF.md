@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.103.0`. Measured at 0.103.0: `npm test` **1718 pass**,
+**State:** `main` at `0.104.0`. Measured at 0.104.0: `npm test` **1721 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**. `npm run test:live` **27 of 27 across 11 files**.
 
@@ -40,6 +40,32 @@ a list that never had it.
 **The lesson is the one this file keeps relearning.** Three defects this session were found by
 execution and invisible to 1687 unit tests — the `.hypothesis/` cache, the ssh rate-limit, and
 this. A brief is output nobody asserts on, and it is handed to the one reader who will act on it.
+
+### 0.104.0 — 0.103.0's fix was not retroactive, and testing the *consequence* found the gap
+
+**Written to lock a property I had already asserted, and it failed on the first run.** 0.103.0
+stopped a security id being *filed* as a requirement pin. It says nothing about a store written by
+an older build — and `panelB`'s `pins.json` on disk holds `DoD-2-security` among its requirement
+pins **right now**. `narrowedPanelPlan` would have carried it, silently restoring the exact
+cancellation 0.103.0 was written to close.
+
+The mechanism was fixed and the outcome was not. The difference only showed up because the test
+asserted the consequence — *a security id can never be carried past a panel* — rather than the
+mechanism that was supposed to produce it.
+
+The carry now refuses on three independent grounds: not required, evidenced only by a test file,
+or a security id. **Two mechanisms must both fail before A4 and A8 can cancel each other again.**
+
+**One existing test changed, and its breakage was informative.** *"Refuses to narrow when every
+required id is carried"* can no longer happen while a security id is in the required set, because
+that id is never carryable. That is a **stronger** property than the test asserted — a real panel
+always has at least one id that must be freshly read, so the full-panel fallback is no longer the
+only thing standing between a run and shipping on pins alone. It is now asserted in its own right,
+and the original all-carried branch is still tested on an ordinary id set.
+
+**The lesson, and this session has now paid for it twice:** a fix verified only by its mechanism
+is a fix that may not have happened. Both times the gap was found by writing down what should now
+be *true of the system* and running it, rather than what the change *did*.
 
 ### The reviewer-name audit, and a negative result worth recording
 

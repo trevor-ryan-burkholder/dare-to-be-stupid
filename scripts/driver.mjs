@@ -2935,7 +2935,15 @@ export function isTestEvidence(file) {
  * @returns {{ assignments: { reviewer: string, ids: string[] }[], carried: import('./pins.mjs').RequirementPin[], narrowed: boolean }}
  */
 export function narrowedPanelPlan(assignments, carriedPins, requiredIds) {
-  const carried = carriedPins.filter((pin) => requiredIds.includes(pin.id) && !isTestEvidence(pin.file));
+  // Three independent refusals, and the third is defence in depth rather than belt-and-braces
+  // pedantry. 0.103.0 stopped a security id being *filed* as a requirement pin, but that fix is
+  // not retroactive: a store written by an older build still holds one, and carrying it would
+  // silently restore the exact cancellation A4 and A8 produced together — the id whose gradual
+  // degradation A4 exists to catch becoming the one nobody re-reads. Two mechanisms must now
+  // both fail before that can happen again.
+  const carried = carriedPins.filter(
+    (pin) => requiredIds.includes(pin.id) && !isTestEvidence(pin.file) && !isSecurityId(pin.id),
+  );
   if (carried.length === 0 || carried.length >= requiredIds.length) {
     return { assignments, carried: [], narrowed: false };
   }

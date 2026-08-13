@@ -3474,10 +3474,28 @@ describe('narrowedPanelPlan', () => {
   it('refuses to narrow when every required id is carried', () => {
     // A run that shipped on pins alone, with no fresh cold read at all, would have replaced the
     // one component of this architecture that nothing else substitutes for.
-    const plan = narrowedPanelPlan(ASSIGNMENTS, REQUIRED.map(pin), REQUIRED);
+    //
+    // The required set here deliberately excludes the security id, because since 0.103.0 a
+    // security id is never carryable — which makes "everything carried" unreachable on any real
+    // panel. That is a stronger property than this test asserts and it is asserted separately;
+    // this one still has to prove the all-carried branch itself works.
+    const ordinary = REQUIRED.filter((id) => !isSecurityId(id));
+    const plan = narrowedPanelPlan(ASSIGNMENTS, ordinary.map(pin), ordinary);
     assert.equal(plan.narrowed, false);
     assert.deepStrictEqual(plan.assignments, ASSIGNMENTS);
     assert.deepStrictEqual(plan.carried, []);
+  });
+
+  it('cannot reach the all-carried state at all while a security id is required', () => {
+    // The consequence of 0.103.0 plus the carry refusal: a real panel always has at least one
+    // id that must be freshly read, so the full-panel fallback is not the only thing standing
+    // between a run and shipping on pins alone.
+    const plan = narrowedPanelPlan(ASSIGNMENTS, REQUIRED.map(pin), REQUIRED);
+    assert.equal(plan.narrowed, true, 'the security id should have kept one id un-carried');
+    assert.equal(
+      plan.carried.some((p) => isSecurityId(p.id)),
+      false,
+    );
   });
 
   it('refuses to narrow when nothing is carried, and hands back the plan untouched', () => {
@@ -4365,5 +4383,39 @@ describe('isSecurityId', () => {
     // No argument for reviewers or ownership: there is nowhere for a config to reach in and
     // change the answer.
     assert.equal(isSecurityId.length, 1);
+  });
+});
+
+// The *consequence* of 0.103.0, which matters more than the mechanism and was only argued.
+// Before it, a reconfigured panel filed DoD-2-security as a requirement pin - and requirement
+// pins are eligible for the A8 carry, so the one id whose gradual degradation A4 exists to catch
+// became the one nobody re-reads. Two defensive layers cancelling out. These lock the outcome.
+describe('a security id can never be carried past a panel', () => {
+  /** @param {string} id @returns {import('../scripts/pins.mjs').RequirementPin} */
+  const pin = (id) => ({ id, evidence: `src/${id}.mjs:4`, file: `src/${id}.mjs`, fingerprint: 'abc', pinnedAt: 2 });
+  const REQUIRED = ['PRD-1.1', 'PRD-1.2', 'DoD-2-security', 'DoD-5-design'];
+  const ASSIGNMENTS = [
+    { reviewer: 'security', ids: ['DoD-2-security'] },
+    { reviewer: 'correctness', ids: ['PRD-1.1', 'PRD-1.2'] },
+    { reviewer: 'design', ids: ['DoD-5-design'] },
+  ];
+
+  it('is not carried even if one somehow reached the requirement pins', () => {
+    // Belt and braces. 0.103.0 stops a security id being filed as a requirement pin at all, but
+    // a store written by an older build still holds one, and carrying it would silently restore
+    // the defect on the very next run.
+    const plan = narrowedPanelPlan(ASSIGNMENTS, [pin('DoD-2-security'), pin('PRD-1.1')], REQUIRED);
+    assert.equal(
+      plan.carried.some((p) => isSecurityId(p.id)),
+      false,
+      'a security id was carried, so A4 and A8 are cancelling each other out again',
+    );
+  });
+
+  it('still carries the ordinary requirement standing beside it', () => {
+    // The refusal must be surgical: losing the whole carry over one security pin would throw
+    // away a saving for a hazard that touches one id.
+    const plan = narrowedPanelPlan(ASSIGNMENTS, [pin('DoD-2-security'), pin('PRD-1.1')], REQUIRED);
+    assert.deepStrictEqual(plan.carried.map((p) => p.id), ['PRD-1.1']);
   });
 });
