@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.97.0`. Measured at 0.97.0: `npm test` **1681 pass**,
+**State:** `main` at `0.98.0`. Measured at 0.98.0: `npm test` **1683 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**. `npm run test:live` **27 of 27 across 11 files** at 0.96.0;
 0.97.0 touches no spawn path or template contract.
@@ -14,6 +14,27 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.98.0 — the nested-dare denial now says it is a text match, and the rule is NOT weakened
+
+**Third bite in one session**, and the second of the three was a commit message describing the
+rule itself. `nested-dare` scans command position including heredoc bodies, so a `git commit -F -`
+whose body merely *mentions* the command is refused. `README.md` already recorded it biting twice.
+
+**The rule stays exactly as it is, and that is the decision.** Three reasons, in order of weight:
+a heredoc genuinely can carry a script, so heredoc bodies really are command position; the
+operator-blocked case is a *deliberate* one with a test stating its reasoning — *"nested runs do
+not become reasonable because a human asked for them in this session"*; and loosening a
+no-nesting guard to make commit messages easier is precisely the trade this project refuses. The
+workaround costs one reworded sentence.
+
+What changed is the **sentence**. The denial now says outright that it is a text match rather than
+a detected invocation, names heredoc bodies as the usual cause, and tells the reader to reword
+rather than reach for the rule. A message that misdirects costs an investigation, and this
+repository has now paid for that four times — the mutation gate's false "nothing changed", the
+gate failure reduced to two npm warnings, this, and this again.
+
+Behaviour is unchanged and a test asserts that explicitly beside the new wording.
 
 ### Item 19 — the deploy's ssh half, live-verified. 13 August 2026
 

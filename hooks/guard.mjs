@@ -552,7 +552,11 @@ function checkRecursiveRemove(segments, cwd) {
 }
 
 const NESTED_REASON =
-  'dare does not spawn dare. Nested runs are blocked at the driver and at the hook (CLAUDE.md invariant, DESIGN.md §13.6).';
+  'dare does not spawn dare. Nested runs are blocked at the driver and at the hook (CLAUDE.md invariant, DESIGN.md §13.6). ' +
+  'This is a TEXT match, not a detected invocation: the rule scans command position including heredoc bodies, so a commit ' +
+  'message or a here-doc that merely mentions the command is refused too. That is deliberate - a heredoc can carry a script - ' +
+  'and it has now caught an operator writing prose about this project three times. If that is what happened, reword rather ' +
+  'than reach for the rule: it is not weakened to make commit messages easier.';
 
 /** Programs that take a whole command, or a whole prompt, as an argument. */
 const SHELL_INVOKERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);

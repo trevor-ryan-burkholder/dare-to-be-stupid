@@ -587,10 +587,34 @@ describe('deny reasons', () => {
 
   it('names the no-nesting invariant for a nested run', () => {
     const result = evaluate(bashEvent('/dare'));
+    const reason = result.decision === 'deny' ? result.reason : '';
     assert.equal(
-      result.decision === 'deny' ? result.reason : '',
-      'dare does not spawn dare. Nested runs are blocked at the driver and at the hook (CLAUDE.md invariant, DESIGN.md §13.6).',
+      reason.startsWith('dare does not spawn dare. Nested runs are blocked at the driver and at the hook'),
+      true,
+      reason,
     );
+    assert.equal(reason.includes('CLAUDE.md invariant, DESIGN.md §13.6'), true, reason);
+  });
+
+  // The rule is a text match over command position, heredoc bodies included, and that is
+  // deliberate because a heredoc can carry a script. It therefore also refuses an operator
+  // writing *prose* that merely mentions the command - which happened three times in one
+  // session, twice to a commit message describing this very rule. The rule is not weakened for
+  // that; the sentence is made to say so, because a message that misdirects costs an
+  // investigation and this repository has paid for that repeatedly.
+  it('says the denial is a text match, so prose about the command is diagnosable in seconds', () => {
+    const result = evaluate(bashEvent('/dare'));
+    const reason = result.decision === 'deny' ? result.reason : '';
+    assert.equal(reason.includes('TEXT match, not a detected invocation'), true, reason);
+    assert.equal(reason.includes('heredoc'), true, reason);
+    assert.equal(reason.includes('reword rather'), true, reason);
+  });
+
+  it('still denies, and denies identically, whatever the sentence now says', () => {
+    // The message changed; the behaviour must not have. A commit message mentioning the command
+    // is refused exactly as before.
+    assertDenied(bashEvent('/dare'), 'nested-dare');
+    assertDenied(bashEvent("sh -c '/dare'"), 'nested-dare');
   });
 });
 
