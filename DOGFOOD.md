@@ -102,14 +102,30 @@ claude --version        # records which CLI the run was against
 git --version
 ```
 
-Install the plugin **at the version under test**, and check the pin, because the install cache
-is keyed by version and a stale copy is indistinguishable from a wrong fix — this cost hours
-once already (`CLAUDE.md`, "Releasing"):
+**Do not install the plugin to dogfood it. Run the working tree directly:**
 
 ```bash
-grep '"version"' .claude-plugin/plugin.json
-grep -A2 dare-to-be-stupid ~/.claude/plugins/installed_plugins.json   # check gitCommitSha
+node /path/to/dare-to-be-stupid/scripts/driver.mjs PRD.md --yes > ~/dare-logs/runN.log 2>&1
 ```
+
+This instruction used to say the opposite — install at the version under test and check the pin —
+and that is how you walk into the trap it was warning about. The install cache is keyed by
+**version**, `/plugin marketplace add` reports success on an already-added marketplace **without
+refetching**, and pulling the marketplace clone changes nothing because the loader reads the
+`cache/` snapshot. A fix at an unchanged version therefore resolves to the old folder and is
+indistinguishable from a wrong fix. It cost hours once (`CLAUDE.md`, "Releasing"). **Running the
+tree cannot go stale.**
+
+**From 0.59.0 there is no longer any reason to install for a run.** The guard hook used to be the
+argument — an uninstalled plugin meant an unguarded builder. That was never true in the direction
+anyone believed: a `claude -p` child does not load the operator's plugin PreToolUse hooks, so an
+*installed* plugin meant an unguarded builder too. The driver now supplies the hook itself in
+`--settings`, resolved relative to `scripts/driver.mjs`, so a run from the working tree is
+**fully guarded with nothing installed at all**.
+
+Installing now buys exactly two things, neither of which a dogfood run needs: the slash command,
+and the guard firing in **your own interactive sessions** — which taxes unrelated work and will
+refuse your `rm -rf` when a shell variable is unresolved.
 
 Each scenario gets its **own throwaway repository**. Never point `/dare` at anything you would
 mind losing: the ratchet runs `git reset --hard`.
