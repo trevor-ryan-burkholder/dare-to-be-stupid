@@ -72,12 +72,20 @@ derived and always on; **`--max-turns` ships off by default** (`maxChildTurns: 0
 honest arithmetic gets from a dollar ceiling to a turn count, and because it is undocumented in
 `claude --help` 2.1.228 — accepted by the parser, verified, but a weaker contract.
 
-### 5. R15's phrasing paragraph in `templates/reviewer-system.md` — OPEN (verified absent at 0.88.0)
+### 5. R15's phrasing paragraph in `templates/reviewer-system.md` — DONE (0.76.0, before this plan)
 `BORROWED.md` R14/R15: a finding phrased as an input gets fixed as an input (runs 12 and 13,
 measured). One paragraph: a finding must state **the property violated**, with the input as
 evidence for it. Parser untouched; output contract unchanged.
 **Done when:** the paragraph exists and `templates.test.mjs` asserts its presence, in the
 repo's existing pattern.
+
+**Already satisfied, and the plan's parenthetical was false.** The heading *"State the property,
+not the example"* has been in `templates/reviewer-system.md` since **0.76.0** (`git log -S`
+finds it in `dc7dfbd`), carrying both worked examples and the *"name the class and give more
+than one member"* instruction. `test/templates.test.mjs:610–628` asserts the heading, the
+whitespace-normalised sentence *"a failing example is satisfied by handling that example"*, and
+the class instruction. `OPEN (verified absent at 0.88.0)` was not a verification — nothing was
+checked, and one `grep` contradicted it.
 
 ---
 

@@ -15,6 +15,25 @@ line in the same commit.
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
 
+### Item 5 — R15's phrasing paragraph. CLOSED as already done at 0.76.0
+
+`PLAN.md` marked it `OPEN (verified absent at 0.88.0)`. It has been present since **0.76.0**,
+fourteen versions earlier: `templates/reviewer-system.md` carries *"State the property, not the
+example"* with both worked examples and the instruction to name the class and give more than one
+member of it, and `test/templates.test.mjs:610–628` asserts all three. One `grep` contradicted
+the claim.
+
+**The parenthetical is the finding, not the item.** "Verified absent" was written where no
+verification happened, and a false claim of having checked is worse than an unchecked `OPEN` —
+the second invites a look and the first forbids one. Together with item 1 that is **two of the
+five Phase 0 items already done before the plan was written**, both discovered by reading the
+repository rather than the ledger. Where `PLAN.md` and the tree disagree, the tree wins; the
+remaining statuses in that file deserve the same suspicion until item 22 has been through them.
+
+**Not verified:** whether the paragraph *works* — whether reviewers phrased findings as
+properties in runs after 0.76.0 — is unmeasured, and R15's evidence is still only the two runs
+that motivated it.
+
 ### Item 4 — a child is bounded in flight at last. DONE at 0.90.0, tier 3 watched it stop
 
 `childBudget(config, spentUsd)` returns `costCeiling` minus everything handed to children so
