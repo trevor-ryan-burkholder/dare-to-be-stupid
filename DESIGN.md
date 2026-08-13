@@ -175,8 +175,25 @@ the run itself. `commands/dare.md` runs preflight **before** shelling to the dri
 | Remote is **not** prod/client/customer (if a remote exists) | never point at users | abort |
 | Network reachable (npm registry) | impeccable + tooling install | abort |
 | `.dare/config.json` exists | run config | auto-run `dare init` (one-time scaffold) |
+| **No other driver holds this repository** | two drivers on one tree each `git reset --hard` it and commit over the other | abort, naming the pid and the lock file to delete |
 | **Agent-config security scan** clean | dangerous mode trusts the repo's own hooks/prompts/MCP/secrets | abort on findings (§3.6) |
 | `--dangerously-skip-permissions` acknowledged | the premise; guard hook is the safety | require `--yes` or an interactive confirm |
+
+**The run lock, `.dare/run.json`.** Written by the driver at start, removed on every path out,
+and holding one number that matters: the driver's pid. Measured on 13 August 2026 — `ps` showed
+three drivers, two on the same `cwd`, because run 14 was sent `SIGTERM` and did not die before run
+15 launched. Run 15's result is void and nothing may be concluded from its log. §13.6's
+re-entrancy guard does not cover this and never did: it refuses a *nested* run, a builder invoking
+the slash command, which is a different failure entirely.
+
+Living under `.dare/` means §6's positional rule already protects it — a process marked
+`DARE_RUNNING` may not write there at any depth, so a builder cannot forge or clear it.
+
+**A live pid refuses; a dead pid is stale and does not.** The asymmetry is deliberate and it has a
+known imperfection: *"is this pid alive"* is not *"is this pid my driver"* once a reboot recycles
+pids, and there is no portable way to ask the second question. So this can refuse a run that
+should have started. That mistake costs one `rm` on a path the message names; the other mistake
+cost an entire run. A lock left by a killed driver clears itself, because its pid is gone.
 
 **Installed by the run, not the user:** vitest, Playwright + browsers (`npx playwright
 install`), and impeccable (`npx impeccable install`) are provisioned during Phase 1/early

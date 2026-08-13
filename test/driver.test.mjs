@@ -23,6 +23,7 @@ import { after, describe, it } from 'node:test';
 import { readAssumptions } from '../scripts/assumptions.mjs';
 import { MUTATION_CONFIG_CONTENTS } from '../scripts/toolchains/node.mjs';
 import { pinSecurityElement, quarantinePin, readPins, writePins } from '../scripts/pins.mjs';
+import { RUN_LOCK_FILE } from '../scripts/run-lock.mjs';
 import { DEFAULT_OWNERSHIP, defaultConfig } from '../scripts/config.mjs';
 import {
   DriverError,
@@ -3855,7 +3856,7 @@ describe('every .dare artifact the driver writes is ignored by git', () => {
   // So the list is asserted against the constants the writers actually use. An artifact whose
   // name lives in a constant cannot be added without this failing.
   it('covers every named artifact constant', () => {
-    for (const name of [OUTCOME_FILE, REVIEW_RECORD]) {
+    for (const name of [OUTCOME_FILE, REVIEW_RECORD, RUN_LOCK_FILE]) {
       assert.equal(
         DARE_IGNORED_PATHS.includes(`.dare/${name}`),
         true,

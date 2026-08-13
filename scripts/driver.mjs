@@ -50,6 +50,8 @@ import {
   selectLessons,
 } from './lessons.mjs';
 import { OracleError, parseOracleCases, resolveArtifactCommand, runOracle, writeOracle } from './oracle.mjs';
+import { checkNoConcurrentRun } from './preflight.mjs';
+import { RUN_LOCK_FILE, claimRunLock, clearRunLock } from './run-lock.mjs';
 import { installQualityPlugins } from './plugins.mjs';
 import { applyWinner, createWorktrees, parseNumstat, removeWorktrees, selectWinner, shouldRace } from './race.mjs';
 import { parseReport } from './reporters/index.mjs';
@@ -1889,6 +1891,10 @@ export const DARE_IGNORED_PATHS = [
   // reproduced by the person who documented it: an artifact tracked by git is restored by
   // `git reset --hard`, so the record of how a run ended would be replaced by an older run's.
   '.dare/outcome.json',
+  // The run lock. Tracking it would be worse than pointless: a `git reset --hard` would restore
+  // some other run's pid into the file this run is holding, and the next run would then refuse
+  // to start on the word of a process that has not existed for days.
+  `.dare/${RUN_LOCK_FILE}`,
   // Not `.dare/` state, and here for a reason measured in dogfood run 4. The operator redirects
   // the run's output into the repository — `DOGFOOD.md` said to — so `git add -A` tracked it, and
   // the hard reset in iteration 2 **reverted the log to its state at `lastGoodCommit`**. That
@@ -3792,6 +3798,18 @@ export function main(argv, io = {}) {
     }
   };
 
+  // One driver per repository (DESIGN.md §3.5). Checked here as well as in preflight, because
+  // preflight runs in a *different process* — the `init` entry point — and the operator also
+  // launches this file directly, which is exactly what the two-driver incident on 13 August
+  // 2026 looked like in `ps`. The window between that check and this claim is milliseconds;
+  // the window it closes was hours.
+  const concurrent = checkNoConcurrentRun(dareDir);
+  if (!concurrent.ok) {
+    write(verbatim(`${concurrent.detail}\n${concurrent.fix}`));
+    return 1;
+  }
+  claimRunLock(dareDir, { pid: process.pid, startedAt: new Date().toISOString() });
+
   /** @type {RunOutcome} */
   let outcome;
   try {
@@ -3964,6 +3982,12 @@ export function main(argv, io = {}) {
     write(render({ kind: 'terminal', state: 'ABORTED' }, { mode }));
     write(stamp('ABORTED', { mode }));
     return 1;
+  } finally {
+    // Released on every path out, including the ABORTED one above. A lock left behind by a run
+    // that ended normally would refuse the next run for no reason — and unlike a lock left by a
+    // killed driver, that one would not clear itself, because this pid really is alive right up
+    // until the process exits.
+    clearRunLock(dareDir);
   }
 
   write(render({ kind: 'terminal', state: outcome.state }, { mode }));

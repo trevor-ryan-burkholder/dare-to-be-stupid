@@ -9,7 +9,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -19,12 +19,14 @@ import {
   checkCleanWorkingTree,
   checkDangerAcknowledged,
   checkHasCommits,
+  checkNoConcurrentRun,
   checkNodeVersion,
   checkRemoteIsNotProduction,
   compareVersions,
   formatPreflight,
   runPreflight,
 } from '../scripts/preflight.mjs';
+import { RUN_LOCK_FILE, claimRunLock } from '../scripts/run-lock.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -111,6 +113,7 @@ describe('a healthy machine passes', () => {
         'safe-remote',
         'network',
         'config',
+        'no-concurrent-run',
         'agent-surface',
         'danger-acknowledged',
       ],
@@ -293,5 +296,63 @@ describe('formatPreflight', () => {
 
   it('lists no fixes when everything passed', () => {
     assert.equal(formatPreflight(preflight()).includes('preflight failed'), false);
+  });
+});
+
+// Measured on 13 August 2026, and it destroyed a run. `ps` showed three driver processes, two
+// of them with the same `cwd`: run 14 had been sent SIGTERM and had not died, and run 15
+// launched into the same tree. Two drivers were then mutating one repository, each able to
+// `git reset --hard` it and commit over the other. Run 15's result is void.
+describe('checkNoConcurrentRun', () => {
+  /** @returns {string} a fresh `.dare` directory */
+  function makeDareDir() {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-preflight-lock-'));
+    temporaryDirs.push(dir);
+    const dareDir = path.join(dir, '.dare');
+    mkdirSync(dareDir, { recursive: true });
+    return dareDir;
+  }
+
+  it('passes when nothing holds the repository', () => {
+    const result = checkNoConcurrentRun(makeDareDir(), { isAlive: () => true });
+    assert.equal(result.ok, true);
+    assert.equal(result.detail, 'no other driver holds this repository');
+  });
+
+  it('blocks when the recorded driver is still alive, and names its pid', () => {
+    const dareDir = makeDareDir();
+    claimRunLock(dareDir, { pid: 4242, startedAt: '2026-08-13T10:00:00.000Z' });
+    const result = checkNoConcurrentRun(dareDir, { isAlive: () => true, self: 1 });
+    assert.equal(result.ok, false);
+    assert.equal(result.blocking, true);
+    assert.equal(result.detail.includes('4242'), true, result.detail);
+    assert.equal(result.detail.includes('2026-08-13T10:00:00.000Z'), true, result.detail);
+  });
+
+  // A pidfile left by a killed driver must not lock the repository forever. `kill -TERM`
+  // failed to stop a driver here and `-9` worked, so the killed-driver case is the common one
+  // rather than the exotic one.
+  it('treats a lock whose process is gone as stale, and lets the run start', () => {
+    const dareDir = makeDareDir();
+    claimRunLock(dareDir, { pid: 4242, startedAt: '2026-08-13T10:00:00.000Z' });
+    const result = checkNoConcurrentRun(dareDir, { isAlive: () => false, self: 1 });
+    assert.equal(result.ok, true);
+    assert.equal(result.detail.includes('stale'), true, result.detail);
+  });
+
+  it('does not block a process on its own lock', () => {
+    const dareDir = makeDareDir();
+    claimRunLock(dareDir, { pid: 99, startedAt: 'x' });
+    assert.equal(checkNoConcurrentRun(dareDir, { isAlive: () => true, self: 99 }).ok, true);
+  });
+
+  // Nothing defaults to pass, and the direction matters: a lock that will not parse is not
+  // evidence that nobody holds one.
+  it('blocks on a lock it cannot read, rather than reporting the repository free', () => {
+    const dareDir = makeDareDir();
+    writeFileSync(path.join(dareDir, RUN_LOCK_FILE), '{not json', 'utf8');
+    const result = checkNoConcurrentRun(dareDir, { isAlive: () => false });
+    assert.equal(result.ok, false);
+    assert.equal(result.fix.includes(path.join('.dare', RUN_LOCK_FILE)), true, result.fix);
   });
 });

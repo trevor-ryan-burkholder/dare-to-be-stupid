@@ -15,6 +15,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
 import { ConfigError, initConfig, riskyRemoteWord } from './config.mjs';
+import { RUN_LOCK_FILE, pidIsAlive, readRunLock } from './run-lock.mjs';
 import { blockingFindings, formatFindings, scanAgentSurface } from './security-scan.mjs';
 
 /** @typedef {{ name: string, ok: boolean, blocking: boolean, detail: string, fix: string }} CheckResult */
@@ -251,6 +252,59 @@ export function checkConfig(dareDir) {
 }
 
 /**
+ * Is another driver already running against this repository?
+ *
+ * Measured on 13 August 2026: two drivers on one tree, each able to `git reset --hard` it and
+ * commit over the other, and the second run's result was void. The re-entrancy guard does not
+ * cover this — it refuses a *nested* run, which is a different thing.
+ *
+ * **A lock whose pid is alive refuses the run; a lock whose pid is dead is stale and does not.**
+ * That asymmetry is the whole design. HANDOFF names the trap in it: "is this pid alive" is not
+ * the same question as "is this pid *my* driver" once a reboot recycles pids, and there is no
+ * portable way to ask the second one. So this can refuse a run that should have started. The
+ * cost of that is one `rm` on a path the message names; the cost of the other mistake was an
+ * entire run whose log means nothing. Refusing is the cheap error, and a stale lock left by a
+ * killed driver clears itself rather than locking the repository forever.
+ *
+ * @param {string} dareDir
+ * @param {{ isAlive?: (pid: number) => boolean, self?: number }} [options]
+ * @returns {CheckResult}
+ */
+export function checkNoConcurrentRun(dareDir, options = {}) {
+  const isAlive = options.isAlive ?? pidIsAlive;
+  const self = options.self ?? process.pid;
+  const lockPath = path.join('.dare', RUN_LOCK_FILE);
+  /** @type {ReturnType<typeof readRunLock>} */
+  let lock;
+  try {
+    lock = readRunLock(dareDir);
+  } catch (error) {
+    // Unreadable is not free. See `readRunLock`: a lock that will not parse is not evidence
+    // that nobody holds one.
+    return check('no-concurrent-run', false, /** @type {Error} */ (error).message, `Delete ${lockPath} if no driver is running.`);
+  }
+  if (lock === null) return check('no-concurrent-run', true, 'no other driver holds this repository', 'Nothing to do.');
+  if (lock.pid === self) {
+    return check('no-concurrent-run', true, `this process (${self}) already holds the lock`, 'Nothing to do.');
+  }
+  if (!isAlive(lock.pid)) {
+    return check(
+      'no-concurrent-run',
+      true,
+      `a previous driver (pid ${lock.pid}${lock.startedAt === '' ? '' : `, started ${lock.startedAt}`}) left a stale lock; it is not running`,
+      'Nothing to do.',
+    );
+  }
+  return check(
+    'no-concurrent-run',
+    false,
+    `driver pid ${lock.pid}${lock.startedAt === '' ? '' : `, started ${lock.startedAt}`} is still running against this repository`,
+    `Wait for it, or stop it and check the kill took — SIGTERM has failed to stop a driver here and -9 did. ` +
+      `Then delete ${lockPath} if it remains.`,
+  );
+}
+
+/**
  * The static half of the safety story (DESIGN.md §3.6).
  *
  * @param {string} cwd
@@ -320,6 +374,7 @@ export function runPreflight(options) {
     checkRemoteIsNotProduction(probe),
     checkNetwork(probe),
     checkConfig(dareDir),
+    checkNoConcurrentRun(dareDir),
     checkAgentSurface(cwd),
     checkDangerAcknowledged({ yes: options.yes ?? false, interactive: options.interactive ?? false }),
   ];
