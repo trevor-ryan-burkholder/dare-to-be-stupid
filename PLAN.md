@@ -193,10 +193,45 @@ the recorded failure modes as requirements: the driver refuses any unsandboxed f
 builder's behalf, and sandbox *registration* gets a live check — the guard's own history is the
 reason.
 
-### 17. The run-level wall clock — decision, not code — OPEN
+### 17. The run-level wall clock — PROPOSAL DRAFTED, **NEEDS OPERATOR**
 Named open in `HANDOFF.md`. Decide it and write it into `DESIGN.md`: a wall-clock ceiling, or
 an explicit refusal with the `maxIterations`-is-the-honest-unit argument. Either closes it;
 undecided is the only wrong state.
+
+**Not decided here. Drafted for the operator, with a recommendation.**
+
+**What is already bounded, which changes the question.** Since 0.80.0–0.82.0 every individual
+wait has a ceiling: children (`childTimeoutMs`, 30m), gates (`gateTimeoutMs`, 45m), the deploy
+(10m), the smoke and health probes. `maxIterations` bounds the loop in iterations, `tokenCeiling`
+bounds work and `costCeiling` bounds money. So the operator's original complaint — *"it'll hang
+and sit there for hours"* — is closed. The only case a wall clock still catches is a run that is
+**slow but productive**: every ceiling holding, every iteration doing real work, and hours going
+by.
+
+**Why a hard wall-clock kill is the wrong shape.** Firing mid-iteration leaves a tree that
+nothing has judged — no gates, no panel, no ratchet decision. That is the same defect 0.83.0
+argued about race landing: `base + something nothing gated` is a state no evidence in the run
+describes. A ceiling whose failure mode is *destroying the evidence for the work already paid
+for* is worse than the condition it prevents.
+
+**Recommended: a wall-clock budget checked only at the iteration boundary.** One more clause in
+`shouldContinue`, beside the three already there, returning `BUDGET` with the elapsed time named.
+It never fires mid-iteration, so it never abandons an unjudged tree; a run can overshoot it by at
+most one iteration. **That guarantee already has vocabulary here** — `charge()`'s comment says
+`tokenCeiling` is *"stops at the first opportunity after the ceiling is crossed", not "never
+exceeds it"* — so this is the existing contract in a fourth unit rather than a new kind of
+promise. Suggested default: **off** (`0`), because no run has recorded a total wall clock and a
+number nobody measured would wear the authority of one, exactly as argued for `maxChildTurns`.
+What would set it: the elapsed time of the next few dogfood runs.
+
+**The alternative, if the operator prefers it:** an explicit refusal written into `DESIGN.md`
+§10 — *iterations are the honest unit for a loop; every wait is individually bounded; a wall
+clock adds a fourth ceiling that can only fire on a run doing real work.* That is a complete
+answer and closes the item just as well.
+
+**Either way the wrong state is the current one.** What is needed from the operator is one of:
+(a) build the boundary-checked budget, default off; (b) build it with a measured default; or
+(c) refuse it in `DESIGN.md` with the argument above.
 
 ### 18. Improve-mode cost concentration — OPEN
 Segment one cost 7× segment two on a four-file repository. Measure on something mid-sized
