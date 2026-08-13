@@ -22,6 +22,7 @@ import {
   checkNoConcurrentRun,
   checkNodeVersion,
   checkRemoteIsNotProduction,
+  checkSandboxAvailable,
   compareVersions,
   formatPreflight,
   runPreflight,
@@ -114,6 +115,7 @@ describe('a healthy machine passes', () => {
         'network',
         'config',
         'no-concurrent-run',
+        'sandbox',
         'agent-surface',
         'danger-acknowledged',
       ],
@@ -354,5 +356,50 @@ describe('checkNoConcurrentRun', () => {
     const result = checkNoConcurrentRun(dareDir, { isAlive: () => false });
     assert.equal(result.ok, false);
     assert.equal(result.fix.includes(path.join('.dare', RUN_LOCK_FILE)), true, result.fix);
+  });
+});
+
+// R19. The load-bearing half is the refusal, not the sandbox: the recorded failure mode is an
+// agent on a kernel where bubblewrap failed asking to rerun unsandboxed, and a sandbox that can
+// be declined by the thing it contains is not a sandbox.
+describe('checkSandboxAvailable', () => {
+  /** @param {boolean} ok @returns {import('../scripts/preflight.mjs').Probe} */
+  const bwrap = (ok) => () => ({ ok, status: ok ? 0 : 127, stdout: ok ? 'bubblewrap 0.8.0' : '', stderr: 'not found' });
+
+  it('passes and says nothing is in force when no sandbox was asked for', () => {
+    // A host with no bubblewrap is a perfectly ordinary host for a run that never asked.
+    const result = checkSandboxAvailable(bwrap(false), false, 'linux');
+    assert.equal(result.ok, true);
+    assert.equal(result.detail.includes('not requested'), true, result.detail);
+  });
+
+  it('passes on Linux when bubblewrap is there, and names the version it found', () => {
+    const result = checkSandboxAvailable(bwrap(true), true, 'linux');
+    assert.equal(result.ok, true);
+    assert.equal(result.detail.includes('bubblewrap 0.8.0'), true, result.detail);
+  });
+
+  // The assertion this whole check exists for.
+  it('FAILS the run when a sandbox was asked for and the host cannot provide one', () => {
+    const result = checkSandboxAvailable(bwrap(false), true, 'linux');
+    assert.equal(result.ok, false);
+    assert.equal(result.detail.includes('would run unsandboxed'), true, result.detail);
+    assert.equal(result.fix.includes('apt install bubblewrap'), true, result.fix);
+  });
+
+  it('accepts macOS without probing, because seatbelt ships with the operating system', () => {
+    const probing = () => {
+      throw new Error('macOS must not be probed for bubblewrap');
+    };
+    const result = checkSandboxAvailable(probing, true, 'darwin');
+    assert.equal(result.ok, true);
+    assert.equal(result.detail.includes('seatbelt'), true, result.detail);
+  });
+
+  it('refuses a platform it knows no sandbox for, rather than assuming one', () => {
+    // An unknown sandbox is not a sandbox. Nothing here defaults to protected.
+    const result = checkSandboxAvailable(bwrap(true), true, 'win32');
+    assert.equal(result.ok, false);
+    assert.equal(result.detail.includes('win32'), true, result.detail);
   });
 });

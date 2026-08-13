@@ -50,6 +50,9 @@ describe('defaultConfig', () => {
       // On by default: it can only skip work on an iteration that is going to fail, because a
       // narrowed panel that passes triggers the full panel before any ship.
       panelCarry: { enabled: true },
+      // Off by default because bubblewrap is a separate package and the driver refuses an
+      // unsandboxed fallback: defaulting it on would refuse every run on a host without it.
+      sandbox: { enabled: false },
       reviewers: ['security', 'correctness', 'design'],
       ownership: {
         security: ['DoD-2-security'],

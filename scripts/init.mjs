@@ -14,7 +14,7 @@
 import path from 'node:path';
 import process from 'node:process';
 
-import { initConfig } from './config.mjs';
+import { initConfig, loadConfig } from './config.mjs';
 import { formatPreflight, runPreflight } from './preflight.mjs';
 
 /**
@@ -46,11 +46,23 @@ export function main(argv, io = {}) {
     return 0;
   }
 
+  // Read here rather than inside preflight, because preflight is deliberately configuration-free
+  // apart from `checkConfig` and a bad config file must still produce its own named failure
+  // rather than an unrelated one about sandboxing.
+  let wantsSandbox = false;
+  try {
+    wantsSandbox = loadConfig(dareDir).sandbox.enabled;
+  } catch {
+    // `checkConfig` reports an unreadable config as itself. A run that cannot read its settings
+    // has a larger problem than whether it asked to be sandboxed.
+  }
+
   const result = runPreflight({
     cwd,
     yes,
     interactive: io.interactive ?? process.stdout.isTTY === true,
     dareDir,
+    sandbox: wantsSandbox,
   });
   log(formatPreflight(result));
   return result.ok ? 0 : 1;

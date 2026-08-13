@@ -1678,6 +1678,34 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `childTimeoutMs` | 1_800_000 | bounds *wall-clock per child*, and it is the only one of the three that is a watchdog. `tokenCeiling` and `costCeiling` bind a child that returns; neither can see one that does not. Roughly 2.8x the longest child ever observed (§3.9) |
 | `gateTimeoutMs` | 2_700_000 | the same watchdog for gate commands, which hang the same way. **Not derived from measurement**, unlike the row above: no run has recorded a per-gate duration and mutation testing is the unmeasured slow one, so this is a backstop sized to be embarrassing to hit. When it fires, the driver also sweeps the descendants the gate leaked — see below |
 
+**The OS sandbox is a second floor, and the refusal is the load-bearing half (R19).** The guard
+sees tool calls; it cannot see what the code a builder *wrote* does at runtime, which is the A2
+limitation and the layer a kernel sandbox reaches. When `sandbox.enabled` is set, the driver adds
+`"sandbox": {"enabled": true}` to the settings blob it hands each writing child — the key read out
+of the CLI binary rather than guessed, since 2.1.228 answers a refused command with *"Set
+\"sandbox\": {\"enabled\": true} in Claude Code settings"*.
+
+Only phases that keep the guard get it, and the split is **derived** from `isColdPhase` rather
+than listed, for the same reason the guard's is: a phase added later with write tools is
+sandboxed automatically. Cold phases run under `--safe-mode`, which strips customizations anyway.
+
+**The driver refuses the fallback on the builder's behalf.** R19's recorded failure mode is an
+agent on a kernel where bubblewrap failed *asking to rerun unsandboxed*, and a sandbox that can be
+declined by the thing it contains is not a sandbox. `preflight`'s `checkSandboxAvailable` probes
+the host **before the run starts** and fails it — bubblewrap missing on Linux, or a platform this
+build knows no sandbox for. An unknown sandbox is not a sandbox; nothing here defaults to
+protected.
+
+**Why the check has to be at preflight and cannot be later.** `claude --help` states that in `-p`
+mode *settings files that fail validation are silently ignored*. A sandbox declaration the CLI
+would not honour therefore vanishes without a word — and takes the guard hook in the same blob
+with it. That is the guard's own eleven-version history, where unit tests were green and the hook
+was reaching nobody, repeated with a different key.
+`test/live/sandbox-registration.live.test.mjs` is the answer to it, and it is deliberate about
+what it proves: that a real child accepts the blob and still answers, **not** that the kernel
+confines anything. The second needs bubblewrap, which is absent on the machine this was built on,
+and a test green because it never ran is the failure this project refuses everywhere else.
+
 **The API-shaped oracle's plumbing (R18).** The `docs` gate has always required
 `docs/api-contract.md` for every project shape. For an `api` capability the **machine-readable**
 half is now required too, at exactly `docs/openapi.yaml` — one path, not a list of accepted
@@ -1835,6 +1863,7 @@ the ceiling. Ctrl-C reaches the whole group and so takes the leak with it, but `
 the driver alone does not, and the driver cannot run a handler while blocked inside
 `execFileSync`. Closing that is part of the async driver conversion, where a free event loop
 makes signal forwarding possible at all.
+| `sandbox.enabled` | **false** | R19: an OS-level floor **under** the guard (bubblewrap on Linux/WSL2, seatbelt on macOS). Off by default because bubblewrap is a separate package and the driver **refuses an unsandboxed fallback** — defaulting it on would refuse every run on a host without it. Preflight checks the host before the run starts |
 | `panelCarry.enabled` | true | A8's carry: a requirement a cold reviewer already passed with `file:line` evidence, whose evidenced file has not changed, is not re-argued on an iteration that is going to fail anyway. **A pre-filter only** — a narrowed panel that passes triggers the full panel before any ship, so nothing carried ever reaches a ship decision |
 | `maxChildTurns` | **0** (off) | `--max-turns` on each child. Zero means the flag is not passed. **No default is offered because none can be derived**: there is no arithmetic from a token or dollar ceiling to a number of agentic turns, and a made-up number would wear the authority of a measured one |
 | `reviewers` | `["security","correctness","design"]` | the specialized cold panel (§1.1); each owns its DoD lines |

@@ -1,10 +1,8 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.95.0`. Measured at 0.95.0: `npm test` **1659 pass**,
+**State:** `main` at `0.96.0`. Measured at 0.96.0: `npm test` **1664 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
-`npm run release-check` **ok**. `npm run test:live` **23 of 23 across 10 files** at 0.90.0 and
-not re-run since. **Note:** 0.94.0 edits `templates/architect.md`, which is a template but not
-one with a machine-parsed output contract, so tier 3 was not re-armed for it.
+`npm run release-check` **ok**, `npm run test:live` **27 of 27 across 11 files**.
 
 **This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
 `package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
@@ -15,6 +13,40 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### Item 16 — the OS sandbox. DONE at 0.96.0, off by default, and confinement is unproven here
+
+**Three facts measured before writing anything**, all of which shaped it:
+
+1. The settings key is `"sandbox": {"enabled": true}` — read out of the 2.1.228 binary, which
+   answers a refused command with *"Set `"sandbox": {"enabled": true}` in Claude Code settings"*.
+   Not guessed.
+2. **bubblewrap is not installed on this machine.** The CLI's own advice when it is missing is
+   `apt install bubblewrap`.
+3. `claude --help` states that in `-p` mode **settings files that fail validation are silently
+   ignored**. A sandbox key the CLI disliked would take the whole blob down — *guard included* —
+   without a word.
+
+Fact 3 is why the check is at **preflight** and not later, and fact 2 is why the default is
+**off**. With the unsandboxed fallback refused — which is R19's load-bearing half, because a
+sandbox that can be declined by the thing it contains is not one — defaulting it on would refuse
+every run on this host and most others. Arming it is a statement about a machine, and
+`checkSandboxAvailable` checks that machine before the run starts: bubblewrap on Linux, seatbelt
+assumed on macOS, and an outright refusal on a platform this build knows no sandbox for. An
+unknown sandbox is not a sandbox.
+
+Only writing phases get it, derived from `isColdPhase` rather than listed, so a phase added later
+with write tools is sandboxed automatically — the same reason the guard's split is derived.
+
+**The live check exists because R19 says it must**, in the guard's own terms: eleven versions of
+green unit tests once proved nothing about whether the hook was loaded. Tier 3 now spawns a real
+child with the sandboxed blob and asserts it starts, answers, and draws no complaint about its
+settings. **27 of 27 across 11 files.**
+
+**Not verified, and it is the interesting half: that the kernel confines anything.** That needs
+bubblewrap, which is absent here. Asserting confinement now would produce a test that is green
+because it never ran, which is the exact failure this project refuses everywhere else. What is
+proved is that the declaration survives the trip to a real child with the guard still beside it.
 
 ### 0.95.0 — the schemathesis gate leaves a cache in the tree, and 0.94.0 committed one here
 

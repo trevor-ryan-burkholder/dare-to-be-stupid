@@ -110,6 +110,58 @@ export function checkClaudeCli(probe) {
 }
 
 /**
+ * Can this host actually sandbox, when the operator has asked for one?
+ *
+ * **R19's load-bearing half is the refusal, not the sandbox.** The recorded failure mode is an
+ * agent on a kernel where bubblewrap failed *asking to rerun unsandboxed* — and a sandbox that
+ * can be declined by the thing it contains is not a sandbox. The driver therefore refuses on the
+ * builder's behalf, before the run starts, rather than letting a child proceed unprotected.
+ *
+ * It has to be checked here because it cannot be checked later. `claude --help` states that in
+ * `-p` mode **settings that fail validation are silently ignored**, so a sandbox declaration the
+ * CLI would not honour disappears without a word — the guard's own eleven-version history, where
+ * unit tests were green and the hook was reaching nobody, repeated with a different key.
+ *
+ * Only `bubblewrap` is probed, and only on Linux. macOS sandboxes with seatbelt, which is part
+ * of the operating system and has nothing to install; Windows is not a supported host for this.
+ * A missing probe answer is a failure, never a pass — an unknown sandbox is not a sandbox.
+ *
+ * Skipped entirely when the operator has not armed it, because a host with no bubblewrap is a
+ * perfectly ordinary host for a run that never asked to be sandboxed.
+ *
+ * @param {Probe} probe
+ * @param {boolean} wanted whether `sandbox.enabled` is set
+ * @param {string} [platform]
+ * @returns {CheckResult}
+ */
+export function checkSandboxAvailable(probe, wanted, platform = process.platform) {
+  if (!wanted) {
+    return check('sandbox', true, 'not requested; the guard hook is the only limit in force', '');
+  }
+  if (platform === 'darwin') {
+    return check('sandbox', true, 'macOS seatbelt, which ships with the operating system', '');
+  }
+  if (platform !== 'linux') {
+    return check(
+      'sandbox',
+      false,
+      `sandbox.enabled is set, but this build knows of no sandbox for ${platform}`,
+      'Unset sandbox.enabled, or run on Linux or macOS. The driver will not start a child unsandboxed after being asked for one.',
+    );
+  }
+  const result = probe('bwrap', ['--version']);
+  return check(
+    'sandbox',
+    result.ok,
+    result.ok
+      ? `bubblewrap present: ${result.stdout.trim()}`
+      : 'sandbox.enabled is set and bubblewrap is not installed, so a child would run unsandboxed',
+    'Install bubblewrap (`apt install bubblewrap`), or unset sandbox.enabled. The driver refuses the ' +
+      'fallback on the builder\'s behalf: a sandbox that can be declined is not a sandbox.',
+  );
+}
+
+/**
  * @param {Probe} probe
  * @returns {CheckResult}
  */
@@ -357,6 +409,7 @@ export function checkDangerAcknowledged(options) {
  *   nodeVersion?: string,
  *   probe?: Probe,
  *   dareDir?: string,
+ *   sandbox?: boolean,
  * }} options
  * @returns {{ ok: boolean, checks: CheckResult[], failures: CheckResult[] }}
  */
@@ -375,6 +428,7 @@ export function runPreflight(options) {
     checkNetwork(probe),
     checkConfig(dareDir),
     checkNoConcurrentRun(dareDir),
+    checkSandboxAvailable(probe, options.sandbox ?? false),
     checkAgentSurface(cwd),
     checkDangerAcknowledged({ yes: options.yes ?? false, interactive: options.interactive ?? false }),
   ];

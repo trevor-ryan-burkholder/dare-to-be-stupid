@@ -925,7 +925,7 @@ const PLUGIN_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
  *
  * @returns {string} the JSON for `--settings`
  */
-function childSettings() {
+function childSettings(sandbox = false) {
   let manifest;
   try {
     manifest = JSON.parse(readFileSync(HOOKS_MANIFEST, 'utf8'));
@@ -952,7 +952,25 @@ function childSettings() {
       }
     }
   }
-  return JSON.stringify({ outputStyle: CHILD_OUTPUT_STYLE, hooks });
+  // R19. An OS-level floor **under** the guard, never instead of it. The guard sees tool calls;
+  // it cannot see what the code a builder wrote does at runtime, which is the A2 limitation and
+  // is the layer a kernel sandbox reaches.
+  //
+  // The key was read out of the CLI binary rather than guessed: 2.1.228 answers a refused
+  // command with *"Set \"sandbox\": {\"enabled\": true} in Claude Code settings"*.
+  //
+  // **Declared here and verified elsewhere, because print mode will not tell us.** `claude
+  // --help` states that in `-p` mode "settings files that fail validation are silently
+  // ignored" — so a sandbox key this CLI did not understand would vanish without a word, which
+  // is the guard's own eleven-version history repeating with a different key. `preflight.mjs`
+  // checks the host can sandbox at all and **refuses the run** rather than letting a child
+  // proceed unsandboxed: a sandbox that can be declined is not a sandbox, and one that
+  // evaporates quietly is worse than none because it is believed.
+  return JSON.stringify({
+    outputStyle: CHILD_OUTPUT_STYLE,
+    hooks,
+    ...(sandbox ? { sandbox: { enabled: true } } : {}),
+  });
 }
 
 /**
@@ -1079,12 +1097,17 @@ export function childEnvironment(env) {
  * plus the PRD, and a prompt that happens to begin with `--`.
  *
  * @param {{ model: string, systemPrompt?: string, phase: string, effort?: string,
- *   maxBudgetUsd?: number, maxTurns?: number }} options
+ *   maxBudgetUsd?: number, maxTurns?: number, sandbox?: boolean }} options
  * @returns {string[]}
  */
 export function claudeArgs(options) {
   const policy = permissionsFor(options.phase);
-  const args = ['-p', '--output-format', 'json', '--settings', childSettings(), '--model', options.model];
+  // Only phases that keep the guard get the sandbox, and the split is *derived* rather than
+  // listed — `isColdPhase` already separates read-only phases, which run under `--safe-mode`
+  // and would have every customization stripped anyway. A phase added later with write tools
+  // is sandboxed automatically, which is the same reason the guard's own split is derived.
+  const sandbox = options.sandbox === true && !isColdPhase(options.phase);
+  const args = ['-p', '--output-format', 'json', '--settings', childSettings(sandbox), '--model', options.model];
   // The in-flight budget bound (`childBudget`). Placed here, before the variadic
   // `--allowedTools`, for the reason the whole function is arranged around: anything after
   // that flag is read as one more tool name.
@@ -3587,7 +3610,7 @@ export function shipTimeMutation(cwd, dareDir, startCommit, timeoutMs) {
  *
  * @param {{ prompt: string, model: string, systemPrompt?: string, phase: string, effort?: string, cwd: string,
  *   env: Record<string, string | undefined>, contextLimit?: number, timeoutMs?: number,
- *   maxBudgetUsd?: number, maxTurns?: number,
+ *   maxBudgetUsd?: number, maxTurns?: number, sandbox?: boolean,
  *   run?: (command: string, args: string[],
  *     options: { cwd: string, env?: Record<string, string | undefined>, input?: string, timeoutMs?: number }) =>
  *     ShellResult }} options
@@ -3750,6 +3773,7 @@ export function main(argv, io = {}) {
       // is checked inside `spawnClaude`: every child in the loop passes through this one
       // door, so a phase added later cannot forget the ceiling.
       timeoutMs: config.childTimeoutMs,
+      sandbox: config.sandbox.enabled,
       ...allowance,
     });
     // Counted here because **every** child in the loop passes through this function — the

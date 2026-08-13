@@ -35,6 +35,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 /** @typedef {{ maxCharacters: number }} ContextBudgetConfig */
 /** @typedef {{ enabled: boolean }} OracleConfig */
 /** @typedef {{ enabled: boolean }} PanelCarryConfig */
+/** @typedef {{ enabled: boolean }} SandboxConfig */
 /**
  * @typedef {{
  *   maxIterations: number, stallLimit: number, tokenCeiling: number, costCeiling: number,
@@ -43,7 +44,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, styleModel: string, lessonModel: string,
  *   qualityPlugins: string[], effort: Record<string, string>, oracle: OracleConfig,
- *   panelCarry: PanelCarryConfig,
+ *   panelCarry: PanelCarryConfig, sandbox: SandboxConfig,
  *   deploy: DeployConfig, extractTests: boolean,
  *   chaos: number, realityCheck: RealityCheckConfig, dareMe: DareMeConfig, race: RaceConfig,
  *   advisory: AdvisoryConfig, lessons: LessonsConfig, contextBudget: ContextBudgetConfig
@@ -145,6 +146,19 @@ export function defaultConfig() {
     // panel that says pass triggers the full panel before any ship, so nothing carried can
     // reach a ship decision. The saving is real and the guarantee is unchanged.
     panelCarry: { enabled: true },
+    // R19. An OS-level floor under the guard (DESIGN.md §6). Claude Code sandboxes with
+    // bubblewrap on Linux/WSL2 and seatbelt on macOS.
+    //
+    // **Off by default, and that is a fact about hosts rather than a doubt about the idea.**
+    // bubblewrap is a separate package - the CLI's own advice when it is missing is
+    // `apt install bubblewrap` - and it is absent on the machine this was built on. Defaulting
+    // this on would refuse every run on any host without it, because the driver refuses an
+    // unsandboxed fallback rather than quietly proceeding. Arming it is an operator's decision
+    // about their own machine, and `preflight` checks the machine before the run starts.
+    //
+    // The guard remains the primary limit either way. This is an added floor, never a
+    // replaced one.
+    sandbox: { enabled: false },
     reviewers: ['security', 'correctness', 'design'],
     ownership: Object.fromEntries(Object.entries(DEFAULT_OWNERSHIP).map(([reviewer, ids]) => [reviewer, [...ids]])),
     requireUnanimous: true,
@@ -456,6 +470,14 @@ export function validateConfig(input) {
     rejectUnknownKeys(oracle, new Set(['enabled']), 'oracle');
     merged.oracle = {
       enabled: 'enabled' in oracle ? requireBoolean(oracle.enabled, 'oracle.enabled') : defaults.oracle.enabled,
+    };
+  }
+
+  if ('sandbox' in source) {
+    const sandbox = requireObject(source.sandbox, 'sandbox');
+    rejectUnknownKeys(sandbox, new Set(['enabled']), 'sandbox');
+    merged.sandbox = {
+      enabled: 'enabled' in sandbox ? requireBoolean(sandbox.enabled, 'sandbox.enabled') : defaults.sandbox.enabled,
     };
   }
 

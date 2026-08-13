@@ -195,7 +195,7 @@ the schema so it can be generated from. **The argv was executed, not read** — 
 the contract is machine-valid and generatable, not that the app obeys it; the live half needs a
 started server and is unowned.
 
-### 16. R19 — OS sandbox under the builder — OPEN
+### 16. R19 — OS sandbox under the builder — DONE (0.96.0), confinement itself unverifiable here
 Adopt Claude Code's native sandbox for builder children as a second floor under the guard, with
 the recorded failure modes as requirements: the driver refuses any unsandboxed fallback on the
 builder's behalf, and sandbox *registration* gets a live check — the guard's own history is the
