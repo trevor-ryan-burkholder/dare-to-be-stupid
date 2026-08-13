@@ -60,6 +60,7 @@ import {
   removeWorktrees,
   selectWinner,
   shouldRace,
+  stallHypothesis,
   sweepRaceWorktrees,
 } from './race.mjs';
 import { parseReport } from './reporters/index.mjs';
@@ -4223,7 +4224,11 @@ export function main(argv, io = {}) {
           protectedTests: ratchetPassing,
           gates: gateNames,
           capabilities: runCapabilities(),
-          raceCandidate: { index: worktree.index, of: created.worktrees.length },
+          raceCandidate: {
+            index: worktree.index,
+            of: created.worktrees.length,
+            hypothesis: stallHypothesis(worktree.index),
+          },
         });
         writeBrief(dareDir, iteration, candidateBrief, worktree.index);
 

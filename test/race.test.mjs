@@ -22,8 +22,10 @@ import {
   createWorktrees,
   parseNumstat,
   removeWorktrees,
+  STALL_HYPOTHESES,
   selectWinner,
   shouldRace,
+  stallHypothesis,
   sweepRaceWorktrees,
   worktreeName,
 } from '../scripts/race.mjs';
@@ -571,5 +573,56 @@ describe('applyWinner', () => {
     const { root } = makeRepo();
     const applied = applyWinner({ cwd: root, run: realRunner, commit: 'not-a-commit' });
     assert.equal(applied.ok, false);
+  });
+});
+
+// C5 / BORROWED.md R9. The candidate brief has always said "another candidate is trying a
+// different one", and until now nothing made that true: every candidate got the same objective
+// and differed only by sampling. `raceCandidate` carried `{ index, of }` and nothing else.
+describe('stall hypotheses give race candidates something to actually differ about', () => {
+  it('gives each of the first candidates a different angle', () => {
+    const first = [1, 2, 3, 4].map(stallHypothesis);
+    assert.equal(new Set(first).size, 4, 'two candidates were handed the same angle');
+  });
+
+  it('is stable, so two runs give candidate 2 the same angle', () => {
+    // A reader comparing two runs must be able to hold the variable still.
+    assert.equal(stallHypothesis(2), stallHypothesis(2));
+    assert.equal(stallHypothesis(2), STALL_HYPOTHESES[1]);
+  });
+
+  it('wraps rather than running out on a race wider than the list', () => {
+    // Two candidates sharing an angle is strictly better than a candidate with none.
+    const span = STALL_HYPOTHESES.length;
+    assert.equal(stallHypothesis(span + 1), STALL_HYPOTHESES[0]);
+    assert.equal(stallHypothesis(span + 2), STALL_HYPOTHESES[1]);
+  });
+
+  it('never returns an empty angle, for any candidate number a race could produce', () => {
+    for (let index = 1; index <= 20; index += 1) {
+      assert.equal(typeof stallHypothesis(index), 'string');
+      assert.equal(stallHypothesis(index).length > 20, true, `candidate ${index} got nothing usable`);
+    }
+  });
+
+  // The invariant that keeps this cheap: a hypothesis is a prompt, not a criterion. If one ever
+  // reached selection, a race would be decided partly by an opinion nobody audited.
+  it('is invisible to selection, which reads gates, regressions, churn and index only', () => {
+    /** @param {number} index @param {boolean} ok */
+    const candidate = (index, ok) => ({
+      index,
+      dir: `/w/${index}`,
+      commit: `c${index}`,
+      gates: [{ name: 'lint', ok, status: ok ? 0 : 1, detail: ok ? 'passed' : 'failed' }],
+      regressions: [],
+      filesChanged: 1,
+      linesChanged: 10,
+    });
+    // Candidate 2 passes its gates, candidate 1 does not. Selection must take 2 regardless of
+    // any angle either was handed - `selectWinner` is never given one, and this asserts the
+    // shape it is given has no room for one.
+    const chosen = selectWinner([candidate(1, false), candidate(2, true)]);
+    assert.equal(chosen.winner?.index, 2);
+    assert.equal('hypothesis' in candidate(1, true), false, 'a hypothesis must never reach a race candidate record');
   });
 });

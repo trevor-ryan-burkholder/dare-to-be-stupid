@@ -328,3 +328,42 @@ describe('per-toolchain guidance in the brief', () => {
     assert.equal(compileBrief(input), compileBrief(input));
   });
 });
+
+// C5. The brief is where a hypothesis becomes visible to the only thing that reads it.
+describe('a race candidate brief carries its own angle, and says what that angle is not', () => {
+  /** @param {{ index: number, of: number, hypothesis?: string } | undefined} candidate */
+  const brief = (candidate) =>
+    compileBrief({
+      iteration: 3,
+      chaos: 1,
+      objective: { kind: 'initial', headline: 'Make it work.', reason: 'nothing exists yet' },
+      raceCandidate: candidate,
+    });
+
+  it('renders the hypothesis it was given', () => {
+    const text = brief({ index: 2, of: 3, hypothesis: 'the previous attempt was too small.' });
+    assert.equal(text.includes('Your angle on why the last attempt stalled'), true);
+    assert.equal(text.includes('the previous attempt was too small.'), true);
+  });
+
+  // The load-bearing half. A candidate that believed it was scored on its hypothesis would
+  // defend the hypothesis instead of the objective, which is the failure mode this design
+  // refuses everywhere else - and the brief is the only place that belief can be prevented.
+  it('tells the candidate the angle is not a standard and nothing scores it', () => {
+    const text = brief({ index: 1, of: 2, hypothesis: 'the tests are what is wrong here.' });
+    assert.equal(text.includes('not an instruction and not a standard'), true, text);
+    assert.equal(text.includes('the gates cannot see it'), true, text);
+  });
+
+  it('says nothing about an angle when none was given, so the old shape still renders', () => {
+    const text = brief({ index: 1, of: 2 });
+    assert.equal(text.includes('You are candidate 1 of 2'), true);
+    assert.equal(text.includes('Your angle'), false);
+  });
+
+  it('says nothing about an angle for an ordinary non-race build', () => {
+    const text = brief(undefined);
+    assert.equal(text.includes('Your angle'), false);
+    assert.equal(text.includes('You are candidate'), false);
+  });
+});

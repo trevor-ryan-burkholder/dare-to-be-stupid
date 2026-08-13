@@ -1678,6 +1678,22 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `childTimeoutMs` | 1_800_000 | bounds *wall-clock per child*, and it is the only one of the three that is a watchdog. `tokenCeiling` and `costCeiling` bind a child that returns; neither can see one that does not. Roughly 2.8x the longest child ever observed (§3.9) |
 | `gateTimeoutMs` | 2_700_000 | the same watchdog for gate commands, which hang the same way. **Not derived from measurement**, unlike the row above: no run has recorded a per-gate duration and mutation testing is the unmeasured slow one, so this is a backstop sized to be embarrassing to hit. When it fires, the driver also sweeps the descendants the gate leaked — see below |
 
+**Race candidates now differ by more than sampling (C5 / R9).** The candidate brief has always
+said *"another candidate is trying a different one"* and nothing made it true: every candidate
+received the same objective, and `raceCandidate` carried `{ index, of }`. Each candidate is now
+handed one **stall archetype** from a fixed, driver-owned list in `race.mjs`, by index, wrapping
+if the race is wider than the list.
+
+Fixed rather than model-authored, for two reasons. `BRIEF.md` section E's do-not-add list is
+closed and the persona budget went to `oracle-author`. And a stall hypothesis chosen by a model
+is a model with an opinion about a race, one step from a model adjudicating one.
+
+**A hypothesis is a prompt, never a criterion**, and the brief says so to the candidate in as
+many words: nothing scores it against its angle, the gates cannot see the angle, and it should
+abandon it the moment the code disagrees. Selection is untouched — `selectWinner` reads gates,
+then regressions, then `parseNumstat`, then index, and a race candidate record has no field an
+angle could travel in.
+
 **A8's carry is a pre-filter, and calling it that is the whole safety argument.** Carrying skips
 re-review of requirements whose evidence is pinned and unchanged. Two refusals to narrow, and a
 third guarantee, each of them protecting something concrete:

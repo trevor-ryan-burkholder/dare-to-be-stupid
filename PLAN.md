@@ -157,10 +157,23 @@ Invalidation unchanged and fail-closed. **The review-cost delta needs a run that
 panel twice, which is dogfood-class; it is parked with items 7/8/20 and owed to `HANDOFF.md`
 from the first such run.**
 
-### 13. C5 — differentiated race candidates — OPEN
+### 13. C5 — differentiated race candidates — DONE (0.93.0), with a precondition disagreement
 Precondition met (racing lands winners since 0.83.0). One distinct stall hypothesis per
 candidate, rendered in the brief; selection stays `selectWinner` untouched; a hypothesis is a
 prompt, never a criterion.
+
+**Landed.** `STALL_HYPOTHESES` / `stallHypothesis` in `race.mjs`, rendered by `brief.mjs`, wired
+at the one race call site. Fixed and driver-owned, because section E is closed and a model with
+an opinion about a race is one step from a model adjudicating one. The brief tells the candidate
+outright that nothing scores it against its angle.
+
+**Disagreement with the origin, recorded rather than resolved.** This item says the precondition
+is "racing lands winners since 0.83.0". `BRIEF.md` C5 says something different and stricter:
+*"Ordered behind a live test of the race's builder half"* — a real `claude -p` child inside a
+race worktree, which `HANDOFF.md` records as never exercised and which **still does not exist**
+(`test/live/` has no such file). C5 was built anyway on the grounds that it is prompt-only and
+cannot break the race mechanism, but the origin's precondition is unmet and is now item 13's
+residue rather than being quietly dropped.
 
 ### 14. R17 — metamorphic relations in the oracle — OPEN
 Run 12's defect class: assert relations between runs (permute, scale, duplicate, subset,

@@ -51,7 +51,7 @@ import path from 'node:path';
  *   gates?: string[],
  *   capabilities?: string[],
  *   toolchain?: { name: string, guidance: string },
- *   raceCandidate?: { index: number, of: number } | null
+ *   raceCandidate?: { index: number, of: number, hypothesis?: string } | null
  * }} BriefInput
  */
 
@@ -189,6 +189,26 @@ export function compileBrief(input) {
       'worktree. Solve the objective your own way. Another candidate is trying a different one and the',
       'gates decide between you, so do not hedge toward what you imagine the others are doing.',
     );
+    // C5 / BORROWED.md R9. The sentence above has always claimed the candidates differ, and
+    // until now nothing made it true: every candidate got the same objective and differed only
+    // by sampling. This is the difference.
+    //
+    // **A hypothesis is a prompt, never a criterion.** It reaches no gate, no ratchet and no
+    // reviewer, and no candidate is judged against the one it was handed - selection stays
+    // `selectWinner`, which reads gates, regressions, `parseNumstat` and index, in that order.
+    // Saying so *inside the brief* matters as much as it being true: a candidate that believed
+    // it was being scored on its hypothesis would defend the hypothesis instead of the
+    // objective, which is the failure this design refuses everywhere else.
+    if (input.raceCandidate.hypothesis !== undefined && input.raceCandidate.hypothesis !== '') {
+      lines.push(
+        '',
+        `**Your angle on why the last attempt stalled:** ${input.raceCandidate.hypothesis}`,
+        '',
+        'This is a lead, not an instruction and not a standard. Nothing scores you against it, and',
+        'the gates cannot see it. Abandon it the moment the code says otherwise - a candidate that',
+        'defends its angle instead of the objective loses to one that did the work.',
+      );
+    }
   }
 
   lines.push(

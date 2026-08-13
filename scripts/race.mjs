@@ -32,6 +32,58 @@ import path from 'node:path';
 /** @typedef {import('./driver.mjs').GateResult} GateResult */
 
 /**
+ * Distinct explanations for why the previous iteration stalled, one per race candidate.
+ *
+ * **From `BORROWED.md` R9 / `BRIEF.md` C5.** The candidate brief has always told each candidate
+ * *"another candidate is trying a different one"*, and nothing made that true: every candidate
+ * received the same objective and differed only by sampling. The `raceCandidate` field that
+ * would carry a difference carried `{ index, of }`. The seam was built and empty; this fills it.
+ *
+ * **Fixed and driver-owned rather than authored by a model, and that is deliberate twice over.**
+ * `BRIEF.md` section E's do-not-add list is closed and the persona budget was spent on
+ * `oracle-author`, so generating these would need a phase this project has decided not to have.
+ * And a race is the one place determinism is cheapest to keep: a stall hypothesis chosen by a
+ * model is a model with an opinion about a race, one step from a model adjudicating one.
+ *
+ * They are **stall archetypes**, not diagnoses. Nothing here knows why *this* iteration stalled;
+ * what the list provides is that candidate 1 and candidate 2 start from genuinely different
+ * places, which is the whole of R9's borrowable idea. The order is stable, so a reader comparing
+ * two runs sees the same candidate given the same angle.
+ *
+ * @type {string[]}
+ */
+export const STALL_HYPOTHESES = [
+  'the previous attempt fixed the symptom the failure named rather than the property behind it, ' +
+    'so the same defect survives under a different input. Look for the general rule first.',
+  'the previous attempt was too small. Something structural is wrong - a wrong data shape, a ' +
+    'missing layer, an abstraction fighting the problem - and no local edit reaches it.',
+  'the previous attempt was too large, and something in the diff that was never required broke ' +
+    'something that worked. Find the smallest change that satisfies the objective and make only that.',
+  'the tests, not the code, are what is wrong here: they assert something the objective does not ' +
+    'ask for, or they assert nothing. Read them against the requirement before changing source.',
+  'an assumption made earlier is false. Something believed about the framework, the toolchain or ' +
+    'the input format does not hold - verify it by executing it rather than by reading.',
+  'the failure is in the seams rather than in any one unit: setup, configuration, wiring or ' +
+    'ordering between parts that are each individually correct.',
+];
+
+/**
+ * The hypothesis for one candidate.
+ *
+ * `index` is the candidate's own number, which `createWorktrees` hands out from 1. It wraps
+ * rather than running out: a race wider than the list still gives every candidate an angle, and
+ * two candidates sharing one is strictly better than a candidate with none.
+ *
+ * @param {number} index 1-based candidate number
+ * @returns {string}
+ */
+export function stallHypothesis(index) {
+  const span = STALL_HYPOTHESES.length;
+  return STALL_HYPOTHESES[(((index - 1) % span) + span) % span];
+}
+
+
+/**
  * @typedef {{
  *   index: number, dir: string, commit: string | null,
  *   gates: GateResult[], regressions: string[], filesChanged: number, linesChanged: number

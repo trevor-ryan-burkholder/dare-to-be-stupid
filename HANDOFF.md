@@ -1,9 +1,9 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.92.0`. Measured at 0.92.0: `npm test` **1641 pass**,
+**State:** `main` at `0.93.0`. Measured at 0.93.0: `npm test` **1650 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**. `npm run test:live` **23 of 23 across 10 files** at 0.90.0 and
-not re-run since — nothing in 0.91.0–0.92.0 touches a spawn path or a template contract.
+not re-run since — nothing in 0.91.0–0.93.0 touches a spawn path or a template contract.
 
 **This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
 `package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
@@ -14,6 +14,33 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### Item 13 — C5, differentiated race candidates. DONE at 0.93.0, on an unmet precondition
+
+`STALL_HYPOTHESES` in `race.mjs` is six stall **archetypes** — symptom-not-property, too small,
+too large, the tests are wrong, a false assumption, the seams — handed out by candidate index and
+wrapping if the race is wider. `brief.mjs` renders the angle, and the one race call site wires it.
+
+**Fixed and driver-owned rather than model-authored.** Section E's do-not-add list is closed and
+the persona budget went to `oracle-author`; and a stall hypothesis chosen by a model is a model
+with an opinion about a race, one step from a model adjudicating one.
+
+**The invariant is stated to the candidate, not merely held by the code.** The brief says the
+angle is *"a lead, not an instruction and not a standard"*, that nothing scores it against the
+angle, that the gates cannot see it, and that it should abandon the angle the moment the code
+disagrees — because a candidate that defends its hypothesis instead of the objective is the
+failure this design refuses everywhere else. `selectWinner` is untouched and a race candidate
+record has no field an angle could travel in; a test asserts both.
+
+**Disagreement with the origin, and the origin is stricter.** `PLAN.md` says the precondition is
+"racing lands winners since 0.83.0". `BRIEF.md` C5 says *"Ordered behind a live test of the
+race's builder half"* — a real `claude -p` child inside a race worktree — which this file records
+as never exercised and which **still does not exist**. C5 was built anyway because it is
+prompt-only and cannot break the race mechanism, but the precondition is unmet and stays open:
+**nothing has ever run a builder child inside a race worktree.**
+
+**Not verified:** no run has raced with hypotheses. Whether distinct angles produce distinguishable
+candidates is R9's claim and remains unmeasured — the brief-level facts are tested, the effect is not.
 
 ### Item 12 — A8's carry. Mechanism DONE at 0.92.0; the measured delta is owed and cannot come from here
 
