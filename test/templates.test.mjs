@@ -13,7 +13,9 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+
+import { renderTemplate } from '../scripts/driver.mjs';
 import { describe, it } from 'node:test';
 
 import { parseAssumptions } from '../scripts/assumptions.mjs';
@@ -539,5 +541,54 @@ describe('the toolchain guidance fragments', () => {
       assert.equal(guidance.includes('Do not satisfice'), false, `${toolchain.name} restates the contract`);
       assert.equal(guidance.includes('RED before GREEN'), false, `${toolchain.name} restates the contract`);
     }
+  });
+});
+
+describe('the template directory, scanned rather than listed', () => {
+  // The list above names the persona system prompts and is hand-maintained. The directory holds
+  // more than that - toolchain fragments, frontend direction, the oracle author, the security
+  // escalation - and an enumeration that has to be remembered is the defect this repository has
+  // now paid for three times: .dare protection by basename, ensureDareIgnored's short list, and
+  // CI_REQUIRED_COMMANDS. So the check that must never be skipped is applied positionally.
+  const dir = new URL('../templates/', import.meta.url);
+  const files = readdirSync(dir).filter((name) => name.endsWith('.md')).sort();
+
+  it('finds every shipped template, so a new one cannot arrive unchecked', () => {
+    assert.equal(files.length >= 8, true, `only ${files.length} templates found: ${files.join(', ')}`);
+  });
+
+  for (const name of files) {
+    const contents = readFileSync(new URL(name, dir), 'utf8');
+
+    it(`${name} carries no Junkion styling`, () => {
+      // DESIGN.md §9: the comedy is in the output layer only. A prompt written in the voice
+      // would change what the model does, which is exactly what the style layer may not do.
+      for (const tell of ['VOLUNTARY RECALL', 'GRAND PRIZE', 'LIMITED-TIME', 'STAY TUNED', 'UNACCEPTABLE']) {
+        assert.equal(contents.toUpperCase().includes(tell), false, `${name} contains style-layer text: ${tell}`);
+      }
+    });
+
+    it(`${name} is not empty`, () => {
+      assert.equal(contents.trim().length > 200, true, `${name} is suspiciously short`);
+    });
+  }
+});
+
+describe('renderTemplate', () => {
+  it('throws rather than sending a placeholder to a child', () => {
+    // A prompt reaching a child with a literal {{snippet}} asks about nothing, and the child
+    // answers about nothing - most likely `unknown`, which records a loss of protection and
+    // blocks a ship. Better a startup error than a quarantine nobody can explain.
+    assert.throws(
+      () => renderTemplate('security-escalation.md', { evidence: 'src/a.ts:1' }),
+      /\{\{snippet\}\}/,
+    );
+  });
+
+  it('substitutes every placeholder it was given', () => {
+    const rendered = renderTemplate('security-escalation.md', { evidence: 'src/a.ts:1', snippet: 'const guard = true;' });
+    assert.equal(rendered.includes('src/a.ts:1'), true);
+    assert.equal(rendered.includes('const guard = true;'), true);
+    assert.equal(/\{\{[a-zA-Z]+\}\}/.test(rendered), false);
   });
 });

@@ -1,5 +1,17 @@
 # Implementation brief — integrity, portability, reliability
 
+> ## This is a historical record. `COMPLETION.md` is the live plan.
+>
+> **Frozen 12 August 2026 at 0.74.0.** Item statuses here are maintained, but the *shape* of this
+> document — a list of work to do — belongs to a tree that no longer exists. An independent audit
+> found the hazard and named it precisely: **two documents shaped like plans, one of them wrong
+> about the flagship item, is drift being manufactured.** Its example was A3, which read
+> `DEFERRED` here for hours after `scripts/oracle.mjs` existed.
+>
+> Read this for **why a decision was taken**. Read `COMPLETION.md` for **what to do next**, and
+> `HANDOFF.md` for **what has actually run**. If they disagree, the newest wins and this one is
+> the one to correct.
+
 **Status: revised 11 August 2026 against the repository at 0.18.0.** The original brief was
 written against a pre-0.10.0 tree and eight of its items had shipped before it was read. Those
 are collapsed to one line each below, pointing at `HANDOFF.md`, which is the verification

@@ -2783,6 +2783,33 @@ function template(name) {
 }
 
 /**
+ * A template with `{{name}}` placeholders filled in.
+ *
+ * The security-escalation prompt was a string literal in this file until an audit pointed out
+ * that every other persona reads from `templates/` and `CLAUDE.md` calls those "the
+ * highest-leverage artifacts in the repo" — so one persona's wording was quietly exempt from the
+ * rule that its wording is product code, reviewed and versioned like any other.
+ *
+ * **An unsubstituted placeholder throws.** A prompt reaching a child with a literal
+ * `{{snippet}}` in it would ask about nothing, and the child would answer about nothing — most
+ * likely `unknown`, which is the verdict that records a loss of protection and blocks a ship.
+ * Failing here makes that a startup error rather than a quarantine nobody can explain.
+ *
+ * @param {string} name
+ * @param {Record<string, string>} values
+ * @returns {string}
+ */
+export function renderTemplate(name, values) {
+  let text = template(name);
+  for (const [key, value] of Object.entries(values)) text = text.split(`{{${key}}}`).join(value);
+  const leftover = text.match(/\{\{[a-zA-Z]+\}\}/);
+  if (leftover !== null) {
+    throw new DriverError(`${name} still contains ${leftover[0]} after substitution; the prompt would ask about nothing`);
+  }
+  return text;
+}
+
+/**
  * The builder's system prompt, plus visual direction when there is a UI to direct.
  *
  * Two things make this a function rather than a string. The condition is re-asked every
@@ -3605,34 +3632,7 @@ export function main(argv, io = {}) {
       // time somebody reindented a file.
       securityEscalation: (pin) =>
         runChild({
-          prompt: [
-            'A defensive element in this repository was verified by an earlier security audit and can no',
-            'longer be found where it was. Decide which of three things happened. Nothing else is being',
-            'asked of you, and you must not repair anything.',
-            '',
-            `Recorded location: ${pin.evidence}`,
-            'Recorded code, with whitespace collapsed:',
-            '',
-            '    ' + pin.snippet,
-            '',
-            'Search the repository for this protection — not for this text. It may have been renamed,',
-            'extracted into a helper, moved behind a decorator or replaced by an equivalent guard, and any',
-            'of those still count as present.',
-            '',
-            'Answer with one fenced json block and nothing else:',
-            '',
-            '```json',
-            '{ "finding": "removed" | "moved" | "unknown", "evidence": "path/file.ts:LINE", "snippet": "the line",',
-            '  "detail": "one sentence of why" }',
-            '```',
-            '',
-            '- "removed" means the protection is gone and nothing equivalent replaced it. Say this only if',
-            '  you looked and are confident; it will reset the working tree.',
-            '- "moved" means you found it, and then `evidence` and `snippet` are required.',
-            '- "unknown" means you could not tell. This is a legitimate answer and is not a failure. It is',
-            '  recorded as a loss of protection and blocks the run from shipping, which is the correct',
-            '  outcome for something nobody can establish.',
-          ].join('\n'),
+          prompt: renderTemplate('security-escalation.md', { evidence: pin.evidence, snippet: pin.snippet }),
           model: config.reviewerModel,
           phase: 'security-escalation',
       effort: config.effort['security-escalation'],
