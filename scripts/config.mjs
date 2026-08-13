@@ -43,7 +43,8 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
  *   reviewers: string[], ownership: Record<string, string[]>, requireUnanimous: boolean,
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, styleModel: string, lessonModel: string,
- *   qualityPlugins: string[], effort: Record<string, string>, oracle: OracleConfig,
+ *   qualityPlugins: string[], extraGates: { name: string, command: string[] }[],
+ *   effort: Record<string, string>, oracle: OracleConfig,
  *   panelCarry: PanelCarryConfig, sandbox: SandboxConfig,
  *   deploy: DeployConfig, extractTests: boolean,
  *   chaos: number, realityCheck: RealityCheckConfig, dareMe: DareMeConfig, race: RaceConfig,
@@ -172,6 +173,11 @@ export function defaultConfig() {
     // optional and degrade to a warning, because neither is worth killing a run over on a
     // machine without python3 or a reachable registry (DESIGN.md §5.1).
     qualityPlugins: ['impeccable', 'knip', 'semgrep', 'schemathesis'],
+    // Empty by default, and an empty list changes nothing: a project that declares no gates of
+    // its own gets exactly the roster it got before this key existed. See `requireExtraGates`
+    // for why these are declared rather than detected, and why they live somewhere the builder
+    // cannot reach.
+    extraGates: [],
     effort: {
       builder: 'medium',
       prd: 'medium',
@@ -344,6 +350,46 @@ function requireSmokeChecks(value) {
 }
 
 /**
+ * Validate the operator's own gates: checks this project considers gating that no toolchain knows.
+ *
+ * **Why this exists.** The gate roster is derived from the detected toolchain and the provisioned
+ * quality plugins, so a verification a project declares for itself is invisible to the loop. This
+ * repository is its own example: `npm run release-check` holds the install-cache invariant —
+ * shipped file changed, version not bumped, and the fix silently resolves to the previous build —
+ * and a builder could break it every iteration without a single gate noticing.
+ *
+ * **Why config rather than detection.** Guessing which of a project's scripts are gating is the
+ * kind of inference that is wrong quietly. An operator naming them is unambiguous, and `.dare/`
+ * is positionally protected (§6), so a gate declared here is one the builder cannot delete —
+ * which is the whole difference between a gate and a suggestion. `BRIEF.md` §E rejects thresholds
+ * that adapt because they make gates negotiable by the thing they constrain; a builder-editable
+ * gate list would be the same error with more steps.
+ *
+ * Both fields are mandatory and the command is argv, never a shell string: a gate assembled by a
+ * shell is a gate whose meaning depends on the shell.
+ *
+ * @param {unknown} value
+ * @returns {{ name: string, command: string[] }[]}
+ */
+function requireExtraGates(value) {
+  if (!Array.isArray(value)) throw new ConfigError('extraGates must be an array of { name, command } objects');
+  return value.map((entry, index) => {
+    const where = `extraGates[${index}]`;
+    const gate = requireObject(entry, where);
+    rejectUnknownKeys(gate, new Set(['name', 'command']), where);
+    if (!('name' in gate)) throw new ConfigError(`${where} has no name: a gate nothing can be called by`);
+    if (!('command' in gate)) throw new ConfigError(`${where} has no command: there is nothing to run`);
+    const name = requireString(gate.name, `${where}.name`).trim();
+    if (name === '') throw new ConfigError(`${where}.name is empty`);
+    const command = requireStringArray(gate.command, `${where}.command`);
+    // An empty argv would spawn nothing and report whatever the runner does with no program.
+    // Nothing here defaults to pass, and a gate that cannot run is a failure rather than a skip.
+    if (command.length === 0) throw new ConfigError(`${where}.command is empty: there is nothing to run`);
+    return { name, command };
+  });
+}
+
+/**
  * @param {unknown} value
  * @param {string} key
  * @returns {Record<string, unknown>}
@@ -409,6 +455,7 @@ export function validateConfig(input) {
   }
 
   if ('qualityPlugins' in source) merged.qualityPlugins = requireStringArray(source.qualityPlugins, 'qualityPlugins');
+  if ('extraGates' in source) merged.extraGates = requireExtraGates(source.extraGates);
 
   if ('reviewers' in source) {
     const reviewers = requireStringArray(source.reviewers, 'reviewers');

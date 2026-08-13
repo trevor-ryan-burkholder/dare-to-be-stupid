@@ -1,8 +1,8 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.106.0`. Measured at 0.106.0: `npm test` **1729 pass**,
-`npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Carried from
-0.105.0 and not re-run since: `npm run test:integration` **30 pass**.
+**State:** `main` at `0.107.0`. Measured at 0.107.0: `npm test` **1738 pass**,
+`npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
+`npm run release-check` **ok**.
 
 **`npm run test:live` last read 26 of 27, and the one failure was real.** It is written up below
 under 0.106.0; the parser defect it exposed is fixed and the same case now runs as a tier 1
@@ -18,6 +18,39 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.107.0 — a project's own gates, which is item 21's last engineering prerequisite
+
+**`extraGates` in `.dare/config.json`: `{ name, command }`, run every iteration, required, and
+listed in the brief as `operator:<name>`.** The gate roster is derived from the detected toolchain
+and the provisioned quality plugins, so a verification a project declares for *itself* has never
+been visible to the loop. This repository is the example that matters: `npm run release-check`
+holds the install-cache invariant — shipped file changed, version not bumped, and the fix silently
+resolves to the previous build — and a builder could break it every iteration with nothing
+noticing.
+
+**Declared, not detected.** Guessing which of a project's scripts are gating is inference that is
+wrong quietly. **And declared in `.dare/`, which is the load-bearing half:** the guard protects
+that directory positionally, so a gate declared there is one the builder cannot delete. A
+builder-editable gate list would be `BRIEF.md` §E's rejected self-adjusting threshold with extra
+steps — gates negotiable by the thing they constrain.
+
+**It found a second defect while being built, and that one is 0.99.0 in the other direction.**
+The brief's gate list (`describedGates`) is written **by hand**, separately from the list that
+executes. Wired only into the executing list, an operator gate would have **run without ever being
+described** — the builder failing a rule nobody told it, arriving as a bare non-zero exit from a
+command the brief never mentioned. 0.99.0 was a gate described and not run; this is the same seam
+producing the more dangerous orientation. Both lists now come from `config.extraGates`.
+
+**The structural hazard is still there and is worth someone's next session:** two hand-maintained
+lists that must agree, with nothing asserting that they do. Every future gate has to remember both.
+
+**Not verified, and it is the familiar gap:** tier 1 proves the config validates and both mappings
+are shaped right. **Nothing asserts that `gateTree` composes the operator list into what actually
+runs** — the assembly point is inside a closure in `main`, untestable from tier 1, and the
+`quality:` prefix has lived with exactly the same gap since it was added. This is the shape of the
+guard-registration defect (`CLAUDE.md`), and it is named here rather than left to be discovered.
+The first run configured with an `extraGate` is what closes it.
 
 ### 0.106.0 — the assumptions log dropped cited assumptions where nothing could count them
 

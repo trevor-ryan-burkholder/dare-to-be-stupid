@@ -1900,6 +1900,7 @@ makes signal forwarding possible at all.
 | `lessonModel` | `claude-sonnet-5` | the cold lesson extractor (§13.8); advisory, so it never needs the strongest model |
 | `effort` | see §10.2 | reasoning effort per phase (`low`…`max`), keyed by the phase names the driver uses |
 | `qualityPlugins` | `["impeccable", "knip", "semgrep"]` | auto-installed in Phase 1 (§5); impeccable required, the other two degrade to a warning |
+| `extraGates` | `[]` | `{ name, command }` checks this project considers gating that no toolchain knows about. Run every iteration, required, listed in the brief as `operator:<name>`. Declared rather than detected, and declared *here* — `.dare/` is positionally protected (§6), so a builder cannot delete a gate that constrains it |
 | `deploy.enabled` | **false** | preview-only when enabled; never prod |
 | `deploy.command` | `[]` | argv array run **before** the ship decision when `enabled`; a string is refused (§10.1) |
 | `deploy.url` | `""` | the fixed host the smoke checks ask. Required when `enabled`; refused if not http(s) or if it looks like production |

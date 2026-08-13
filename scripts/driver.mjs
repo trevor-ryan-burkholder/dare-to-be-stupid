@@ -4238,6 +4238,14 @@ export function main(argv, io = {}) {
       // had it.
       text: `quality:${gate.plugin}: ${gate.command.join(' ')}${armingNote(gate)}`,
     })),
+    // Described from the same config the roster is built from, because this list is written by
+    // hand and the execution list is not — which is 0.99.0's defect in its other direction. A
+    // gate that runs and is never described fails a builder on a rule nobody told it, and the
+    // failure arrives as a bare non-zero exit from a command the brief never mentioned.
+    ...config.extraGates.map((gate) => ({
+      name: `operator:${gate.name}`,
+      text: `operator:${gate.name}: ${gate.command.join(' ')}`,
+    })),
     {
       name: 'ci',
       text: 'ci: a workflow under .github/workflows that actually runs build, lint, types, unit and e2e',
@@ -4292,6 +4300,15 @@ export function main(argv, io = {}) {
           .filter((gate) => !gate.frontendOnly || hasFrontend(dir))
           .filter((gate) => gate.capability === undefined || capabilities.includes(gate.capability))
           .map((gate) => ({ name: `quality:${gate.plugin}`, command: gate.command, required: true })),
+        // The operator's own, from protected config. Prefixed so a brief, a gate line and a
+        // reviewer can all tell where a gate came from: a failure in `operator:release-check`
+        // is a project invariant, not a toolchain result, and the two are debugged differently.
+        // Required like everything else here — a declared gate that only warns is a comment.
+        ...config.extraGates.map((gate) => ({
+          name: `operator:${gate.name}`,
+          command: gate.command,
+          required: true,
+        })),
       ],
       capabilities,
     );

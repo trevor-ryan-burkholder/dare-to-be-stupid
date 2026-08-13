@@ -368,6 +368,12 @@ Prerequisites named in `HANDOFF.md`: pin `hooks/guard.mjs` as a security element
 (the positional rule does not cover it), `release-check` reachable as a gate (item 3 helps),
 and the `CLAUDE.md` scope note is the operator's call to suspend — nobody else's.
 
+**The engineering prerequisites are now met (0.107.0); the decision is still not mine.**
+`extraGates` in protected `.dare/config.json` makes `release-check` declarable as a required gate
+named `operator:release-check`, so a builder editing `scripts/` without bumping now fails an
+iteration instead of breaking the install-cache invariant silently. **Both remaining blockers are
+the operator's:** suspending the `CLAUDE.md` scope note, and deciding to run at all.
+
 **Status of the three at 0.96.0:** the guard is protected (0.88.0's `protected-guard`, positional
 and self-referential — the first prerequisite is met by a stronger mechanism than the one named).
 `release-check` gained the header check at 0.89.0 but **is still not a declared gate**, so a

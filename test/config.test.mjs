@@ -67,6 +67,7 @@ describe('defaultConfig', () => {
       styleModel: 'claude-fable-5',
       lessonModel: 'claude-sonnet-5',
       qualityPlugins: ['impeccable', 'knip', 'semgrep', 'schemathesis'],
+      extraGates: [],
       effort: {
         builder: 'medium',
         prd: 'medium',
@@ -333,6 +334,13 @@ describe('validateConfig refuses what it cannot trust', () => {
     [{ builderModel: 5 }, 'a model that is not a string'],
     [{ qualityPlugins: [1] }, 'a plugin list of non-strings'],
     [{ deploy: 'vercel' }, 'a deploy section that is not an object'],
+    [{ extraGates: { name: 'x', command: ['y'] } }, 'a single extra gate where a list belongs'],
+    [{ extraGates: [{ command: ['npm', 'run', 'x'] }] }, 'an extra gate with no name'],
+    [{ extraGates: [{ name: 'release-check' }] }, 'an extra gate with nothing to run'],
+    [{ extraGates: [{ name: '  ', command: ['npm'] }] }, 'an extra gate named only whitespace'],
+    [{ extraGates: [{ name: 'x', command: [] }] }, 'an extra gate with an empty argv'],
+    [{ extraGates: [{ name: 'x', command: 'npm run x' }] }, 'an extra gate given a shell string'],
+    [{ extraGates: [{ name: 'x', command: ['npm'], required: false }] }, 'an extra gate trying to be advisory'],
     [{ race: { n: 0 } }, 'a racer count below 1'],
     [[], 'an array instead of an object'],
     ['nope', 'a string instead of an object'],
@@ -342,6 +350,22 @@ describe('validateConfig refuses what it cannot trust', () => {
       assert.throws(() => validateConfig(input), ConfigError);
     });
   }
+
+  it('accepts an operator gate and keeps its argv exactly', () => {
+    // The reason this key exists: a project invariant no toolchain knows about. This
+    // repository's own is `release-check`, which holds the install-cache rule — a shipped file
+    // changed without a version bump resolves to the previous build, and every symptom of that
+    // looks like a wrong fix rather than an unloaded one.
+    const config = validateConfig({ extraGates: [{ name: 'release-check', command: ['npm', 'run', 'release-check'] }] });
+    assert.deepEqual(config.extraGates, [{ name: 'release-check', command: ['npm', 'run', 'release-check'] }]);
+  });
+
+  it('names the offending gate by index, so a list of five is debuggable', () => {
+    assert.throws(
+      () => validateConfig({ extraGates: [{ name: 'a', command: ['x'] }, { name: 'b', command: [] }] }),
+      (error) => error instanceof ConfigError && error.message.includes('extraGates[1]'),
+    );
+  });
 
   it('names the unknown key so the operator can find the typo', () => {
     assert.throws(
