@@ -19,6 +19,33 @@ line in the same commit.
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
 
+### `ship1`, in flight — what a properly budgeted run actually looks like
+
+**Written while the run is alive, and marked as such.** These are observations at iteration 4 of
+12, not an outcome. The final entry replaces this one.
+
+**The budget question is answered: it was arithmetic, not decay.** Given 150M / $200 / 12
+iterations — the sizing the two historical ships used — `ship1` reached iteration 4 having spent
+**25% of its ceiling**, ~8.4M per iteration, squarely inside the 5–9M band measured on the three
+15M runs that all died at iteration 2. Nothing about the loop had degraded; the ceilings had.
+
+**Findings are converging: 13 on iteration 1, 4 on iteration 3.** Iteration 2 produced no panel at
+all because a gate failed first — the cheap path working exactly as designed, and worth recording
+because it is invisible in any token total.
+
+**The sequential panel costs more than the whole build.** Full table in `PLAN.md` item 10. The
+short version: iteration 3's builder ran **36 seconds** and its panel ran **1,493** — 41×. Panel
+wall clock is ~25 minutes an iteration and barely moves (1510s, 1493s) while the builders it
+judges differ by 17×. **Tokens and time point opposite ways:** the builder dominates tokens (8.69M
+vs 4.44M on iteration 1), the panel dominates clock by an order of magnitude. That is item 10's
+justification arriving as measurement rather than argument.
+
+**One safety note for anyone doing the same thing.** `ship1` runs `scripts/driver.mjs` out of this
+working tree, which was edited and committed three times underneath it. That is safe *here* and
+the reason is checkable rather than hopeful: every `import(...)` in `scripts/` is a jsdoc type
+annotation, so there is no runtime dynamic import and the process holds every module from startup.
+**Verify that before assuming it, if a lazy import is ever added.**
+
 ### 0.108.0 — the brief and the roster now have one origin, so they cannot disagree about a gate
 
 **Closes the hazard 0.107.0 named rather than leaving it armed**, which is this repository's

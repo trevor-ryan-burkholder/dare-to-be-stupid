@@ -165,6 +165,24 @@ be the first race whose candidates carry distinct stall hypotheses (C5).
 
 ### 10. R21 — async driver: heartbeat, parallel panel, process groups — OPEN, **UNBLOCKED: item 8 says keep the panel and parallelise it**
 
+**Measured live in `ship1`, 13 August, and it is worse than "3× where it could be `max()`":**
+
+| iteration | builder | panel (three cold reviewers, sequential) | findings |
+|---|---|---|---|
+| 1 | 619s / 8.69M | 308 + 734 + 468 = **1510s** / 4.44M | 13 |
+| 2 | 191s / 1.98M | *none — a gate failed first, correctly* | — |
+| 3 | **36s** / 0.33M | 386 + 736 + 371 = **1493s** / 3.88M | 4 |
+
+**Iteration 3 spent 36 seconds building and 1,493 seconds being judged — 41×.** The panel is
+~25 minutes of pure sequential wall clock, every iteration, and it barely varies: 1510s and 1493s
+on iterations whose builders differed by 17×.
+
+**The token and time pictures point opposite ways, and only one of them is fixable here.** The
+builder dominates *tokens* (8.69M against the panel's 4.44M on iteration 1); the panel dominates
+*wall clock* by an order of magnitude. Parallelising replaces `sum` with `max`: iteration 3 would
+have been 736s instead of 1493s. **Roughly 12 minutes back per iteration, ~2.5 hours over a
+twelve-iteration run**, for no change in what is read or how it is charged.
+
 **Item 8's answer, which is what it was waiting for: keep the panel, parallelise it.** One
 reviewer is 2.6× cheaper, but the panel's dominant cost is *wall clock* — `3×` where it could be
 `max()` — and the solo arm's only observed advantage was depth on an id both owned, while the
