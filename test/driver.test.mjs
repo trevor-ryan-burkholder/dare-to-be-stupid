@@ -53,6 +53,7 @@ import {
   assertOwnershipCovers,
   claudeArgs,
   formatGateFailure,
+  isColdPhase,
   combinePanel,
   inspectCiWorkflows,
   observabilityGate,
@@ -3539,5 +3540,57 @@ describe('.dare/outcome.json', () => {
     });
     assert.equal(typeof result.state, 'string', 'the run died over a forensic artifact');
     assert.equal(logged.some((line) => line.includes('outcome.json')), true, 'the failure was silent');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cold-phase isolation (0.69.0)
+// ---------------------------------------------------------------------------
+
+describe('isColdPhase and --safe-mode', () => {
+  // Every claude -p child inherits the operator's installed-plugin SessionStart injections, the
+  // project MEMORY.md, userEmail and git status - measured in the repo AND in an empty temp
+  // directory. The injected text carries imperative behavioural instructions, and a live child
+  // once obeyed those instead of the driver's prompt.
+  //
+  // safe mode fixes it and cannot be applied everywhere: it disables hooks INCLUDING one handed
+  // to it explicitly in --settings. Measured - a child given safe mode and the 0.59.0 guard still
+  // overwrote .dare/state.json with permission_denials: []. So the split is by write capability.
+
+  it('isolates every read-only phase', () => {
+    for (const phase of ['review', 'reality-check', 'lesson-extractor', 'security-escalation']) {
+      assert.equal(isColdPhase(phase), true, `${phase} is read-only and was not isolated`);
+      assert.equal(claudeArgs({ model: 'm', phase }).includes('--safe-mode'), true);
+    }
+  });
+
+  it('never isolates a phase that can write, because that would disable the guard', () => {
+    // The builder is the one that matters: it runs --dangerously-skip-permissions, and the guard
+    // is the only limit left. prd and design hold Write and Edit, so they keep it too.
+    for (const phase of ['builder', 'prd', 'design']) {
+      assert.equal(isColdPhase(phase), false, `${phase} can write and would lose its guard`);
+      assert.equal(claudeArgs({ model: 'm', phase }).includes('--safe-mode'), false);
+    }
+  });
+
+  it('derives the split from PHASE_PERMISSIONS rather than a list', () => {
+    // A hardcoded list is the enumeration defect §6 already paid for: a phase added later would
+    // default to whichever side somebody forgot. Every phase must land on exactly one side, and
+    // the side must follow from its own tools.
+    for (const [phase, policy] of Object.entries(PHASE_PERMISSIONS)) {
+      const writes = policy.dangerous || policy.allowedTools.some((t) => ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(t));
+      assert.equal(isColdPhase(phase), !writes, `${phase} is on the wrong side of the split`);
+    }
+  });
+
+  it('keeps the guard on every phase it does not isolate', () => {
+    // The two must never both be absent. A phase with neither is a child that can write and has
+    // nothing stopping it.
+    for (const phase of Object.keys(PHASE_PERMISSIONS)) {
+      const args = claudeArgs({ model: 'm', phase });
+      const settings = JSON.parse(args[args.indexOf('--settings') + 1]);
+      const guarded = Array.isArray(settings.hooks?.PreToolUse) && settings.hooks.PreToolUse.length > 0;
+      assert.equal(guarded || args.includes('--safe-mode'), true, `${phase} has neither guard nor isolation`);
+    }
   });
 });

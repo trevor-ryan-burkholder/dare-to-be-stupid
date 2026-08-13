@@ -893,6 +893,43 @@ export function permissionsFor(phase) {
   return policy;
 }
 
+/** Tools that can change a tree. A phase holding none of these has nothing for a guard to deny. */
+const MUTATING_TOOLS = new Set(['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+
+/**
+ * May this phase run in `--safe-mode`?
+ *
+ * **The problem.** Every `claude -p` child inherits the operator's installed-plugin SessionStart
+ * injections, the project `MEMORY.md`, `userEmail` and git status — measured on 12 August, in the
+ * repository *and in an empty temp directory*. Asked without tools, a child quoted this machine's
+ * memory line back verbatim. Worse than context: the injected text carries **imperative
+ * behavioural instructions**, and a live child once obeyed those instead of the driver's prompt,
+ * answering *"What would you like me to focus on today?"* to a prompt asking for one word. §5.0
+ * called this open; it is wider than "the operator's skill surface".
+ *
+ * It matters most at the cold panel, whose starvation is the reason the architecture exists
+ * (§1.1). A reviewer handed the operator's memory is not the cold read this design promises.
+ *
+ * **Why it cannot simply be applied everywhere.** `--safe-mode` disables hooks — **including a
+ * hook handed to it explicitly in `--settings`.** Measured: a child given safe mode *and* the
+ * 0.59.0 guard still overwrote `.dare/state.json` with `permission_denials: []`. Safe mode and
+ * the guard are mutually exclusive, so any phase that can write must keep the guard instead.
+ * (`--bare` is not an alternative: it refuses OAuth and demands `ANTHROPIC_API_KEY`.)
+ *
+ * So the split is by **write capability**, and it is derived from `PHASE_PERMISSIONS` rather than
+ * listed here — a hardcoded list is the enumeration defect §6 already paid for once. A phase
+ * added later with write tools keeps the guard automatically; one added read-only gets the
+ * isolation automatically.
+ *
+ * @param {string} phase
+ * @returns {boolean}
+ */
+export function isColdPhase(phase) {
+  const policy = permissionsFor(phase);
+  if (policy.dangerous) return false;
+  return policy.allowedTools.every((tool) => !MUTATING_TOOLS.has(tool));
+}
+
 /**
  * The environment a child runs with.
  *
@@ -934,6 +971,9 @@ export function claudeArgs(options) {
   // on stdin — anything after that flag is read as one more tool name, which is the defect that
   // killed every phase but `builder` and bought this repository its live tier (§11.1).
   if (options.effort !== undefined && options.effort !== '') args.push('--effort', options.effort);
+  // Isolation for the read-only phases, and only those. See `isColdPhase`: safe mode disables
+  // hooks including the guard, so a phase that can write must keep the guard instead.
+  if (isColdPhase(options.phase)) args.push('--safe-mode');
   if (options.systemPrompt !== undefined && options.systemPrompt.length > 0) {
     args.push('--append-system-prompt', options.systemPrompt);
   }

@@ -20,7 +20,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { parseClaudeEnvelope, spawnClaude } from '../../scripts/driver.mjs';
+import { claudeArgs, parseClaudeEnvelope, spawnClaude } from '../../scripts/driver.mjs';
 
 const ARMED = process.env.DARE_LIVE === '1';
 
@@ -114,5 +114,40 @@ describe('per-phase reasoning effort reaches a real child', { skip: ARMED ? fals
   it('still works when no effort is given, so the flag is optional rather than required', { timeout: LIVE_TIMEOUT }, () => {
     const result = ask('Reply with exactly the word: pineapple. No punctuation, no explanation.');
     assert.equal(result.ok, true, result.raw.slice(0, 400));
+  });
+});
+
+describe('cold phases are actually isolated', { skip: ARMED ? false : 'DARE_LIVE is not set' }, () => {
+  // Measured before 0.69.0: a child in the repo AND in an empty temp directory was handed the
+  // operator's plugin SessionStart injections and the project MEMORY.md, and quoted this
+  // machine's memory line back verbatim when asked without tools. The injected text carries
+  // imperative instructions, which a live child once obeyed instead of the driver's prompt.
+
+  /** @param {string} phase @param {string} prompt */
+  const askAs = (phase, prompt) =>
+    spawnClaude({ prompt, model: CHEAP_MODEL, phase, cwd: process.cwd(), env: process.env });
+
+  it('starves a reviewer of the operator plugin surface', { timeout: LIVE_TIMEOUT }, () => {
+    const result = askAs(
+      'review',
+      'Do not use any tools. Answer only from context already given to you. Does your context ' +
+        'contain the exact phrase "You have superpowers"? Answer YES or NO only.',
+    );
+    assert.equal(result.ok, true, result.raw.slice(0, 400));
+    assert.equal(/\bno\b/i.test(result.text), true, `the panel still inherits plugin injections: ${result.text}`);
+  });
+
+  it('leaves a reviewer able to work — isolation is not a lobotomy', { timeout: LIVE_TIMEOUT }, () => {
+    // The other half. A cold phase that cannot answer is not isolated, it is broken, and the
+    // reviewer's output is machine-parsed.
+    const result = askAs('review', 'Reply with exactly the word: pineapple. No punctuation, no explanation.');
+    assert.equal(result.ok, true, result.raw.slice(0, 400));
+    assert.equal(result.text.toLowerCase().includes('pineapple'), true, result.text);
+  });
+
+  it('does not isolate the builder, because that would disable its guard', { timeout: LIVE_TIMEOUT }, () => {
+    // safe mode disables hooks including one supplied in --settings, so the builder keeping the
+    // guard and the builder keeping the operator's context are the same decision.
+    assert.equal(claudeArgs({ model: CHEAP_MODEL, phase: 'builder' }).includes('--safe-mode'), false);
   });
 });

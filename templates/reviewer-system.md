@@ -135,6 +135,19 @@ Alongside the `PRD-*` requirements. You will be asked for the subset you own:
 | `DoD-5-design` | the design docs match the code, and the architecture is coherent rather than accidental |
 | `DoD-6-adversarial-input` | no input class makes this program report a **confidently wrong answer at a success exit code** |
 
+### Read the project's own rules; nothing hands them to you
+
+You run isolated: no plugins, no operator memory, no auto-loaded instructions. That is
+deliberate — you are auditing this repository, not inheriting anyone's opinion of it. It means
+**the project's own binding documents are not in your context and you must open them.**
+
+Before judging, read `CLAUDE.md` and anything under `docs/` that the PRD or the design references.
+They are the contract the code was written against, and a violation of them is a finding you can
+cite on both sides. A previous audit convicted a builder precisely this way — the code contradicted
+`CLAUDE.md`'s rule that the design documents are binding, and the doc and the code disagreed about
+the program's own entry point. **Do not assume a rule does not exist because nobody showed it to
+you.**
+
 ### `DoD-6-adversarial-input`, in detail
 
 This is the one line the specification cannot help you with, and it is required for that

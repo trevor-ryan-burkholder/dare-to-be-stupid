@@ -78,7 +78,7 @@ mode, so it keeps working when the builder runs with `--dangerously-skip-permiss
 | `protected-state` | **mutation of any path under `.dare/`, at any depth, including files that do not exist yet** — but only from inside a run | reads, always; every write by the operator outside a run; `tsconfig.json`; an app's own `src/state.json` |
 | `git-history`     | `push --force` / `-f` / `--force-with-lease`, `rebase`, `filter-branch`, `reflog expire`                         | ordinary pushes, `git reset --hard` (the ratchet needs it), `git reflog`, "rebase" inside a commit message |
 | `rm-recursive`    | recursive `rm` outside the temp directory, and any recursive `rm` whose target cannot be resolved before it runs | non-recursive `rm`, `rm -rf /tmp/...`, `rmdir`                                                             |
-| `nested-dare`     | a builder invoking `/dare`                                                                                       | the word "dare" in prose, paths and filenames containing it                                                |
+| `nested-dare`     | a builder invoking the slash command — **and any Bash whose text contains it, including a commit message describing it** | the bare word "dare" in prose, paths and filenames containing it                                           |
 
 A malformed or unparseable payload is a **deny**. A guard that fails open is not a guard.
 
