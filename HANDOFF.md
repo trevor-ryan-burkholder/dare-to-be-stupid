@@ -136,6 +136,46 @@ has ever deployed to a real droplet** — the ssh half is argv nobody has run. T
 the .NET adapter is treated: correct by construction, unverified in the world. The first real use
 should be a throwaway box, watched.
 
+## Queue item 1 — worktree racing. Attempt 1 failed to arm; the reason is a real constraint. 13 August 2026
+
+**Racing still has not executed with a live builder.** Attempt 1 (`~/dare-logs/race1.log`,
+`~/dare-dogfood/race1`, `race.enabled: true, n: 3, after: 2, maxIterations: 6`) never armed it,
+and the reason is arithmetic rather than bad luck.
+
+**What the run did:**
+
+```
+SEGMENT ONE   -> review outstanding: 9 finding(s)
+SEGMENT TWO   -> gates failed: quality:knip
+SEGMENT THREE -> review outstanding: 2 finding(s)
+SEGMENT FOUR  -> review outstanding: 3 finding(s)
+SEGMENT FIVE  -> (killed here)
+```
+
+**Two things had to line up and did not.**
+
+First, **a converging run keeps resetting the stall counter.** `recordProgress` counts an
+iteration as improved when the gate score rises *or* the ratchet grows. Findings falling 9 → 2
+means the builder was also adding tests, so `passingCount` kept climbing and
+`stalledIterations` kept returning to zero. The PRD was designed to plateau — one impossible
+latency clause, everything else satisfiable — and it did not plateau soon enough.
+
+Second, and this is the constraint worth writing down: **`shouldRace` refuses when fewer than two
+iterations remain** — *"a race needs one to run and one to land the winner."* So with
+`after: 2` and `maxIterations: 6`, racing can only arm in the window between iteration 3 and
+iteration 4. Two stalls have to land inside a two-iteration window or the opportunity is gone,
+and at segment 5 the run was already past it whatever it did next.
+
+**The practical rule:** racing needs `maxIterations >= race.after + 3` before it can arm at all,
+and it needs the stall to arrive *early*. A six-iteration budget with `after: 2` gives racing a
+single chance. I killed the run at segment 5 once the window had closed rather than let it spend
+two more iterations proving nothing — the operator's standing instruction is to stop a run whose
+problem is known rather than watch it finish.
+
+**Attempt 2 is running** on the same tree with `race.after: 1` and `maxIterations: 10`: the first
+non-improving iteration arms it, and the headroom exists when it does. The `knip` failure at
+segment 2 of attempt 1 is the evidence that this PRD does produce non-improving iterations.
+
 ## Nothing stops two drivers running against one repository. 13 August 2026
 
 Found at the start of the unsupervised session, and it destroyed a run before it was noticed.
