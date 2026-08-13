@@ -29,6 +29,53 @@ iterations — the sizing the two historical ships used — `ship1` reached iter
 **25% of its ceiling**, ~8.4M per iteration, squarely inside the 5–9M band measured on the three
 15M runs that all died at iteration 2. Nothing about the loop had degraded; the ceilings had.
 
+### The ratchet can lock in a defect, and `ship1` found the case — the sharpest finding of the day
+
+**The same regression fired on iterations 5 and 7: `src/csv.test.ts::parseCsv > an unterminated
+quote at EOF ends the field at EOF`.** Twice is a pattern, and the pattern is structural.
+
+The ratcheted test:
+
+```js
+it("an unterminated quote at EOF ends the field at EOF", () => {
+  const [record] = parseCsv('"abc');
+  expect(record).toEqual({ fields: ["abc"], line: 1 });
+});
+```
+
+The panel's `DoD-6` **CLASS 2**, at the same time: *"a record boundary the parser never
+establishes is silently absorbed … mishandled at `src/csv.ts:92` where the EOF flush pushes the
+pending record **without ever testing `inQuotes`**"* — with `a,b\n1,x\n2,"y\n3,z\n` losing a whole
+data row at exit 0.
+
+**The ratcheted test asserts exactly the behaviour the reviewer calls the defect.** The builder
+wrote that test in an early iteration, encoding the bug as a specification, and the ratchet then
+made it permanent. Every attempt to satisfy `DoD-6` breaks it, which is a regression, which hard
+resets and destroys the iteration's work. Twice.
+
+**It is not a true deadlock, and the escape is uncomfortable.** A test id is the reporter's *test
+name*. So the builder may rewrite the assertion **inside** that `it(...)` — the id keeps passing,
+the ratchet is satisfied, and the fix lands. What it may not do is delete or rename the test, both
+of which drop the id and read as a regression.
+
+**So the legal move leaves a test whose name is a lie about its body.** `"an unterminated quote at
+EOF ends the field at EOF"` would then assert that it does *not*. That is the id-level granularity
+of the ratchet showing its edge: it is exactly the property A6 and `integrity.mjs` exist to
+police from the other side — an id that keeps passing while its assertion is gutted. **The two
+mechanisms are in tension here, and neither is wrong.**
+
+**What this is evidence for, stated without inflation.** The ratchet has one documented escape —
+`git reset --hard` plus a regression task — and that escape assumes the *code* regressed. It has
+no path for **the test itself being wrong**, which is a different failure and, on this evidence,
+a reachable one on any run where the builder writes tests before the panel has read the code.
+`CLAUDE.md` already demands that a fourth monotonic property design its escape before its
+enforcement; **the first one has an escape that does not cover this case.**
+
+**Not concluded:** whether the builder finds the rewrite move. At the time of writing it has five
+iterations and 42% of budget left, and has failed twice. If it burns the rest oscillating, that is
+the finding; if it finds the move, the finding is that a correct fix required making a test name
+false.
+
 **The ratchet fired on iteration 5, live, and the whole sequence worked.** The builder broke a
 previously-passing test — `src/csv.test.ts::parseCsv > an unterminated quote at EOF ends the field
 at EOF` — and the loop hard reset on one regression, extracted a lesson (9s, 34K tokens), and went
