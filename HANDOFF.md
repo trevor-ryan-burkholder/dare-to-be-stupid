@@ -136,6 +136,34 @@ has ever deployed to a real droplet** — the ssh half is argv nobody has run. T
 the .NET adapter is treated: correct by construction, unverified in the world. The first real use
 should be a throwaway box, watched.
 
+## Nothing stops two drivers running against one repository. 13 August 2026
+
+Found at the start of the unsupervised session, and it destroyed a run before it was noticed.
+
+`ps` showed **three** driver processes, two of them with `cwd` = `~/dare-dogfood/csvstat-h`:
+run 14 at 29 minutes and run 15 at 10. **Run 14 had been sent `SIGTERM` and had not died**, so
+when run 15 launched, two independent drivers were mutating one tree — each able to
+`git reset --hard` it, rewrite `.dare/`, and commit over the other. Run 15's result is void and
+nothing may be concluded from its log.
+
+**§13.6's re-entrancy guard does not cover this.** It refuses a *nested* run — a builder invoking
+the slash command — and the driver refuses to spawn one. Two operators, or one operator twice,
+starting independent drivers on the same directory is a different thing entirely and nothing
+looks for it.
+
+The cheap fix is the conventional one: a pidfile under `.dare/`, written at start and checked at
+preflight, refusing when the recorded pid is alive. It fits the existing design — `.dare/` is
+already driver-owned and §6 already denies a run every write there, so a builder cannot forge it.
+
+**NEEDS REVIEW, and deliberately not built:** this is a new feature and the session brief says
+this is not a build session. Recorded so the next one can decide. Note the interaction worth
+thinking about first: a pidfile left behind by a killed driver must not lock the repository
+forever, and "is this pid alive" is not the same question as "is this pid *my* driver" after a
+reboot recycles pids.
+
+**Operationally, until then:** check `ps -eo pid,args | grep driver.mjs` before launching, and
+verify a kill actually took. `kill -TERM` did not stop a driver here; `kill -9` did.
+
 ## Queue item 3 — the 0.56.0–0.58.0 ship condition, both branches reached live. 13 August 2026
 
 **Not tested in isolation: reached by runs that executed**, and in two cases both branches
