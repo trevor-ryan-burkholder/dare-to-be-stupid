@@ -37,6 +37,64 @@ ceiling of its own is an open question - `maxIterations` bounds it in iterations
 honest unit for a loop, and a wall-clock cap that fires mid-iteration would leave a tree nothing
 has judged.
 
+## Improve mode driven end to end by a live run. 13 August 2026
+
+**First brownfield run this project has ever done.** `~/dare-dogfood/improve3`, a six-commit
+four-file CLI with planted defects, log at `~/dare-logs/improve3.log`, `maxIterations: 3`,
+`tokenCeiling: 12M`.
+
+```
+BUDGET: token ceiling reached: 12907553 of 12000000
+iterations: 2  tokens: 12907553  cost: $11.3438  passing: 47
+```
+
+**It did not ship, and the product is fixed anyway** — the run-10 pattern again: the tree the run
+refused to tag is materially better than the one it started from. Verified by running the binary,
+not by reading the panel:
+
+| requirement | before | after |
+|---|---|---|
+| PRD-1.1 unreadable file | `{"count":0,"mean":null,"max":null}` exit 0 | `cannot read '…': ENOENT`, **exit 1** |
+| PRD-1.2 non-numeric line | `mean: 1.333` (folded `foo` in as 0) exit 0 | `badline.txt:2: not a number: 'foo'`, **exit 1** |
+| PRD-1.3 empty input | `mean: null, max: null` exit 0 | `no numeric data`, **exit 1** |
+| PRD-1.4 no argument | identical to 1.1 | `no input file given` + usage, **exit 2** — deliberately distinct |
+| good input | `{"count":3,"mean":2,"max":3}` | unchanged |
+
+**The authoring phase is the headline.** 59–72s, ~366K tokens, and the document cited `file:line`
+on every requirement with **real executed output pasted in** — it ran the binary rather than
+reading it. Four requirements, inside the 3–8 cap. It wrote a *"what was examined and found
+correct"* section instead of padding. **It found one defect that was never planted** (PRD-1.4, a
+missing argument being indistinguishable from an unreadable file). No rewrites, no test renames, no
+style notes: every prohibition in the template survived contact with a real model.
+
+**What the run confirmed live, none of it previously observed in a run:**
+
+- **the run lock** — `.dare/lock.json` held `pid: 59477`, the only driver, throughout;
+- **every child printed its ceiling** — `killed after 30m`, eleven times;
+- **the manifest ignore fix** — the target's `git status` stayed clean;
+- **`gate-integrity` caught the builder** writing `toBeDefined()` and made it fix it;
+- **the guard travelling to a child** — visible in the builder's `--settings` blob in `ps`.
+
+### Two findings from watching it
+
+**The mutation gate's decline message is false, and it is the misleading kind.** It printed *"no
+first-party source changed since the last ratchet-advancing commit"* while `src/cli.mjs`,
+`src/parse.mjs` and `src/stats.mjs` were all modified. Cause: on iteration 1 there is no
+`state.json`, so `lastGoodCommit` is `null`, and `changedSince` returns `[]` on its first line —
+`if (options.since === null) return []`. **"I have no baseline" is not "nothing changed", and the
+message asserts the wrong one.** The decision is defensible; the sentence is not. Unfixed.
+
+**Segment one cost 6.06M tokens against segment two's 0.83M — 7× — on a four-file repository.**
+Segment one wrote tests and touched three source files; segment two fixed two gate failures. Worth
+understanding before improve mode meets anything larger, because at this ratio the first iteration
+alone would exhaust an ordinary ceiling on a real codebase.
+
+**Not yet tried, and named as the last thing to try:** pointing improve mode at this repository.
+Three obstacles first — the scope note in `CLAUDE.md` is one line and the operator's call; the
+builder can edit `hooks/guard.mjs`, which the positional rule does **not** cover, so the guard
+should be pinned as a security element before anything else; and `release-check` is not a declared
+gate, so a builder editing `scripts/` without bumping breaks the install-cache invariant silently.
+
 ## MEASURED: why a run "hangs", and the SIGTERM claim in this file was wrong
 
 **13 August 2026. Two experiments, both cheap, both settling questions this file had been
