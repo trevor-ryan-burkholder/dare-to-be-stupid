@@ -3097,10 +3097,10 @@ export function runDeploy(deploy, options) {
  * being spawned. Both have been wrong before, and neither is visible in a run's output.
  *
  * @param {{ prompt: string, model: string, systemPrompt?: string, phase: string, effort?: string, cwd: string,
- *   env: Record<string, string | undefined>, contextLimit?: number,
+ *   env: Record<string, string | undefined>, contextLimit?: number, timeoutMs?: number,
  *   run?: (command: string, args: string[],
- *     options: { cwd: string, env?: Record<string, string | undefined>, input?: string }) =>
- *     { ok: boolean, status: number, stdout: string, stderr: string } }} options
+ *     options: { cwd: string, env?: Record<string, string | undefined>, input?: string, timeoutMs?: number }) =>
+ *     ShellResult }} options
  * @returns {ClaudeResult}
  */
 export function spawnClaude(options) {
@@ -3124,7 +3124,26 @@ export function spawnClaude(options) {
     cwd: options.cwd,
     env: childEnvironment(options.env),
     input: options.prompt,
+    // Absent unless the caller supplies one, so a test double that omits it keeps the
+    // unbounded wait every child had before 0.80.0. `main` always supplies it.
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
   });
+  // Checked before the stdout test below, and the order is the whole point. A child killed
+  // mid-stream can leave a partial envelope on stdout, and `result.stdout.trim() !== ''`
+  // would send that fragment to the parser — which might well parse it, and report whatever
+  // half a verdict looks like. A killed child has no verdict. A fragment of one is not a
+  // smaller verdict, it is a different one, and nothing here defaults to pass.
+  if (result.timedOut === true) {
+    return {
+      ok: false,
+      text: '',
+      costUsd: 0,
+      tokens: 0,
+      raw:
+        `the ${options.phase} child did not return within ${options.timeoutMs}ms and was killed. ` +
+        'Nothing it may have written was read, because a killed child has no verdict',
+    };
+  }
   if (!result.ok && result.stdout.trim() === '') {
     return { ok: false, text: '', costUsd: 0, tokens: 0, raw: result.stderr };
   }
@@ -3143,13 +3162,38 @@ export function spawnClaude(options) {
  * not tokens, and said so — there is no tokenizer here and an estimate would read as a
  * measurement.
  *
+ * Since 0.80.0 it also names the ceiling, and that is the only thing an operator can act on
+ * while the event loop is blocked: it converts "is this hung?" — unanswerable — into "has it
+ * been longer than the number in the line?", which is arithmetic. The operator's report was
+ * that a run would sit for hours before anyone said anything; nobody could have known sooner,
+ * because nothing on screen said when silence stops being normal.
+ *
  * @param {string} phase
  * @param {string} model
  * @param {number} characters the prompt and system prompt, measured
+ * @param {number} [timeoutMs] the ceiling after which the child is killed
  * @returns {string}
  */
-export function childStartLine(phase, model, characters) {
-  return `${phase}: ${model} running on ${characters} characters of prompt, no output until it returns`;
+export function childStartLine(phase, model, characters, timeoutMs) {
+  const base = `${phase}: ${model} running on ${characters} characters of prompt, no output until it returns`;
+  return timeoutMs === undefined ? base : `${base}, killed after ${formatDuration(timeoutMs)}`;
+}
+
+/**
+ * Milliseconds as something a person can hold in their head while watching a log.
+ *
+ * @param {number} milliseconds
+ * @returns {string}
+ */
+export function formatDuration(milliseconds) {
+  const seconds = Math.round(milliseconds / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  if (minutes < 60) return remainder === 0 ? `${minutes}m` : `${minutes}m${remainder}s`;
+  const hours = Math.floor(minutes / 60);
+  const leftoverMinutes = minutes % 60;
+  return leftoverMinutes === 0 ? `${hours}h` : `${hours}h${leftoverMinutes}m`;
 }
 
 /**
@@ -3195,9 +3239,16 @@ export function main(argv, io = {}) {
    */
   const runChild = (options) => {
     const measured = measurePrompt({ systemPrompt: options.systemPrompt, prompt: options.prompt });
-    write(verbatim(childStartLine(options.phase, options.model, measured.characters)));
+    write(verbatim(childStartLine(options.phase, options.model, measured.characters, config.childTimeoutMs)));
     const startedAt = Date.now();
-    const result = spawnClaude({ ...options, contextLimit: config.contextBudget.maxCharacters });
+    const result = spawnClaude({
+      ...options,
+      contextLimit: config.contextBudget.maxCharacters,
+      // Supplied here rather than at each call site, for the same reason the context budget
+      // is checked inside `spawnClaude`: every child in the loop passes through this one
+      // door, so a phase added later cannot forget the ceiling.
+      timeoutMs: config.childTimeoutMs,
+    });
     write(verbatim(childEndLine(options.phase, result, Math.round((Date.now() - startedAt) / 1000))));
     return result;
   };

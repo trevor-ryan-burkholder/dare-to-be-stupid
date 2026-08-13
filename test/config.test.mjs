@@ -68,6 +68,7 @@ describe('defaultConfig', () => {
         'security-escalation': 'high',
         'oracle-author': 'max',
       },
+      childTimeoutMs: 1_800_000,
       oracle: { enabled: false },
       deploy: { enabled: false, command: [], url: '', smoke: [], timeoutMs: 600000 },
       extractTests: true,
@@ -96,6 +97,25 @@ describe('defaultConfig', () => {
     // default: it is a second whole-repository read of the same line.
     const owned = Object.values(defaultConfig().ownership).flat();
     assert.equal(owned.length, new Set(owned).size, 'an id is owned twice by default');
+  });
+
+  // The operator's top blocker, 13 August: a run hangs and sits there for hours until
+  // somebody says something. `tokenCeiling` and `costCeiling` do not help — they bind a child
+  // that *returns*, which makes them accounting rather than a watchdog.
+  describe('the child ceiling', () => {
+    it('bounds every child by default, rather than trusting one to come back', () => {
+      assert.equal(defaultConfig().childTimeoutMs, 1_800_000);
+    });
+
+    it('refuses a ceiling that bounds nothing', () => {
+      for (const bad of [0, -1, 2.5, 'thirty minutes', null]) {
+        assert.throws(() => validateConfig({ childTimeoutMs: bad }), /childTimeoutMs/, `childTimeoutMs accepted ${JSON.stringify(bad)}`);
+      }
+    });
+
+    it('accepts an operator-supplied ceiling, because a long task is not a hung one', () => {
+      assert.equal(validateConfig({ childTimeoutMs: 5_400_000 }).childTimeoutMs, 5_400_000);
+    });
   });
 
   it('never enables deploy by default, because a run is pre-production only', () => {

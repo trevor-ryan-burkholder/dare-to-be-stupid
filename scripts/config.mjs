@@ -37,6 +37,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 /**
  * @typedef {{
  *   maxIterations: number, stallLimit: number, tokenCeiling: number, costCeiling: number,
+ *   childTimeoutMs: number,
  *   reviewers: string[], ownership: Record<string, string[]>, requireUnanimous: boolean,
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, styleModel: string, lessonModel: string,
@@ -102,6 +103,18 @@ export function defaultConfig() {
     // per-run budget, and a default that fired before `tokenCeiling` in ordinary operation
     // would make every run stop for the wrong stated reason.
     costCeiling: 50,
+    // The third ceiling, and the only one that is a watchdog. `tokenCeiling` and `costCeiling`
+    // bind a child that *returns*; neither can see one that does not, which made them read as
+    // protection against a hang when they are accounting. The operator's report on 13 August
+    // was that a run "will hang sometimes and sit there for hours until I say something", and
+    // that is the gap it was sitting in.
+    //
+    // Thirty minutes, derived from measurement rather than taste: run 10's builders averaged
+    // 470s and its slowest race candidate ran 651s, so this is roughly 2.8x the longest child
+    // this project has ever observed. Killing a child that was working is the expensive wrong
+    // answer — `runChild`'s own comment says so — which is why the margin is large and why the
+    // number is configurable.
+    childTimeoutMs: 1_800_000,
     reviewers: ['security', 'correctness', 'design'],
     ownership: Object.fromEntries(Object.entries(DEFAULT_OWNERSHIP).map(([reviewer, ids]) => [reviewer, [...ids]])),
     requireUnanimous: true,
@@ -315,6 +328,7 @@ export function validateConfig(input) {
   if ('stallLimit' in source) merged.stallLimit = requirePositiveInteger(source.stallLimit, 'stallLimit');
   if ('tokenCeiling' in source) merged.tokenCeiling = requirePositiveInteger(source.tokenCeiling, 'tokenCeiling');
   if ('costCeiling' in source) merged.costCeiling = requirePositiveNumber(source.costCeiling, 'costCeiling');
+  if ('childTimeoutMs' in source) merged.childTimeoutMs = requirePositiveInteger(source.childTimeoutMs, 'childTimeoutMs');
   if ('requireUnanimous' in source) {
     merged.requireUnanimous = requireBoolean(source.requireUnanimous, 'requireUnanimous');
   }

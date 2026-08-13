@@ -209,7 +209,18 @@ substitutes for the other, and both are checked on every child. `costCeiling` re
 own `total_cost_usd` rather than estimating from a rate card, for the same reason nothing else
 here estimates.
 
-**On a subscription neither is the binding constraint.** There the limit is the rate-limit
+**Both are accounting, and neither is a watchdog. `childTimeoutMs` is the watchdog.** A ceiling
+read from an envelope is a ceiling on a child that *returned*; a child that never returns produces
+no envelope, spends no recorded tokens, and passes both checks forever. Children run under
+`execFileSync`, which blocks the event loop for the whole call, so nothing can tick while one is
+out and a hung child is pixel-identical to a working one — the operator's report on 13 August 2026
+was of runs sitting for hours before anyone noticed. The ceiling is 30 minutes by default against a
+longest-ever-observed child of 651s, because killing a child that was working is the expensive
+wrong answer. On a timeout the child's output is **discarded unread**, including any partial
+envelope: a killed child has no verdict, and half of one is a different verdict rather than a
+smaller one.
+
+**On a subscription neither of the first two is the binding constraint.** There the limit is the rate-limit
 window, and a child that runs out of allowance is told apart from a child that failed:
 `EXHAUSTION_PATTERN` marks it, the work in progress is **committed**, and the run ends `BUDGET`
 saying it can resume. A stalled allowance is not a failed build and must never be scored as one.
@@ -1614,6 +1625,7 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `stallLimit` | 4 | iterations with no gate improvement before abort |
 | `tokenCeiling` | 4_000_000 | bounds *work*. Not a cap and not convertible to money — see §3.5 |
 | `costCeiling` | 50 | bounds *spend*, in USD, from the envelope's own `total_cost_usd`. Decimals allowed |
+| `childTimeoutMs` | 1_800_000 | bounds *wall-clock per child*, and it is the only one of the three that is a watchdog. `tokenCeiling` and `costCeiling` bind a child that returns; neither can see one that does not. Roughly 2.8x the longest child ever observed (§3.9) |
 | `reviewers` | `["security","correctness","design"]` | the specialized cold panel (§1.1); each owns its DoD lines |
 | `ownership` | see §1.1 | reviewer → id patterns (`*` is the only wildcard). Must cover every required id, or the run refuses to start |
 | `requireUnanimous` | true | every panel member must return pass on its lines |
@@ -1629,6 +1641,7 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `deploy.command` | `[]` | argv array run **before** the ship decision when `enabled`; a string is refused (§10.1) |
 | `deploy.url` | `""` | the fixed host the smoke checks ask. Required when `enabled`; refused if not http(s) or if it looks like production |
 | `deploy.smoke` | `[]` | `{ path, status }` checks against `deploy.url`. Required when `enabled` — a deploy nothing checks cannot fail |
+| `deploy.timeoutMs` | 600_000 | the deploy command is killed after this. Validated even while `enabled` is false, because a timeout that is nonsense is wrong when it is written, not when it is used (§10.1) |
 | `extractTests` | true | parse JSON reporter output into ratchet IDs |
 | `chaos` | 1 | stupidity dial, 1–3; per-iteration scope budget (§13) |
 | `realityCheck.after` | 3 | stalled iterations before the buildability breaker fires (§13) |

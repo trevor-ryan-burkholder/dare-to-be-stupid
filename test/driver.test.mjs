@@ -1159,6 +1159,96 @@ describe('spawnClaude checks the context budget before it spends anything', () =
   });
 });
 
+// The operator's top blocker, 13 August 2026: "when there's a run it'll hang sometimes and sit
+// there for hours until I say something." Children run under `execFileSync`, which blocks the
+// event loop for the whole call, so no heartbeat is possible while one is in flight and a hung
+// child looks exactly like a working one. `tokenCeiling` and `costCeiling` are no help — they
+// bind a child that *returns*, which makes them accounting rather than a watchdog.
+describe('a child that never returns is killed and named', () => {
+  /**
+   * @param {{ timeoutMs?: number, result: import('../scripts/driver.mjs').ShellResult }} parts
+   */
+  function spawnWith(parts) {
+    /** @type {{ command: string, timeoutMs: number | undefined }[]} */
+    const seen = [];
+    const result = spawnClaude({
+      prompt: 'do the thing',
+      systemPrompt: 'sys',
+      model: 'claude-sonnet-5',
+      phase: 'builder',
+      cwd: '/repo',
+      env: {},
+      contextLimit: 400000,
+      ...(parts.timeoutMs === undefined ? {} : { timeoutMs: parts.timeoutMs }),
+      run: (command, _args, options) => {
+        seen.push({ command, timeoutMs: options.timeoutMs });
+        return parts.result;
+      },
+    });
+    return { seen, result };
+  }
+
+  /** @type {import('../scripts/driver.mjs').ShellResult} */
+  const timedOut = { ok: false, status: 1, stdout: '', stderr: 'spawnSync claude ETIMEDOUT', timedOut: true };
+
+  it('hands the ceiling to the shell rather than trusting the child to come back', () => {
+    const { seen } = spawnWith({
+      timeoutMs: 1_800_000,
+      result: { ok: true, status: 0, stdout: JSON.stringify({ result: 'done', is_error: false }), stderr: '', timedOut: false },
+    });
+    assert.deepStrictEqual(seen, [{ command: 'claude', timeoutMs: 1_800_000 }]);
+  });
+
+  it('reports the timeout by name, with the phase and the ceiling that killed it', () => {
+    const { result } = spawnWith({ timeoutMs: 1_800_000, result: timedOut });
+    assert.equal(result.ok, false);
+    assert.equal(result.raw.includes('builder'), true, result.raw);
+    assert.equal(result.raw.includes('1800000ms'), true, result.raw);
+  });
+
+  // The dangerous shape. A child killed mid-stream can leave partial JSON on stdout, and the
+  // old order — parse whatever arrived — would hand that fragment to the envelope parser and
+  // report whatever it made of it. A killed child has no verdict, and a fragment of one is
+  // not a smaller verdict, it is a different one.
+  it('does not parse the output of a child it killed, however much of it arrived', () => {
+    const { result } = spawnWith({
+      timeoutMs: 1_800_000,
+      result: { ...timedOut, stdout: '{"result":"looks fine to me","is_error":false}' },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.text, '');
+    assert.equal(result.raw.includes('1800000ms'), true, result.raw);
+  });
+
+  it('charges nothing for a child that was killed, because no envelope reported a cost', () => {
+    const { result } = spawnWith({ timeoutMs: 1_800_000, result: timedOut });
+    assert.equal(result.tokens, 0);
+    assert.equal(result.costUsd, 0);
+  });
+
+  // The benign neighbour. A ceiling that also broke children which return on time would be
+  // caught by every other test in this file, but a test proving only the kill proves only
+  // that it kills.
+  it('leaves a child that returns inside the ceiling completely alone', () => {
+    const { result } = spawnWith({
+      timeoutMs: 1_800_000,
+      result: { ok: true, status: 0, stdout: JSON.stringify({ result: 'done', is_error: false }), stderr: '', timedOut: false },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.text, 'done');
+  });
+
+  it('names the ceiling in the start line, so a silent child can be told from a dead one', () => {
+    // The one thing an operator can act on while the event loop is blocked: knowing when the
+    // silence stops being normal. Run 10's builders averaged 470s and its slowest race
+    // candidate ran 651s, so nine minutes of nothing is ordinary.
+    assert.equal(
+      childStartLine('builder', 'claude-sonnet-5', 1234, 1_800_000),
+      'builder: claude-sonnet-5 running on 1234 characters of prompt, no output until it returns, killed after 30m',
+    );
+  });
+});
+
 describe('changedSince', () => {
   // The baseline choice is the load-bearing part of A5. Measured from the last
   // ratchet-advancing commit rather than the last iteration, because a regression iteration
