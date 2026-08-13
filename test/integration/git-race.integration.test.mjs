@@ -205,3 +205,73 @@ describe('parseNumstat against real git output', () => {
     });
   });
 });
+
+// The defect that made racing useless, reproduced against real git before it was fixed. The
+// unit tests in test/race.test.mjs assert the argv this builds; whether `git stash push
+// --include-untracked` actually clears a tree enough for `merge --ff-only` to proceed is git's
+// contract, not ours, and that is exactly the distinction tier 2 exists for.
+describe('landing a winner on the dirty tree a race actually finds', () => {
+  it('fast-forwards anyway, and leaves the ungated changes in the stash rather than in the tree', () => {
+    const repo = makeRepo();
+    const parentDir = worktreeParent(repo, 'dirty');
+    const base = git(repo, ['rev-parse', 'HEAD']);
+    const created = createWorktrees({ cwd: repo, run: defaultRunner, n: 1, base, parentDir });
+    const worktree = created.worktrees[0];
+
+    // The candidate does its work from the base commit, exactly as a real one does.
+    writeFileSync(path.join(worktree.dir, 'winner.txt'), 'candidate work\n', 'utf8');
+    git(worktree.dir, ['add', '-A']);
+    git(worktree.dir, ['commit', '--quiet', '--no-verify', '-m', 'candidate 1']);
+    const commit = git(worktree.dir, ['rev-parse', 'HEAD']);
+
+    // Meanwhile the main tree looks how it looked in the live run: a tracked file modified and
+    // untracked gate debris sitting beside it.
+    writeFileSync(path.join(repo, 'a.txt'), 'one\ntwo\n', 'utf8');
+    writeFileSync(path.join(repo, 'debris.txt'), 'stryker\n', 'utf8');
+
+    const applied = applyWinner({ cwd: repo, run: defaultRunner, commit });
+
+    assert.equal(applied.ok, true, applied.detail);
+    assert.equal(git(repo, ['rev-parse', 'HEAD']), commit);
+    assert.equal(readFileSync(path.join(repo, 'winner.txt'), 'utf8'), 'candidate work\n');
+    // The ungated edit is gone from the tree and recoverable from the stash.
+    assert.equal(readFileSync(path.join(repo, 'a.txt'), 'utf8'), 'one\n');
+    assert.equal(git(repo, ['stash', 'list']).includes('set aside before landing a race winner'), true);
+
+    removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: created.worktrees });
+  });
+
+  it('restores the tree when the merge fails for a reason stashing cannot fix', () => {
+    const repo = makeRepo();
+    writeFileSync(path.join(repo, 'a.txt'), 'one\ntwo\n', 'utf8');
+
+    const applied = applyWinner({ cwd: repo, run: defaultRunner, commit: 'not-a-commit' });
+
+    assert.equal(applied.ok, false);
+    assert.equal(applied.detail.includes('restored'), true, applied.detail);
+    // The operator's tree is exactly as they left it, and there is no stash to go looking for.
+    assert.equal(readFileSync(path.join(repo, 'a.txt'), 'utf8'), 'one\ntwo\n');
+    assert.equal(git(repo, ['stash', 'list']), '');
+  });
+
+  // The benign neighbour: the clean-tree path must not gain a stash it never needed.
+  it('leaves a clean tree untouched, with nothing stashed', () => {
+    const repo = makeRepo();
+    const parentDir = worktreeParent(repo, 'clean');
+    const base = git(repo, ['rev-parse', 'HEAD']);
+    const created = createWorktrees({ cwd: repo, run: defaultRunner, n: 1, base, parentDir });
+    const worktree = created.worktrees[0];
+    writeFileSync(path.join(worktree.dir, 'winner.txt'), 'candidate work\n', 'utf8');
+    git(worktree.dir, ['add', '-A']);
+    git(worktree.dir, ['commit', '--quiet', '--no-verify', '-m', 'candidate 1']);
+    const commit = git(worktree.dir, ['rev-parse', 'HEAD']);
+
+    const applied = applyWinner({ cwd: repo, run: defaultRunner, commit });
+
+    assert.equal(applied.ok, true, applied.detail);
+    assert.equal(applied.detail, `fast-forwarded to ${commit}`);
+    assert.equal(git(repo, ['stash', 'list']), '');
+
+    removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: created.worktrees });
+  });
+});

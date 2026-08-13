@@ -245,17 +245,80 @@ export function removeWorktrees(options) {
 /**
  * Fast-forward the main tree onto the winning candidate's commit.
  *
- * `--ff-only` is the whole safety argument. The main tree has not moved while the race ran,
- * so the winner's commit descends from it and the merge is a pointer move. If that is ever
- * untrue the merge fails loudly instead of inventing a merge commit nobody reviewed.
+ * `--ff-only` is the whole safety argument. The winner's commit descends from the commit the
+ * race started at, so the merge is a pointer move. If that is ever untrue the merge fails
+ * loudly instead of inventing a merge commit nobody reviewed.
  *
- * @param {{ cwd: string, run: Runner, commit: string }} options
+ * **The tree is set aside first, and until 0.83.0 it was not — which made racing unable to land
+ * a winner in the one situation it exists for.** Observed live on 13 August 2026: two candidates
+ * passed every gate, candidate 1 won on the smallest diff, and git refused with *"Your local
+ * changes to the following files would be overwritten by merge: docs/architecture.md"*. The run
+ * logged it and continued, so three builders and roughly 7.4M tokens bought nothing, in a form
+ * indistinguishable from a race that had no winner.
+ *
+ * That was not bad luck. A race is armed by a *stalled* iteration, so a dirty tree is the normal
+ * state at the moment a winner lands, and the design's promise — *"the main tree has not moved"* —
+ * was false in the way that matters: it has not **committed**, and `--ff-only` cares about the
+ * working tree, not only the ref.
+ *
+ * **Why setting aside is right rather than merely convenient.** `createWorktrees` detaches every
+ * candidate at `git rev-parse HEAD`, so no candidate ever saw the uncommitted changes and every
+ * candidate's gates passed against `base + its own diff`. Landing the winner on top of those
+ * changes would produce `base + winner + something nothing gated` — a tree no evidence in the run
+ * describes. Keeping them is not the cautious option; it is the one that ships unjudged code.
+ *
+ * Nothing is destroyed. `git stash push --include-untracked` preserves the lot, ignored paths
+ * excepted, which is what keeps `.dare/` — ratchet, pins, briefs — out of it entirely. The stash
+ * is **not** popped after a successful merge: re-applying ungated changes on top of the winner
+ * rebuilds exactly the tree this avoids, and could conflict with the winner's diff while doing it.
+ * It *is* popped when the merge fails anyway, because a failed race must leave the tree as it
+ * found it.
+ *
+ * @param {{ cwd: string, run: Runner, commit: string, stashLabel?: string }} options
  * @returns {{ ok: boolean, detail: string }}
  */
 export function applyWinner(options) {
-  const result = options.run('git', ['merge', '--ff-only', options.commit], { cwd: options.cwd });
+  const status = options.run('git', ['status', '--porcelain'], { cwd: options.cwd });
+  if (!status.ok) {
+    // Not knowing whether the tree is dirty is not the same as it being clean, and merging on
+    // the second reading when the first is what we have is how a race lands on a tree nobody
+    // inspected.
+    return { ok: false, detail: `the working tree could not be inspected before the merge: ${(status.stderr || status.stdout).trim()}` };
+  }
+  const changes = status.stdout.split('\n').filter((line) => line.trim().length > 0);
+  let stashed = false;
+  if (changes.length > 0) {
+    const label = options.stashLabel ?? 'set aside before landing a race winner';
+    const stash = options.run('git', ['stash', 'push', '--include-untracked', '--message', label], { cwd: options.cwd });
+    if (!stash.ok) {
+      return {
+        ok: false,
+        detail:
+          `${changes.length} uncommitted change(s) blocked the merge and could not be set aside: ` +
+          `${(stash.stderr || stash.stdout).trim()}`,
+      };
+    }
+    stashed = true;
+  }
+
+  const merged = options.run('git', ['merge', '--ff-only', options.commit], { cwd: options.cwd });
+  if (!merged.ok) {
+    const detail = (merged.stderr || merged.stdout).trim();
+    if (!stashed) return { ok: false, detail };
+    const restored = options.run('git', ['stash', 'pop'], { cwd: options.cwd });
+    return {
+      ok: false,
+      detail: restored.ok
+        ? `${detail}; the working tree was restored`
+        : `${detail}; the working tree could NOT be restored: ${(restored.stderr || restored.stdout).trim()}`,
+    };
+  }
+
   return {
-    ok: result.ok,
-    detail: result.ok ? `fast-forwarded to ${options.commit}` : (result.stderr || result.stdout).trim(),
+    ok: true,
+    detail: stashed
+      ? `fast-forwarded to ${options.commit}; ${changes.length} uncommitted change(s) were set aside ` +
+        'and left in `git stash` — no candidate was gated with them, so they are not part of what just landed'
+      : `fast-forwarded to ${options.commit}`,
   };
 }

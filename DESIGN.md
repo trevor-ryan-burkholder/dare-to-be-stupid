@@ -1988,9 +1988,27 @@ The constraints are the design:
   leaked worktree is not cosmetic: `git worktree add` refuses a directory it already knows
   about, so one abandoned race breaks every later race, and the error names a directory
   rather than the race that left it behind.
-- The winner lands by `git merge --ff-only`. The main tree has not moved, so the merge is a
-  pointer move; if that is ever untrue it fails loudly rather than inventing a merge commit
-  nobody reviewed.
+- The winner lands by `git merge --ff-only`. The winner's commit descends from the commit the
+  race started at, so the merge is a pointer move; if that is ever untrue it fails loudly
+  rather than inventing a merge commit nobody reviewed.
+- **The working tree is set aside first, and the earlier wording here was wrong.** This section
+  used to say "the main tree has not moved". It has not *committed*, which is a different thing,
+  and `--ff-only` refuses on the working tree rather than only the ref. Observed live on 13
+  August 2026: two candidates passed every gate, candidate 1 won on the smallest diff, and git
+  refused with *"Your local changes to the following files would be overwritten by merge"*. Three
+  builders and ~7.4M tokens bought nothing, in a form indistinguishable from a race with no
+  winner. **A race is armed by a stalled iteration, so a dirty tree is the normal state at the
+  moment a winner lands** — racing could not land a winner in the situation it exists for.
+- **Why setting aside is correct and not merely convenient.** Every candidate is detached at
+  `git rev-parse HEAD`, so no candidate ever saw the uncommitted changes, and each one's gates
+  passed against `base + its own diff`. Landing the winner on top of them would produce
+  `base + winner + something nothing gated` — a tree no evidence in the run describes. Keeping
+  them is the option that ships unjudged code.
+- Nothing is destroyed: `git stash push --include-untracked` preserves everything except ignored
+  paths, which is what keeps `.dare/` out of it. The stash is **not** popped after a successful
+  merge — re-applying ungated changes on top of the winner rebuilds the very tree this avoids —
+  and **is** popped when the merge fails anyway, because a failed race must leave the tree as it
+  found it. A stash that cannot be taken refuses the merge rather than proceeding.
 
 > **Re-entrancy guard (not optional):** whatever the settings, the driver refuses to spawn
 > a nested `dare` run and caps concurrent builders. ECC learned the hard way that

@@ -326,6 +326,131 @@ describe('worktree lifecycle', () => {
   });
 });
 
+// Observed live on 13 August 2026, and it made racing useless in the only situation it exists
+// for. `git merge --ff-only` ran against a dirty main tree and git refused:
+//
+//   race: 2 candidates passed every gate; candidate 1 won on the smallest diff
+//         (2250 line(s) across 4 file(s)); error: Your local changes to the following
+//         files would be overwritten by merge: docs/architecture.md
+//
+// The run logged the line and carried on, so the cost was three builders and ~7.4M tokens for
+// nothing, in a form indistinguishable from a race that simply had no winner.
+//
+// The argument for setting the tree aside rather than keeping it is not "the ratchet has not
+// judged this work". It is stronger than that, and it comes from reading `createWorktrees`:
+// every candidate is created `--detach` at `git rev-parse HEAD`, so **no candidate ever saw
+// the uncommitted changes**. Each one's gates passed against `base + its own diff`. Landing
+// the winner on top of those changes produces `base + winner + something nothing gated`,
+// which is a tree no evidence in the run describes.
+describe('applyWinner against a dirty main tree', () => {
+  /**
+   * @param {{ status?: string, stash?: boolean, merge?: boolean }} answers
+   */
+  function runnerFor(answers) {
+    /** @type {string[][]} */
+    const calls = [];
+    /** @type {import('../scripts/race.mjs').Runner} */
+    const run = (command, args) => {
+      calls.push([command, ...args]);
+      const line = args.join(' ');
+      if (line.startsWith('status')) return { ok: true, status: 0, stdout: answers.status ?? '', stderr: '' };
+      if (line.startsWith('stash push')) {
+        return answers.stash === false
+          ? { ok: false, status: 1, stdout: '', stderr: 'cannot save the current index state' }
+          : { ok: true, status: 0, stdout: 'Saved working directory\n', stderr: '' };
+      }
+      if (line.startsWith('merge')) {
+        return answers.merge === false
+          ? { ok: false, status: 1, stdout: '', stderr: 'Your local changes would be overwritten' }
+          : { ok: true, status: 0, stdout: '', stderr: '' };
+      }
+      return { ok: true, status: 0, stdout: '', stderr: '' };
+    };
+    return { calls, run };
+  }
+
+  it('merges directly when the tree is already clean, without inventing a stash', () => {
+    const { calls, run } = runnerFor({ status: '' });
+    const applied = applyWinner({ cwd: '/repo', run, commit: 'abc123' });
+    assert.equal(applied.ok, true);
+    assert.deepStrictEqual(calls, [
+      ['git', 'status', '--porcelain'],
+      ['git', 'merge', '--ff-only', 'abc123'],
+    ]);
+  });
+
+  it('sets the tree aside before merging, untracked files included', () => {
+    // `--include-untracked` and not `--all`: ignored paths are left alone, which is what keeps
+    // `.dare/` — the ratchet, the pins, the briefs — out of the stash entirely.
+    const { calls, run } = runnerFor({ status: ' M docs/architecture.md\n?? .stryker-tmp/\n' });
+    const applied = applyWinner({ cwd: '/repo', run, commit: 'abc123' });
+    assert.equal(applied.ok, true, applied.detail);
+    assert.deepStrictEqual(calls[0], ['git', 'status', '--porcelain']);
+    assert.equal(calls[1][1], 'stash');
+    assert.equal(calls[1].includes('--include-untracked'), true);
+    assert.deepStrictEqual(calls[2], ['git', 'merge', '--ff-only', 'abc123']);
+  });
+
+  it('says how many changes it set aside, and that nothing gated them', () => {
+    const { run } = runnerFor({ status: ' M docs/architecture.md\n M src/bin.ts\n?? .stryker-tmp/\n' });
+    const applied = applyWinner({ cwd: '/repo', run, commit: 'abc123' });
+    assert.equal(applied.detail.includes('3 uncommitted change(s)'), true, applied.detail);
+    assert.equal(applied.detail.includes('git stash'), true, applied.detail);
+  });
+
+  // The stash is deliberately NOT popped after a successful merge. Those changes were absent
+  // from every candidate's gates, so re-applying them would rebuild the exact tree the ceiling
+  // above exists to prevent — and could conflict with the winner's diff while doing it.
+  it('does not put the changes back after a successful merge', () => {
+    const { calls, run } = runnerFor({ status: ' M docs/architecture.md\n' });
+    applyWinner({ cwd: '/repo', run, commit: 'abc123' });
+    assert.equal(
+      calls.some((call) => call.join(' ').includes('stash pop')),
+      false,
+      'the merge succeeded and the ungated changes were re-applied on top of it',
+    );
+  });
+
+  // A failed race must leave the tree as it found it. Otherwise a merge that refuses for some
+  // other reason silently converts the operator's tree into a clean one plus a stash they were
+  // never told to look for.
+  it('puts the changes back when the merge fails anyway', () => {
+    const { calls, run } = runnerFor({ status: ' M docs/architecture.md\n', merge: false });
+    const applied = applyWinner({ cwd: '/repo', run, commit: 'abc123' });
+    assert.equal(applied.ok, false);
+    assert.equal(
+      calls.some((call) => call.join(' ') === 'git stash pop'),
+      true,
+      'the merge failed and the tree was left stashed',
+    );
+    assert.equal(applied.detail.includes('restored'), true, applied.detail);
+  });
+
+  // Nothing defaults to pass. A stash that fails leaves the tree dirty, so merging anyway is
+  // the original defect with an extra step.
+  it('does not merge at all when the tree could not be set aside', () => {
+    const { calls, run } = runnerFor({ status: ' M docs/architecture.md\n', stash: false });
+    const applied = applyWinner({ cwd: '/repo', run, commit: 'abc123' });
+    assert.equal(applied.ok, false);
+    assert.equal(
+      calls.some((call) => call.includes('merge')),
+      false,
+      'the merge ran against a tree that could not be cleaned',
+    );
+  });
+
+  it('fails rather than guessing when git status itself cannot be read', () => {
+    /** @type {import('../scripts/race.mjs').Runner} */
+    const run = (_command, args) =>
+      args[0] === 'status'
+        ? { ok: false, status: 128, stdout: '', stderr: 'not a git repository' }
+        : { ok: true, status: 0, stdout: '', stderr: '' };
+    const applied = applyWinner({ cwd: '/repo', run, commit: 'abc123' });
+    assert.equal(applied.ok, false);
+    assert.equal(applied.detail.includes('not a git repository'), true, applied.detail);
+  });
+});
+
 describe('applyWinner', () => {
   it('fast-forwards the main tree onto the winner', () => {
     const { root, head } = makeRepo();
