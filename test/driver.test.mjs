@@ -57,6 +57,7 @@ import {
   carriedReport,
   TOOL_CACHE_PATHS,
   armingNote,
+  overlayGates,
   childBudget,
   isSecurityId,
   isTestEvidence,
@@ -2951,6 +2952,59 @@ describe('requiredIdsFor', () => {
     // question about whether the program tells the truth, not about security or design.
     const covered = Object.values(DEFAULT_OWNERSHIP).flat();
     assert.equal(covered.includes('DoD-6-adversarial-input'), true);
+  });
+});
+
+describe('overlayGates', () => {
+  const QUALITY = [
+    { plugin: 'knip', command: ['npx', 'knip'], frontendOnly: false },
+    { plugin: 'impeccable', command: ['npx', 'impeccable', 'detect', 'src/'], frontendOnly: true },
+    { plugin: 'schemathesis', command: ['schemathesis', 'run'], frontendOnly: false, capability: 'api' },
+  ];
+  const EXTRA = [{ name: 'release-check', command: ['npm', 'run', 'release-check'] }];
+
+  it('gives the brief and the roster one origin, so they cannot disagree about what a gate is', () => {
+    // The invariant the extraction exists for. Both directions of divergence have been seen
+    // live: a gate described and never run (0.99.0), and — caught before shipping — a gate run
+    // and never described, which fails a builder on a rule the brief never mentioned.
+    for (const gate of overlayGates(QUALITY, EXTRA)) {
+      assert.equal(gate.text.startsWith(`${gate.name}: `), true, gate.text);
+      assert.equal(gate.text.includes(gate.command.join(' ')), true, gate.text);
+    }
+  });
+
+  it('prefixes by origin, because a project invariant and a toolchain result debug differently', () => {
+    assert.deepStrictEqual(
+      overlayGates(QUALITY, EXTRA).map((gate) => gate.name),
+      ['quality:knip', 'quality:impeccable', 'quality:schemathesis', 'operator:release-check'],
+    );
+  });
+
+  it('annotates an arming condition in the text rather than dropping the gate', () => {
+    const gates = overlayGates(QUALITY, []);
+    assert.equal(gates[1].text.endsWith('(armed once this repo renders a UI)'), true, gates[1].text);
+    assert.equal(gates[2].text.endsWith('(armed only for a api project)'), true, gates[2].text);
+    // Capabilities are re-detected every iteration, so a list that silently dropped a
+    // not-yet-armed gate would read as a list that never had it.
+    assert.equal(gates.length, 3);
+  });
+
+  it('carries the arming fields the executing filter reads, and only where they belong', () => {
+    const gates = overlayGates(QUALITY, EXTRA);
+    assert.equal(gates[1].frontendOnly, true);
+    assert.equal(gates[2].capability, 'api');
+    assert.equal('capability' in gates[0], false, 'an unarmed gate gained a capability key');
+  });
+
+  it('arms an operator gate unconditionally: the operator declaring it is the condition', () => {
+    const [gate] = overlayGates([], EXTRA);
+    assert.equal(gate.frontendOnly, false);
+    assert.equal('capability' in gate, false);
+    assert.deepStrictEqual(gate.command, ['npm', 'run', 'release-check']);
+  });
+
+  it('is empty when there is nothing layered over the toolchain', () => {
+    assert.deepStrictEqual(overlayGates([], []), []);
   });
 });
 

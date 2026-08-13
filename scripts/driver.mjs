@@ -3664,6 +3664,54 @@ export function armingNote(gate) {
 }
 
 /**
+ * The gates layered over the toolchain's own: provisioned quality plugins, then the operator's.
+ *
+ * **One origin for two projections, and that is the entire point of the function.** A gate is
+ * written down twice in a run — once in the brief that tells the builder what it must pass, and
+ * once in the roster that executes — and until 0.107.0 those were assembled independently, by
+ * hand, from the same raw inputs. Both directions of divergence have now been observed:
+ *
+ *   - **described and not run** (0.99.0): a CLI's brief demanded `schemathesis` against an
+ *     OpenAPI document, eleven lines above its own statement that the project is not an API. The
+ *     gate was correctly filtered at execution, so nothing failed and nothing said anything; the
+ *     builder was simply told to gold-plate.
+ *   - **run and not described** (caught during 0.107.0, before it shipped): an operator gate
+ *     wired only into the executing list would fail an iteration on a rule the brief never
+ *     mentioned, arriving as a bare non-zero exit from an unfamiliar command.
+ *
+ * The second is worse and both come from the same seam. Returning `text` and `command` together
+ * makes them structurally incapable of disagreeing about *what a gate is*; the callers still
+ * differ about *which gates apply*, which is deliberate. Execution filters on arming conditions,
+ * the brief keeps every gate and annotates it — capabilities are re-detected each iteration
+ * (§3.7), so a list that silently dropped a not-yet-armed gate would read as one that never had
+ * it.
+ *
+ * Operator gates carry no arming condition. An operator who declared a gate is the arming
+ * condition, and there is nothing to detect.
+ *
+ * @param {{ plugin: string, command: string[], frontendOnly: boolean, capability?: string }[]} qualityGates
+ * @param {{ name: string, command: string[] }[]} extraGates
+ * @returns {{ name: string, command: string[], text: string, frontendOnly: boolean, capability?: string }[]}
+ */
+export function overlayGates(qualityGates, extraGates) {
+  return [
+    ...qualityGates.map((gate) => ({
+      name: `quality:${gate.plugin}`,
+      command: gate.command,
+      text: `quality:${gate.plugin}: ${gate.command.join(' ')}${armingNote(gate)}`,
+      frontendOnly: gate.frontendOnly,
+      ...(gate.capability === undefined ? {} : { capability: gate.capability }),
+    })),
+    ...extraGates.map((gate) => ({
+      name: `operator:${gate.name}`,
+      command: gate.command,
+      text: `operator:${gate.name}: ${gate.command.join(' ')}`,
+      frontendOnly: false,
+    })),
+  ];
+}
+
+/**
  * Run the mutation gate once, at ship time, over what this run itself changed.
  *
  * Called from exactly one place — a passing panel with no other evidence that the suite can
@@ -4222,29 +4270,12 @@ export function main(argv, io = {}) {
   const briefCapabilities = runCapabilities();
   const describedGates = [
     ...toolchainGates.gates.map((gate) => ({ name: gate.name, text: `${gate.name}: ${gate.command.join(' ')}` })),
-    ...provisioning.gates.map((gate) => ({
-      name: `quality:${gate.plugin}`,
-      // Both arming conditions are annotated, and the second was missing for one version.
-      // **Found by watching a live run:** an `api`-gated plugin was listed in a CLI's brief as a
-      // gate "every iteration must pass", two lines above the brief's own statement that this
-      // project is "none of api, network-service". The gate was correctly filtered out at
-      // execution, so nothing ever failed — the builder was simply told to satisfy a command
-      // that would never run, on a schema a CLI has no reason to own. A brief that demands
-      // gold-plating and a gate list that cannot fail are the same defect seen from two sides.
-      //
-      // Annotated rather than omitted, following `frontendOnly`'s precedent and for its reason:
-      // capabilities are re-detected every iteration (§3.7), so a gate that does not apply now
-      // may apply later, and a list that silently dropped it would read as a list that never
-      // had it.
-      text: `quality:${gate.plugin}: ${gate.command.join(' ')}${armingNote(gate)}`,
-    })),
-    // Described from the same config the roster is built from, because this list is written by
-    // hand and the execution list is not — which is 0.99.0's defect in its other direction. A
-    // gate that runs and is never described fails a builder on a rule nobody told it, and the
-    // failure arrives as a bare non-zero exit from a command the brief never mentioned.
-    ...config.extraGates.map((gate) => ({
-      name: `operator:${gate.name}`,
-      text: `operator:${gate.name}: ${gate.command.join(' ')}`,
+    // Every overlay gate, armed or not, annotated rather than omitted — see `overlayGates` for
+    // the two live defects that produced this shape, and for why the brief and the roster now
+    // disagree only about which gates apply and never about what a gate is.
+    ...overlayGates(provisioning.gates, config.extraGates).map((gate) => ({
+      name: gate.name,
+      text: gate.text,
     })),
     {
       name: 'ci',
@@ -4292,23 +4323,20 @@ export function main(argv, io = {}) {
     const applicable = applicableGates(
       [
         ...commandGates(dir, treeDare),
-        ...provisioning.gates
-          // Two arming questions, and they should be one. `frontendOnly` is the older ad-hoc
-          // flag; `capability` is the general form (BORROWED.md R7), and collapsing the first
-          // into the second is a separate item. A gate whose capability is absent is not run
-          // and not warned about: it does not apply, which is different from failing.
+        // The same overlay the brief describes, filtered here to what is actually armed. The
+        // prefixes travel with it, so a brief, a gate line and a reviewer all read a failure in
+        // `operator:release-check` as a project invariant rather than a toolchain result — two
+        // things debugged very differently. Required like everything else: a declared gate that
+        // only warns is a comment.
+        //
+        // Two arming questions, and they should be one. `frontendOnly` is the older ad-hoc
+        // flag; `capability` is the general form (BORROWED.md R7), and collapsing the first
+        // into the second is a separate item. A gate whose capability is absent is not run
+        // and not warned about: it does not apply, which is different from failing.
+        ...overlayGates(provisioning.gates, config.extraGates)
           .filter((gate) => !gate.frontendOnly || hasFrontend(dir))
           .filter((gate) => gate.capability === undefined || capabilities.includes(gate.capability))
-          .map((gate) => ({ name: `quality:${gate.plugin}`, command: gate.command, required: true })),
-        // The operator's own, from protected config. Prefixed so a brief, a gate line and a
-        // reviewer can all tell where a gate came from: a failure in `operator:release-check`
-        // is a project invariant, not a toolchain result, and the two are debugged differently.
-        // Required like everything else here — a declared gate that only warns is a comment.
-        ...config.extraGates.map((gate) => ({
-          name: `operator:${gate.name}`,
-          command: gate.command,
-          required: true,
-        })),
+          .map((gate) => ({ name: gate.name, command: gate.command, required: true })),
       ],
       capabilities,
     );

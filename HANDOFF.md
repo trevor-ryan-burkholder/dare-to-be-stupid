@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.107.0`. Measured at 0.107.0: `npm test` **1738 pass**,
+**State:** `main` at `0.108.0`. Measured at 0.108.0: `npm test` **1744 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -18,6 +18,35 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.108.0 — the brief and the roster now have one origin, so they cannot disagree about a gate
+
+**Closes the hazard 0.107.0 named rather than leaving it armed**, which is this repository's
+recurring shape: the A8 carry sat armed for a version because it was built without being decided.
+
+A gate is written down twice in a run — once in the brief that tells the builder what it must
+pass, once in the roster that executes — and those were assembled independently, by hand, from the
+same inputs. **Both directions of divergence have now been observed**, which is what makes this a
+class rather than a bug:
+
+- **described and not run** (0.99.0): a CLI's brief demanded `schemathesis` against an OpenAPI
+  document, eleven lines above its own statement that the project is not an API. Nothing failed,
+  so nothing said anything; the builder was told to gold-plate.
+- **run and not described** (0.107.0, caught before it shipped): an operator gate wired only into
+  the executing list fails an iteration on a rule the brief never mentioned, arriving as a bare
+  non-zero exit from an unfamiliar command. **The worse of the two.**
+
+`overlayGates` returns `name`, `command` and `text` together, and both call sites project from it.
+The lists still differ about **which gates apply** — execution filters on arming conditions, the
+brief keeps every gate and annotates it, because capabilities are re-detected each iteration and a
+list that silently dropped a not-yet-armed gate would read as one that never had it. What they can
+no longer differ about is **what a gate is**. Six tests, no behaviour change: tier 1 went 1738 →
+1744 with nothing else moving.
+
+**Still not asserted, and unchanged by this:** that `gateTree` composes the overlay into what
+actually runs. The assembly point is a closure in `main` and tier 1 cannot see it — the same gap
+the `quality:` prefix has always had, and the same shape as the guard-registration defect. This
+change narrows the blast radius of that gap without closing it.
 
 ### 0.107.0 — a project's own gates, which is item 21's last engineering prerequisite
 
@@ -42,8 +71,9 @@ described** — the builder failing a rule nobody told it, arriving as a bare no
 command the brief never mentioned. 0.99.0 was a gate described and not run; this is the same seam
 producing the more dangerous orientation. Both lists now come from `config.extraGates`.
 
-**The structural hazard is still there and is worth someone's next session:** two hand-maintained
-lists that must agree, with nothing asserting that they do. Every future gate has to remember both.
+**The structural hazard — two hand-maintained lists that must agree, with nothing asserting they
+do — was closed at 0.108.0, directly below.** It is left described here because it is the reason
+that change exists.
 
 **Not verified, and it is the familiar gap:** tier 1 proves the config validates and both mappings
 are shaped right. **Nothing asserts that `gateTree` composes the operator list into what actually
