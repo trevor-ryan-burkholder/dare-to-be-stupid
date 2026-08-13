@@ -37,6 +37,62 @@ ceiling of its own is an open question - `maxIterations` bounds it in iterations
 honest unit for a loop, and a wall-clock cap that fires mid-iteration would leave a tree nothing
 has judged.
 
+## MEASURED: why a run "hangs", and the SIGTERM claim in this file was wrong
+
+**13 August 2026. Two experiments, both cheap, both settling questions this file had been
+answering by assertion.**
+
+### SIGTERM does kill the driver. What survives is the orphaned child.
+
+This file said *"Run 14 had been sent `SIGTERM` and had not died"* and *"`kill -TERM` did not stop
+a driver here; `kill -9` did."* Measured against a driver blocked inside `execFileSync`:
+
+```
+started pid=25925
+RESULT: SIGTERM killed it
+--- did the grandchild survive? ---
+25933 77188 node -e setTimeout(()=>{},60000)
+```
+
+The driver died on the first `TERM`. **Its child was re-parented — PPID `77188`, not `25925` — and
+kept running.** So what `ps` shows after a kill is very likely the orphaned `claude` child, still
+alive and still spending, being mistaken for a driver that refused to die. Node installs no SIGTERM
+handler here and the default action is termination; there was never a mechanism for the driver to
+ignore it.
+
+**This does not make the two-driver incident imaginary** — two drivers on one tree were observed,
+and the run lock at 0.82.0 is the right answer to it either way. It makes the *stated cause* wrong,
+and an operator acting on it reaches for `-9` when the thing they actually need to kill is a child
+the driver no longer owns.
+
+### The real hang: `execFileSync` waits for EOF, and an orphan holds the pipe open
+
+The gate command below **exits immediately**. It prints `gate-done` and is gone. It also leaves one
+background grandchild alive for eight seconds.
+
+| gate | result |
+|---|---|
+| no timeout (pre-0.81.0) | **`RETURNED after 8162ms`**, `stdout="gate-done"` |
+| `timeout: 4000` (0.81.0) | `THREW after 4009ms code=ETIMEDOUT` |
+
+**`execFileSync` reads the child's stdout until EOF, and EOF does not arrive while any process
+holds the write end.** The command finished in milliseconds; the call blocked for the grandchild's
+whole lifetime. Substitute a dev server, a watcher, a test runner that leaks a handle — anything
+that does not exit — and 8 seconds becomes *forever*, at 0% CPU, indistinguishable from work.
+
+**`health-probe.mjs` already documents this exact mechanism** — *"the pipe never closes … can keep
+the calling process alive indefinitely. Observed exactly once, as a test run that hung for five
+minutes."* It was treated there as a health-probe concern. **It is a general property of every gate
+the driver runs**, and it was unbounded until 0.81.0. That is now the strongest evidence the gate
+ceiling was worth adding, and it arrived after the fact rather than before it.
+
+**Still open, and named rather than fixed: the orphan survives the timeout.** `execFileSync`'s
+timeout signals the direct child; the grandchild in the run above was still alive afterwards
+(`27476`). So 0.81.0 converts an indefinite hang into a bounded, named failure — which is the
+important half — while the leaked process keeps whatever port or memory it held, against every
+later iteration. `health-probe.mjs` already solves this properly for its own child by spawning
+detached and signalling the **process group**; gates do not.
+
 ## 0.85.0 — improve mode: the repository is the input, and it is verified live
 
 **The command had three input shapes and all three were product-shaped** — a PRD to build, an idea
@@ -464,7 +520,11 @@ forever, and "is this pid alive" is not the same question as "is this pid *my* d
 reboot recycles pids.
 
 **Operationally, until then:** check `ps -eo pid,args | grep driver.mjs` before launching, and
-verify a kill actually took. `kill -TERM` did not stop a driver here; `kill -9` did.
+verify a kill actually took. **The claim that once stood here — that `kill -TERM` did not stop a
+driver — was measured on 13 August and is wrong; see the entry at the top of this file.** SIGTERM
+kills the driver on the first try. What survives is its orphaned `claude` child, still running and
+still spending, which is what `ps` shows you afterwards. Kill that too, by pid, and do not read its
+presence as a driver that refused to die.
 
 ## Queue item 3 — the 0.56.0–0.58.0 ship condition, both branches reached live. 13 August 2026
 
