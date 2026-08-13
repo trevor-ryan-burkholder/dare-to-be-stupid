@@ -123,6 +123,9 @@ export function defaultConfig() {
       'reality-check': 'high',
       'lesson-extractor': 'low',
       'security-escalation': 'high',
+      // It writes the only artifact judged against the specification rather than the code, once,
+      // before anything exists to check it against. There is no cheaper moment to think hard.
+      'oracle-author': 'max',
     },
     // A3, the held-out oracle. **Off by default, and that is not the usual cowardice.**
     //

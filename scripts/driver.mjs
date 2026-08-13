@@ -875,6 +875,20 @@ export const PHASE_PERMISSIONS = {
   // not tell. Read-only for the same reason every reviewer is — it reports, it does not fix,
   // and a child that could restore the guard itself would be judging its own repair.
   'security-escalation': { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep'] },
+  // **No tools at all, and that is the whole point of the phase existing.**
+  //
+  // The oracle author writes acceptance cases from the PRD *before any code exists* (§4.6), and
+  // its independence is the only thing it has. It ran as `review` until an audit noticed it was a
+  // persona this table never declared — and the consequence was worse than the tidiness point.
+  // `review` carries `Read`, `Glob` and `Grep`, and the driver authors the oracle **if the store
+  // is missing**, which includes a *resumed* tree where the implementation already exists. An
+  // author able to read `src/` writes cases against the code it is supposed to be independent of,
+  // which is the entire property gone, silently, on exactly the runs where nobody would look.
+  //
+  // Its input is the PRD, handed to it in the prompt. It needs to open nothing. Declaring the
+  // empty set makes the held-out property structural rather than a fact about which directory the
+  // run happened to start from.
+  'oracle-author': { dangerous: false, allowedTools: [] },
 };
 
 /**
@@ -3180,8 +3194,8 @@ export function main(argv, io = {}) {
     const authored = runChild({
       prompt: `${template('oracle-author.md')}\n\n---\n\nPRD.md:\n\n${prd}`,
       model: config.reviewerModel,
-      phase: 'review',
-      effort: config.effort['review'],
+      phase: 'oracle-author',
+      effort: config.effort['oracle-author'],
       cwd,
       env,
     });

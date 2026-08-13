@@ -25,7 +25,8 @@ import {
   resolveArtifactCommand,
   writeOracle,
 } from '../scripts/oracle.mjs';
-import { oracleGate, staticGates } from '../scripts/driver.mjs';
+import { PHASE_PERMISSIONS, claudeArgs, oracleGate, staticGates } from '../scripts/driver.mjs';
+import { defaultConfig } from '../scripts/config.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -241,5 +242,36 @@ describe('the oracle as a gate', () => {
     assert.equal(named({ oracle: true }).includes('oracle'), false, 'armed with no dareDir');
     assert.equal(named({ dareDir: path.join(dir, '.dare') }).includes('oracle'), false, 'dareDir with no arming');
     assert.equal(named({ oracle: true, dareDir: path.join(dir, '.dare') }).includes('oracle'), true);
+  });
+});
+
+describe('the oracle author is its own persona', () => {
+  // Found by an independent audit: it ran as `review`, a phase PHASE_PERMISSIONS never declared,
+  // and the table exists precisely so nothing inherits another phase's powers.
+  //
+  // The consequence was worse than the tidiness point. `review` carries Read, Glob and Grep, and
+  // the driver authors the oracle *if the store is missing* - which includes a resumed tree where
+  // the implementation already exists. An author able to read src/ writes cases against the code
+  // it is meant to be independent of, and the whole held-out property is gone on exactly the runs
+  // where nobody would think to look.
+
+  it('is declared, so it cannot inherit another phase by accident', () => {
+    assert.equal(Object.hasOwn(PHASE_PERMISSIONS, 'oracle-author'), true);
+  });
+
+  it('is given no tools at all, which is what makes held-out structural', () => {
+    const policy = PHASE_PERMISSIONS['oracle-author'];
+    assert.equal(policy.dangerous, false);
+    assert.deepStrictEqual(policy.allowedTools, [], 'it can open the implementation it must not see');
+  });
+
+  it('is spawned with no tool grant, so a resumed tree cannot leak the code to it', () => {
+    const args = claudeArgs({ model: 'm', phase: 'oracle-author' });
+    assert.equal(args.includes('--allowedTools'), false);
+    assert.equal(args.includes('--dangerously-skip-permissions'), false);
+  });
+
+  it('thinks at max, because it writes the one artifact judged against the spec', () => {
+    assert.equal(defaultConfig().effort['oracle-author'], 'max');
   });
 });

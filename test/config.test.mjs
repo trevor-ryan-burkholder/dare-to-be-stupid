@@ -66,6 +66,7 @@ describe('defaultConfig', () => {
         'reality-check': 'high',
         'lesson-extractor': 'low',
         'security-escalation': 'high',
+        'oracle-author': 'max',
       },
       oracle: { enabled: false },
       deploy: { enabled: false, command: [], url: '', smoke: [] },
