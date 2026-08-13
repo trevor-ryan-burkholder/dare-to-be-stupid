@@ -44,11 +44,24 @@ These are the load-bearing properties. A change that breaks one is wrong even if
 - **Nothing defaults to pass.** Missing evidence, unparseable reviewer output, a crashed
   gate, a timeout — all fail. If you are writing `catch { return pass }`, stop.
 - **The guard hook is not editable by what it guards.** Processes inside a run — marked by
-  `DARE_RUNNING` in their environment — may not write `.dare/state.json`,
-  `.dare/config.json` or `.dare/lessons.json`. Outside a run these are ordinary files, and
-  the operator edits them from wherever they like, including from inside Claude Code. The
-  boundary is the run, not the plugin being installed: a rule that also locks out the person
-  who owns the repository has stopped being a guard and started being a nuisance.
+  `DARE_RUNNING` in their environment — may not write **anything under `.dare/`, at any depth,
+  including artifacts that do not exist yet.** The rule is *positional*, not a list of names:
+  enumeration was the original defect, because each new artifact defaulted to writable until
+  somebody remembered to add it, and `red-evidence.json`, `test-report.json` and the archived
+  briefs are all read back as decisions. Outside a run these are ordinary files, and the
+  operator edits them from wherever they like, including from inside Claude Code. The boundary
+  is the run, not the plugin being installed: a rule that also locks out the person who owns the
+  repository has stopped being a guard and started being a nuisance.
+- **The driver must hand the guard to every child it spawns, and this is the one to break most
+  easily.** Registering the hook in `hooks/hooks.json` covers the *operator's* Claude Code
+  sessions; **a `claude -p` child does not load the operator's plugin PreToolUse hooks.** For
+  eleven versions every builder therefore ran completely unguarded while `test/guard.test.mjs`
+  stayed correct and green, because it proves the guard's *logic* and nothing asserted its
+  *invocation*. The hook now travels in `childSettings()`, read from the manifest rather than
+  restated, and `test/live/guard-registration.live.test.mjs` is the only thing that can hold it.
+  **If you touch `claudeArgs` or `childSettings`, run tier 3.** A unit test cannot see this
+  break, and the visible signals all lie: the plugin *is* loaded in those children — its
+  SessionStart hook reaches them.
 - **Style never touches logic.** The Junkion layer renders at output only. It may not
   inform gate results, ratchet state, or reviewer JSON. `DARE_STYLE=plain` must fully
   bypass it.
