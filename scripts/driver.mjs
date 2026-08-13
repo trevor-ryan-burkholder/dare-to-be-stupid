@@ -3594,6 +3594,22 @@ export function runDeploy(deploy, options) {
 }
 
 /**
+ * How a quality-plugin gate's arming condition reads in a brief.
+ *
+ * Empty for a gate that always applies. A gate that is armed by something — a frontend, a
+ * capability — says so, because the alternative is a builder reading "every iteration must
+ * pass" over a command that will never run against this project.
+ *
+ * @param {{ frontendOnly?: boolean, capability?: string }} gate
+ * @returns {string}
+ */
+export function armingNote(gate) {
+  if (gate.frontendOnly === true) return ' (armed once this repo renders a UI)';
+  if (gate.capability !== undefined) return ` (armed only for a ${gate.capability} project)`;
+  return '';
+}
+
+/**
  * Run the mutation gate once, at ship time, over what this run itself changed.
  *
  * Called from exactly one place — a passing panel with no other evidence that the suite can
@@ -4154,7 +4170,19 @@ export function main(argv, io = {}) {
     ...toolchainGates.gates.map((gate) => ({ name: gate.name, text: `${gate.name}: ${gate.command.join(' ')}` })),
     ...provisioning.gates.map((gate) => ({
       name: `quality:${gate.plugin}`,
-      text: `quality:${gate.plugin}: ${gate.command.join(' ')}${gate.frontendOnly ? ' (armed once this repo renders a UI)' : ''}`,
+      // Both arming conditions are annotated, and the second was missing for one version.
+      // **Found by watching a live run:** an `api`-gated plugin was listed in a CLI's brief as a
+      // gate "every iteration must pass", two lines above the brief's own statement that this
+      // project is "none of api, network-service". The gate was correctly filtered out at
+      // execution, so nothing ever failed — the builder was simply told to satisfy a command
+      // that would never run, on a schema a CLI has no reason to own. A brief that demands
+      // gold-plating and a gate list that cannot fail are the same defect seen from two sides.
+      //
+      // Annotated rather than omitted, following `frontendOnly`'s precedent and for its reason:
+      // capabilities are re-detected every iteration (§3.7), so a gate that does not apply now
+      // may apply later, and a list that silently dropped it would read as a list that never
+      // had it.
+      text: `quality:${gate.plugin}: ${gate.command.join(' ')}${armingNote(gate)}`,
     })),
     {
       name: 'ci',

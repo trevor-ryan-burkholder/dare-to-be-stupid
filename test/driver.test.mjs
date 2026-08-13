@@ -56,6 +56,7 @@ import {
   assertOwnershipCovers,
   carriedReport,
   TOOL_CACHE_PATHS,
+  armingNote,
   childBudget,
   isTestEvidence,
   narrowedPanelPlan,
@@ -4305,5 +4306,31 @@ describe('isTestEvidence', () => {
 
   it('handles a Windows-shaped path, because contributors are on three platforms', () => {
     assert.equal(isTestEvidence('tests\\perf.test.js'), true);
+  });
+});
+
+// Found by watching a live run, which is the only place it was visible. A CLI's brief listed
+// `quality:schemathesis ... docs/openapi.yaml` under "gates every iteration must pass", two
+// lines above the same brief saying the project is "none of api, network-service". The gate was
+// correctly filtered out at execution, so nothing ever failed - the builder was simply told to
+// satisfy a command that would never run, on a schema a CLI has no reason to own.
+describe('armingNote', () => {
+  it('says nothing for a gate that always applies', () => {
+    assert.equal(armingNote({}), '');
+    assert.equal(armingNote({ frontendOnly: false }), '');
+  });
+
+  it('names the frontend condition, as it always did', () => {
+    assert.equal(armingNote({ frontendOnly: true }), ' (armed once this repo renders a UI)');
+  });
+
+  it('names a capability condition, which is what was missing', () => {
+    assert.equal(armingNote({ capability: 'api' }), ' (armed only for a api project)');
+  });
+
+  it('prefers the frontend wording when a gate somehow carries both', () => {
+    // Not a shape any current plugin has. Asserted so the answer is decided rather than
+    // whichever branch happens to come first after an edit.
+    assert.equal(armingNote({ frontendOnly: true, capability: 'api' }), ' (armed once this repo renders a UI)');
   });
 });

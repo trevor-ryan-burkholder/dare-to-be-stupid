@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.98.0`. Measured at 0.98.0: `npm test` **1683 pass**,
+**State:** `main` at `0.99.0`. Measured at 0.99.0: `npm test` **1687 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**. `npm run test:live` **27 of 27 across 11 files** at 0.96.0;
 0.97.0 touches no spawn path or template contract.
@@ -14,6 +14,33 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.99.0 — a CLI's brief demanded an API gate, found by reading a live run's brief
+
+**0.94.0's defect, visible only from inside a run.** `oracle1`'s iteration-1 brief listed
+
+```
+- quality:schemathesis: schemathesis run --dry-run -c all docs/openapi.yaml
+```
+
+under *"Gates every iteration must pass"* — **eleven lines above** the same brief stating this
+project is *"none of api, network-service"*.
+
+The gate itself was filtered correctly and never ran; `capability: 'api'` does its job at the
+execution site. What was wrong is the **brief**, which lists provisioning gates while applying
+only the older `frontendOnly` annotation. So the builder was instructed to satisfy a command that
+could never run, against an OpenAPI schema a CLI has no reason to own — a brief demanding
+gold-plating, and a gate list that cannot fail, which are one defect seen from two sides. Nothing
+would ever have reported it.
+
+`armingNote` now annotates both conditions. **Annotated rather than omitted**, following
+`frontendOnly`'s precedent and for its reason: capabilities are re-detected every iteration
+(§3.7), so a gate that does not apply now may apply later, and silently dropping it would read as
+a list that never had it.
+
+**The lesson is the one this file keeps relearning.** Three defects this session were found by
+execution and invisible to 1687 unit tests — the `.hypothesis/` cache, the ssh rate-limit, and
+this. A brief is output nobody asserts on, and it is handed to the one reader who will act on it.
 
 ### Item 7, interim — A3 armed for the first time, and its authoring rule makes it blind to the defect class this project keeps shipping
 
