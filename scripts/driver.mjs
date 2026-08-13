@@ -2824,7 +2824,7 @@ export function unprovenIds(options) {
 
 /**
  * @param {string[]} argv
- * @returns {{ input: string, yes: boolean, confirmPrd: boolean }}
+ * @returns {{ input: string, yes: boolean, confirmPrd: boolean, improve: boolean }}
  */
 export function parseDriverArgs(argv) {
   const flags = new Set(argv.filter((argument) => argument.startsWith('--')));
@@ -2833,6 +2833,11 @@ export function parseDriverArgs(argv) {
     input: positional.join(' ').trim(),
     yes: flags.has('--yes'),
     confirmPrd: flags.has('--confirm-prd'),
+    // Improve mode (§2.1). The other three input shapes are all product-shaped — a PRD to
+    // build, an idea to specify, or nothing at all — and none of them can express "this
+    // repository already exists, find what is wrong with it". In improve mode the positional
+    // argument is not a PRD path and not an idea: it is an optional area to focus on.
+    improve: flags.has('--improve'),
   };
 }
 
@@ -3303,7 +3308,7 @@ export function main(argv, io = {}) {
     write(verbatim(/** @type {Error} */ (error).message));
     return 1;
   }
-  const { input, confirmPrd } = parseDriverArgs(argv);
+  const { input, confirmPrd, improve } = parseDriverArgs(argv);
 
   // What Phase 0 and Phase 1 cost. These run before `driveRun` exists, so without carrying
   // them the ceiling silently restarts at zero when the loop begins — the defect the first
@@ -3372,7 +3377,49 @@ export function main(argv, io = {}) {
 
   // ---- Phase 0: ideate --------------------------------------------------
   const prdPath = path.join(cwd, 'PRD.md');
-  if (input !== '' && existsSync(path.resolve(cwd, input))) {
+  if (improve) {
+    // Improve mode refuses a repository with no history rather than authoring against nothing.
+    // An improvement author handed an empty tree has nothing to ground a requirement in, and
+    // ungrounded requirements are this project's most expensive defect class: the builder
+    // cannot satisfy them, the stall counter climbs, and the run ends without anyone able to
+    // say which line was impossible. `hasMeaningfulHistory` is the existing, tested signal for
+    // "there is prior work here", and it is used as the proxy rather than a second detector.
+    if (greenfield) {
+      write(
+        verbatim(
+          'improve mode needs a repository that already exists, and this one has no meaningful history. ' +
+            'Give a PRD or an idea instead.',
+        ),
+      );
+      return 1;
+    }
+    write(verbatim(input === '' ? 'authoring PRD.md from this repository' : `authoring PRD.md from this repository, focused on: ${input}`));
+    const authored = runChild({
+      prompt:
+        `${template('improve-author.md')}\n\n---\n\n` +
+        (input === ''
+          ? 'No area was named. Examine the repository as a whole.'
+          : `Focus your examination here, and say so if the ground truth leads elsewhere:\n\n${input}`),
+      model: config.prdModel,
+      // The `prd` phase already carries Read, Glob and Grep, which is exactly what an author
+      // grounding requirements in real `file:line` evidence needs. A new phase would have
+      // meant a new permissions entry and a new effort key for the same capability.
+      phase: 'prd',
+      effort: config.effort['prd'],
+      cwd,
+      env,
+    });
+    if (!authored.ok) {
+      write(verbatim(`improvement authoring failed: ${authored.raw.slice(0, 800)}`));
+      write(stamp('ABORTED', { mode }));
+      return 1;
+    }
+    if (chargePreLoop(authored)) {
+      preLoopBudgetEnd('improvement authoring');
+      return 1;
+    }
+    if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
+  } else if (input !== '' && existsSync(path.resolve(cwd, input))) {
     write(verbatim(`using ${input}`));
     if (path.resolve(cwd, input) !== prdPath) writeFileSync(prdPath, readFileSync(path.resolve(cwd, input), 'utf8'));
   } else {
@@ -3407,7 +3454,7 @@ export function main(argv, io = {}) {
     if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
   }
 
-  commitPhase('dare: author PRD.md');
+  commitPhase(improve ? 'dare: author PRD.md from the existing repository' : 'dare: author PRD.md');
   if (confirmPrd) {
     write(verbatim('PRD.md is written and committed. Review it, then re-run without --confirm-prd.'));
     return 0;

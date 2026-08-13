@@ -131,6 +131,38 @@ Numbered requirements are load-bearing: the reviewer emits one verdict object pe
 requirement ID, so the PRD's structure *is* the DoD checklist. Unattended by default;
 `--confirm-prd` pauses for a human read before the loop starts.
 
+### 2.1 Phase 0, improve mode — the repository *is* the input
+
+`--improve`, optionally with an area to focus on. The other three input shapes are all
+**product-shaped** — a PRD to build, an idea to specify, or nothing at all — and none of them can
+express *"this repository already exists; find what is wrong with it."* Improve mode is that
+fourth shape, and everything downstream is unchanged: it produces the same `PRD.md`, with the same
+`PRD-<section>.<n>` ids, judged by the same panel against the same DoD.
+
+`templates/improve-author.md` runs in the **`prd` phase**, which already carries `Read`, `Glob`
+and `Grep` — exactly what an author grounding requirements in real `file:line` evidence needs, and
+the reason this needed no new permissions entry.
+
+Four properties carry the mode, and each of them is a defect this project has already paid for:
+
+- **Every requirement cites `file:line` for the current behaviour.** An ungrounded requirement is
+  an unsatisfiable gate, which is this codebase's most expensive failure class — the builder
+  cannot satisfy it, the stall counter climbs, and the run ends with nobody able to say which line
+  was impossible.
+- **Between three and eight requirements.** Each costs at least one iteration against a fixed
+  budget. Forty improvements produce a loop that half-does all of them and finishes none.
+- **Nothing may rename, move or delete an existing passing test.** The ratchet protects every test
+  id that has ever passed, so a renamed test reads as a *lost* one and the repair is hard-reset
+  every iteration, forever. It is the most expensive requirement the author could write and it
+  looks completely harmless.
+- **No rewrites, migrations or restructurings.** The builder works under the scope rule — every
+  changed line traces to its requirement — and "move the parser into its own module" has no
+  falsifying observation while licensing a diff that touches everything.
+
+**Refused on a repository with no meaningful history**, using `hasMeaningfulHistory` rather than a
+second detector. An improvement author handed an empty tree has nothing to ground a requirement
+in, so it would invent them, which is the first bullet in its worst form.
+
 ### Phase 1 — Design (the phase the original spec skipped)
 A `claude -p` call with `templates/architect.md` produces, into `docs/`:
 `architecture.md` (components + boundaries), `api-contract.md`, `data-model.md`, and a
@@ -1263,6 +1295,7 @@ dare-to-be-stupid/
 │   └── guard.mjs                 # the limit that survives permission skipping
 ├── templates/
 │   ├── prd-author.md             # idea → PRD           (Phase 0)
+│   ├── improve-author.md         # repository → PRD     (Phase 0, --improve)
 │   ├── architect.md              # PRD → design docs     (Phase 1)
 │   ├── builder-system.md         # Phase 2
 │   ├── reviewer-system.md        # Phase 5 (the actual product)

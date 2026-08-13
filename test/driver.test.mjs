@@ -2695,7 +2695,21 @@ describe('parseDriverArgs', () => {
       input: 'a todo app',
       yes: false,
       confirmPrd: false,
+      improve: false,
     });
+  });
+
+  // Improve mode. The other three input shapes are product-shaped - "specify a thing to build" -
+  // and none of them can express "this repository exists, find what is wrong with it".
+  it('reads the improve flag, and defaults it off', () => {
+    assert.equal(parseDriverArgs([]).improve, false);
+    assert.equal(parseDriverArgs(['--improve']).improve, true);
+  });
+
+  it('keeps a positional argument alongside improve, as the thing to focus on', () => {
+    const parsed = parseDriverArgs(['--improve', 'the', 'csv', 'parser']);
+    assert.equal(parsed.improve, true);
+    assert.equal(parsed.input, 'the csv parser');
   });
 
   it('reads a path as the input', () => {
@@ -2711,6 +2725,7 @@ describe('parseDriverArgs', () => {
       input: 'an idea',
       yes: true,
       confirmPrd: true,
+      improve: false,
     });
   });
 });

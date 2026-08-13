@@ -15,7 +15,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 
-import { renderTemplate } from '../scripts/driver.mjs';
+import { renderTemplate, requiredIdsFor } from '../scripts/driver.mjs';
 import { describe, it } from 'node:test';
 
 import { parseAssumptions } from '../scripts/assumptions.mjs';
@@ -624,5 +624,54 @@ describe('the reviewer states properties rather than examples', () => {
   it('asks for more than one member of the class where possible', () => {
     // One example invites one repair. The narrow fix is the failure mode being defended against.
     assert.equal(REVIEWER.includes('at least one of which the'), true);
+  });
+});
+
+// Improve mode's author (DESIGN.md §2.1). The other three input shapes are product-shaped and
+// none of them can express "this repository exists, find what is wrong with it".
+describe('the improve-author template', () => {
+  const IMPROVE = readFileSync(new URL('../templates/improve-author.md', import.meta.url), 'utf8');
+
+  it('produces the same id shape the auditor and requiredIdsFor expect', () => {
+    // The whole pipeline keys off PRD-<section>.<n>. An improvement document that numbered its
+    // requirements any other way would be judged against the DoD lines alone.
+    assert.equal(/PRD-<section>\.<n>/.test(IMPROVE), true);
+    assert.equal(requiredIdsFor(IMPROVE).includes('PRD-1.1'), true, 'the worked example does not parse as an id');
+  });
+
+  it('demands file:line evidence, because an invented requirement is an unsatisfiable gate', () => {
+    assert.equal(IMPROVE.includes('file:line'), true);
+    assert.equal(/grounded/i.test(IMPROVE), true);
+  });
+
+  it('caps the number of requirements rather than leaving it to judgement', () => {
+    // A document listing forty improvements produces a loop that half-does all of them against
+    // a fixed iteration budget and finishes none.
+    assert.equal(/three and eight/i.test(IMPROVE), true);
+  });
+
+  // The most expensive requirement an improvement author could write, and the one that looks
+  // most harmless. The ratchet protects every test id that has ever passed, so a renamed test
+  // reads as a lost one and the repair is hard-reset every iteration, forever.
+  it('forbids renaming or deleting an existing passing test, and says why', () => {
+    assert.equal(/renames?, moves?,? or deletes? an existing passing test/i.test(IMPROVE), true);
+    assert.equal(/ratchet/i.test(IMPROVE), true);
+  });
+
+  it('forbids rewrites and restructuring, which the scope rule cannot police', () => {
+    assert.equal(/rewrite/i.test(IMPROVE), true);
+    assert.equal(/scope rule/i.test(IMPROVE), true);
+  });
+
+  it('tells the author to say so rather than pad the list when the repository is sound', () => {
+    assert.equal(/padding/i.test(IMPROVE), true);
+  });
+
+  it('puts wrong answers at exit 0 first in the search order', () => {
+    // The defect class two dogfood runs shipped, and the one no deterministic gate can see.
+    const wrongAnswers = IMPROVE.indexOf('Wrong answers at exit 0');
+    const untested = IMPROVE.indexOf('Behaviour the tests assert nothing about');
+    assert.equal(wrongAnswers > 0, true, 'the search order does not mention wrong answers at exit 0');
+    assert.equal(wrongAnswers < untested, true, 'wrong answers are not ranked above untested behaviour');
   });
 });

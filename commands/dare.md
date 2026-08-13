@@ -1,6 +1,6 @@
 ---
-description: Hand a PRD, an idea, or nothing at all to an autonomous build loop. Pre-production only.
-argument-hint: [path-to-PRD.md | "an idea in quotes" | (nothing)]
+description: Hand a PRD, an idea, an existing repository, or nothing at all to an autonomous build loop. Pre-production only.
+argument-hint: [path-to-PRD.md | "an idea in quotes" | --improve ["area"] | (nothing)]
 allowed-tools: Bash(node:*), Bash(git status:*), Bash(git rev-parse:*)
 ---
 
@@ -12,6 +12,10 @@ Start an autonomous run in the current repository.
 
 - a path to an existing PRD — the loop starts at the design phase
 - an idea in quotes — a PRD is authored first
+- `--improve`, optionally with an area in quotes — **the repository already exists.** A cold
+  child reads it and writes `PRD.md` from what it finds, grounding every requirement in a real
+  `file:line`, then the ordinary loop fixes them. Refused on a repository with no meaningful
+  history, because an author with nothing to read invents requirements the builder cannot satisfy
 - nothing — "dare me" mode invents its own idea, if `dareMe.enabled` is set
 
 ## Do this, in order
