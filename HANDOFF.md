@@ -181,10 +181,25 @@ fail again — that invariant is the only reason this loop terminates. The defec
 ratchet protected an id; it is that the id was allowed to encode an implementation as a
 requirement in the first place. The oracle is upstream of that, which is why it is the fix.
 
-**Open question worth an experiment, not a patch:** whether `gate-integrity` should refuse a test
-whose assertion is an expression over the input rather than a literal — `toBe((0.1 + 0.2) / 2)`
-recomputes the implementation instead of stating an expected value. It would have caught this one.
-It would also fail legitimate table-driven tests, so measure before building.
+**Proposed, measured, and rejected — do not rebuild it.** The tempting patch was a `gate-integrity`
+rule refusing an assertion whose expected value is an *expression* rather than a literal, since
+`toBe((0.1 + 0.2) / 2)` recomputes the implementation instead of stating an answer. Measured
+against the four shipped dogfood suites — **337 assertions, 6 matches:**
+
+| match | verdict |
+|---|---|
+| `toBe(USAGE + '\n')` × 4 | legitimate: a constant concatenated with a newline |
+| `toBe(-1e308)` | **false positive of the detector itself**, matched on the minus sign |
+| `toBe((0.1 + 0.2) / 2)` | the real defect |
+
+**One true positive, five false.** §4's own rule settles it: a false positive costs a full
+iteration on a correct repository, a false negative costs nothing the reviewer was not already
+covering. This would have been the eighth unsatisfiable gate.
+
+It is also not syntactically detectable in principle. What makes that assertion wrong is that it
+**recomputes the implementation over the same literals the input contains** — a semantic
+relationship between test and fixture, not a shape a regex can see. The oracle catches it because
+it never asks the implementation what the answer is, which is the whole argument for §4.6.
 
 ## Run 12 SHIPPED — and shipped a wrong answer past a 110,877-case audit
 
