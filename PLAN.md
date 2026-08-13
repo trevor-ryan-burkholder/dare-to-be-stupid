@@ -282,9 +282,27 @@ test file. Two of five Phase 0 items were already done before this plan was writ
 Phase 3 item shipped a known hazard; all three were found by reading `HANDOFF.md` rather than
 the plan.
 
-### 23. Closing consistency pass — OPEN
+### 23. Closing consistency pass — DONE (docs only, no bump: docs are not a shipped path)
 `DESIGN.md` and `CLAUDE.md` describe what the code does; this file's statuses all terminal;
 `AUDIT.md`-style read of whatever phase 0–3 changed.
+
+**Two real gaps found, both from 0.88.0–0.94.0 and both user-facing.** `protected-guard` — a
+whole deny category — appeared in **no** document: README said the guard "denies four
+categories" and listed four, `DESIGN.md` §6 never named it, and `CLAUDE.md`'s invariant *titled*
+"the guard hook is not editable by what it guards" described only `.dare/` in its body. All
+three fixed. README's `qualityPlugins` default was also stale by one plugin.
+
+Two new invariants written into `CLAUDE.md`, because both are load-bearing and both are easy to
+delete by accident: a carried requirement is a **pre-filter** and a narrowed `pass` must trigger
+the full panel, and a requirement evidenced only by a test file is **never** carried.
+
+**Ten documented values were cross-checked against the code by executing it**, not by reading:
+every config default, the `$0.0001` child-budget floor, the canonical OpenAPI path agreeing
+between the gate and the fuzzer argv, and the tool-cache list. All ten matched. Every
+`DESIGN.md` §10 config row exists for all 30 keys.
+
+**Statuses are terminal or explicitly parked:** 10 DONE, 1 NEEDS OPERATOR (17), 2 BLOCKED on an
+experiment (10, 14), 8 PREPARED and handed over, 1 refused (21).
 
 ---
 

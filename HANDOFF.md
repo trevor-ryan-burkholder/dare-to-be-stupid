@@ -15,6 +15,33 @@ line in the same commit.
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
 
+### Item 23 — the closing consistency pass. DONE, docs only
+
+**Two user-facing gaps, both silent, both from work landed in the last day.**
+`protected-guard` — an entire deny category, added 0.88.0 — was in **no** document. README said
+the guard *"denies four categories"* and listed four. `DESIGN.md` §6 never mentioned it.
+`CLAUDE.md`'s invariant carried the title *"the guard hook is not editable by what it guards"*
+over a body that described only `.dare/` — the title had been aspirational for months and became
+true without the text noticing. All three now say it, including *why it almost never fires*.
+README's `qualityPlugins` default was stale by one plugin.
+
+**Two invariants added to `CLAUDE.md`**, because they are load-bearing and trivially deletable:
+a carried requirement is a pre-filter and a narrowed `pass` must trigger the full panel; and a
+requirement evidenced only by a test file is never carried.
+
+**The audit was executed rather than read.** Ten documented values were asserted against the
+running code — every new config default, the `$0.0001` budget floor, the canonical OpenAPI path
+agreeing between the `docs` gate and the fuzzer argv, the tool-cache list — and all ten matched.
+All 30 config keys have a `DESIGN.md` §10 row.
+
+**No version bump**, and that is the layout working: `README.md`, `DESIGN.md` and `CLAUDE.md`
+are not shipped paths, so the plugin cache is unaffected by any of it.
+
+**Not verified:** this pass checked *values*, not *prose*. Nothing here proves that a paragraph
+describing a mechanism describes it correctly — only that the numbers and names in it are the
+ones the code uses. The one class of error it would not have caught is the class item 5 was:
+a confident sentence about something nobody checked.
+
 ### Item 22 — the stratigraphy sweep, and it found a hazard the sweep itself had warned about
 
 Six stale strata in this file are now reconciled in place rather than struck, each with a dated

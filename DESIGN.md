@@ -1100,6 +1100,29 @@ The builder runs with `--dangerously-skip-permissions`. That's the premise. PreT
 hooks fire **regardless** of permission mode, which makes them the only reliable place to
 put a limit when everything else is off.
 
+**Five deny categories:** `protected-state` (anything under `.dare/`, positionally),
+`protected-guard` (the hook and its manifest), `git-history`, `rm-recursive` and `nested-dare`.
+The README carries the table; what belongs here is why the second one exists.
+
+**`protected-guard`, added 0.88.0.** `CLAUDE.md`'s invariant reads *"the guard hook is not
+editable by what it guards"*. That was true of `.dare/` and **false of the guard**: the
+positional rule protected the run's evidence, and nothing protected the file deciding what a run
+may do. A builder holding `--dangerously-skip-permissions` could rewrite its own constraint, and
+no required id would have noticed.
+
+It is positional for the same reason `protected-state` is, and **self-referential**: the path
+comes from `import.meta.url`, so it protects whichever copy of the guard is actually deciding,
+wherever it was loaded from. A literal path would be an enumeration, and enumeration is the
+defect §6 has already paid for. Reads are refused with writes, as `protected-state` refuses
+`cat .dare/config.json`, because a shell string cannot be told from a write reliably and a rule
+that fails open on the first heredoc is worse than a blunt one; the Read tool is not hooked, so
+reading the guard by the ordinary route is untouched.
+
+**For an ordinary target it never fires**, because the guard lives in an install cache outside
+the repository under test. It exists for the one case where the repository under test *is* the
+plugin — the case that must be safe before the loop is ever pointed at this repository, and one
+of the three prerequisites `HANDOFF.md` names for that.
+
 **A hook only fires where it is registered, and for eleven versions it was registered in the
 wrong place.** `hooks/hooks.json` registers the guard with *Claude Code*, which applies it to
 the operator's own sessions. **A `claude -p` child does not load the operator's plugin

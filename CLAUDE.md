@@ -52,6 +52,12 @@ These are the load-bearing properties. A change that breaks one is wrong even if
   operator edits them from wherever they like, including from inside Claude Code. The boundary
   is the run, not the plugin being installed: a rule that also locks out the person who owns the
   repository has stopped being a guard and started being a nuisance.
+  **And the file itself, since 0.88.0.** This bullet's title was true of `.dare/` and false of
+  the guard for a long time: nothing stopped a builder rewriting the rule that constrained it.
+  `protected-guard` closes that, resolved from `import.meta.url` so it protects whichever copy is
+  actually deciding. For any ordinary target it never fires — the guard lives in an install cache
+  outside the tree — so it exists for the one case where the repository under test *is* the
+  plugin.
 - **The driver must hand the guard to every child it spawns, and this is the one to break most
   easily.** Registering the hook in `hooks/hooks.json` covers the *operator's* Claude Code
   sessions; **a `claude -p` child does not load the operator's plugin PreToolUse hooks.** For
@@ -72,6 +78,18 @@ These are the load-bearing properties. A change that breaks one is wrong even if
   to a scoped reviewer rather than resetting, because a false pin under monotonicity is
   unremovable and turns a formatter run into an objective the builder cannot satisfy. If you
   add a fourth monotonic property, design its escape before its enforcement.
+- **A carried requirement is a pre-filter, never a substitute for the panel** (`DESIGN.md` §4.3,
+  0.92.0). Carrying skips re-review on an iteration that is going to fail; a narrowed panel that
+  returns `pass` triggers the **full** panel, which then decides. Delete that and a run can ship
+  with a whole reviewer never having looked at the final tree — run 10's ship was saved by the
+  *design* auditor spotting an inert `bin` that no requirement asked about. Two refusals to
+  narrow go with it: everything carried, and every reviewer emptied.
+- **A requirement evidenced only by a test file is never carried.** A pin fingerprints the whole
+  evidenced file, so if that file is a test, the *source* can regress while the fingerprint
+  holds. Recorded as a hazard in `HANDOFF.md` before the carry existed, armed by building the
+  carry without deciding it, and closed by `isTestEvidence`. The pattern is deliberately broad
+  because the errors are asymmetric: refusing to carry costs one re-review, wrongly carrying
+  hides a regression for the rest of the run.
 - **Quarantine is not a pass.** A quarantined security element blocks `SHIPPED`. Anything that
   lets a run ship over recorded lost protection has removed the only thing making the word mean
   something.

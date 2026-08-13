@@ -71,11 +71,12 @@ tooling and quality plugins.
 
 `hooks/guard.mjs` is a PreToolUse hook. PreToolUse hooks fire regardless of permission
 mode, so it keeps working when the builder runs with `--dangerously-skip-permissions`
-(`DESIGN.md` §6). It reads the hook payload as JSON on stdin and denies four categories:
+(`DESIGN.md` §6). It reads the hook payload as JSON on stdin and denies five categories:
 
 | Rule              | What it blocks                                                                                                   | What it deliberately leaves alone                                                                          |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `protected-state` | **mutation of any path under `.dare/`, at any depth, including files that do not exist yet** — but only from inside a run | reads, always; every write by the operator outside a run; `tsconfig.json`; an app's own `src/state.json` |
+| `protected-guard` | **the guard hook itself and the manifest that registers it** — reads and writes both, and only from inside a run | every path in any ordinary target, since the guard lives in an install cache outside it; the operator, always; a project's own `src/hooks/guard.mjs`; `test/guard.test.mjs` |
 | `git-history`     | `push --force` / `-f` / `--force-with-lease`, `rebase`, `filter-branch`, `reflog expire`                         | ordinary pushes, `git reset --hard` (the ratchet needs it), `git reflog`, "rebase" inside a commit message |
 | `rm-recursive`    | recursive `rm` outside the temp directory, and any recursive `rm` whose target cannot be resolved before it runs | non-recursive `rm`, `rm -rf /tmp/...`, `rmdir`                                                             |
 | `nested-dare`     | a builder invoking the slash command — **and any Bash whose text contains it, including a commit message describing it, and any text in command position, heredoc bodies included** | the word inside a longer token: `dare-logs/`, `.dare/`, `dare-to-be-stupid`. **Not** prose in general — see below |
@@ -92,6 +93,14 @@ silently never happens and the sequence can look like it worked. Telling an invo
 mention needs real shell parsing, and a whitelist that fails open on the first heredoc would be
 worse than a blunt rule — so it is left blunt and written down instead. **Prefer the `Edit` tool
 over a heredoc whenever the text names the command.**
+
+**`protected-guard` almost never fires, and that is the design.** The guard normally lives in
+`~/.claude/plugins/cache/…`, well outside the repository under test, so no path in that tree
+resolves to it. It exists for the one case where the repository under test **is** the plugin —
+which has to be safe before the loop is ever pointed here. It is resolved from
+`import.meta.url`, so it protects whichever copy of the guard is actually deciding, wherever it
+was loaded from; a literal path would be an enumeration, and enumeration is the defect this
+repository has paid for repeatedly.
 
 **`protected-state` is positional, not a list of names.** It used to name three files and leave
 the rest of `.dare/` writable; that enumeration was the defect, because each new artifact
@@ -299,7 +308,7 @@ unattended run hours of behaviour nobody asked for, with no way to tell.
 | `requireUnanimous`   | `true`                                | one dissent blocks the ship                                |
 | `advisory.minConfidence` | `0.7`                             | below this an advisory finding is recorded, not acted on   |
 | `lessons`            | `{ "enabled": true, "maxPerBrief": 3 }` | evidence-derived lesson memory                           |
-| `qualityPlugins`     | `["impeccable", "knip", "semgrep"]`   | provisioned before the loop; impeccable is required, the other two degrade to a warning |
+| `qualityPlugins`     | `["impeccable", "knip", "semgrep", "schemathesis"]` | provisioned before the loop; impeccable is required, the rest degrade to a warning. `impeccable` is armed by a frontend, `schemathesis` by the `api` capability |
 | `deploy`             | `{ "enabled": false, "command": [], "url": "", "smoke": [] }` | off by default. When enabled, all four are required: the argv array runs **before** the ship decision and the smoke checks must pass against `url`, or the tag is withheld. Fixed hosts only — push-triggered hosts have no exit code. `DESIGN.md` §10.1 |
 | `chaos`              | `1`                                   | scope budget: 1 surgical, 2 normal, 3 feral                |
 | `realityCheck.after` | `3`                                   | stalled iterations before asking if the PRD is buildable   |
