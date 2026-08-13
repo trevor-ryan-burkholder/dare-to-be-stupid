@@ -116,13 +116,26 @@ template. Planting run 12's exact defect into a copy of the tree produces `{"mea
 every headline failure this project has shipped. **Item 14 is the missing half, not an
 enhancement.** Dispute/quarantine remains unexercised — nothing disputed a case.
 
-### 8. R14 — the panel versus one reviewer at equal compute — OPEN, **PREPARED** (`DOGFOOD.md` operator queue)
+### 8. R14 — the panel versus one reviewer at equal compute — DONE (panelA vs panelB)
 Config-only (`reviewers`, `ownership`, `effort`), run 6-vs-7 method. Evidence points both ways:
 run 12's correctness reviewer fuzzed 110,877 cases alone; run 10's *design* auditor caught the
 inert `bin`. **This gates item 10's shape:** if one reviewer at `max` matches the panel, the
 parallel-panel half of the async rewrite is moot and the panel shrinks instead.
 **Done when:** two comparable runs differ only in panel shape and the cost/verdict delta is
 recorded.
+
+**Done.** One reviewer at `max` is **2.6× cheaper and 2.2× faster** per full panel (1.40M/664s vs
+3.36–3.64M/1360–1451s, the control having n=2 because `oracle1` is a second sample). Findings are
+inside the control's own 4-to-5 spread; the solo went *deeper* on `DoD-6` (three input classes vs
+one) and the panel's single extra finding was **false** — the `DoD-4` unsatisfiable line fixed at
+0.101.0.
+
+**What the experiment actually bought was a defect:** the solo config produced zero security pins
+and silently disabled A4 (fixed, 0.103.0).
+
+**Recommendation: do not shrink the panel on this evidence — build item 10's parallelism.** The
+saving is real but it is a cost argument, and the panel's dominant cost is wall clock, `3×` where
+it could be `max()`. **Item 10 is therefore unblocked with the panel kept.**
 
 ### 9. Case I — racing with live builders, current state — OPEN (verify first), **PREPARED**
 Queue item 1 raced live builders and 0.83.0 fixed the landing. Decide whether a full case-I
@@ -140,7 +153,7 @@ be the first race whose candidates carry distinct stall hypotheses (C5).
 
 ## Phase 2 — the repriced rewrite. After item 8.
 
-### 10. R21 — async driver: heartbeat, parallel panel, process groups — OPEN, **BLOCKED on item 8**
+### 10. R21 — async driver: heartbeat, parallel panel, process groups — OPEN, **UNBLOCKED: item 8 says keep the panel and parallelise it**
 One move (`execFileSync` → async spawn with process groups) closes three named opens: the
 hung-vs-working blindness, the sequential three-read panel (only if item 8 keeps the panel),
 and the orphan pipe (subsuming item 2's mechanism driver-wide). Constraints from

@@ -41,6 +41,55 @@ a list that never had it.
 execution and invisible to 1687 unit tests — the `.hypothesis/` cache, the ssh rate-limit, and
 this. A brief is output nobody asserts on, and it is handed to the one reader who will act on it.
 
+### Item 8 — DONE. The panel versus one reviewer, measured. R14's answer is "cheaper, and not obviously worse — but do not shrink it on this"
+
+Two runs, run 8's PRD, byte-identical but for `reviewers`, `ownership` and `effort`. Both ended
+`BUDGET`. **`oracle1` doubles as a second sample of the three-reviewer arm**, which gives the
+control an n of 2 for free.
+
+**Cost, per full panel over all sixteen ids:**
+
+| arm | reviewers | panel tokens | panel wall |
+|---|---|---|---|
+| three reviewers (oracle1) | 3 | 3.36M | 1360s |
+| three reviewers (panelA) | 3 | 3.64M | 1451s |
+| **one reviewer at `max`** | **1** | **1.40M** | **664s** |
+
+**2.6× cheaper, 2.2× faster.** That is a large, unambiguous saving and it is the strongest thing
+R14 has going for it.
+
+**Findings — and this is where counting fails.** oracle1 found 4, panelA 5, panelB 4. The control
+arm's own spread is 4-to-5, so the count difference is inside the noise. Reading the content
+matters more, and it says two opposite things:
+
+- **The solo reviewer went deeper.** On `DoD-6-adversarial-input` it enumerated **three** input
+  classes that produce a wrong answer at exit 0; panelA's found one. Both caught the same core
+  `mean` defect independently.
+- **The panel's one extra finding was false.** panelA's design auditor failed `DoD-4` on a CLI for
+  having no health endpoint — which its own gate policy exempts. That is 0.101.0's unsatisfiable
+  requirement, and it means the panel's "wider net" here caught nothing real.
+
+**The result that decides it is not about findings at all.** The solo configuration produced
+**zero security pins** and filed `DoD-2-security` as an ordinary requirement pin, silently
+disabling A4's security monotonicity — 0.103.0. That was a defect in the pinning code rather than
+a property of solo review, and it is fixed, so it should not recur. But it is what the experiment
+actually bought, and it is worth more than the cost ratio.
+
+**Recommendation, stated as one: do not shrink the panel on this evidence — build item 10's
+parallelism instead.** The saving is real but it is a *cost* argument, and the qualitative
+evidence is one run per arm in which the panel's only distinguishing finding was spurious and the
+solo's advantage was depth on an id both owned. Meanwhile the panel's dominant cost is wall clock,
+`3×` where it could be `max()`, and item 10 removes exactly that. Parallelising a three-reviewer
+panel closes most of the 2.2× gap without giving up a heterogeneous read.
+
+**What would settle it properly**, since this does not: several runs per arm on different PRD
+shapes, scored on findings a human confirms as real — because on this evidence the panel's extra
+finding was not.
+
+**Confounds, named rather than buried:** one run per arm; panelA's panel judged iteration-2 code
+while panelB's judged iteration-1 code, so the two never reviewed the same tree; and all three
+runs ended `BUDGET` without shipping, so neither arm was ever tested at a ship decision.
+
 ### 0.103.0 — A4 switched itself off when the panel was reconfigured, and nothing said so
 
 **The most serious defect this session, and item 8 found it by changing two config keys.**
