@@ -431,14 +431,16 @@ npm run typecheck
 npm test                     # tier 1
 npm run test:integration     # tier 2 — real git/node/npm, no network, no money
 DARE_LIVE=1 npm run test:live   # tier 3 — real claude -p, spends money
-npm run release-check        # refuses a shipped change at an unbumped version
+npm run release-check        # refuses a shipped change at an unbumped version, or a stale HANDOFF header
 ```
 
 **Any change to a shipped file requires a version bump** in `.claude-plugin/plugin.json` and
 `package.json` together. The install cache is keyed by version, so an update at an unchanged
 version silently resolves to the old folder and keeps running the previous build —
 indistinguishable from a wrong fix. `npm run release-check` is what catches it; do not rely on
-remembering.
+remembering. It also refuses when `HANDOFF.md`'s header disagrees with the manifests, in either
+direction — that line went stale by fourteen versions once, and a discipline that keeps failing
+becomes a gate here.
 
 Do not run `/dare` against this repository (`CLAUDE.md`, scope note).
 

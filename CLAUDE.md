@@ -198,6 +198,13 @@ has changed since — comparing against the **working tree**, so it catches an u
 edit too. It fails when it cannot establish a baseline, because an unknown baseline is not
 evidence that nothing changed.
 
+**It also refuses a version the `HANDOFF.md` header has not kept up with.** That header
+carries its own instruction to move with the version, and it went stale by *fourteen*
+versions once and then by three more directly under the warning added about it. A discipline
+that keeps failing becomes a gate here. Both directions refuse — header behind the manifests
+and header ahead of them — and so does a header that cannot be read at all, because an
+unreadable header is not evidence of a correct one.
+
 ## Style of work here
 
 - The User directs, you execute. If something is ambiguous, pick the defensible option and

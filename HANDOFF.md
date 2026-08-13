@@ -15,6 +15,30 @@ line in the same commit.
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
 
+### Item 3 — `release-check` now refuses a stale header. DONE, no version bump
+
+`statedHandoffVersion` reads the `**State:**` paragraph — the whole paragraph, not one line,
+because it wraps and a reflow must not read as a missing header — and takes the first
+backticked `x.y.z`. The branch name in backticks before it is skipped by the shape of the
+pattern rather than by position.
+
+Three refusals, not one: header **behind** the manifests, header **ahead** of them, and a
+header that cannot be read at all. The third is the nothing-defaults-to-pass case and it is why
+`handoffVersion` is a **required** field on `evaluateRelease` rather than an optional one — a
+caller who forgets it must not get a pass by omission.
+
+Verified twice over: unit tests including two that write a real temporary tree and drive `main`
+against it, and by hand against **this** repository, staling the header to `0.88.0` and watching
+the command refuse before restoring it.
+
+**No version bump, and that is the design working.** `tools/` is not a shipped path, which is
+exactly why the checker lives there — a checker under `scripts/` would demand a bump every time
+the checker itself changed.
+
+**Not verified:** nothing enforces this in CI, because there is no CI here; it is a command an
+operator or a gate must run. Item 21 wants `release-check` reachable as a *gate*, and this item
+does not do that — it only makes the gate worth reaching.
+
 ### Item 2 — the orphaned grandchild. DONE at 0.89.0, and the obvious fix was the wrong one
 
 **What was measured before anything was written**, because the fix this file had already named

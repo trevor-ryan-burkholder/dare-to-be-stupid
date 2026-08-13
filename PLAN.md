@@ -46,11 +46,16 @@ pass, with a bystander case proving the sweep is a set difference and not a grou
 `kill` to the driver rather than by the ceiling still leaks; that needs the free event loop item
 10 buys.
 
-### 3. `release-check` refuses a bump that leaves the HANDOFF header behind — OPEN
+### 3. `release-check` refuses a bump that leaves the HANDOFF header behind — DONE (no bump needed)
 The header went stale by fourteen versions once, then again by three (0.86.0–0.88.0) directly
 under its own warning. This project's answer to a discipline that keeps failing is a gate.
 **Done when:** `release-check` fails when `HANDOFF.md`'s stated version disagrees with the
 manifests; a test proves both directions.
+
+**Landed.** `statedHandoffVersion` in `tools/release-check.mjs`; both directions asserted, plus
+an unreadable header refusing rather than passing. Verified against the real repository by
+staling the header and watching the command refuse. **No version bump:** `tools/` is not a
+shipped path, which is why the checker lives there.
 
 ### 4. Per-child budget flags (`BORROWED.md` R16) — OPEN
 `costCeiling` (0.79.0+) is run-level accounting on returned envelopes; nothing bounds a child in

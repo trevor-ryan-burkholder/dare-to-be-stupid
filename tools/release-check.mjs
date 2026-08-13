@@ -38,12 +38,58 @@ export function isShipped(file) {
   return SHIPPED_PATHS.some((dir) => file === dir || file.startsWith(`${dir}/`));
 }
 
+/**
+ * The version `HANDOFF.md`'s header claims the tree is at, or `null` with the reason it
+ * could not be read.
+ *
+ * **Why a gate rather than a rule.** The header carries its own instruction — *"If you change
+ * the version, change this line in the same commit"* — and went stale by **fourteen** versions
+ * under it, then by three more (0.86.0–0.88.0) immediately after that warning was added. This
+ * project's answer to a discipline that keeps failing is a gate, and the header is the first
+ * line anyone reads, so a wrong one misdirects every reader before they reach anything true.
+ *
+ * The whole `**State:**` paragraph is searched, not one line, because it wraps and a reflow
+ * that moved the version to the next line would otherwise read as a missing header. The first
+ * backticked semver wins; the branch name in backticks before it is not one and is skipped by
+ * the shape of the pattern rather than by position.
+ *
+ * `null` is a failure and never a pass. An unreadable header is not evidence of a correct one,
+ * which is the same rule the baseline lookup above already follows.
+ *
+ * @param {string} text the contents of `HANDOFF.md`
+ * @returns {{ version: string | null, reason: string }}
+ */
+export function statedHandoffVersion(text) {
+  const lines = text.split('\n');
+  const start = lines.findIndex((line) => line.includes('**State:**'));
+  if (start === -1) {
+    return {
+      version: null,
+      reason: 'HANDOFF.md has no **State:** line, so the version it claims cannot be read',
+    };
+  }
+  /** @type {string[]} */
+  const paragraph = [];
+  for (let index = start; index < lines.length; index += 1) {
+    if (index > start && lines[index].trim() === '') break;
+    paragraph.push(lines[index]);
+  }
+  const match = paragraph.join(' ').match(/`(\d+\.\d+\.\d+)`/);
+  if (match === null) {
+    return {
+      version: null,
+      reason: "HANDOFF.md's **State:** paragraph names no `x.y.z` version, so it claims nothing to check",
+    };
+  }
+  return { version: match[1], reason: '' };
+}
+
 /** @typedef {{ ok: boolean, problems: string[] }} ReleaseVerdict */
 
 /**
  * Decide whether this working state may be released as-is.
  *
- * @param {{ changedFiles: string[], pluginVersion: string, packageVersion: string }} input
+ * @param {{ changedFiles: string[], pluginVersion: string, packageVersion: string, handoffVersion: string | null, handoffReason?: string }} input
  * @returns {ReleaseVerdict}
  */
 export function evaluateRelease(input) {
@@ -54,6 +100,19 @@ export function evaluateRelease(input) {
     problems.push(
       `version mismatch: .claude-plugin/plugin.json is ${input.pluginVersion} but package.json is ` +
         `${input.packageVersion}. They must agree, or the installed copy is labelled wrongly.`,
+    );
+  }
+
+  if (input.handoffVersion === null) {
+    problems.push(
+      `${input.handoffReason ?? "HANDOFF.md's stated version could not be read"}. ` +
+        'A header that cannot be checked is not a header that is right.',
+    );
+  } else if (input.handoffVersion !== input.pluginVersion) {
+    problems.push(
+      `HANDOFF.md says the tree is at ${input.handoffVersion} but the manifests say ` +
+        `${input.pluginVersion}. That header is the first line anyone reads, and it has gone stale ` +
+        'by fourteen versions once and by three more directly under its own warning.',
     );
   }
 
@@ -109,6 +168,18 @@ export function changesSinceVersion(options) {
 }
 
 /**
+ * @param {string} file
+ * @returns {string} the file, or empty when it cannot be read
+ */
+function readHandoff(file) {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+/**
  * @param {{ cwd?: string, log?: (line: string) => void, git?: Git }} [io]
  * @returns {number} process exit code
  */
@@ -120,21 +191,32 @@ export function main(io = {}) {
   const pluginVersion = JSON.parse(readFileSync(path.join(cwd, '.claude-plugin/plugin.json'), 'utf8')).version;
   const packageVersion = JSON.parse(readFileSync(path.join(cwd, 'package.json'), 'utf8')).version;
 
+  // A missing HANDOFF.md reads as an empty one, which `statedHandoffVersion` refuses. That is
+  // deliberate: "the file is not there" and "the header is unreadable" deserve the same
+  // answer, and neither is evidence that the version is right.
+  const handoff = statedHandoffVersion(readHandoff(path.join(cwd, 'HANDOFF.md')));
+
   const changes = changesSinceVersion({ git, version: pluginVersion });
-  const verdict = evaluateRelease({ changedFiles: changes.changedFiles, pluginVersion, packageVersion });
+  const verdict = evaluateRelease({
+    changedFiles: changes.changedFiles,
+    pluginVersion,
+    packageVersion,
+    handoffVersion: handoff.version,
+    handoffReason: handoff.reason,
+  });
 
   if (verdict.ok) {
     log(
       changes.baseline === null
-        ? `ok: version ${pluginVersion} is a bump that has not been committed yet`
-        : `ok: version ${pluginVersion}, no shipped file changed since ${changes.baseline.slice(0, 7)}`,
+        ? `ok: version ${pluginVersion} is a bump that has not been committed yet, and HANDOFF.md agrees`
+        : `ok: version ${pluginVersion}, no shipped file changed since ${changes.baseline.slice(0, 7)}, and HANDOFF.md agrees`,
     );
     return 0;
   }
 
   for (const problem of verdict.problems) log(problem);
   log('');
-  log('Bump the version in .claude-plugin/plugin.json and package.json together.');
+  log("Bump the version in .claude-plugin/plugin.json and package.json together, and move HANDOFF.md's header with them.");
   return 1;
 }
 
