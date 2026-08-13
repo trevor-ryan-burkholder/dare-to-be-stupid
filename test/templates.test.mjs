@@ -729,6 +729,35 @@ describe('the oracle author is taught metamorphic relations', () => {
 // CLI has none by design (DESIGN.md 857: "a CLI's exit code is its health check"). A required id
 // no correct CLI can satisfy is an unsatisfiable gate - the most expensive defect class here -
 // and an intermittent one, because it fires only when an auditor reads the line literally.
+describe('the DoD ids that some correct projects cannot satisfy are conditioned', () => {
+  const flat = () => REVIEWER.replace(/\s+/g, ' ');
+
+  it('does not demand e2e in CI from a project with no browser', () => {
+    // The `ci` gate reports "not required here: e2e" for a CLI. A reviewer line demanding it
+    // anyway fails a correct repository for doing the right thing.
+    assert.equal(flat().includes('e2e only where a browser is involved'), true);
+    assert.equal(flat().includes('not required here: e2e'), true);
+    assert.deepStrictEqual(GATE_POLICY.e2e.appliesTo, ['web-ui', 'desktop-ui']);
+  });
+
+  it('does not demand auth from something that authorizes nothing', () => {
+    assert.equal(flat().includes('where the project has an authorization boundary'), true);
+  });
+
+  // The half that keeps this a conditioning rather than a weakening. A CLI reading a token has a
+  // boundary and must still be checked.
+  it('still requires the negative case wherever a boundary exists, with evidence', () => {
+    const f = flat();
+    assert.equal(f.includes('all have a boundary, and its negative case must be enforced'), true);
+    assert.equal(f.includes('Say which you found, and how you looked'), true);
+    assert.equal(f.includes('a missing check and an inapplicable one are opposite conclusions'), true);
+  });
+
+  it('keeps the dependency-audit half unconditional, because every project has dependencies', () => {
+    assert.equal(flat().includes('dependency-audit half of `DoD-2` is unconditional'), true);
+  });
+});
+
 describe("DoD-4's observability half is conditioned on project shape", () => {
   it('no longer demands a health endpoint unconditionally', () => {
     const flat = REVIEWER.replace(/\s+/g, ' ');

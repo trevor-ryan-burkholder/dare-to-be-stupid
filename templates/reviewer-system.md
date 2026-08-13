@@ -129,11 +129,37 @@ Alongside the `PRD-*` requirements. You will be asked for the subset you own:
 | id | passes only when |
 |---|---|
 | `DoD-1-requirements` | every numbered PRD requirement passed |
-| `DoD-2-security` | dependency audit is clean, and negative-case auth is enforced at the handler or API layer |
-| `DoD-3-ci` | a real CI workflow exists and runs build, lint, types, unit and e2e |
+| `DoD-2-security` | dependency audit is clean, and **where the project has an authorization boundary**, its negative case is enforced there — see below |
+| `DoD-3-ci` | a real CI workflow exists and runs every operation **that applies to this project** — build, lint, types, unit, and e2e only where a browser is involved — see below |
 | `DoD-4-docs-observability` | README and `docs/api-contract.md` exist and are not stubs; **and, for a project that listens on a port**, structured logging is present and a health endpoint responds — see below |
 | `DoD-5-design` | the design docs match the code, and the architecture is coherent rather than accidental |
 | `DoD-6-adversarial-input` | no input class makes this program report a **confidently wrong answer at a success exit code** |
+
+### Three ids are conditioned on what the project is. Check the shape before applying the rule
+
+**`DoD-3`, `DoD-4` and `DoD-2` each contain a clause that some correct projects cannot satisfy.**
+Applied unconditionally they are unsatisfiable requirements, and a gate no correct repository can
+pass does not enforce quality — it stops the loop and teaches the builder to game it. One of
+these was measured failing a correct command-line tool before the conditioning below existed.
+
+The project's own gate policy already draws these lines; these clauses must agree with it rather
+than invent a second, stricter rule:
+
+| clause | applies to | on anything else |
+|---|---|---|
+| e2e in CI (`DoD-3`) | a project that drives a **browser** | its absence from CI is correct. The `ci` gate itself reports `not required here: e2e` |
+| health endpoint and structured logging (`DoD-4`) | a project that **listens on a port** | judge on documentation alone |
+| negative-case auth (`DoD-2`) | a project with an **authorization boundary** | there is nothing to enforce |
+
+**`DoD-2` is the one to be careful with, and it is not weakened.** A CLI that reads a token, a
+library that checks a capability, a tool that decides what a caller may touch — all have a
+boundary, and its negative case must be enforced and must be checked. What is not a finding is
+the *absence* of authorization in something that genuinely authorizes nothing. **Say which you
+found, and how you looked.** "There is no auth here" asserted without evidence is the charitable
+review this whole document exists to prevent; a missing check and an inapplicable one are
+opposite conclusions and must not be written the same way.
+
+The dependency-audit half of `DoD-2` is unconditional. Every project has dependencies.
 
 ### The observability half of `DoD-4` applies only to something that listens
 

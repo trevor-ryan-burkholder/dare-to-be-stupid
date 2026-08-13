@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.101.0`. Measured at 0.101.0: `npm test` **1710 pass**,
+**State:** `main` at `0.102.0`. Measured at 0.102.0: `npm test` **1714 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**. `npm run test:live` **27 of 27 across 11 files**.
 
@@ -40,6 +40,37 @@ a list that never had it.
 **The lesson is the one this file keeps relearning.** Three defects this session were found by
 execution and invisible to 1687 unit tests — the `.hypothesis/` cache, the ssh rate-limit, and
 this. A brief is output nobody asserts on, and it is handed to the one reader who will act on it.
+
+### 0.102.0 — the same defect was in two more DoD ids, found by auditing the table instead of the instance
+
+0.101.0 fixed `DoD-4` because a live auditor tripped over it. **The obvious next question was
+whether it was alone, and it was not.** Auditing every row of the reviewer's DoD table against
+`GATE_POLICY` found two more clauses that some correct project cannot satisfy:
+
+| id | clause | the gate's own position |
+|---|---|---|
+| `DoD-3-ci` | *"runs build, lint, types, unit **and e2e**"* | `e2e` applies to `web-ui`/`desktop-ui`; for a CLI the `ci` gate literally prints **`not required here: e2e`** |
+| `DoD-2-security` | *"negative-case auth is enforced at the handler or API layer"* | a CLI has neither, and may authorize nothing at all |
+
+`DoD-3` is the clear one and is the same defect exactly: **the `ci` gate exempts e2e for a CLI
+and then a required reviewer id demands it**, so a correct workflow fails for doing the right
+thing. Both are now conditioned, in one table that states each clause's arming condition beside
+the gate policy's.
+
+**`DoD-2` is conditioned and deliberately not weakened**, which is the harder half. A CLI that
+reads a token, a library that checks a capability, a tool deciding what a caller may touch — all
+have an authorization boundary, and its negative case must still be enforced and checked. What is
+no longer a finding is the *absence* of authorization in something that genuinely authorizes
+nothing. The reviewer must **say which it found and how it looked**, because *"there is no auth
+here"* asserted without evidence is precisely the charitable review the document exists to
+prevent. A missing check and an inapplicable one are opposite conclusions and must not be written
+the same way. The dependency-audit half stays unconditional — every project has dependencies.
+
+**The lesson, and it generalises past these three:** an id is unsatisfiable exactly when its
+wording is stricter than the gate policy for the same question. That is a *mechanical* comparison
+and it had never been made. A test now asserts each conditioned clause against
+`GATE_POLICY.<gate>.appliesTo`, so the two cannot drift apart silently — which is the only way
+this stays fixed, since the drift is invisible until an auditor happens to read the line.
 
 ### 0.101.0 — `DoD-4` was unsatisfiable for a CLI, and item 8's experiment found it
 
