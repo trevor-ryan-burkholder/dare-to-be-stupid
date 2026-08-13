@@ -136,6 +136,83 @@ has ever deployed to a real droplet** — the ssh half is argv nobody has run. T
 the .NET adapter is treated: correct by construction, unverified in the world. The first real use
 should be a throwaway box, watched.
 
+## Run 12 SHIPPED — and shipped a wrong answer past a 110,877-case audit
+
+Case G, `~/dare-dogfood/csvstat6`, same PRD, twelve iterations, 0.65.0. Log at
+`~/dare-logs/run12.log`.
+
+```
+SHIPPED: panel unanimous on 16 requirement(s)
+iterations: 6  tokens: 57782345  cost: $49.4684  passing: 107   (0 quarantined)
+```
+
+Panel trajectory: **6 → 2 → 1 → pass → 3 → pass.** Sixteen ids, because `DoD-6` is now one of
+them.
+
+**What shipped, verified by running the binary rather than by reading the panel:**
+
+| defect | run 9 (no `DoD-6`) | run 10 | run 12 |
+|---|---|---|---|
+| unterminated quote | **shipped: half the data at exit 0** | blocked → fixed | fixed, `exit 3` |
+| sum overflow | — | blocked → fixed | fixed, `mean 1e+308` |
+| **catastrophic cancellation** | — | **named by the panel** | **`mean: 0`, true mean 1/3, exit 0 — SHIPPED** |
+
+### Why it was missed, which is the finding
+
+**The reviewer was not lazy. It was exceptional.** It wrote an independent reference parser and
+summariser *from the PRD and data model* and differentially fuzzed the binary against it —
+**110,877 cases** — plus truncation, CR-only line endings, BOM, numerics and boundaries. Its own
+words on the case it passed:
+
+> *"two values of `1e308` → mean 1e308 (the naive sum overflows; `summarise.ts:58` falls back to
+> `stableMean`…)"*
+
+**It tested the guard, not the gap beside the guard.** `stableMean` triggers on a *non-finite*
+sum. `1e16, 1, -1e16` never overflows — it loses precision **inside** finite range, the fallback
+never fires, and the naive sum returns 0. The reviewer verified the repair where it triggers and
+never asked where it doesn't.
+
+**And the fuzz could not have caught it.** The reference was written from the same documents, so a
+property those documents never mention — floating-point associativity — is invisible to *both*
+implementations equally. **That is the oracle problem, and it is why A3 is now the top of
+`COMPLETION.md`.** A differential fuzz against a reference derived from the same spec is not an
+independent oracle; it is the same assumption twice.
+
+**The invalid-UTF-8 case is a genuine disagreement, not a miss.** Run 10 called `distinct: 1` for
+`\xff` and `\xfe` a defect; run 12 saw the identical input and judged *"→ U+FFFD, exit 0, counts
+correct"*. Both bytes decode to the same replacement character, so both readings are defensible.
+Two reviewers, one input, honest disagreement — a judgment line behaving like one.
+
+**The verdict on `DoD-6`: it raises the floor enormously and it is not a guarantee.** Two of three
+known defects were driven out of the product by it. `DESIGN.md` §4.5 predicted exactly this — *"it
+is exactly as good as the reviewer executing it"* — and that is now measured rather than reasoned.
+
+### 0.56.0 cost a clean panel, and this is no longer provisional
+
+Iteration 5's panel **passed unanimously**. The sensitivity check withheld the ship. The builder
+touched first-party source as the brief instructs — and **iteration 6 came back with three
+findings.** Two extra iterations and roughly $16 to satisfy a check about the *suite* rather than
+the *code*. Second run in a row it has cost real iterations; the fix is `COMPLETION.md` §2.1.
+
+## The guard's `nested-dare` rule has a false positive, and it fails loudly in the wrong place
+
+Found by being bitten, 12 August. A `git commit` whose **message** described the slash command was
+refused with `[dare:nested-dare]`. `README.md` claims that rule *"deliberately leaves alone the
+word 'dare' in prose"*; it does not, once a slash is attached.
+
+**The expensive part is not the refusal.** The deny killed the **entire Bash call**, and that call
+also contained the `python` heredoc performing a documentation edit. The edit never happened, the
+following `git push` succeeded as a no-op on a clean tree, and the whole sequence looked like a
+successful doc fix. It was caught only because `git commit` printed `nothing to commit`.
+
+**It may be correct and merely expensive.** Telling an invocation from a mention needs shell
+parsing, and this repository's own reasoning says a whitelist that fails open on the first heredoc
+is worse than a blunt rule. Rules 2–4 are deliberately refused to everyone, operator included.
+
+Two things worth doing before deciding: **`README.md`'s "leaves alone" claim is currently false and
+should say so**, and a compound command that mixes an edit with a blocked git call will silently
+lose the edit — so prefer the `Edit` tool over `python` heredocs when the text names the command.
+
 ## Run 10: DoD-6 blocked the ship, the loop repaired what it named, and `removed` fired
 
 Case G again (`~/dare-dogfood/csvstat4`), same PRD, fresh tree, log at `~/dare-logs/run10.log`.
