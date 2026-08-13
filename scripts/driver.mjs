@@ -35,7 +35,7 @@ import {
   resolveCapabilities,
   writeCapabilityManifest,
 } from './capabilities.mjs';
-import { loadConfig } from './config.mjs';
+import { DEFAULT_OWNERSHIP, loadConfig } from './config.mjs';
 import { checkContextBudget, measurePrompt } from './context-budget.mjs';
 import { applicableGates, gateApplies } from './gate-policy.mjs';
 import { hasMeaningfulHistory, historyContext } from './history.mjs';
@@ -1840,9 +1840,15 @@ export function driveRun(options) {
           if (entry.status !== 'pass' || entry.evidence === null) continue;
           const contents = readSource(parseEvidence(entry.evidence).file);
           if (contents === null) continue;
-          const isSecurity = panelPlan.assignments.some(
-            (assignment) => assignment.reviewer === 'security' && assignment.ids.includes(entry.id),
-          );
+          // **By id, not by who reviewed it.** This asked whether a reviewer *named* `security`
+          // owned the entry, and `reviewers`/`ownership` are configuration — so a panel
+          // configured with one reviewer named anything else made `isSecurity` false for every
+          // entry, and A4's security monotonicity switched itself off without a word. Measured
+          // in run `panelB`: `DoD-2-security` was filed as an ordinary requirement pin, which is
+          // then eligible for the A8 carry, so the one id whose degradation A4 exists to catch
+          // became the one nobody re-reads. A defensive mechanism disabled by a config key that
+          // never mentions it is the silent-degradation class CLAUDE.md names.
+          const isSecurity = isSecurityId(entry.id);
           if (isSecurity) {
             const line = contents.split('\n')[parseEvidence(entry.evidence).line - 1] ?? '';
             if (normaliseSnippet(line).length === 0) continue;
@@ -3591,6 +3597,27 @@ export function runDeploy(deploy, options) {
   // printed, and an empty stdout still fails rather than defaulting to pass.
   if (!smoked.ok) return { ok: false, detail: smoked.stdout.trim() || 'the smoke check failed and said nothing' };
   return { ok: true, detail: smoked.stdout.trim() || 'smoke checks passed' };
+}
+
+/**
+ * Is this a security id, whatever the panel happens to be configured as?
+ *
+ * Derived from `DEFAULT_OWNERSHIP.security` rather than from the *live* `ownership` map, and that
+ * is the whole correction. Which reviewer reads an id is an operator's choice; whether the id is
+ * about security is a property of the id. Keying the first to the second let a reconfigured panel
+ * turn A4 off silently.
+ *
+ * Uses the same `*` wildcard the ownership matcher uses, so the two cannot disagree about what a
+ * pattern means.
+ *
+ * @param {string} id
+ * @returns {boolean}
+ */
+export function isSecurityId(id) {
+  return DEFAULT_OWNERSHIP.security.some((/** @type {string} */ pattern) => {
+    const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').split('\\*').join('.*');
+    return new RegExp(`^${escaped}$`).test(id);
+  });
 }
 
 /**

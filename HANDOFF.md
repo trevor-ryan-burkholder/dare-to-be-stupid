@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.102.0`. Measured at 0.102.0: `npm test` **1714 pass**,
+**State:** `main` at `0.103.0`. Measured at 0.103.0: `npm test` **1718 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**. `npm run test:live` **27 of 27 across 11 files**.
 
@@ -40,6 +40,49 @@ a list that never had it.
 **The lesson is the one this file keeps relearning.** Three defects this session were found by
 execution and invisible to 1687 unit tests — the `.hypothesis/` cache, the ssh rate-limit, and
 this. A brief is output nobody asserts on, and it is handed to the one reader who will act on it.
+
+### 0.103.0 — A4 switched itself off when the panel was reconfigured, and nothing said so
+
+**The most serious defect this session, and item 8 found it by changing two config keys.**
+
+Security pinning decided whether a passing entry became a **security pin** by asking whether a
+reviewer *named* `security` owned it:
+
+```js
+const isSecurity = panelPlan.assignments.some(
+  (assignment) => assignment.reviewer === 'security' && assignment.ids.includes(entry.id),
+);
+```
+
+`reviewers` and `ownership` are **configuration**. `panelB` ran with one reviewer named
+`correctness` owning every id — a legitimate configuration, and the exact one R14 asks the project
+to evaluate — so `isSecurity` was false for every entry in the run.
+
+| run | reviewers | security pins | where `DoD-2-security` went |
+|---|---|---|---|
+| oracle1 | 3 | 1 | security pin (`package.json:12`) |
+| panelA | 3 | 1 | security pin (`src/read-file.ts:25`) |
+| **panelB** | **1** | **0** | **filed as an ordinary requirement pin** |
+
+**A4's security monotonicity switched itself off**, and there are two ways that bites. No security
+pin means no re-verification, no `moved`/`removed`/`unknown` verdict, no escalation and no
+quarantine — the entire mechanism, silent. And because the id landed in the *requirement* pins
+instead, it became eligible for the A8 carry: **the one id whose gradual degradation A4 exists to
+catch became the one nobody re-reads.** Two defensive layers cancelling each other, from a config
+key that never mentions security.
+
+This is exactly the class `CLAUDE.md` names — *"a defensive guard that disappears one iteration at
+a time"* — and it would never have reported a failure.
+
+**Fixed by asking the id, not the reviewer.** `isSecurityId` derives from
+`DEFAULT_OWNERSHIP.security` rather than the live ownership map: which reviewer reads an id is an
+operator's choice, whether the id is *about* security is a property of the id. It takes one
+argument and there is nowhere for configuration to reach in and change the answer — asserted, so
+the property is not merely true today.
+
+**What this says about R14, before item 8's cost numbers are even in:** the panel-versus-solo
+question was never only about findings. A configuration that looked like a pure cost reduction
+disabled a monotonic safety property, and no gate, no test and no log line noticed.
 
 ### The `panelCarry` cost delta, measured at last — and it is 8%, not 56%
 

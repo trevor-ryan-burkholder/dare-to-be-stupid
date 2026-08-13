@@ -58,6 +58,7 @@ import {
   TOOL_CACHE_PATHS,
   armingNote,
   childBudget,
+  isSecurityId,
   isTestEvidence,
   narrowedPanelPlan,
   shipTimeMutationScope,
@@ -4332,5 +4333,37 @@ describe('armingNote', () => {
     // Not a shape any current plugin has. Asserted so the answer is decided rather than
     // whichever branch happens to come first after an edit.
     assert.equal(armingNote({ frontendOnly: true, capability: 'api' }), ' (armed once this repo renders a UI)');
+  });
+});
+
+// Found by item 8's experiment, which changed `reviewers` and `ownership` and nothing else.
+// Security pinning asked whether a reviewer *named* `security` owned the entry - so panelB, run
+// with one reviewer named `correctness` owning every id, produced zero security pins and filed
+// DoD-2-security as an ordinary requirement pin. A4's security monotonicity switched itself off,
+// silently, because of a config key that never mentions security. Worse, a requirement pin is
+// eligible for the A8 carry, so the one id whose degradation A4 exists to catch became the one
+// nobody re-reads.
+describe('isSecurityId', () => {
+  it('recognises the security id whoever is configured to review it', () => {
+    assert.equal(isSecurityId('DoD-2-security'), true);
+  });
+
+  it('does not claim ids that belong to the other reviewers', () => {
+    // Blocking everything is not passing, and over-claiming here would pin ordinary requirements
+    // as security elements - which are monotonic and far harder to unpin.
+    for (const id of ['DoD-1-requirements', 'DoD-3-ci', 'DoD-5-design', 'DoD-6-adversarial-input', 'PRD-1.1']) {
+      assert.equal(isSecurityId(id), false, `${id} was claimed as a security id`);
+    }
+  });
+
+  it('agrees exactly with the default ownership map it is derived from', () => {
+    // If these drift, an id is pinned as one thing and reviewed as another.
+    assert.deepStrictEqual(DEFAULT_OWNERSHIP.security.filter((p) => !p.includes('*')).map(isSecurityId), [true]);
+  });
+
+  it('is independent of the live panel configuration, which is the whole fix', () => {
+    // No argument for reviewers or ownership: there is nowhere for a config to reach in and
+    // change the answer.
+    assert.equal(isSecurityId.length, 1);
   });
 });
