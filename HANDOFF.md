@@ -39,6 +39,27 @@ ceiling of its own is an open question - `maxIterations` bounds it in iterations
 honest unit for a loop, and a wall-clock cap that fires mid-iteration would leave a tree nothing
 has judged.
 
+## 0.84.0 — abandoned race worktrees heal at the start, and the consequence is now executed
+
+`removeWorktrees` runs on the driver's paths out. **No `finally` and no signal handler survives
+`SIGKILL`**, so cleanup at the end could never have covered the case that produced the leak.
+`sweepRaceWorktrees` runs at race *start* instead, removing every `dare-race-NN` worktree already
+registered and then pruning — an entry whose directory is already gone is invisible to a removal
+loop and still refuses the next `worktree add` on that path.
+
+**0.82.0's run lock is what makes this safe rather than merely likely to be safe.** One driver per
+repository means a race worktree present when a race begins cannot belong to a live race here.
+Without that guarantee the sweep would be a guess about somebody else's work.
+
+**Tier 2 proved the consequence this file had only asserted.** An abandoned race really does make
+the next `createWorktrees` return **zero** worktrees with two problems, and the sweep really does
+restore it. There is also a test that a worktree of the operator's own survives untouched, because
+a sweep that runs against a real repository and removes the wrong thing is worse than a leak.
+
+**`README.md`'s guard table was corrected in the same pass.** It claimed `nested-dare`
+"deliberately leaves alone the bare word in prose". It does not, it never did, and it has now bitten
+twice in one session.
+
 ## 0.83.0 — racing can land a winner now, and the NEEDS REVIEW below had a false dilemma in it
 
 The entry below framed this as a design decision between **committing the loser's work** (puts

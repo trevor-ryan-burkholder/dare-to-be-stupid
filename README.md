@@ -78,9 +78,20 @@ mode, so it keeps working when the builder runs with `--dangerously-skip-permiss
 | `protected-state` | **mutation of any path under `.dare/`, at any depth, including files that do not exist yet** — but only from inside a run | reads, always; every write by the operator outside a run; `tsconfig.json`; an app's own `src/state.json` |
 | `git-history`     | `push --force` / `-f` / `--force-with-lease`, `rebase`, `filter-branch`, `reflog expire`                         | ordinary pushes, `git reset --hard` (the ratchet needs it), `git reflog`, "rebase" inside a commit message |
 | `rm-recursive`    | recursive `rm` outside the temp directory, and any recursive `rm` whose target cannot be resolved before it runs | non-recursive `rm`, `rm -rf /tmp/...`, `rmdir`                                                             |
-| `nested-dare`     | a builder invoking the slash command — **and any Bash whose text contains it, including a commit message describing it** | the bare word "dare" in prose, paths and filenames containing it                                           |
+| `nested-dare`     | a builder invoking the slash command — **and any Bash whose text contains it, including a commit message describing it, and any text in command position, heredoc bodies included** | the word inside a longer token: `dare-logs/`, `.dare/`, `dare-to-be-stupid`. **Not** prose in general — see below |
 
 A malformed or unparseable payload is a **deny**. A guard that fails open is not a guard.
+
+**`nested-dare` has a known false positive, and this table used to describe it wrongly.** It said
+the rule "deliberately leaves alone the bare word in prose". It does not: the payload is tokenized
+like a shell command, so the word in *command position* is refused wherever it appears — including
+inside a heredoc body, which is exactly where prose usually lives. It has now bitten twice, both
+times on a `python` heredoc whose **comment text** began a line with it. The expensive half is not
+the refusal: the deny kills the **whole Bash call**, so an edit bundled into the same command
+silently never happens and the sequence can look like it worked. Telling an invocation from a
+mention needs real shell parsing, and a whitelist that fails open on the first heredoc would be
+worse than a blunt rule — so it is left blunt and written down instead. **Prefer the `Edit` tool
+over a heredoc whenever the text names the command.**
 
 **`protected-state` is positional, not a list of names.** It used to name three files and leave
 the rest of `.dare/` writable; that enumeration was the defect, because each new artifact
