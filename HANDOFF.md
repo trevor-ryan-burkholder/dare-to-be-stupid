@@ -22,14 +22,62 @@ so *hung* and *working* are the same picture for as long as it takes. Run 10's b
 470s each and its slowest race candidate ran 651s, which means a nine-minute silence is normal and
 an infinite one looks identical to it.
 
-**What is bounded today, after 0.79.0:** the deploy command (10 min), the smoke probe (own
-deadline), the health probe (`probeTimeoutMs`, 30s). **What is bounded by nothing:** every
-`claude -p` child, and every gate command. `tokenCeiling` and `costCeiling` only bind a child that
-*returns* — they are accounting, not a watchdog, and this is the distinction that makes the
-ceilings read as protection when they are not.
+**Closed at 0.80.0-0.82.0.** Everything the driver waits on now has a ceiling: children
+(`childTimeoutMs`, 30 min), gate commands (`gateTimeoutMs`, 45 min), the deploy command
+(`deploy.timeoutMs`, 10 min), the smoke probe and the health probe (their own deadlines). And
+`.dare/lock.json` stops the second half of it - two drivers on one tree, which is how run 15 was
+lost.
 
-Being worked now. The mechanism is the one 0.79.0 just proved against a real binary: `shell` takes
-a `timeoutMs` and reports `ETIMEDOUT` distinctly from an ordinary failure.
+`tokenCeiling` and `costCeiling` are **not** part of that list and never were. Both are read from
+an envelope, so both bind a child that *returned*; a child that never returns produces no envelope,
+spends no recorded tokens, and passes both forever. They are accounting. Reading them as protection
+against a hang is the trap, and it is why this went unnoticed for so long.
+
+**Still unbounded, and named rather than fixed:** the run as a whole. Nothing caps total wall-clock,
+so a run can still spend hours inside ceilings that each individually hold. Whether that wants a
+ceiling of its own is an open question - `maxIterations` bounds it in iterations, which is the
+honest unit for a loop, and a wall-clock cap that fires mid-iteration would leave a tree nothing
+has judged.
+
+## 0.80.0–0.82.0 — the stall blocker, closed on three fronts
+
+**0.80.0, every `claude -p` child.** `childTimeoutMs`, 30 minutes, against a longest-ever-observed
+child of 651s. The ordering inside `spawnClaude` is the load-bearing part: the timeout is checked
+**before** the existing empty-stdout branch, because a child killed mid-stream can leave a partial
+envelope and that branch would have handed the fragment to the parser. A killed child has no
+verdict; half of one is a different verdict, not a smaller one. `childStartLine` now names the
+ceiling, which is the only thing an operator can act on while the event loop is blocked — it turns
+*"is this hung?"*, unanswerable, into *"has it been longer than the number on screen?"*, arithmetic.
+
+**0.81.0, every gate command.** `gateTimeoutMs`, 45 minutes, and the comment says plainly that this
+number is **not** derived from measurement, unlike the child one. **No run in this project has ever
+recorded a per-gate duration**, and mutation testing is known to be the slow gate without anybody
+knowing how slow. It is a backstop sized to be embarrassing to hit. **What would refine it is one
+run that logs each gate's wall-clock**, and that is worth doing. A killed gate is reported as
+killed rather than as `exit 1`, because the detail is copied into the builder's brief and a builder
+told `exit 1` for a suite that hung goes hunting an assertion that does not exist.
+
+**0.82.0, the run lock.** `.dare/lock.json`, checked in preflight and again in the driver, released
+in a `finally` on every path out. A live pid refuses, a dead pid is stale and does not. Closes the
+two-driver defect recorded below.
+
+### The collision, caught by an existing test rather than by me
+
+The lock was first written as **`.dare/run.json` — which is already `RUN_MANIFEST`.** It would have
+overwritten the run manifest on every run. What found it was the manifest's own *"is never read
+back by any shipped script"* test, failing on the filename in a new module. That test exists to
+prove the manifest decides nothing; it caught a collision it was not written to catch, because it
+asserts over **the whole `scripts/` tree** rather than over one module. Worth remembering the next
+time a property looks too broad to be worth asserting.
+
+### The guard's `nested-dare` false positive cost time again
+
+Recorded below as found on 12 August and still unfixed. It fired on a `python` heredoc whose
+**comment text** contained the two words `dare init` at the start of a line — `checkNestedDare`
+tokenizes heredoc bodies and `commandName` read it as an invocation. The whole Bash call was
+refused, so the edit inside it never happened, which is the documented expensive half. Recovered by
+using the `Edit` tool, which is what this file already advises. **Second recorded instance. The
+`README.md` claim that the rule "leaves alone the word dare in prose" remains false.**
 
 ## 0.79.0 — the deploy command was the one call in the driver bounded by nothing
 
