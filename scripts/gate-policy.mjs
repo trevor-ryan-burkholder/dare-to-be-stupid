@@ -80,6 +80,13 @@ export const GATE_POLICY = {
       'the end-to-end runner drives a browser. A CLI or library has none, so the gate reports a missing config ' +
       'rather than a defect - and reports it forever, because nothing defaults to pass',
   },
+  oracle: {
+    appliesTo: ['cli'],
+    why:
+      'the held-out cases invoke a program with argv and compare its stdout, which is a CLI shape. ' +
+      'An api or a library needs a different harness, and arming this there would be a gate that ' +
+      'cannot pass rather than a check that does anything',
+  },
   observability: {
     appliesTo: ['api', 'network-service'],
     why:

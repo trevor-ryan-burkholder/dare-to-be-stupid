@@ -49,6 +49,7 @@ import {
   saveLessons,
   selectLessons,
 } from './lessons.mjs';
+import { OracleError, parseOracleCases, resolveArtifactCommand, runOracle, writeOracle } from './oracle.mjs';
 import { installQualityPlugins } from './plugins.mjs';
 import { applyWinner, createWorktrees, parseNumstat, removeWorktrees, selectWinner, shouldRace } from './race.mjs';
 import { parseReport } from './reporters/index.mjs';
@@ -2348,6 +2349,44 @@ export function observabilityGate(cwd, options = {}) {
  *        themselves; omitting it requires all of them. See `inspectCiWorkflows`.
  * @returns {GateResult[]}
  */
+/**
+ * The held-out oracle as a gate (A3, `DESIGN.md` §4.6).
+ *
+ * Off unless `oracle.enabled`, because a case that invents a requirement the specification does
+ * not decide becomes a gate the builder cannot satisfy — and it cannot tell an invention from a
+ * real requirement. Staged rather than imposed until a run has measured it.
+ *
+ * Every failure is a failure. A missing store, an unreadable one, and a project with no declared
+ * entry point all fail with the reason named; none of them declines. The store is only missing if
+ * authoring did not happen, which is a driver fault the operator needs to see rather than a
+ * condition to shrug at.
+ *
+ * @param {string} cwd
+ * @param {string} dareDir
+ * @param {{ run?: import('./plugins.mjs').Runner }} [options]
+ * @returns {GateResult}
+ */
+export function oracleGate(cwd, dareDir, options = {}) {
+  const command = resolveArtifactCommand(cwd);
+  if (command === null) {
+    return {
+      name: 'oracle',
+      ok: false,
+      status: 1,
+      detail:
+        'no runnable entry point: package.json declares no `bin`, so there is nothing for the held-out ' +
+        'cases to invoke. A declared bin is what a user actually runs, and a build whose bin is absent ' +
+        'or inert passes every other gate here (run 10).',
+    };
+  }
+  return runOracle({ dareDir, root: cwd, command, run: options.run ?? shell });
+}
+
+/**
+ * @param {string} cwd
+ * @param {{ run?: import('./plugins.mjs').Runner, capabilities?: string[] | null, probeTimeoutMs?: number, dareDir?: string, oracle?: boolean }} [options]
+ * @returns {GateResult[]}
+ */
 export function staticGates(cwd, options = {}) {
   const ci = inspectCiWorkflows(cwd, options.capabilities ?? null);
 
@@ -2390,6 +2429,13 @@ export function staticGates(cwd, options = {}) {
     // The gates judge the builder; this one judges the gates. `npm run lint` is only worth
     // running while `lint` still means something, and the builder writes what it means.
     integrityGate(cwd),
+    // A3. Present only when armed *and* the driver supplied a `.dare` to read from. Both are
+    // required rather than one, because an oracle with nowhere to read from would report a clean
+    // pass over nothing, and this is the one gate whose entire value is being independent of
+    // everything the builder wrote.
+    ...(options.oracle === true && options.dareDir !== undefined
+      ? [oracleGate(cwd, options.dareDir, options)]
+      : []),
   ];
 }
 
@@ -3117,6 +3163,45 @@ export function main(argv, io = {}) {
   const prd = readFileSync(prdPath, 'utf8');
   const requiredIds = requiredIdsFor(prd);
 
+  // ---- Phase 0b: the held-out oracle (A3) -------------------------------
+  //
+  // Authored here, from the PRD alone, **before the design phase and before any code exists**.
+  // That position is the whole point: every other check in this loop is downstream of the
+  // builder, and this is the one artifact judged against the specification rather than against
+  // the implementation. A child that has seen the code cannot write it.
+  //
+  // Authored if missing rather than only on a fresh run, so a resumed tree gets one too — the
+  // alternative is a gate that fails forever on any repository started before this version.
+  //
+  // Failure to author **ends the run**. A gate armed with nothing would report a clean pass over
+  // nothing, and this is the one gate whose entire value is independence.
+  if (config.oracle.enabled && !existsSync(path.join(dareDir, 'oracle.json'))) {
+    write(verbatim('authoring held-out acceptance cases from the PRD'));
+    const authored = runChild({
+      prompt: `${template('oracle-author.md')}\n\n---\n\nPRD.md:\n\n${prd}`,
+      model: config.reviewerModel,
+      phase: 'review',
+      effort: config.effort['review'],
+      cwd,
+      env,
+    });
+    if (!authored.ok) {
+      write(verbatim(`oracle authoring failed: ${authored.raw.slice(0, 800)}`));
+      write(stamp('ABORTED', { mode }));
+      return 1;
+    }
+    try {
+      const cases = parseOracleCases(authored.text);
+      writeOracle(dareDir, cases);
+      write(verbatim(`held out ${cases.length} acceptance case(s); the builder is never shown them`));
+    } catch (error) {
+      const why = error instanceof OracleError ? error.message : String(error);
+      write(verbatim(`oracle authoring returned nothing usable: ${why}`));
+      write(stamp('ABORTED', { mode }));
+      return 1;
+    }
+  }
+
   // ---- Phase 1: design + quality plugins --------------------------------
   write(verbatim('designing'));
   const designed = runChild({
@@ -3342,7 +3427,10 @@ export function main(argv, io = {}) {
       // `ci` stays universal — the validation set has to run somewhere — but *which* steps it
       // demands is filtered by the same capabilities, which is why they are passed in as well
       // as applied outside. Without that, a browserless project could not satisfy `ci` at all.
-      ...applicableGates(staticGates(dir, { run: shell, capabilities }), capabilities).gates,
+      ...applicableGates(
+        staticGates(dir, { run: shell, capabilities, dareDir: treeDare, oracle: config.oracle.enabled }),
+        capabilities,
+      ).gates,
       redEvidenceGate(evidence),
     ];
     // Withheld rather than blocked. An unproven test earns no protection from the ratchet,

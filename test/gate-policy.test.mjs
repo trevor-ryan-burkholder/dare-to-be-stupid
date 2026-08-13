@@ -47,14 +47,19 @@ describe('the gate table', () => {
     }
   });
 
-  it('conditions exactly two gates, and the rest are universal', () => {
+  it('conditions exactly three gates, and the rest are universal', () => {
     // Deliberately asserted as a whole. Every future addition to this list is a gate that
     // some project will not be checked by, so it should be hard to add one by accident.
+    //
+    // `oracle` joined at 0.72.0, and the addition is deliberate rather than incidental: the
+    // held-out cases invoke a program with argv and compare its stdout, which is a CLI shape.
+    // Arming it on an api or a library would be a gate that cannot pass rather than a check
+    // that does anything — §4.2's defect class, which this repository has hit seven times.
     const conditional = Object.entries(GATE_POLICY)
       .filter(([, rule]) => rule.appliesTo !== null)
       .map(([name]) => name)
       .sort();
-    assert.deepEqual(conditional, ['e2e', 'observability']);
+    assert.deepEqual(conditional, ['e2e', 'observability', 'oracle']);
   });
 });
 

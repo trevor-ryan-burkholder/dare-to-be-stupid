@@ -188,6 +188,42 @@ export function judgeOracleCase(expected, actual) {
 }
 
 /**
+ * How to invoke the thing the oracle judges.
+ *
+ * A CLI's entry point is what `package.json` declares as `bin`, because that is what a user
+ * actually runs — and run 10 found a build whose declared `bin` was **inert**, printing nothing
+ * and exiting 0 through a real `npm install -g`, while every gate stayed green because each of
+ * them invoked `node dist/cli.js` directly. Resolving through `bin` here means the oracle asks
+ * the same question a user does.
+ *
+ * Returns null rather than guessing. A `cli` project with no declared `bin` is a defect the gate
+ * should report by name, not paper over by picking a file that looks plausible.
+ *
+ * @param {string} root
+ * @returns {string[] | null}
+ */
+export function resolveArtifactCommand(root) {
+  const manifest = path.join(root, 'package.json');
+  if (!existsSync(manifest)) return null;
+  /** @type {Record<string, unknown>} */
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(manifest, 'utf8'));
+  } catch {
+    return null;
+  }
+  const bin = parsed.bin;
+  const relative =
+    typeof bin === 'string'
+      ? bin
+      : bin !== null && typeof bin === 'object'
+        ? Object.values(/** @type {Record<string, unknown>} */ (bin)).find((v) => typeof v === 'string')
+        : undefined;
+  if (typeof relative !== 'string' || relative === '') return null;
+  return ['node', path.resolve(root, relative)];
+}
+
+/**
  * Run every held-out case against the built artifact.
  *
  * @param {{

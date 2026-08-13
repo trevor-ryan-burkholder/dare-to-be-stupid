@@ -67,6 +67,7 @@ describe('defaultConfig', () => {
         'lesson-extractor': 'low',
         'security-escalation': 'high',
       },
+      oracle: { enabled: false },
       deploy: { enabled: false, command: [], url: '', smoke: [] },
       extractTests: true,
       chaos: 1,

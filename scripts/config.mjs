@@ -33,13 +33,15 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 /** @typedef {{ minConfidence: number }} AdvisoryConfig */
 /** @typedef {{ enabled: boolean, maxPerBrief: number }} LessonsConfig */
 /** @typedef {{ maxCharacters: number }} ContextBudgetConfig */
+/** @typedef {{ enabled: boolean }} OracleConfig */
 /**
  * @typedef {{
  *   maxIterations: number, stallLimit: number, tokenCeiling: number, costCeiling: number,
  *   reviewers: string[], ownership: Record<string, string[]>, requireUnanimous: boolean,
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, styleModel: string, lessonModel: string,
- *   qualityPlugins: string[], effort: Record<string, string>, deploy: DeployConfig, extractTests: boolean,
+ *   qualityPlugins: string[], effort: Record<string, string>, oracle: OracleConfig,
+ *   deploy: DeployConfig, extractTests: boolean,
  *   chaos: number, realityCheck: RealityCheckConfig, dareMe: DareMeConfig, race: RaceConfig,
  *   advisory: AdvisoryConfig, lessons: LessonsConfig, contextBudget: ContextBudgetConfig
  * }} DareConfig
@@ -122,6 +124,19 @@ export function defaultConfig() {
       'lesson-extractor': 'low',
       'security-escalation': 'high',
     },
+    // A3, the held-out oracle. **Off by default, and that is not the usual cowardice.**
+    //
+    // §13 rejects an `enabled` flag on the context budget, arguing that switching a check off is
+    // a way of not making a decision. That reasoning is about disabling a check already known to
+    // work. This one has never judged a real build, and its failure mode is the worst in this
+    // codebase: a case that invents a requirement the specification does not decide becomes a
+    // gate the builder cannot satisfy for the rest of the run, and it cannot tell an invention
+    // from a real requirement. That defect class has bitten seven times.
+    //
+    // So it stays off until a run has measured it, and the flag is a staging device rather than
+    // an escape hatch. What would justify flipping the default: one case-G run with it on, whose
+    // oracle failures were all genuine defects rather than inventions.
+    oracle: { enabled: false },
     deploy: { enabled: false, command: [], url: '', smoke: [] },
     extractTests: true,
     chaos: 1,
@@ -362,6 +377,14 @@ export function validateConfig(input) {
       merged_[phase] = value;
     }
     merged.effort = merged_;
+  }
+
+  if ('oracle' in source) {
+    const oracle = requireObject(source.oracle, 'oracle');
+    rejectUnknownKeys(oracle, new Set(['enabled']), 'oracle');
+    merged.oracle = {
+      enabled: 'enabled' in oracle ? requireBoolean(oracle.enabled, 'oracle.enabled') : defaults.oracle.enabled,
+    };
   }
 
   if ('deploy' in source) {

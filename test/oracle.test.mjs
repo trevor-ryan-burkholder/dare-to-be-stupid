@@ -22,8 +22,10 @@ import {
   parseOracleCases,
   readOracle,
   runOracle,
+  resolveArtifactCommand,
   writeOracle,
 } from '../scripts/oracle.mjs';
+import { oracleGate, staticGates } from '../scripts/driver.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -188,5 +190,56 @@ describe('running the cases', () => {
     });
     assert.deepStrictEqual(listings[0], ['only-a.csv']);
     assert.deepStrictEqual(listings[1], [], 'the second case saw the first case\'s files');
+  });
+});
+
+describe('resolveArtifactCommand', () => {
+  // A CLI's entry point is what package.json declares as `bin`, because that is what a user
+  // runs. Run 10 found a build whose declared bin was inert - zero bytes, exit 0, through a real
+  // npm install -g - while every gate stayed green because each invoked node dist/cli.js
+  // directly. Resolving through bin makes the oracle ask the same question a user does.
+
+  /** @param {string} manifest */
+  function treeWith(manifest) {
+    const dir = makeTempDir();
+    writeFileSync(path.join(dir, 'package.json'), manifest, 'utf8');
+    return dir;
+  }
+
+  it('resolves a string bin to an absolute node invocation', () => {
+    const dir = treeWith(JSON.stringify({ bin: 'dist/cli.js' }));
+    assert.deepStrictEqual(resolveArtifactCommand(dir), ['node', path.join(dir, 'dist/cli.js')]);
+  });
+
+  it('resolves the first entry of an object bin', () => {
+    const dir = treeWith(JSON.stringify({ bin: { csvstat: 'dist/bin.js' } }));
+    assert.deepStrictEqual(resolveArtifactCommand(dir), ['node', path.join(dir, 'dist/bin.js')]);
+  });
+
+  it('returns null rather than guessing when no bin is declared', () => {
+    // Picking a plausible-looking file would paper over exactly the defect run 10 found.
+    assert.equal(resolveArtifactCommand(treeWith(JSON.stringify({ name: 'x' }))), null);
+    assert.equal(resolveArtifactCommand(makeTempDir()), null);
+    assert.equal(resolveArtifactCommand(treeWith('{ not json')), null);
+  });
+});
+
+describe('the oracle as a gate', () => {
+  it('fails, naming what it looked for, when there is no entry point', () => {
+    const dir = makeTempDir();
+    const result = oracleGate(dir, path.join(dir, '.dare'), { run: () => ({ ok: true, status: 0, stdout: '', stderr: '' }) });
+    assert.equal(result.ok, false);
+    assert.match(result.detail, /declares no `bin`/);
+  });
+
+  it('is absent unless armed, and absent unless the driver supplied a .dare', () => {
+    // Both are required. An oracle with nowhere to read from would report a clean pass over
+    // nothing, and this is the one gate whose whole value is independence from the builder.
+    const dir = makeTempDir();
+    const named = (/** @type {Record<string, unknown>} */ o) => staticGates(dir, o).map((g) => g.name);
+    assert.equal(named({}).includes('oracle'), false);
+    assert.equal(named({ oracle: true }).includes('oracle'), false, 'armed with no dareDir');
+    assert.equal(named({ dareDir: path.join(dir, '.dare') }).includes('oracle'), false, 'dareDir with no arming');
+    assert.equal(named({ oracle: true, dareDir: path.join(dir, '.dare') }).includes('oracle'), true);
   });
 });
