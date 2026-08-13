@@ -1,5 +1,17 @@
 # Audit — 12 August 2026
 
+> **Resolution note, 13 August 2026 — every fix-first item below is closed.** This document is
+> preserved as the 12 August snapshot of the tree at 0.73.0; do not work from its findings.
+> As of 0.88.0: **F1** fixed — `templates/builder-system.md` no longer names any runner and the
+> `no-tests` objective takes the toolchain's `unitCommand`; **F2** fixed — `BRIEF.md` statuses
+> reconciled (A3 reads BUILT 0.70.0–0.72.0); **F3** fixed — `oracle-author` is declared in
+> `PHASE_PERMISSIONS` with `allowedTools: []`, stricter than the policy it once borrowed;
+> **F4** fixed — the escalation prompt lives in `templates/security-escalation.md`; **F5**
+> fixed — `BRIEF-REVIEW.md` deleted. F6 was scope, not a defect. The unchecked list at the
+> bottom has also shrunk since: the suite, integration tier, release-check and tier 3 were all
+> run on 13 August at 0.85.0 (see `HANDOFF.md`'s header), and twelve-plus dogfood runs exercised
+> what this audit could only read.
+
 **Scope correction, before anything else.** The audit prompt names 0.34.0. The working tree is
 at **0.73.0** — thirty-nine versions further, including the dogfood runs (`DOGFOOD.md`), the
 implemented oracle (§4.6), deploy with smoke checks (§10.1), and `COMPLETION.md` as the live

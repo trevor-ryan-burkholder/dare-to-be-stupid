@@ -43,7 +43,7 @@
 
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /** @typedef {{ value: string, hasExpansion: boolean }} Token */
 /** @typedef {{ decision: 'allow' }} Allow */
@@ -325,6 +325,41 @@ export function isProtectedStatePath(candidate, cwd) {
 }
 
 /**
+ * This file, and the manifest that registers it.
+ *
+ * Resolved from `import.meta.url` rather than named, so the rule is **self-referential**: it
+ * protects whichever copy of the guard is actually deciding, wherever it was loaded from. A
+ * literal path would be an enumeration, and enumeration is the defect this repository has paid
+ * for repeatedly.
+ */
+const GUARD_FILE = fileURLToPath(import.meta.url);
+const GUARD_MANIFEST = path.join(path.dirname(GUARD_FILE), 'hooks.json');
+
+/**
+ * Is this path the guard itself?
+ *
+ * `CLAUDE.md`'s invariant reads *"the guard hook is not editable by what it guards"*. That was
+ * true of `.dare/` and **false of the guard**: the positional rule protected the run's evidence
+ * and nothing protected the file deciding what a run may do. A builder holding
+ * `--dangerously-skip-permissions` could rewrite its own constraint, and no required id would
+ * have noticed.
+ *
+ * **For an ordinary target this rule never fires** — the guard lives in an install cache well
+ * outside the repository under test, so no path in that tree resolves to it. It exists for the
+ * one case where the repository under test *is* the plugin, which is the case that has to be
+ * safe before the loop is ever pointed at this repository.
+ *
+ * @param {string} candidate
+ * @param {string} cwd
+ * @returns {boolean}
+ */
+export function isProtectedGuardPath(candidate, cwd) {
+  if (candidate.length === 0) return false;
+  const resolved = path.resolve(cwd, candidate);
+  return resolved === GUARD_FILE || resolved === GUARD_MANIFEST;
+}
+
+/**
  * The environment variable the driver stamps on every `claude -p` child it spawns
  * (`childEnvironment` in `scripts/driver.mjs`). Kept as a literal rather than imported so
  * the hook has no dependency on the driver: hooks run from an install cache and must work
@@ -582,6 +617,48 @@ function wrappedCommands(segments) {
 }
 
 /**
+ * A Bash command naming the guard itself.
+ *
+ * Every token is resolved as a path and compared, rather than pattern-matched: the rule is
+ * positional like `protected-state`, and for anything other than this repository no token can
+ * resolve to it. Reads are refused along with writes for the same reason `protected-state`
+ * refuses `cat .dare/config.json` — a shell string cannot be told apart from a write reliably,
+ * and a rule that fails open on the first heredoc is worse than a blunt one. The Read tool is
+ * not hooked, so reading the guard is still available by the ordinary route.
+ *
+ * @param {string} command
+ * @param {Token[][]} segments
+ * @param {string} cwd
+ * @returns {Decision}
+ */
+function checkProtectedGuard(command, segments, cwd) {
+  // The raw string as well as the tokens, because `tokenizeCommand` **drops redirection
+  // targets** so they are not mistaken for operands — and `echo '' > guard.mjs` puts the whole
+  // attack in the target. `protected-state` tests the raw command for the same reason.
+  for (const candidate of command.match(/[\w./\\~-]+/g) ?? []) {
+    if (isProtectedGuardPath(candidate, cwd)) {
+      return deny(
+        'protected-guard',
+        `${candidate} is the guard hook deciding this call. A run does not edit the rule that ` +
+          'constrains it (CLAUDE.md invariant, DESIGN.md §6). Outside a run it is an ordinary file.',
+      );
+    }
+  }
+  for (const segment of segments) {
+    for (const token of segment) {
+      if (isProtectedGuardPath(token.value, cwd)) {
+        return deny(
+          'protected-guard',
+          `${token.value} is the guard hook deciding this call. A run does not edit the rule that ` +
+            'constrains it (CLAUDE.md invariant, DESIGN.md §6). Outside a run it is an ordinary file.',
+        );
+      }
+    }
+  }
+  return ALLOW;
+}
+
+/**
  * Run every Bash rule over one command string, recursing into command substitutions.
  *
  * Only `protected-state` is conditional on being inside a run. The other three rules —
@@ -600,6 +677,7 @@ export function checkBashCommand(command, cwd, options = {}) {
   const { segments, substitutions } = tokenizeCommand(command);
   const checks = [
     running ? checkProtectedState(command, segments) : ALLOW,
+    running ? checkProtectedGuard(command, segments, cwd) : ALLOW,
     checkNestedDare(segments),
     checkGitHistory(segments),
     checkRecursiveRemove(segments, cwd),
@@ -624,6 +702,13 @@ function checkToolPaths(toolInput, cwd) {
   for (const [key, value] of Object.entries(toolInput)) {
     if (typeof value !== 'string') continue;
     if (!PATH_KEY_RE.test(key)) continue;
+    if (isProtectedGuardPath(value, cwd)) {
+      return deny(
+        'protected-guard',
+        `${value} is the guard hook deciding this call. A run does not edit the rule that constrains it ` +
+          '(CLAUDE.md invariant, DESIGN.md §6). Outside a run it is an ordinary file.',
+      );
+    }
     if (isProtectedStatePath(value, cwd)) {
       return deny(
         'protected-state',

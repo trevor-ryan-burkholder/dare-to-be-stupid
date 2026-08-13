@@ -1,5 +1,14 @@
 # Completion Plan — 12 August 2026
 
+> **Frozen as the historical plan, 13 August 2026. The live plan is `PLAN.md`.** Execution outran this file the day it was
+> written and nobody ticked a box: Phase 1's oracle shipped at 0.70.0–0.72.0, most of Phase 0's
+> experiments ran (E and F passed; run 8 `SHIPPED`; H and I remain), and the tier-3 check ran
+> 8 of 8. **The boxes below are deliberately left unticked** — `HANDOFF.md` is the execution
+> record and `BRIEF.md` carries per-item statuses; ticking a second ledger is how two ledgers
+> disagree. The percentages below (~75% / ~60%) are as-of 12 August, before runs 8–15 and the
+> fixes they bought. Read this file for the *ordering rationale*, which is still the best
+> statement of it, and read `HANDOFF.md` for what actually happened.
+
 > **For agentic workers:** use `superpowers:subagent-driven-development` or
 > `superpowers:executing-plans` for the coded phases. Steps use checkbox syntax.
 >

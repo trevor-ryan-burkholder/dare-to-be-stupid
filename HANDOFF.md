@@ -1,7 +1,10 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.85.0`. Measured 13 August: `npm test` **1591 pass**,
-`npm run test:integration` **28 pass**, `npm run release-check` **ok**. `npm run test:live` **20 of 20 pass across 6 files**, run at 0.85.0.
+**State:** working tree at `0.88.0` (synced by a docs pass, 13 August — 0.86.0–0.88.0 landed
+without updating this line). Last full measurement was **at 0.85.0**: `npm test` **1591 pass**,
+`npm run test:integration` **28 pass**, `npm run release-check` **ok**, `npm run test:live`
+**20 of 20 across 6 files**. Nothing has re-measured since; treat those counts as 0.85.0's, not
+this version's.
 
 **This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
 `package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
@@ -571,11 +574,11 @@ The cheap fix is the conventional one: a pidfile under `.dare/`, written at star
 preflight, refusing when the recorded pid is alive. It fits the existing design — `.dare/` is
 already driver-owned and §6 already denies a run every write there, so a builder cannot forge it.
 
-**NEEDS REVIEW, and deliberately not built:** this is a new feature and the session brief says
-this is not a build session. Recorded so the next one can decide. Note the interaction worth
-thinking about first: a pidfile left behind by a killed driver must not lock the repository
-forever, and "is this pid alive" is not the same question as "is this pid *my* driver" after a
-reboot recycles pids.
+**The paragraph that once stood here said "deliberately not built". It was built at 0.82.0** —
+`scripts/run-lock.mjs`, `.dare/lock.json`, checked at start, and verified live in the improve3
+run, which held `pid: 59477` throughout; see the top of this file. The design questions recorded
+here — a stale pidfile must not lock the repository forever, and "alive" is not "mine" after pid
+reuse — were the input to that implementation, not reasons it stayed unbuilt.
 
 **Operationally, until then:** check `ps -eo pid,args | grep driver.mjs` before launching, and
 verify a kill actually took. **The claim that once stood here — that `kill -TERM` did not stop a

@@ -1,5 +1,8 @@
 # Implementation brief — integrity, portability, reliability
 
+> **This ledger is complete. Remaining work lives in `PLAN.md` (13 August 2026), the only live
+> plan.** Statuses below are final as of their stated versions.
+
 > ## This is a historical record. `COMPLETION.md` is the live plan.
 >
 > **Frozen 12 August 2026 at 0.74.0.** Item statuses here are maintained, but the *shape* of this

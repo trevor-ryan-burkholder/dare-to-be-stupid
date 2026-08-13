@@ -1,4 +1,4 @@
-# Dogfood runs — case D performed 11 August 2026; the rest prepared
+# Dogfood runs — D, E, F and G exercised; E and F passed; run 8 SHIPPED. A, B, C, H, I remain
 
 `BRIEF.md` D2 and `HANDOFF.md` item 9.
 
@@ -289,14 +289,15 @@ likely to stub it.
 an id passed by never being judged. Keep the whole `.dare/` directory if this happens — it is the
 most important artifact this project could produce.
 
-## Case E — deliberate regression  ← DO THIS NEXT
+## Case E — deliberate regression — **PASSED, run 4, 12 August 2026**
+
+**Run 4 passed on every criterion below** — bloopers record, hard reset to `lastGoodCommit`,
+`regression` objective, no reviewer called that iteration. The ratchet fired on a real run
+against a real 93-id state; full record in `HANDOFF.md` ("Run 4: case E passed on every
+criterion"). The recipe stays for re-running against future versions.
 
 **Newly reachable.** Run 3 advanced the ratchet to 93 ids at iteration 1, which is the
 precondition this scenario always needed and never had. Every earlier run ended `passing: 0`.
-
-
-
-The ratchet is the reason the design exists and it has never fired on a real run.
 
 Run Case A or D first until at least one iteration advances the ratchet — `.dare/state.json`
 must show a non-empty `passing` array and a non-null `lastGoodCommit`. Then, **from outside the
@@ -321,10 +322,14 @@ git add -A && git commit -m 'deliberate regression'
 should have moved the first run's `run.json`, `briefs/` and `reality-check.md` there rather than
 overwriting them.
 
-## Case G — the smallest thing that could ship
+## Case G — the smallest thing that could ship — **run 8 SHIPPED, 12 August 2026**
 
-**The outcome this project has never once observed is `SHIPPED`.** Every run in its history has
-ended `BUDGET` or `STALLED`. Cases A and B cannot settle it quickly: they hand over a broad idea
+**Run 8 was the first `SHIPPED` in this project's history** — and the independent audit of that
+ship found the binary discards data at exit 0, which is why `SHIPPED` is a claim to check rather
+than a result to trust. Both halves are the finding; full record in `HANDOFF.md` ("Run 8").
+
+Written when the outcome this project had never once observed was `SHIPPED`, and every run in
+its history had ended `BUDGET` or `STALLED`. Cases A and B cannot settle it quickly: they hand over a broad idea
 ("a link shortener with an admin analytics page"), and a broad idea takes more iterations to
 converge than a budget usually allows. The rejection scenario cannot settle it at all — `PRD-4.1`
 is impossible on purpose.
@@ -399,16 +404,18 @@ The third outcome is the one worth engineering for. Confirm the run does not shi
 
 ---
 
-## The tier-3 live check, also unrun
+## The tier-3 live check — **run 12 August 2026, 8 of 8; 20 of 20 across 6 files at 0.85.0**
 
-Separate from the dogfood runs and much cheaper — a few cents, under a minute:
+First execution found a template defect in eight tests before any dogfood run inherited it —
+exactly the failure this ordering exists to catch (`HANDOFF.md`, "Tier 3 ran for the first
+time"). Separate from the dogfood runs and much cheaper — a few cents, under a minute:
 
 ```bash
 DARE_LIVE=1 npm run test:live
 ```
 
 It covers the builder's assumptions output contract (`test/live/assumptions-contract.live.test.mjs`)
-and the existing `claude -p` child checks. **Run this before the dogfood scenarios.** If the
+and the existing `claude -p` child checks. **Re-run it before any new dogfood scenario.** If the
 assumptions contract is wrong, every dogfood run inherits the fault and you will be debugging it
 inside a four-hour run instead of a sixty-second one.
 

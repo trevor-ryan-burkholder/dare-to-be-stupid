@@ -785,3 +785,64 @@ describe('guard.mjs as a process', () => {
     );
   });
 });
+
+// CLAUDE.md's invariant reads: "The guard hook is not editable by what it guards." That was
+// true of `.dare/` and false of the guard itself. The positional rule protects the run's
+// evidence; nothing protected the file deciding what a run may do, so a builder holding
+// `--dangerously-skip-permissions` could rewrite its own constraint and no required id would
+// notice.
+//
+// It only bites when the repository under test *is* the plugin — for any other target the guard
+// lives in an install cache well outside the tree, and this rule is a no-op there. That is
+// precisely the case that has to be safe before the loop is ever pointed at this repository.
+describe('blocked: the guard cannot be edited by the run it is guarding', () => {
+  const guardPath = path.resolve('hooks/guard.mjs');
+  const hooksManifest = path.resolve('hooks/hooks.json');
+
+  const denied = [
+    [`echo '' > ${guardPath}`, 'a redirect over the guard'],
+    [`sed -i 's/deny/allow/' ${guardPath}`, 'an in-place edit of the guard'],
+    [`rm ${guardPath}`, 'deleting the guard'],
+    [`echo '{}' > ${hooksManifest}`, 'a redirect over the hook manifest'],
+    [`cp /tmp/other.mjs ${guardPath}`, 'overwriting the guard from elsewhere'],
+  ];
+  for (const [command, label] of denied) {
+    it(`denies ${label}`, () => {
+      assertDenied(bashEvent(command), 'protected-guard');
+    });
+  }
+
+  it('denies a Write to the guard', () => {
+    assertDenied(pathEvent('pretooluse-write.json', 'file_path', guardPath), 'protected-guard');
+  });
+
+  it('denies an Edit of the guard', () => {
+    assertDenied(pathEvent('pretooluse-edit.json', 'file_path', guardPath), 'protected-guard');
+  });
+
+  // Same reasoning as protected-state: the rule is about the run, not about the person who owns
+  // the repository. An operator fixing the guard outside a run must not be refused, or the guard
+  // has stopped being a guard and started being a nuisance.
+  it('leaves the operator alone outside a run', () => {
+    assertAllowed(pathEvent('pretooluse-write.json', 'file_path', guardPath), {});
+  });
+});
+
+describe('allowed: guard neighbours', () => {
+  // Blocking everything is not passing. These are the names most likely to be caught by a
+  // careless rule, and every one of them is ordinary work a builder may legitimately do.
+  // Note what is NOT here: `cat hooks/guard.mjs`. A shell string cannot be told apart from a
+  // write reliably, which is exactly why protected-state denies `cat .dare/config.json` too.
+  // Reading through the Read tool stays fine — it is not hooked.
+  const allowed = [
+    ["echo 'x' > test/guard.test.mjs", 'the guard test, which is not the guard'],
+    ["echo 'x' > src/hooks/guard.mjs", "an application's own file that happens to share the name"],
+    ["echo 'x' > docs/guard.md", 'documentation about the guard'],
+    ["echo 'x' > hooks/other.mjs", 'a different file in the hooks directory'],
+  ];
+  for (const [command, label] of allowed) {
+    it(`allows ${label}: ${command}`, () => {
+      assertAllowed(bashEvent(command));
+    });
+  }
+});

@@ -45,7 +45,7 @@ mechanism it already trusts.
 
 ---
 
-### 2. Held-out oracle: tests the builder never sees — **superseded by R13; not taken**
+### 2. Held-out oracle: tests the builder never sees — **superseded by R13; built 0.70.0–0.72.0**
 
 **From:** AgentLoop; supported by *Building to the Test: Coding Agents Deliver What You
 Check, Not What You Requested* (arXiv 2606.28430).
@@ -65,10 +65,12 @@ budget for a way to quarantine a bad oracle test rather than hard-resetting on i
 **Value:** high. It is the same insight as the cold reviewer, applied one layer earlier, and
 it attacks the last place the builder is still judging itself.
 
-> **Deferred 11 August 2026 after reading the code.** Two fixable obstacles — the builder owns the
-> test runner's config, and the regression objective leaks the oracle's ids — plus a third,
-> unsealable reads, which was first called fatal and is not. See **R13**. The hole this identified
-> is real, the item is still the only thing aimed at it, and it waits on a run that finishes.
+> **Deferred 11 August 2026 after reading the code; built 12 August at 0.70.0–0.72.0.** Two
+> fixable obstacles — the builder owns the test runner's config, and the regression objective
+> leaks the oracle's ids — plus a third, unsealable reads, which was first called fatal and is
+> not. The run it waited on finished (run 8 `SHIPPED`), and the runner-ownership objection
+> dissolved when §4.4 put the mutation threshold in driver-owned state — the same move, reused.
+> See **R13** for the design that shipped, which differs from the sketch here.
 
 ---
 
@@ -366,7 +368,7 @@ measured at $0.83 and 124 seconds, gates shell out to real toolchains, and `maxI
 25. The shape transfers; the economics do not. At n=25 a hypothesis loop is a slower race, and
 the race already exists.
 
-## R13. Held-out oracle, reconsidered — **deferred, not rejected**
+## R13. Held-out oracle, reconsidered — **deferred 11 August; built 12 August (0.70.0–0.72.0, `DESIGN.md` §4.6)**
 
 Round one put this in tier 1. On 11 August 2026 it was read against the actual code, shelved, and
 then the shelving reasoning was itself corrected. Both passes are recorded, because the second one
@@ -412,6 +414,17 @@ behind `BRIEF.md` D2 and behind B2's new operation.
 What round one got right and still has: the builder authoring the tests the ratchet is built from
 is a real hole, and it is the last place the builder judges itself. Mutation testing (item 3) and
 RED evidence narrow it. Neither closes it.
+
+**Outcome, 13 August 2026 — built, and the shipped design is not the sketch above.** What landed
+at 0.70.0–0.72.0 (`DESIGN.md` §4.6, `scripts/oracle.mjs`): deterministic **argv-and-stdout
+cases**, not a test suite — no runner config for the builder to own, which with §4.4's
+driver-owned-threshold move is what dissolved obstacle 1. Cases live under `.dare/` (driver-owned
+by §6's positional rule) and are **not supplied** rather than sealed — §6.1's distinction, stated
+in `oracle.mjs`'s own header. Authored in Phase 0b from the PRD alone, before design, under a
+dedicated `oracle-author` phase whose `allowedTools` is the empty set; authoring failure **ends
+the run**. Config-gated off by default; armed by the capability table for `cli` only. Run 12 —
+shipping `mean: 0` past a 110,877-case differential fuzz whose reference came from the same
+spec — is the measurement that turned this from deferred to built.
 
 ## R12. Noted — the overfitting symmetry
 
@@ -496,6 +509,169 @@ Observed in two consecutive runs before the mechanism had a name.
   A child's conversation is disposable."* The blackboard is not an alternative to the coordinator
   here; the coordinator is what makes it trustworthy.
 
+# Round five — mined against the dogfood defects, 12 August 2026
+
+Different method this round: instead of surveying what is out there, each search started from a
+**measured defect in this repository's own runs** and asked what closes it. Four items, each keyed
+to the run that earned it.
+
+## R16. Per-child budget flags — **take it first; it closes case D's defect with one flag**
+
+Case D's record: the token ceiling could not stop a running child, and one builder spent **10× the
+ceiling** before returning — the driver charges spend only when a child comes back, so the
+overshoot bound is "one child", and run 6 priced a single child at 14M tokens. The bound is only as
+good as the largest child, and nothing bounds the child.
+
+`claude -p` accepts `--max-budget-usd` (stop at an approximate dollar spend) and `--max-turns`
+(cap agentic turns). The driver can derive a per-child allowance from the remaining ceiling at
+spawn time and pass both flags in `claudeArgs`. The envelope's reported `total_cost_usd` stays
+authoritative for accounting; the flags are the in-flight bound the accounting cannot be.
+
+Costs, stated: the budget stop is approximate, and a child stopped mid-write returns not-ok —
+which the loop already treats as a builder failure, the correct path. **This touches
+`claudeArgs`, so by `CLAUDE.md`'s own rule it requires tier 3 before it can be believed** —
+the flag's actual stop behaviour is another binary's contract.
+
+## R17. Metamorphic relations in the oracle — **take it; it is the answer to run 12's defect class**
+
+Run 12's defect was `mean: 0` where the truth is `1/3` — a floating-point accumulation property
+the PRD never states, invisible to any check derived from the PRD, which is why 110,877
+differential cases missed it: the reference was built from the same documents. R15 fixed how such
+a finding is *phrased*; nothing yet *generates* one.
+
+Metamorphic testing is the established answer to exactly this oracle problem: instead of asserting
+an output value, assert a **relation between runs** — permute the input and the mean must not
+change; scale every element by k and the mean scales by k; duplicate the dataset and the mean is
+fixed. No reference implementation exists, so there is no "same assumption twice." A relation like
+permutation invariance catches run 12's defect *without anyone having thought of associativity*.
+
+The harness barely changes: an `OracleCase` today is argv plus expected output; a **relation case**
+is two argv-plus-transform pairs and a comparison, still deterministic, still exit-code-and-stdout,
+still sealed under `.dare/`. One schema extension in `oracle.mjs`, one section in
+`templates/oracle-author.md` teaching the five standard relation shapes (permute, scale, duplicate,
+subset, identity-merge). The literature is deep if wanted — Chen et al.'s survey is canonical and
+there is active work applying MT to generated code specifically — but the mechanism needs none of
+it to be built.
+
+## R18. An API-shaped oracle from the contract docs — **take the shape, gate the tool**
+
+`gate-policy.mjs` arms the oracle for `cli` only, on the honest reasoning that argv-and-stdout is
+a CLI harness. But the `docs` gate **already requires an API contract document for `api`
+projects** — the artifact an API-shaped oracle would need is already mandatory, just not
+machine-consumed.
+
+The move: Phase 1 emits the contract as OpenAPI (it already emits `api-contract.md`; make the
+machine-readable half required for `api` capabilities), and a schema-driven property fuzzer runs
+against the live app at gate time — generated inputs, response-schema conformance, negative-case
+validation. Schemathesis is the mature tool for this; it is Python, which is exactly what the
+quality-plugin registry exists for — `knip` and `semgrep` already established the pattern of an
+optional gate that degrades to a warning when the tool cannot be provisioned. Slot it there, not
+in core.
+
+This extends the held-out principle to the shape the oracle currently cannot judge: the contract
+is authored at design time from the PRD, before any code exists — the same independence the CLI
+oracle gets from Phase 0b.
+
+## R19. Native sandbox under the guard — **take it as a second layer; trust it as nothing more**
+
+The guard hook sees tool calls. It cannot see what code the builder *wrote* does at runtime —
+recorded as the A2 limitation, accepted because the threat model is satisficing. Claude Code now
+ships OS-level sandboxing (seatbelt on macOS, bubblewrap on Linux/WSL2) that bounds the process
+at the kernel, which is the layer the hook cannot reach.
+
+Worth adding under the builder for defense in depth, with the failure modes recorded **before**
+adoption, because they are instructive:
+
+- a documented bypass rewrote paths through `/proc/self/root` to dodge a denylist — enumerated
+  denylists lose at the kernel too;
+- a CVE let sandboxed code write `.claude/settings.json` and inject **hooks** that run with host
+  privileges on restart — the guard's own delivery mechanism is what the escape targeted;
+- on a kernel where bubblewrap failed, the agent **asked to rerun unsandboxed** — a fallback the
+  driver must refuse on the builder's behalf, because a sandbox that can be declined by the thing
+  it contains is not a sandbox.
+
+Adopt with the same posture as the guard itself: an added floor, never a replaced one, and its
+*registration* needs a live test for the same reason the guard's did — eleven versions of green
+unit tests once proved nothing about whether the hook was loaded.
+
+## Round five, explicitly not taken
+
+- **Test-impact analysis** (run only affected tests per iteration). Faster iterations, but the
+  ratchet's evidence would shrink to whatever the selector chose — a regression outside the
+  selected set becomes invisible until later, which is a monotonicity hole wearing a speedup.
+- **Spectrum-based fault localization** for regression objectives. Deterministic and appealing,
+  but it needs per-test coverage collection every iteration to be ready for the rare reset, and
+  the regression objective already names the failing ids — the builder's problem has not been
+  *finding* the fault, it has been staying inside the fix (R15).
+
+# Round six — `/batch`, and what the harness underneath has grown, 13 August 2026
+
+Prompted by the operator hearing of a new `/batch` command. Surveyed that, plus what Claude Code
+has shipped since the verified pin (2.1.226), against the repository's own open list — the
+sequential panel, the missing heartbeat, the orphaned grandchild, and the run-level wall clock.
+
+Status of round five first, so this round does not repeat it: **R16 and R17 remain unadopted at
+0.88.0.** `costCeiling` landed, but it is a *run-level* ceiling read from envelopes — the
+complement of R16, not the substitute. A child in flight is still bounded only by
+`childTimeoutMs`; the per-child `--max-budget-usd` bound is still on the table. No metamorphic
+relations in the oracle yet.
+
+## R20. `/batch` and `/simplify` — **nothing to take for the loop; one hazard worth knowing**
+
+`/batch` (Claude Code 2.1.63) fans one session out into parallel subagent workers over
+independent tasks and aggregates the results; each worker auto-runs `/simplify` on its own
+changes before committing.
+
+Neither half fits this loop, for reasons the design already owns:
+
+- **The workers are same-session subagents.** The reviewer invariant is explicit — a separate
+  `claude -p` process, "never 'optimize' this into a subagent" — and the builder already *is* a
+  whole process with full agency; parallelism between builders exists and is called the race.
+  `/batch` is a topology this project deliberately does not use, arriving as a convenience.
+- **`/simplify` is the anti-F1.** It exists to improve adjacent code for clarity — the precise
+  diff chaos-1 forbids, because here an unrequested improvement is regression surface and a
+  regression costs a hard reset. A builder that reached for `/batch` would ship every change
+  pre-widened by a tool whose job is widening.
+
+The hazard note: builders inherit the operator's Claude Code, so the command *exists* in their
+runtime. Nothing today makes a print-mode builder invoke slash commands spontaneously, and no
+countermeasure is warranted — but if a future run's diffs arrive mysteriously "tidied," this is
+the first suspect, and this paragraph is here so that suspicion takes minutes rather than a run.
+
+## R21. The async conversion now pays three times — **take it; the ledger has repriced it**
+
+`HANDOFF.md` declined making the driver async when it bought only a heartbeat: *"a rewrite, not a
+fix."* Since then the file has, in separate entries, recorded three open items that are all the
+same synchronous-driver fact wearing different symptoms:
+
+1. **No heartbeat.** `execFileSync` blocks the event loop, so *hung* and *working* are one
+   picture for however long a child runs — named by the operator as the top blocker, patched with
+   per-child ceilings, still true between ceiling and return.
+2. **The panel is three whole-repository reads run one after another.** A named open. Three cold
+   children with no shared state are embarrassingly parallel; the driver's synchronousness is the
+   only reason review wall-clock is `3×` instead of `max()`.
+3. **The orphan holds the pipe.** `execFileSync` waits for EOF; a leaked grandchild holds the
+   write end and the timeout that rescues the call leaves the leak alive. The proper fix —
+   detached spawn, signal the **process group** — is already implemented in this repository, in
+   `health-probe.mjs`, and named in `HANDOFF.md` as what gates lack.
+
+One move — `execFileSync` → async `spawn` with process groups — closes all three. Costs, stated
+rather than waved at: **deterministic driver lifecycle is a preserved property**, so parallel
+reviewers must not introduce order-dependence — collect all three, then parse and charge in
+declared reviewer order, regardless of completion order. The budget overshoot bound grows from
+"one child" to "children in flight" (three, during review) — document it where the ceiling is
+documented. And it is still the rewrite it always was: land it alone, with tier 3 on the spawn
+path, touching no gate logic in the same commit.
+
+## R22. Message Batches API — **rejected**
+
+Half-price tokens for asynchronous batches is real money at this project's reviewer prices, and
+it does not fit: the integration surface here is `claude -p`, not the raw API; and review sits on
+the loop's critical path, where a batch that returns in an hour stalls the iteration it exists to
+judge. The one latency-tolerant shape — a post-`SHIPPED` advisory re-audit — would be a new
+check with no owner and no gate, which is a thing this design refuses on principle: a check
+nobody waits for is a check nobody fails.
+
 ## Sources
 
 - [SCAFFOLD-CEGIS: Preventing Latent Security Degradation in LLM-Driven Iterative Code Refinement](https://arxiv.org/abs/2603.08520)
@@ -515,3 +691,15 @@ Observed in two consecutive runs before the mechanism had a name.
 - [Loop Engineering](https://github.com/maxmilian/loop-engineering)
 - [OuroLoop GateKeeper / agentic-self-regulation-loop](https://github.com/JdominguezEcommium/agentic-self-regulation-loop)
 - [Inside the Verification Loop](https://www.devassure.io/blog/inside-the-verification-loop/)
+- [Claude Code cost management — `--max-budget-usd`](https://code.claude.com/docs/en/costs)
+- [Claude Code CLI reference](https://backgroundclaude.com/cli-reference)
+- [Metamorphic Testing: A Review of Challenges and Opportunities (ACM Computing Surveys)](https://dl.acm.org/doi/10.1145/3143561)
+- [Validating LLM-Generated Programs with Metamorphic Prompt Testing](https://arxiv.org/pdf/2406.06864)
+- [Metamorphic Testing of Deep Code Models: A Systematic Literature Review](https://arxiv.org/pdf/2507.22610)
+- [Schemathesis](https://schemathesis.io/) and [repository](https://github.com/api-evangelist/schemathesis)
+- [Sandboxing the Claude Code CLI on Linux with bubblewrap](https://labs.esokia.com/post/sandboxing-claude-code-cli-linux-bubblewrap/)
+- [Claude Code sandbox settings.json CVE](https://advisories.gitlab.com/pkg/npm/@anthropic-ai/claude-code/CVE-2026-25725)
+- [Claude Code `/simplify` and `/batch` guide](https://pasqualepillitteri.it/en/news/331/claude-code-simplify-batch-complete-guide)
+- [`/batch` vs `claude -p`](https://smartscope.blog/en/generative-ai/claude/claude-code-batch-processing/)
+- [Message Batches — Claude Platform docs](https://platform.claude.com/docs/en/build-with-claude/batch-processing)
+- [Claude Code changelog, August 2026](https://www.gradually.ai/en/changelogs/claude-code/)
