@@ -41,6 +41,42 @@ a list that never had it.
 execution and invisible to 1687 unit tests — the `.hypothesis/` cache, the ssh rate-limit, and
 this. A brief is output nobody asserts on, and it is handed to the one reader who will act on it.
 
+### The `panelCarry` cost delta, measured at last — and it is 8%, not 56%
+
+**Owed since 0.92.0, and item 12's Done-when could not be met without it.** `panel carry` fired
+for the first time in `panelB`, iteration 2: *"skipped re-review of 9 requirement(s) whose
+evidence has not changed"*.
+
+| iteration | ids reviewed | review tokens | review wall |
+|---|---|---|---|
+| 1 | 16 (nothing carried) | 1,402,476 | 664s |
+| 2 | **7** (9 carried) | 1,285,670 | 475s |
+| delta | **−56% of ids** | **−8.3%** | **−28.5%** |
+
+**Carrying 56% of the requirements saved 8% of the tokens.** The mechanism works exactly as
+designed and buys a small fraction of what `BRIEF.md` R1 predicted.
+
+**The reason is structural and it should have been predictable.** A cold reviewer's cost is
+dominated by *reading the repository*, not by how many ids it answers about. It must read the
+tree whatever it is asked; the id list only changes what it writes at the end. That is why the
+wall clock fell three times as much as the token count — less output to compose, the same input
+to digest.
+
+**This confirms A8's own correction rather than R1's premise.** `BRIEF.md` A8 already struck the
+claim that this loop *"re-litigates every requirement at full cold-panel cost"*, calling it false
+because Phase 5 sits behind the gates. The remaining hope was that review becomes the dominant
+cost on a long run and carrying would scale with it. It does not scale with ids carried, because
+ids are not what review costs.
+
+**What that means for item 12, stated plainly:** the mechanism is safe by construction — a
+narrowed pass still triggers the full panel — and it is now measured as **marginal**. It is not
+worth extending, and anything built on an assumption that carrying scales with the number of
+requirements carried should be re-costed against this number first. If review cost is to be
+reduced, the lever is the *read*, not the id list.
+
+**Caveats, because n is 1:** a single run, the solo-reviewer arm, and iteration 2's tree is not
+iteration 1's. The direction is unambiguous; the exact 8% is not.
+
 ### 0.102.0 — the same defect was in two more DoD ids, found by auditing the table instead of the instance
 
 0.101.0 fixed `DoD-4` because a live auditor tripped over it. **The obvious next question was
