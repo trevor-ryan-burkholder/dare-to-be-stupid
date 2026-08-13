@@ -162,9 +162,37 @@ implementation in its own title. It passed, it entered the ratchet, and it is no
 forever.
 
 Then the panel did its job. `DoD-6-adversarial-input`: *"src/summarise.ts:33 (`sum += n`, an
-unguarded fold) … a confidently wrong answer at exit 0."* The repair is compensated summation —
-**which breaks the protected test.** So the ratchet hard-resets the fix as a regression, the panel
-demands it again, and round it goes.
+unguarded fold) … a confidently wrong answer at exit 0."* Two repair attempts broke the protected
+test and were hard-reset.
+
+### Correction, written after watching it resolve: the cycle broke, and how it broke is the finding
+
+**An earlier draft of this entry said the correct repair was "a regression by definition" and that
+the loop was in a stable deadlock. That was too strong, and the truth is more interesting.** The
+oscillation lasted two cycles and then the builder escaped it — by changing the formulation from
+`sum += n` to **`mean += n / count`**. Measured directly:
+
+| input | `mean += n / count` | verdict |
+|---|---|---|
+| `0.1, 0.2` | `0.15000000000000002` | **passes the protected test exactly** |
+| `1e308, 1e308` | `1e+308` | **fixes the overflow the panel demanded** (was `Infinity`) |
+| `1e16, 1, -1e16` | **`0.5`** | true answer is `0.3333333333333333` — **still wrong, and newly wrong** |
+
+So the protected test did not block the repair. **It narrowed the solution space, and the builder
+found a point in it that satisfies the reviewer's stated finding while leaving the defect class
+intact** — trading one wrong answer at exit 0 for a different wrong answer at exit 0.
+
+That is a subtler failure than a deadlock and a worse one to detect. A deadlock is loud: the same
+regression, forever, in the log. This resolves, the findings converge, the gates go green, and the
+run proceeds looking healthy. **The panel asked about `1e308` because that is the case it found;
+the builder fixed exactly that case.** Nobody lied and nobody stalled.
+
+**It remains the argument for the held-out oracle, by a different route than the one first
+written here.** The oracle's cases are authored from the PRD before any code exists, so the
+assertion is *"mean is the arithmetic mean"* rather than *"mean matches the input the reviewer
+happened to try"* — and a repair that fixes one input while breaking the property still fails.
+Run 12 showed the panel cannot close this hole. Run 13 shows that a finding phrased as a specific
+input gets answered as a specific input.
 
 **Both mechanisms are behaving exactly as specified.** The ratchet is monotonic on test
 *identity* and has no opinion on whether an id was worth having — `BRIEF.md`'s A3 section has said
