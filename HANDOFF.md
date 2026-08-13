@@ -41,6 +41,53 @@ a list that never had it.
 execution and invisible to 1687 unit tests — the `.hypothesis/` cache, the ssh rate-limit, and
 this. A brief is output nobody asserts on, and it is handed to the one reader who will act on it.
 
+### Item 6 — DONE, and `unknown` is not reachable by the documented recipe. The escalation path fired for the first time and was right
+
+**A4's escalation ran live, and every step worked.** The cheap re-check failed, the driver
+escalated to a scoped cold reviewer rather than resetting, and the verdict came back in **32
+seconds for 104,000 tokens**:
+
+```
+pinned security element DoD-2-security at src/paths.ts:6 did not re-verify; asking
+security-escalation: returned after 32s, 104000 tokens
+pinned security element DoD-2-security moved to src/paths.ts:37; re-pinned
+```
+
+**It was correct.** The re-pin names `src/paths.ts:37`, snippet `if (escaped(relative)) {` — my
+table-of-predicates rewrite, which the builder had since hardened with realpath resolution for
+symlinks, which is why it moved. A relocated, still-enforcing guard, found and re-pinned at its
+new location with its new text. That is `CLAUDE.md`'s load-bearing half working exactly as
+written: *a security pin escalates to a scoped reviewer rather than resetting.*
+
+**`unknown` did not fire, and the recipe cannot make it fire.** `DOGFOOD.md`'s case H asks the
+operator to rewrite the guard so it *"shares no text with the pinned snippet"*. That defeats the
+**cheap** check — a text comparison — which is a tripwire, not the judge. The escalation reviewer
+holds `Read`, `Glob` and `Grep` and is told in as many words to *"search the repository for this
+protection — not for this text … renamed, extracted into a helper, moved behind a decorator or
+replaced by an equivalent guard, and any of those still count as present."* A semantically
+identical guard, in the same file, under the same name, is the **definition** of `moved`.
+
+**So the recipe attacks the wrong layer, and `DESIGN.md` §4.3's `unknown` is narrower than it
+reads.** `unknown` is a fail-safe for *reviewer uncertainty* — a searching reviewer that genuinely
+cannot decide — not a state a deliberate intervention can provoke. Producing one would need an
+intervention that is ambiguous rather than merely obfuscated, which does not correspond to any
+realistic degradation. **This is the outcome `PLAN.md` item 6 named as legitimate: the path is
+shown near-unreachable and the design text is corrected rather than defended.**
+
+**"Quarantine is not a pass" was never the untested part.** `test/pins.test.mjs` covers
+`quarantinePin`/`shippingBlockers`, and `test/driver.test.mjs:2028` covers the loop level — *"does
+not ship while an element is quarantined, even on a unanimous panel"*, with its neighbour proving
+it ships once the quarantine clears. The rule is deterministic and held. What had never happened
+was a live *trigger*, and it now turns out a live trigger is close to unprovokable by design.
+
+**What this buys, stated plainly:** A4's expensive path is proven end to end for the first time —
+escalation reachable, cheap, and accurate. `unknown` is reclassified from "the last unobserved
+path" to "the residual a good reviewer rarely needs", and the documents now say so.
+
+**Not verified:** a genuine `unknown` verdict, and therefore a live quarantine. On this evidence
+that is a *feature* — the reviewer resolved an ambiguity the cheap check could not — but it means
+the ship-block has still only ever been exercised by tests.
+
 ### The ratchet reverts the operator's between-run work, and case H's recipe cannot survive it
 
 **Case H attempt 2 failed, and the failure is worth more than the case.** The recipe says to

@@ -91,12 +91,22 @@ checked, and one `grep` contradicted it.
 
 ## Phase 1 — experiments. Spend money, watch, one variable at a time.
 
-### 6. Case H — the `unknown` pin verdict and quarantine — OPEN, **PREPARED** (`DOGFOOD.md` operator queue)
+### 6. Case H — the `unknown` pin verdict and quarantine — DONE; `unknown` shown near-unreachable
 The last unobserved A4 path, and the rule *"quarantine is not a pass"* has never fired. PRD
 recipe ready in `DOGFOOD.md`. If `unknown` proves unreachable in practice, `DESIGN.md` §4.3
 needs rewriting rather than defending — which is why this is an experiment, not a test.
 **Done when:** a run records a quarantined element blocking `SHIPPED`, or the path is shown
 unreachable and the design text is corrected.
+
+**Closed on the second clause, which is the honest half of the Done-when.** The escalation fired
+live for the first time — 32s, 104K tokens — and returned **`moved`**, correctly: it found the
+rewritten guard at `src/paths.ts:37` and re-pinned it. `unknown` cannot be produced by the
+recipe, because the recipe defeats the *text* check while the escalation reviewer holds
+`Read`/`Glob`/`Grep` and is told to search for the **protection, not the text**. `unknown` is a
+fail-safe for reviewer uncertainty, not a provokable state; `DOGFOOD.md` and this entry now say
+so. **"Quarantine is not a pass" was already tested** at unit and loop level
+(`test/driver.test.mjs:2028`); what was missing was a live trigger, and a live trigger is close to
+unprovokable by design.
 
 ### 7. First armed oracle run — DONE (run `oracle1`, BUDGET, oracle judged 19/19)
 A3 is BUILT (0.70.0–0.72.0) and armed by nobody. Enable `oracle.enabled` on a CLI-shaped target

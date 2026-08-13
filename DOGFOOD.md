@@ -447,7 +447,27 @@ inside a four-hour run instead of a sixty-second one.
 > guard that *legitimately* moved, rather than whether it notices sabotage the loop has already
 > undone.
 
-## Case H — the `unknown` pin verdict, the last unobserved path in A4
+## Case H — **PERFORMED 13 August 2026. The escalation fired; the verdict was `moved`, not `unknown`**
+
+> **Read this before re-running it.** The recipe below produces **`moved`**, reliably, and that is
+> the escalation working correctly rather than a flaw in the scenario's execution.
+>
+> The rewrite it asks for defeats the **cheap** re-check, which is a text comparison. The
+> escalation reviewer that then judges holds `Read`, `Glob` and `Grep` and is instructed to
+> *"search the repository for this protection — not for this text"*, counting a rename, an
+> extraction, a decorator or an equivalent guard as present. A semantically identical guard in
+> the same file under the same name is the definition of `moved`.
+>
+> **`unknown` is a fail-safe for reviewer uncertainty, not a provokable state.** Producing one
+> needs an intervention that is genuinely ambiguous rather than merely obfuscated, which does not
+> correspond to a realistic degradation. `test/driver.test.mjs:2028` already proves a quarantined
+> element blocks `SHIPPED`; the rule was never the untested part.
+>
+> What the run *did* establish, all of it new: the escalation path is reachable, costs **32s and
+> 104K tokens**, and was **accurate** — it found the rewritten guard at its new line and re-pinned
+> it with its new text.
+
+## Case H (original recipe) — the `unknown` pin verdict, the last unobserved path in A4
 
 `moved` was observed in run 5 and `removed` in run 10. **`unknown` has never fired**, and it is
 the one that matters most: it is the verdict that produces a **quarantine**, and a quarantined
