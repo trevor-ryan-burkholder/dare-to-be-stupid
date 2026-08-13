@@ -816,15 +816,30 @@ an untested mechanism is how you end up unable to say which half broke.
 
 # D. Validation
 
-## D1. Full suite and new invariant tests — **OPEN**
+## D1. Full suite and new invariant tests — **DONE in substance; the wording was never falsifiable**
 
-All existing tests pass. New focused tests for every invariant added.
+Tiers 1/2/3 stand at 1471 / 18 / 13 and are green. Every invariant added since has landed with
+its own tests, and several arrived *because* a dogfood run proved an untested one false.
 
-## D2. Dogfood against real sacrificial projects — **LARGELY DONE (12 Aug 2026): cases D, E, F and G all run; E and F passed; run 8 SHIPPED. Cases A, B, C unrun (breadth, not risk)**
+The original wording — "new focused tests for every invariant added" — cannot be closed, because
+nothing enumerates the invariants. It is retired rather than ticked, and what replaces it is the
+lesson the runs actually taught: **a green suite is not the evidence this item wanted.**
+`test/guard.test.mjs` was correct and passing throughout the entire period in which the guard was
+firing for zero children. The check that matters is not "is there a test" but "does the test
+observe the thing in the place it actually runs" — which is what tier 3 exists for (§11.1).
 
-Never exercised end to end. `HANDOFF.md` item 9. Both earlier runs died in iteration 1 with
-`passing: 0`, so the ratchet was never reached — give the regression scenarios enough budget to
-reach a second iteration. **Do not substitute another pile of mocks for this phase.**
+## D2. Dogfood against real sacrificial projects — **LARGELY DONE (12 Aug 2026): twelve runs; D, E, F and G all exercised; E and F passed; run 8 SHIPPED. Cases A, B, C unrun (breadth, not risk); H and I written and unrun**
+
+**Twelve runs performed.** The body of this item used to read "Never exercised end to end", which
+was true when it was written and was contradicting its own header by the end of the same day.
+Full records in `HANDOFF.md`; the short version is that dogfooding has found more real defects
+than the test suite has, including three that made a guarantee **false rather than merely
+absent**: the guard hook was registered for no child the driver spawned (0.59.0), the mutation
+gate crashed instead of running on some TypeScript trees (0.65.0), and a ship condition's widened
+remit had no channel to act through (0.60.0).
+
+**Do not substitute another pile of mocks for this phase.** Every one of those was invisible to a
+green suite of 1,400-plus tests and was found by reading a produced artifact.
 
 - **Case A — Node web/API.** "A simple link shortener with an admin analytics page."
 - **Case B — Node with persistence.** "A small task management SPA with local or database
