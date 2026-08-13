@@ -1626,6 +1626,7 @@ JSON, and `DARE_STYLE=plain` suppresses it. Final art designed at build time.
 | `tokenCeiling` | 4_000_000 | bounds *work*. Not a cap and not convertible to money — see §3.5 |
 | `costCeiling` | 50 | bounds *spend*, in USD, from the envelope's own `total_cost_usd`. Decimals allowed |
 | `childTimeoutMs` | 1_800_000 | bounds *wall-clock per child*, and it is the only one of the three that is a watchdog. `tokenCeiling` and `costCeiling` bind a child that returns; neither can see one that does not. Roughly 2.8x the longest child ever observed (§3.9) |
+| `gateTimeoutMs` | 2_700_000 | the same watchdog for gate commands, which hang the same way. **Not derived from measurement**, unlike the row above: no run has recorded a per-gate duration and mutation testing is the unmeasured slow one, so this is a backstop sized to be embarrassing to hit |
 | `reviewers` | `["security","correctness","design"]` | the specialized cold panel (§1.1); each owns its DoD lines |
 | `ownership` | see §1.1 | reviewer → id patterns (`*` is the only wildcard). Must cover every required id, or the run refuses to start |
 | `requireUnanimous` | true | every panel member must return pass on its lines |

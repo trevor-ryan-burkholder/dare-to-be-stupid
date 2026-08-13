@@ -69,6 +69,7 @@ describe('defaultConfig', () => {
         'oracle-author': 'max',
       },
       childTimeoutMs: 1_800_000,
+      gateTimeoutMs: 2_700_000,
       oracle: { enabled: false },
       deploy: { enabled: false, command: [], url: '', smoke: [], timeoutMs: 600000 },
       extractTests: true,
@@ -115,6 +116,23 @@ describe('defaultConfig', () => {
 
     it('accepts an operator-supplied ceiling, because a long task is not a hung one', () => {
       assert.equal(validateConfig({ childTimeoutMs: 5_400_000 }).childTimeoutMs, 5_400_000);
+    });
+
+    // The other half of an iteration. A gate can stop returning too: a suite holding an open
+    // handle, a dev server never reaped, a browser run waiting on a selector that never comes.
+    it('bounds every gate by default as well, because a gate can hang exactly like a child', () => {
+      assert.equal(defaultConfig().gateTimeoutMs, 2_700_000);
+    });
+
+    it('refuses a gate ceiling that bounds nothing', () => {
+      for (const bad of [0, -1, 2.5, 'forty-five minutes', null]) {
+        assert.throws(() => validateConfig({ gateTimeoutMs: bad }), /gateTimeoutMs/, `gateTimeoutMs accepted ${JSON.stringify(bad)}`);
+      }
+    });
+
+    it('gives the gate ceiling more room than the child ceiling, because mutation testing is the slow one', () => {
+      const config = defaultConfig();
+      assert.equal(config.gateTimeoutMs > config.childTimeoutMs, true);
     });
   });
 

@@ -581,8 +581,13 @@ export function combinePanel(reports, options) {
  * `gate:design-slop` on a project with no user interface — is handled upstream by not
  * arming the gate at all (`plugins.mjs`), so anything reaching here must run.
  *
+ * A gate that never *finishes* is the same failure by a slower route, and `timeoutMs` is what
+ * bounds it. A test suite holding an open handle, a dev server a gate started and never
+ * reaped, a browser run waiting on a selector that will not arrive — each blocks the driver's
+ * event loop exactly as a hung child does, and none of them is visible while it happens.
+ *
  * @param {Gate[]} gates
- * @param {{ cwd: string, run: import('./plugins.mjs').Runner }} options
+ * @param {{ cwd: string, run: import('./plugins.mjs').Runner, timeoutMs?: number }} options
  * @returns {{ ok: boolean, results: GateResult[] }}
  */
 export function runGates(gates, options) {
@@ -623,12 +628,25 @@ export function runGates(gates, options) {
       if (out !== '' && err !== '') return `stderr:\n${err}\n\nstdout:\n${out}`;
       return out || err || `exit ${result.status}`;
     };
-    const outcome = options.run(gate.command[0], gate.command.slice(1), { cwd: options.cwd });
+    const outcome = options.run(gate.command[0], gate.command.slice(1), {
+      cwd: options.cwd,
+      // Absent unless supplied, so every existing caller and test double keeps the unbounded
+      // wait gates had before 0.81.0. `main` always supplies it.
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    });
+    // A killed gate is distinguished from one that ran and failed, and the distinction is not
+    // cosmetic: this detail is copied into the brief the builder is handed. Told `exit 1` for
+    // a suite that hung, a builder goes hunting a broken assertion that does not exist. The
+    // gate still fails, because a gate that cannot finish is a gate that cannot run.
+    const detail =
+      outcome.timedOut === true
+        ? `gate ${gate.name} did not finish within ${options.timeoutMs}ms and was killed. Nothing it printed is a result`
+        : failureDetail(outcome);
     results.push({
       name: gate.name,
       ok: outcome.ok,
       status: outcome.status,
-      detail: outcome.ok ? 'passed' : failureDetail(outcome),
+      detail: outcome.ok ? 'passed' : detail,
     });
   }
   return { ok: results.every((result) => result.ok), results };
@@ -3599,7 +3617,7 @@ export function main(argv, io = {}) {
     for (const skip of applicable.skipped) write(verbatim(`gate ${skip.name} does not apply: ${skip.reason}`));
     const browsers = ensurePlaywrightBrowsers({ cwd: dir, dareDir: treeDare, run: shell, capabilities });
     if (browsers.installed) write(verbatim(browsers.detail));
-    const commandResults = runGates(applicable.gates, { cwd: dir, run: shell });
+    const commandResults = runGates(applicable.gates, { cwd: dir, run: shell, timeoutMs: config.gateTimeoutMs });
 
     // ---- the conditional second pass (DESIGN.md §4.4) -------------------
     // Only when every gate in the first pass passed. A failure above costs nothing extra,
@@ -3614,7 +3632,7 @@ export function main(argv, io = {}) {
       for (const skip of secondApplicable.skipped) {
         write(verbatim(`gate ${skip.name} does not apply: ${skip.reason}`));
       }
-      const secondResults = runGates(secondApplicable.gates, { cwd: dir, run: shell });
+      const secondResults = runGates(secondApplicable.gates, { cwd: dir, run: shell, timeoutMs: config.gateTimeoutMs });
       commandResults.results.push(...secondResults.results);
       commandResults.ok = secondResults.ok;
     }

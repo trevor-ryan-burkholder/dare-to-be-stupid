@@ -363,6 +363,82 @@ describe('runGates', () => {
     return { ok, status: ok ? 0 : 1, stdout: '', stderr: ok ? '' : 'boom' };
   };
 
+  // The other half of the operator's stall report. A child is not the only thing in an
+  // iteration that can stop returning: a test suite holding an open handle, a dev server a
+  // gate started and never reaped, a playwright run waiting on a selector that will not
+  // arrive. Every one of those blocks the same event loop for the same forever.
+  describe('a gate that never returns', () => {
+    /** @type {import('../scripts/driver.mjs').ShellResult} */
+    const hung = { ok: false, status: 1, stdout: '', stderr: 'spawnSync npm ETIMEDOUT', timedOut: true };
+
+    it('hands the ceiling to the runner rather than trusting a gate to finish', () => {
+      /** @type {(number | undefined)[]} */
+      const seen = [];
+      runGates([{ name: 'test', command: ['npm', 'test'], required: true }], {
+        cwd: '/repo',
+        timeoutMs: 2_700_000,
+        run: (_command, _args, options) => {
+          seen.push(options.timeoutMs);
+          return { ok: true, status: 0, stdout: '', stderr: '', timedOut: false };
+        },
+      });
+      assert.deepStrictEqual(seen, [2_700_000]);
+    });
+
+    it('fails the gate and says it was killed, rather than reporting a bare exit code', () => {
+      // The detail is not cosmetic: it is copied into the brief the builder is handed. A
+      // builder told `exit 1` for a suite that hung will go looking for a broken assertion.
+      const outcome = runGates([{ name: 'test', command: ['npm', 'test'], required: true }], {
+        cwd: '/repo',
+        timeoutMs: 2_700_000,
+        run: () => hung,
+      });
+      assert.equal(outcome.ok, false);
+      assert.equal(outcome.results[0].ok, false);
+      assert.equal(
+        outcome.results[0].detail,
+        'gate test did not finish within 2700000ms and was killed. Nothing it printed is a result',
+      );
+    });
+
+    it('keeps running the gates after the one that hung', () => {
+      let calls = 0;
+      const outcome = runGates(
+        [
+          { name: 'test', command: ['npm', 'test'], required: true },
+          { name: 'lint', command: ['npm', 'run', 'lint'], required: true },
+        ],
+        {
+          cwd: '/repo',
+          timeoutMs: 2_700_000,
+          run: () => {
+            calls += 1;
+            return calls === 1 ? hung : { ok: true, status: 0, stdout: '', stderr: '', timedOut: false };
+          },
+        },
+      );
+      assert.equal(calls, 2);
+      assert.deepStrictEqual(
+        outcome.results.map((r) => [r.name, r.ok]),
+        [
+          ['test', false],
+          ['lint', true],
+        ],
+      );
+    });
+
+    // The benign neighbour. A gate that ran and failed must keep the output that says why —
+    // 0.78.0 exists because a mutation failure reached the operator as two npm warnings.
+    it('leaves an ordinary failure reporting what it printed', () => {
+      const outcome = runGates([{ name: 'test', command: ['npm', 'test'], required: true }], {
+        cwd: '/repo',
+        timeoutMs: 2_700_000,
+        run: () => ({ ok: false, status: 1, stdout: '2 failed', stderr: '', timedOut: false }),
+      });
+      assert.equal(outcome.results[0].detail, '2 failed');
+    });
+  });
+
   it('passes only when every gate exits zero', () => {
     const outcome = runGates(
       [

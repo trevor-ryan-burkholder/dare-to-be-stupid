@@ -37,7 +37,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 /**
  * @typedef {{
  *   maxIterations: number, stallLimit: number, tokenCeiling: number, costCeiling: number,
- *   childTimeoutMs: number,
+ *   childTimeoutMs: number, gateTimeoutMs: number,
  *   reviewers: string[], ownership: Record<string, string[]>, requireUnanimous: boolean,
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, styleModel: string, lessonModel: string,
@@ -115,6 +115,16 @@ export function defaultConfig() {
     // answer — `runChild`'s own comment says so — which is why the margin is large and why the
     // number is configurable.
     childTimeoutMs: 1_800_000,
+    // The same watchdog, for the other half of an iteration. A test suite holding an open
+    // handle, a dev server a gate started and never reaped, a browser run waiting on a
+    // selector that never arrives — each blocks the driver exactly as a hung child does.
+    //
+    // Unlike `childTimeoutMs` this number is **not derived from measurement**, and saying so
+    // matters: no run in this project has ever recorded a per-gate duration, and mutation
+    // testing is known to be the slow one without anybody knowing how slow. Forty-five minutes
+    // is a guess sized to be embarrassing to hit. What would refine it is one run that logs
+    // each gate's wall-clock; until that exists this is a backstop, not a budget.
+    gateTimeoutMs: 2_700_000,
     reviewers: ['security', 'correctness', 'design'],
     ownership: Object.fromEntries(Object.entries(DEFAULT_OWNERSHIP).map(([reviewer, ids]) => [reviewer, [...ids]])),
     requireUnanimous: true,
@@ -329,6 +339,7 @@ export function validateConfig(input) {
   if ('tokenCeiling' in source) merged.tokenCeiling = requirePositiveInteger(source.tokenCeiling, 'tokenCeiling');
   if ('costCeiling' in source) merged.costCeiling = requirePositiveNumber(source.costCeiling, 'costCeiling');
   if ('childTimeoutMs' in source) merged.childTimeoutMs = requirePositiveInteger(source.childTimeoutMs, 'childTimeoutMs');
+  if ('gateTimeoutMs' in source) merged.gateTimeoutMs = requirePositiveInteger(source.gateTimeoutMs, 'gateTimeoutMs');
   if ('requireUnanimous' in source) {
     merged.requireUnanimous = requireBoolean(source.requireUnanimous, 'requireUnanimous');
   }

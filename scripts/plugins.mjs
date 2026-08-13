@@ -18,8 +18,15 @@
 
 import { execFileSync } from 'node:child_process';
 
-/** @typedef {{ ok: boolean, status: number, stdout: string, stderr: string }} RunResult */
-/** @typedef {(command: string, args: string[], options: { cwd: string }) => RunResult} Runner */
+/**
+ * `timedOut` is optional: the provisioning runners here call short-lived commands that cannot
+ * hang on a remote machine, and requiring the field of every double would be bookkeeping. The
+ * driver's real `shell` always sets it, and every consumer tests it for `true` rather than for
+ * truthiness.
+ *
+ * @typedef {{ ok: boolean, status: number, stdout: string, stderr: string, timedOut?: boolean }} RunResult
+ */
+/** @typedef {(command: string, args: string[], options: { cwd: string, timeoutMs?: number }) => RunResult} Runner */
 /**
  * @typedef {{
  *   name: string, required: boolean, frontendOnly: boolean,
