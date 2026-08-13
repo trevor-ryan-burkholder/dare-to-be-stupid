@@ -41,6 +41,47 @@ a list that never had it.
 execution and invisible to 1687 unit tests — the `.hypothesis/` cache, the ssh rate-limit, and
 this. A brief is output nobody asserts on, and it is handed to the one reader who will act on it.
 
+### What an iteration costs, and why nothing shipped today
+
+**Asked directly by the operator — *"we haven't had a success in a minute"* — and the answer is a
+budgeting artifact, not a regression.**
+
+| run | `tokenCeiling` | outcome |
+|---|---|---|
+| csvstat2 | **150,000,000** | **SHIPPED** |
+| csvstat6 | **160,000,000**, `maxIterations: 12` | **SHIPPED** |
+| oracle1, panelA, panelB (13 Aug) | **15,000,000** | `BUDGET` ×3 |
+
+**Today's runs were given one tenth of the budget every successful run in this project's history
+used.** That was the right call for what they were — experiments sized to answer one question
+each, and all three answered — but it makes "no ships today" say nothing about whether the loop
+still ships.
+
+**The per-iteration figure, which this file has never carried:**
+
+| run | tokens | iterations reached | per iteration |
+|---|---|---|---|
+| oracle1 | 18.06M | 2 | ~9.0M |
+| panelA | 15.59M | 3 | ~5.2M |
+| panelB | 17.10M | 3 | ~5.7M |
+| caseH | 19.60M | 4 | ~4.9M |
+
+**An iteration costs 5–9M tokens.** The runs that shipped did so at iterations 2 and 7. So a ship
+needs roughly **40–110M**, and a 15M ceiling buys **two iterations** — which is exactly where all
+three died, every time with findings still being produced.
+
+**Money does not track tokens and the gap is large.** oracle1 spent 18.06M for $13.83 ($0.766/M);
+panelA spent 15.59M for $16.60 ($1.065/M). **14% fewer tokens, 20% more money** — a 39% swing in
+price per million between two runs of the same PRD hours apart, driven by cache-read share. That
+is `costCeiling`'s justification measured rather than argued, and it means no token number can be
+converted into a bill.
+
+**Also worth knowing: the overshoot is whatever the last child cost.** oracle1 overshot its ceiling
+by 3.06M (20%), panelA by 594K (4%). The bound is "one child", and one child was measured at 9.5M.
+
+`ship1` is the honest test of the question: 150M / $200 / 12 iterations, on the PRD csvstat2 and
+csvstat6 both shipped.
+
 ### Item 6 — DONE, and `unknown` is not reachable by the documented recipe. The escalation path fired for the first time and was right
 
 **A4's escalation ran live, and every step worked.** The cheap re-check failed, the driver

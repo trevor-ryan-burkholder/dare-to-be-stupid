@@ -164,6 +164,23 @@ scenario() {                      # usage: scenario link-shortener
 }
 ```
 
+**Budget arithmetic, measured 13 August 2026 — use this instead of guessing.** An iteration costs
+**5–9M tokens** (four runs: 4.9, 5.2, 5.7, 9.0M per iteration). The two runs in this project's
+history that reached `SHIPPED` were given **150M** and **160M** ceilings and shipped at iterations
+**2** and **7**. So:
+
+| you want | ceiling |
+|---|---|
+| an experiment that reaches the panel once | 15M — two iterations, and it will end `BUDGET` |
+| a run that can plausibly ship | **100–150M**, `maxIterations: 12` |
+
+**Money does not track tokens.** Two runs of the same PRD hours apart priced at **$0.766/M** and
+**$1.065/M** — a 39% swing driven by cache-read share. Set `costCeiling` from what you are willing
+to spend, never by converting a token figure.
+
+**The overshoot is whatever the last child cost**, because a child's spend is unknowable until it
+returns. Measured between 4% and 20% of the ceiling; one builder alone cost 9.5M.
+
 **Give every scenario enough budget to reach a second iteration.** Both earlier attempts died in
 the first one, so a run that stops at iteration 1 tells you nothing you do not already know.
 After `dare init` scaffolds `.dare/config.json`, edit it *before* starting the run — the guard
