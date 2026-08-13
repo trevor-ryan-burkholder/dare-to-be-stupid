@@ -1,15 +1,38 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** working tree at `0.88.0` (synced by a docs pass, 13 August — 0.86.0–0.88.0 landed
-without updating this line). Last full measurement was **at 0.85.0**: `npm test` **1591 pass**,
-`npm run test:integration` **28 pass**, `npm run release-check` **ok**, `npm run test:live`
-**20 of 20 across 6 files**. Nothing has re-measured since; treat those counts as 0.85.0's, not
-this version's.
+**State:** `main` at `0.88.0`. Measured at 0.88.0: `npm test` **1603 pass**, `npm run lint` and
+`npm run typecheck` clean, `npm run release-check` **ok**. `npm run test:integration` and
+`npm run test:live` last measured at 0.85.0 — **28 pass** and **20 of 20 across 6 files**
+respectively; treat those two counts as 0.85.0's until they are re-run.
 
 **This header was stale by fourteen versions until 13 August** — it read `0.64.0` while
 `package.json` read `0.78.0`, which spans the entire A3 held-out-oracle build (0.70.0–0.72.0). It
 is the first line anyone reads and it was the least true. If you change the version, change this
 line in the same commit.
+
+## Working `PLAN.md`, 13 August 2026 — execution record
+
+Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
+**including what was not verified**.
+
+### Item 1 — the mutation gate's baseline message. CLOSED as already done at 0.87.0
+
+`PLAN.md` listed it `OPEN`. The repository disagreed and the repository was right.
+`scripts/driver.mjs:3699` already passes `undefined` rather than `[]` when no commit has advanced
+the ratchet, `scripts/toolchains/node.mjs:142` already declines with a distinct no-baseline
+sentence that says outright *"This is not a statement that nothing changed"*, and
+`test/toolchains.test.mjs:404–422` already asserts both messages plus the negative — that the
+no-baseline reason does **not** contain the changed-set sentence. Nothing to build.
+
+**How the plan got it wrong is the useful part.** The item was compiled out of the improve3 run
+notes higher in this file, which record the defect and say *"Unfixed."* That was true when it was
+written and false four commits later; commit `135f43d` recorded the finding and `769db67` fixed it
+the same day. A plan compiled from a *findings* stratum inherits the moment that stratum was
+written, not the state of the tree. This is item 22's problem arriving early, and it argues for
+doing item 22 before trusting any remaining status in this file.
+
+**Not verified:** nothing new was run for this item beyond tier 1, which the code path is covered
+by. No live run has re-observed the corrected message in the wild.
 
 ## THE TOP BLOCKER, named by the operator: a run hangs for hours and nothing notices
 

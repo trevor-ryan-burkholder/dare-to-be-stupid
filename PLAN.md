@@ -17,12 +17,19 @@ Statuses: `OPEN` → `IN PROGRESS` → `DONE (version)` / `CLOSED (reason)`.
 
 ## Phase 0 — deterministic hygiene. No design work, one commit each, land now.
 
-### 1. Mutation gate's decline message lies about baselines — OPEN
+### 1. Mutation gate's decline message lies about baselines — DONE (0.87.0, before this plan)
 `HANDOFF.md` (improve3 findings): on iteration 1 `lastGoodCommit` is null, `changedSince`
 returns `[]`, and the gate prints *"no first-party source changed"* while three source files
 were modified. "I have no baseline" is not "nothing changed." The decision is defensible; the
 sentence is not.
 **Done when:** the no-baseline case prints a no-baseline message; a test asserts both messages.
+
+**Already satisfied when this plan was written.** `scripts/driver.mjs:3699` passes `undefined`
+rather than `[]` when `lastGoodCommit` is null; `scripts/toolchains/node.mjs:142` declines with
+*"no baseline to scope the changed set against … This is not a statement that nothing changed"*;
+`test/toolchains.test.mjs:404–422` asserts both messages **and** that the no-baseline reason does
+not contain the other sentence. The plan compiled this from the `HANDOFF.md` finding without
+checking the commit that answered it on the same day.
 
 ### 2. Gate commands leak orphaned grandchildren — OPEN
 `HANDOFF.md` ("the real hang"): 0.81.0's timeout bounds the hang but the grandchild survives,
