@@ -367,3 +367,35 @@ describe('a race candidate brief carries its own angle, and says what that angle
     assert.equal(text.includes('You are candidate'), false);
   });
 });
+
+describe('the brief carries what the guard refused last iteration', () => {
+  const base = {
+    iteration: 3,
+    chaos: 1,
+    objective: { kind: /** @type {const} */ ('gates'), headline: 'x', reason: 'y' },
+  };
+
+  it('lists each refusal and says the rule will hold', () => {
+    // A fresh child cannot remember being told no. Every builder is a new process, so a denial
+    // the guard issued last iteration is invisible to this one, and the measured result is a
+    // builder re-attempting the same refused action iteration after iteration -- each refusal
+    // correctly enforced and none of them ever teaching anything.
+    const brief = compileBrief({
+      ...base,
+      deniedLastIteration: ['meeseeks-guard: denied [nested-meeseeks] meeseeks does not spawn meeseeks'],
+    });
+    assert.equal(brief.includes('## Refused last iteration'), true);
+    assert.equal(brief.includes('nested-meeseeks'), true);
+    assert.equal(brief.includes('will refuse them again'), true);
+  });
+
+  it('says nothing when nothing was refused, which is the common case', () => {
+    assert.equal(compileBrief(base).includes('Refused last iteration'), false);
+    assert.equal(compileBrief({ ...base, deniedLastIteration: [] }).includes('Refused'), false);
+  });
+
+  it('stays deterministic: refusals arrive sorted', () => {
+    const brief = compileBrief({ ...base, deniedLastIteration: ['b-rule', 'a-rule'] });
+    assert.equal(brief.indexOf('a-rule') < brief.indexOf('b-rule'), true);
+  });
+});

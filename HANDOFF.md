@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.137.0`. Measured at 0.137.0: `npm test` **1884 pass**,
+**State:** `main` at `0.138.0`. Measured at 0.138.0: `npm test` **1887 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -58,6 +58,25 @@ Phase 6 sets it, so a fully green iteration happened and the old code would have
 **Early banking remains unconfirmed in the wild.**
 
 **Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
+
+### 0.138.0 — a denied builder finds out, one iteration late
+
+**The last piece of the denial pipeline.** 0.131.0 made guard refusals visible to the *operator* —
+`spawnClaude` reads them off the child's stderr and the log prints them. But **every builder is a
+fresh process with no history**, so a denial issued last iteration is invisible to this one, and
+the measured shape (case J's brief mentioning `/meeseeks` ten times across iterations) is a
+builder re-attempting the same refused action forever — each refusal correctly enforced, none of
+them ever teaching anything.
+
+`compileBrief` now takes `deniedLastIteration` and renders a **Refused last iteration** section:
+each refusal verbatim, plus the one sentence that matters — *the rule will refuse them again this
+iteration; find a route that does not need them.* The driver carries `built.denials` across the
+loop boundary. Same family as the repeated-regression note (0.109.0) and the stuck-gate note
+(0.117.0): the loop knew something was recurring and the one participant who could stop it was
+never told.
+
+Deterministic like everything in the brief — refusals arrive sorted — and silent in the common
+case where nothing was refused.
 
 ### 0.137.0 — the slash command documents the flags the driver takes
 

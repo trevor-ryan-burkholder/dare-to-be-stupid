@@ -51,7 +51,8 @@ import path from 'node:path';
  *   gates?: string[],
  *   capabilities?: string[],
  *   toolchain?: { name: string, guidance: string },
- *   raceCandidate?: { index: number, of: number, hypothesis?: string } | null
+ *   raceCandidate?: { index: number, of: number, hypothesis?: string } | null,
+ *   deniedLastIteration?: string[]
  * }} BriefInput
  */
 
@@ -181,6 +182,22 @@ export function compileBrief(input) {
     '',
     chaosLine(input.chaos),
   ];
+
+  if ((input.deniedLastIteration ?? []).length > 0) {
+    // **A fresh child cannot remember being told no.** Every builder is a new process with no
+    // history, so a denial the guard issued last iteration is invisible to this one, and the
+    // measured result is a builder re-attempting the same refused action iteration after
+    // iteration — each refusal correctly enforced and none of them ever taught anything.
+    // Same family as the repeated-regression and stuck-gate notes: the loop knows something is
+    // recurring and the one participant who could stop it was never told.
+    lines.push('', '## Refused last iteration', '');
+    lines.push(
+      'The previous iteration attempted the following and the guard refused each one. The rule',
+      'will refuse them again this iteration; find a route that does not need them.',
+      '',
+    );
+    for (const denial of [...(input.deniedLastIteration ?? [])].sort()) lines.push(`- ${denial}`);
+  }
 
   if (input.raceCandidate !== null && input.raceCandidate !== undefined) {
     lines.push(

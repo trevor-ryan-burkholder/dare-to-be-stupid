@@ -1503,6 +1503,13 @@ export function driveRun(options) {
   const regressionCounts = new Map();
 
   /**
+   * Guard refusals the previous iteration's builder received, for the next brief. A fresh
+   * child cannot remember being told no; this is how it finds out. See `compileBrief`.
+   * @type {string[]}
+   */
+  let deniedLastIteration = [];
+
+  /**
    * The first iteration's brief length in characters, the baseline for §3.9's growth check.
    * Zero until an iteration sets it: a run that never built a brief has nothing to compare.
    */
@@ -1773,6 +1780,7 @@ export function driveRun(options) {
       protectedTests: loadState(meeseeksDir).passing,
       lessons: relevant,
       history: effects.history?.(objective.findings ?? []) ?? [],
+      deniedLastIteration,
       gates: options.gateNames ?? [],
       // Re-asked every iteration rather than resolved once, for the same reason the design
       // gate's arming is: detection answers about the tree as it is now, and the tree changes
@@ -1812,6 +1820,7 @@ export function driveRun(options) {
 
     if (!raced) {
       const built = effects.build(brief);
+      deniedLastIteration = built.denials ?? [];
       builderTokens += built.tokens;
       builderRuns += 1;
       const exhausted = charge(built);
