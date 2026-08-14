@@ -10,7 +10,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, it } from 'node:test';
@@ -914,5 +914,43 @@ describe('--give-them-the-box at the hook', () => {
     assert.equal(checkBashCommand('echo x > .meeseeks/state.json', '/repo', boxed).decision, 'deny');
     assert.equal(checkBashCommand('git push --force', '/repo', boxed).decision, 'deny');
     assert.equal(checkBashCommand('rm -rf /repo/src', '/repo', boxed).decision, 'deny');
+  });
+});
+
+describe('a denial is announced on stderr as well as decided on stdout', () => {
+  /** @param {string} command @param {Record<string,string>} env */
+  const runHook = (command, env) =>
+    spawnSync(process.execPath, [GUARD], {
+      input: JSON.stringify({
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Bash',
+        tool_input: { command },
+        cwd: '/repo',
+      }),
+      encoding: 'utf8',
+      env: { ...process.env, ...env },
+    });
+
+  it('writes the rule and reason to stderr when it denies', () => {
+    // Case J could not tell whether its builder declined to nest or was refused, because a
+    // hook's deny lives in a conversation the driver never sees. stdout carries the protocol;
+    // stderr carries the news.
+    const result = runHook('meeseeks "build a thing"', {});
+    assert.equal(result.stderr.includes('meeseeks-guard: denied'), true, result.stderr);
+    assert.equal(result.stderr.includes('nested-meeseeks'), true, result.stderr);
+  });
+
+  it('still puts the decision on stdout, unchanged', () => {
+    // The protocol channel must not move. A hook that announced itself and forgot to decide
+    // would fail open.
+    const result = runHook('meeseeks "build a thing"', {});
+    const decision = JSON.parse(result.stdout);
+    assert.equal(decision.hookSpecificOutput.permissionDecision, 'deny');
+  });
+
+  it('says nothing on stderr when it allows', () => {
+    const result = runHook('echo hello', {});
+    assert.equal(result.stderr.trim(), '');
+    assert.equal(result.stdout.trim(), '');
   });
 });

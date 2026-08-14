@@ -944,8 +944,14 @@ export function childBudget(config, spentUsd) {
 
 /**
  * @typedef {{
- *   ok: boolean, text: string, costUsd: number, tokens: number, raw: string, exhausted?: boolean
+ *   ok: boolean, text: string, costUsd: number, tokens: number, raw: string, exhausted?: boolean,
+ *   denials?: string[]
  * }} ClaudeResult
+ *
+ * `denials` carries any guard refusals the child's stderr reported. **Case J is why it exists:**
+ * that run could not tell whether its builder declined to nest or was refused, because a hook's
+ * deny lives in a conversation the driver never sees. The guard now writes one line to stderr on
+ * every denial and this is where it lands.
  */
 
 /**
@@ -4290,10 +4296,19 @@ export function spawnClaude(options) {
         'Nothing it may have written was read, because a killed child has no verdict',
     };
   }
+  // Read off stderr regardless of whether the child succeeded, because a denied tool call does
+  // not fail a child — the model is told no and carries on, which is exactly why the refusal was
+  // invisible.
+  const denials = (result.stderr ?? '')
+    .split('\n')
+    .filter((line) => line.startsWith('meeseeks-guard: denied'))
+    .map((line) => line.trim());
+
   if (!result.ok && result.stdout.trim() === '') {
-    return { ok: false, text: '', costUsd: 0, tokens: 0, raw: result.stderr };
+    return { ok: false, text: '', costUsd: 0, tokens: 0, raw: result.stderr, ...(denials.length > 0 ? { denials } : {}) };
   }
-  return parseClaudeEnvelope(result.stdout);
+  const parsed = parseClaudeEnvelope(result.stdout);
+  return denials.length > 0 ? { ...parsed, denials } : parsed;
 }
 
 /**
@@ -4433,6 +4448,9 @@ export function main(argv, io = {}) {
     // reaching the place that needs it before the next child is spawned rather than after.
     handedOutUsd += result.costUsd;
     write(verbatim(childEndLine(options.phase, result, Math.round((Date.now() - startedAt) / 1000))));
+    // Surfaced, once, per child. A guard refusal is the loop's own limit doing its job and the
+    // operator has no other way to learn it happened.
+    for (const denial of result.denials ?? []) write(verbatim(`${options.phase}: ${denial}`));
     return result;
   };
 

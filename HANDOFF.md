@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.130.0`. Measured at 0.130.0: `npm test` **1872 pass**,
+**State:** `main` at `0.131.0`. Measured at 0.131.0: `npm test` **1875 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -58,6 +58,28 @@ Phase 6 sets it, so a fully green iteration happened and the old code would have
 **Early banking remains unconfirmed in the wild.**
 
 **Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
+
+### 0.131.0 — a guard denial inside a child is no longer invisible to the run
+
+**Case J's real finding, and it was not about nesting.** That run could not tell whether its
+builder **declined** to start a nested run or **tried and was refused** — because a hook's denial
+lives in a conversation the driver never sees. The brief mentioned `/meeseeks` ten times by
+iteration 3 and the log said nothing at all. **An enforcement action with no record is
+indistinguishable from an enforcement that never happened.**
+
+**stdout carries the protocol; stderr carries the news.** The guard now writes one line on every
+denial — `meeseeks-guard: denied [rule] reason` — and `spawnClaude` reads it off **regardless of
+whether the child succeeded**, which is the part that matters: a denied tool call does not fail a
+child. The model is told no and carries on. That is exactly why the refusal was invisible.
+
+`runChild` surfaces them once per child, prefixed with the phase. Three tests hold it: the stderr
+line appears on a denial, **the stdout decision is unchanged** (a hook that announced itself and
+forgot to decide would fail open), and an allow says nothing on either channel.
+
+**Honestly scoped:** whether a hook's stderr reaches the driver depends on how Claude Code
+forwards it, and this repository cannot test that without a live run. The plumbing on both ends is
+proven; the middle is not. If it never arrives nothing changes, and if it does a previously
+invisible event becomes visible — which is why it was worth doing on an unverified premise.
 
 ### 0.130.0 — `--deadline=<minutes>`, because thirty is a guess and the operator knows better
 

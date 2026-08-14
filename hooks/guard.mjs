@@ -872,6 +872,18 @@ async function main() {
   }
   const out = renderDecision(decision);
   if (out.length > 0) process.stdout.write(out);
+  // **stdout carries the protocol; stderr carries the news.** A denial inside a `claude -p` child
+  // is currently invisible to the run that spawned it — case J could not tell whether its builder
+  // declined to nest or was refused, because the only record of a refusal lives in a conversation
+  // the driver never sees. One line on stderr costs nothing, cannot affect the decision, and gives
+  // the driver something to surface.
+  //
+  // **Whether it reaches the driver is unverified**, because that depends on how Claude Code
+  // forwards a hook's stderr, and this repository has no way to test it without a live run. If it
+  // never arrives, nothing changes; if it does, a previously invisible event becomes visible.
+  if (decision.decision === 'deny') {
+    process.stderr.write(`meeseeks-guard: denied [${decision.rule}] ${decision.reason}\n`);
+  }
   process.exitCode = 0;
 }
 
