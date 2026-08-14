@@ -466,6 +466,112 @@ new refusal has a deny-path test and a benign neighbour. **Outstanding for DONE:
 Done-when's live half — one boxed dogfood run shipping a one-component repository — authorized
 by the operator as measurement run 3.
 
+### 25. `configure.mjs` — the operator's config wizard — **DONE (0.145.0)**
+
+**Origin:** operator request, 14 Aug 2026 ("We should probably add a config step you can do via
+cli"), made immediately after walking the deploy block by hand. Hand-authored JSON is the whole
+current interface: the schema lives in the reader's memory, and a typo costs a preflight
+round-trip to discover.
+
+**Spec:**
+
+- New shipped file `scripts/configure.mjs`, run as `node scripts/configure.mjs` in the target
+  repository. Interactive wizard over `node:readline/promises`. No dependencies, ESM, Node ≥22.12.
+- **Refuses under `MEESEEKS_RUNNING`.** A process inside a run may not reshape the config that
+  constrains it. The env marker is the same fact the guard hook reads — and the check here is
+  load-bearing, not decorative: the guard hook travels with Claude Code tool calls, and a
+  builder shelling out to this script in a plain subprocess would meet no hook at all.
+- **One validator.** The wizard builds a plain object and hands it to `validateConfig`; it never
+  restates a rule. Interactive validation failure names the key and re-prompts; `--show` and any
+  future non-interactive path exit non-zero instead.
+- **The existing config is the baseline, and unasked keys survive.** Read
+  `.meeseeks/config.json` when present, use its values as the bracketed prompt defaults, merge
+  answers over it, validate the whole, write with `writeConfig` (atomic). An operator's
+  `extraGates` must not vanish because the wizard did not ask about them.
+- Prompt groups, in order: budgets (`maxIterations`, `tokenCeiling`, `costCeiling`, deadline
+  **asked in minutes, stored as `deadlineMs`** — the same unit the `--deadline` flag speaks);
+  loop shape (`chaos`, `stallLimit`); `race` (enabled → `n`, `after`); `oracle` (enabled);
+  `deploy` (enabled → `command` collected **one argument per prompt** into an argv array, blank
+  to finish — never whitespace-splitting a string, which is exactly §10.1's mangling trap;
+  `url`; `smoke` entries as path + status until blank; `timeoutMs`); `components` (name/dir/spec
+  entries until blank, with the printed reminder that running them still requires
+  `--give-them-the-box` typed at launch — the wizard configures, it cannot permit).
+- Empty input keeps the bracketed default. `--show` prints the effective config (file merged
+  over defaults, through the validator) and exits without prompting or writing.
+- Every prompt is an injectable seam (`io.ask`, `io.write`) so tier 1 drives the full dialogue
+  with a scripted answer list. No tier 2 or 3 owed: no git, no child processes, no money.
+- Docs in the same slice: a README quickstart line and a DESIGN.md §10 note that the wizard
+  exists and reuses the validator.
+
+**Done when:** unit tests cover the dialogue (every group; blank-keeps-default; unasked-key
+preservation; the argv-array collection; a validation failure re-prompting; the
+`MEESEEKS_RUNNING` refusal; `--show` writing nothing), lint/typecheck/tier 1 green, version
+bumped with ledgers in the same commit.
+
+**Status (14 Aug 2026, 0.145.0):** built by a workflow implementer, hardened twice. The
+implementer caught its own defect during a live smoke test — `rl.question` drops lines that
+arrive while no question is pending, so piped stdin died as a false EOF; rewritten to buffer
+`line` events with a regression test. The hostile review then reproduced a MEDIUM: the
+validation re-prompt loop routed structurally unrepairable errors (an unknown key inside a
+section, a poisoned key behind a disabled `enabled`) to a group whose prompts cannot reach the
+offending key — the same validator sentence printed 31 times with ctrl-d as the only exit.
+Fixed with an identical-after-a-round concession: a failure that survives a full re-prompt
+byte-identical exits non-zero naming the hand edit, nothing written; a typed repair changes the
+message, so progress never trips it. Three loop-family tests pin it (both reproductions plus
+the repairable benign neighbour). Also fixed on review: `--show`'s docs no longer claim "the
+effective config" — it prints the file merged over defaults, and run-time env overrides are
+applied at launch, not shown. 1998 tier-1 tests. Recorded residuals: the wizard cannot empty a
+non-empty list (blank means keep; clearing is a hand edit), and an unrepairable *unasked*
+top-level key is discovered at the final validation rather than up front, because an early
+check would also refuse baselines the dialogue can repair.
+
+### 26. Tiered panel — triage-model review on unshippable iterations — OPEN, **SPECIFIED**
+
+**Origin:** operator-approved optimization, 14 Aug 2026, priced from run-1 receipts: the first
+three panels of the 0.144.0 case I race run cost ≈23.0M of the run's first ≈46.4M tokens
+(~50% of the entire bill), and every one judged an iteration whose required gates had already
+failed — a tree that could not ship whatever the verdict said.
+
+**Spec:**
+
+- New config key `reviewerTriageModel`, default `claude-sonnet-5`, validated beside
+  `reviewerModel`.
+- When the just-gated iteration has failing **required** gates, the cold panel runs on
+  `reviewerTriageModel`; when the gates are green (a ship candidate), on `reviewerModel`. The
+  panel's log line names the tier and why, so a transcript reader never has to infer it.
+- The panel stays exactly as cold either way — separate processes, no build log, the same
+  starvation. **Model is not independence**; nothing about §4's contract moves.
+- **Monotonic-store protection, which is the load-bearing half:** a triage-tier panel's
+  requirement passes are feedback only. They are never pinned as cold-passed requirements and
+  never satisfy or seed a carry. Only full-model panels write pins. Without this, one sonnet
+  judgment becomes unremovable under monotonicity and leaks into a later ship through the carry
+  pre-filter — a false pin with no escape, the exact hazard §4.3 orders designed away before
+  enforcement.
+- `SHIPPED` therefore remains structurally reachable only through a full-model panel on a
+  gates-green tree. No new enforcement needed; the tier selection makes it so, and a test pins
+  it.
+- Operator escape: set both model keys equal and tiering is off.
+- Tests: tier selection in both directions; the deny path — a triage pass writes no pin and
+  enables no carry — beside its benign neighbour (a full-tier pass pins exactly as today); the
+  tier-naming log line.
+- Docs: DESIGN.md §4 note and §10 row, deferred until the item-25 build lands (its implementer
+  holds DESIGN.md).
+
+**Done when:** the tests above are green on the tier-1 baseline, lint/typecheck clean, version
+and ledgers in the same commit — and one later live run's panel bill is compared against run
+1's ~50% baseline in HANDOFF, because this item exists to move a measured number.
+
+### 27. Health-probe fail-fast — INVESTIGATED, **DROPPED (14 Aug 2026)**
+
+Proposed from run-1's repeated `ECONNREFUSED ... within 30000ms` waits; dropped on reading the
+code before speccing. `probeHealth` already fails fast on the case worth catching — a server
+process that exits is reported the moment it dies, with its output attached. The 30-second
+waits in run 1 were the *other* case: a process alive but not listening on its assigned port,
+which is indistinguishable from a legitimately slow-starting server without heuristics, and a
+heuristic in a failure path is how a gate starts lying. Measured waste: roughly one to two
+minutes across an entire multi-hour run. Not worth a mechanism; recorded so the next person
+with this idea reads this instead of building it.
+
 ## Phase 4 — breadth, then the mirror.
 
 ### 20. Dogfood cases A, B, C — OPEN, **PREPARED** (run C first — TRX and the dotnet adapter)

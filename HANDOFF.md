@@ -1,7 +1,7 @@
 # START HERE — handoff, last swept 14 August 2026
 
-**State:** `main` at `0.144.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.144.0: `npm test` **1962 pass**,
-`npm run test:integration` **46 pass**, `npm run lint` and `npm run typecheck` clean,
+**State:** `main` at `0.145.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.145.0: `npm test` **1998 pass**,
+`npm run test:integration` **46 pass** (unchanged at 0.145.0 — nothing tier 2 owns was touched), `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
@@ -101,6 +101,26 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.145.0 — the config wizard (PLAN item 25), and the loop that imprisoned the operator
+
+`node scripts/configure.mjs` in a target repo: six prompt groups over the existing file as
+baseline, one validator (`validateConfig`, reused, zero rules restated), unasked keys surviving
+byte-for-byte, deploy.command collected one argument per prompt so §10.1's mangling trap is
+unreachable, `MEESEEKS_RUNNING` refused before any read, every failure path writing nothing.
+`--show` prints the file merged over defaults — *as written*, not the driver's view; env
+overrides apply at launch and are deliberately absent.
+
+Two defects mattered, both caught before landing. The implementer found its own: `rl.question`
+drops lines that arrive unprompted, so **piped stdin died as a false EOF** — fail-closed but
+wrong; rewritten to buffer `line` events, regression-tested through a PassThrough. The hostile
+reviewer reproduced the other: unrepairable validation errors (unknown key inside a section, a
+poisoned key behind a disabled `enabled`) were routed to a group whose prompts cannot reach the
+key, printing the identical sentence **31 times** with ctrl-d as the only exit — while the
+routing function's own contract promised a clean refusal. Fixed with the
+identical-after-a-round concession: same message after a full re-prompt → exit non-zero, name
+the hand edit, write nothing. The detector needs no knowledge of which keys a group asks,
+which is what keeps it from drifting against the validator.
 
 ### 0.144.0 — components: the box does something (PLAN item 24), then survives its own review
 

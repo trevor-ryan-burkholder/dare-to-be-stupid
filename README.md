@@ -178,6 +178,12 @@ whole thing is `node:` builtins and shelling out.
 Everything lives in `.meeseeks/config.json`, which the guard protects during a run — so a gate
 declared here is one the builder **cannot delete**.
 
+**You don't have to hand-author it.** `node scripts/configure.mjs` (run in the target
+repository, with the path pointing at the plugin's `scripts/`) walks the common settings as
+prompts — same validator as the driver, blank keeps the shown default, keys it does not ask
+about survive untouched. `--show` prints the config as written (file merged over defaults)
+without writing anything; run-time env overrides are not shown.
+
 ```jsonc
 {
   "maxIterations": 20,        // the cap that usually binds. See the note below.

@@ -1999,6 +1999,18 @@ makes signal forwarding possible at all.
 or `customer`, and requires a clean working tree (the ratchet's `reset --hard` destroys
 uncommitted work).
 
+**`configure.mjs` is the interactive way to author this file** — `node scripts/configure.mjs`
+in the target repository, one prompt group per section (budgets, loop shape, race, oracle,
+deploy, components). It owns no rules of its own: it builds a plain object and hands it to
+`validateConfig`, writes with `writeConfig`, and preserves every key it does not ask about
+(`extraGates`, `effort`, …) byte-for-byte, so the wizard and the driver can never disagree
+about what a valid config is. It refuses under `MEESEEKS_RUNNING` before reading anything — a
+process inside a run may not reshape the config that constrains it — and every failure path
+writes nothing: EOF mid-dialogue, a validation error re-prompting cannot repair, an existing
+file that will not parse. `--show` prints the config as written — the file merged over
+defaults, through the validator — without prompting or writing. It is not the running driver's
+view: run-time env overrides such as `MEESEEKS_CHAOS` are applied at launch and are not shown.
+
 ### 10.2 Per-phase reasoning effort
 
 `--effort` takes `low`, `medium`, `high`, `xhigh` or `max`, and it is a per-phase knob of exactly
