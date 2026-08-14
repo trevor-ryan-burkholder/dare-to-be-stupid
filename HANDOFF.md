@@ -24,6 +24,39 @@ line in the same commit.
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
 
+### Case J — `--give-them-the-box`: inconclusive, and the honest answer is that it ran out of money
+
+**`BUDGET`, 12,508,787 of 12,000,000 tokens, \$11.96, three briefs written, two iterations
+completed.** The budget was too small — the same mistake this file has now recorded three times —
+and the run died before the question was settled.
+
+**What was verified.** The unsupported-mode banner printed **verbatim and unstyled**, ahead of
+everything, exactly as designed:
+
+```
+--give-them-the-box: nested runs are PERMITTED to depth 2. This is unsupported.
+Everything else still holds: .meeseeks/ is guarded, review is cold, nothing defaults to pass.
+```
+
+**What was not.** **No nested run was ever started.** No `inner.txt`, one driver process
+throughout, and the only "nested" line in the log is the banner itself. So the depth cap never
+fired, the guard's relaxed rule was never exercised in anger, and the two-drivers-one-repository
+question — the whole reason to expect corruption — remains exactly as unknown as before.
+
+**The builder did engage with it, which makes the silence interesting rather than empty.** By
+iteration 3 the brief mentioned `/meeseeks` or `inner.txt` **ten times**; iteration 2's mentioned
+it once. Something was being discussed and nothing was ever executed. Whether the builder declined
+on principle, or attempted it and was denied inside a child whose output never reaches the driver
+log, **cannot be told from here** — and that gap is itself worth knowing: a guard denial inside a
+`claude -p` child is invisible to the run's own log.
+
+**A claim I will not make.** The run banked **35 ids** and wrote `state.json`, which looks like
+0.121.0's early banking working live. It is not evidence of that: `lastGoodCommit` is set, and only
+Phase 6 sets it, so a fully green iteration happened and the old code would have banked too.
+**Early banking remains unconfirmed in the wild.**
+
+**Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
+
 ### 0.127.0 — the race can now win: strictly better than main, and nothing regressed
 
 **Three operator decisions taken on 14 August; this is the one that needed code.**
