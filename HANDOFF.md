@@ -1,6 +1,6 @@
 # START HERE — handoff, last swept 14 August 2026
 
-**State:** `main` at `0.142.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.142.0: `npm test` **1891 pass**,
+**State:** `main` at `0.143.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.143.0: `npm test` **1892 pass**,
 `npm run test:integration` **38 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -101,6 +101,36 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.143.0 — the parallel panel: `max()` where `sum()` was being paid
+
+**Item 10 step 4, the last step of the last feature, and the measured 73% of wall clock it
+existed for.** `runPanel` now fires every reviewer at once. Everything after that happens in
+**declared order regardless of completion order** — `Promise.all` preserves positions, the map
+initiates spawns in declared order, and the loop reads, charges, parses and early-exits in that
+same order. Given the same three envelopes, every decision is byte-identical to the sequential
+panel's; a panel whose verdict depends on who finished first would be a different program
+(`BORROWED.md` R21, verbatim).
+
+**The proof is adversarial and it is a clock.** The new test gives the trio reversed completion
+order — security slowest, design fastest — and asserts three things at once: calls initiated in
+declared order, completions in the reversed order (the premise really held), and a panel whose
+delays sum to 180ms finishing in **96.6ms**. Overlap measured, not asserted. Writing it re-taught
+a harness lesson the suite already carries in its own comments: *without a passing report the run
+takes the no-tests path and never reaches the panel*, so a first draft watched an empty panel in
+5ms and called it failure.
+
+**What genuinely changed is the overshoot, documented where the ceilings live** (`config.mjs`): a
+failed or budget-breaching reviewer used to stop later ones from ever spawning; now all are in
+flight, so spend past a ceiling is bounded by children-in-flight — three, during review — instead
+of one child.
+
+**In `ship1`'s terms:** iteration 3's panel was 1,493 seconds of sequential reads whose longest
+member was 736. This change buys that difference back on every iteration of every future run.
+
+**Item 10 is COMPLETE** — async conversion, heartbeat, parallel panel, overshoot documented. The
+last planned feature. What remains project-wide: the Components item (queued in memory), a race
+winner, cases A/B.
 
 ### 0.142.0 — the heartbeat: hung and working stop looking alike
 

@@ -106,6 +106,10 @@ export function defaultConfig() {
     // Set generously on purpose: it is a backstop against a pathological run rather than a
     // per-run budget, and a default that fired before `tokenCeiling` in ordinary operation
     // would make every run stop for the wrong stated reason.
+    // **The overshoot bound is children-in-flight, not one child, since the parallel panel**
+    // (0.143.0). A ceiling can only stop what has not been spawned; during review three cold
+    // readers are already running when a breach is detected, so the spend past either ceiling
+    // is bounded by all of them finishing — measured at up to 9.5M tokens for a single child.
     costCeiling: 50,
     // The third ceiling, and the only one that is a watchdog. `tokenCeiling` and `costCeiling`
     // bind a child that *returns*; neither can see one that does not, which made them read as

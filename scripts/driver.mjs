@@ -2169,17 +2169,39 @@ export async function driveRun(options) {
      * @returns {Promise<{ done: true, reports: ReviewerReport[] } | { done: false, outcome: RunOutcome }>}
      */
     const runPanel = async (assignments) => {
+      // **Every reviewer runs at once; everything after that happens in declared order.** The
+      // panel was sequential until 0.143.0 and it was the run's dominant cost: measured in
+      // `ship1`, review was 73% of wall clock, panels held ~25 minutes an iteration while the
+      // builders they judged differed by 17x, and one cold read took 1,215 seconds. Parallel
+      // recovers `max()` where `sum()` was being paid.
+      //
+      // The constraint that survives the parallelism is BORROWED.md R21's, verbatim: collect
+      // all children, then parse and charge in **declared reviewer order regardless of
+      // completion order**. `Promise.all` preserves positions, the map initiates spawns in
+      // declared order, and the loop below reads, charges, parses and early-exits in that same
+      // order — so given the same three envelopes, every decision this function makes is
+      // byte-identical to the sequential version's. A panel whose verdict depends on who
+      // finished first would be a different program.
+      //
+      // What genuinely changed is the overshoot, and it is documented where the ceilings are
+      // (`config.mjs`): a failed or budget-breaching reviewer used to stop the *later* ones
+      // from ever spawning; now all are already in flight, so the bound on spend past a
+      // ceiling grows from one child to children-in-flight — three, during review.
+      const settled = await Promise.all(
+        assignments.map(({ reviewer, ids }) => effects.review(reviewer, ids)),
+      );
       /** @type {ReviewerReport[]} */
       const collected = [];
-      for (const { reviewer, ids } of assignments) {
-        const result = await effects.review(reviewer, ids);
+      for (let i = 0; i < assignments.length; i += 1) {
+        const { reviewer, ids } = assignments[i];
+        const result = settled[i];
         const exhausted = charge(result);
         // A reviewer that died is not a reviewer that found problems. Scoring it as a
         // failing audit would hand the builder "output could not be parsed" as though it
         // were a finding, and burn the remaining iterations against a wall.
         if (!result.ok) return { done: false, outcome: await landCleanly(result, iterationNumber, `${reviewer} audit`) };
-        // Ending here abandons the reviewers that have not run. That is correct: a panel is
-        // only unanimous if every member answered, so a partial panel cannot ship anyway.
+        // Ending here discards the reviewers later in declared order. That is correct: a
+        // panel is only unanimous if every member answered, so a partial panel cannot ship.
         if (exhausted) return { done: false, outcome: finish('BUDGET', ceilingReason()) };
         collected.push(
           parseReviewerReport(result.text, { requiredIds: ids, minConfidence: config.advisory.minConfidence }),

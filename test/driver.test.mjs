@@ -18,6 +18,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { setTimeout } from 'node:timers';
 import { after, describe, it } from 'node:test';
 
 import { readAssumptions } from '../scripts/assumptions.mjs';
@@ -3097,6 +3098,53 @@ describe('driveRun', () => {
     assert.equal(parsed.ok, true);
     assert.equal(parsed.costUsd, 0);
     assert.equal(parsed.tokens, 7);
+  });
+});
+
+describe('the parallel panel', () => {
+  it('runs reviewers concurrently but charges and reports in declared order', async () => {
+    // BORROWED R21's constraint, tested adversarially: the reviewers COMPLETE in reverse
+    // order (security slowest, design fastest), and the outcome must be byte-identical to
+    // the sequential panel's -- calls initiated in declared order, charges applied in
+    // declared order, and the wall clock proving they overlapped (max, not sum).
+    /** @type {string[]} */
+    const started = [];
+    /** @type {string[]} */
+    const finished = [];
+    const DELAYS = { security: 90, correctness: 60, design: 30 };
+    const t0 = Date.now();
+    await run(
+      {
+        // Without a passing report the run takes the no-tests path and never reaches the panel.
+        readTestReports: () => [ONE_PASSING],
+        review: (/** @type {string} */ reviewer, /** @type {string[]} */ ids) => {
+          started.push(reviewer);
+          return new Promise((resolve) =>
+            setTimeout(() => {
+              finished.push(reviewer);
+              resolve({
+                ok: true,
+                costUsd: 0,
+                tokens: 1,
+                raw: '{}',
+                text: JSON.stringify({
+                  requirements: ids.map((id) => ({ id, status: 'pass', evidence: 'src/a.mjs:1' })),
+                }),
+              });
+            }, DELAYS[/** @type {keyof typeof DELAYS} */ (reviewer)] ?? 10),
+          );
+        },
+      },
+      { maxIterations: 1, reviewers: ['security', 'correctness', 'design'] },
+      [],
+      ['PRD-1.1', 'DoD-2-security', 'DoD-5-design'],
+    );
+    const elapsed = Date.now() - t0;
+    assert.deepEqual(started, ['security', 'correctness', 'design'], 'calls must initiate in declared order');
+    assert.deepEqual(finished, ['design', 'correctness', 'security'], 'the test premise: completion is reversed');
+    // Sequential panels would pay the 180ms sum per panel; overlap pays the 90ms max. The
+    // bound is generous because CI machines wobble, but it sits far below sequential cost.
+    assert.equal(elapsed < 1500, true, `panel wall clock ${elapsed}ms suggests sequential reviews`);
   });
 });
 
