@@ -525,7 +525,7 @@ non-empty list (blank means keep; clearing is a hand edit), and an unrepairable 
 top-level key is discovered at the final validation rather than up front, because an early
 check would also refuse baselines the dialogue can repair.
 
-### 26. Tiered panel — triage-model review on unshippable iterations — OPEN, **SPECIFIED**
+### 26. Tiered panel — triage-model review on unshippable iterations — **REFUTED (14 Aug 2026), reverted unlanded**
 
 **Origin:** operator-approved optimization, 14 Aug 2026, priced from run-1 receipts: the first
 three panels of the 0.144.0 case I race run cost ≈23.0M of the run's first ≈46.4M tokens
@@ -560,6 +560,26 @@ failed — a tree that could not ship whatever the verdict said.
 **Done when:** the tests above are green on the tier-1 baseline, lint/typecheck clean, version
 and ledgers in the same commit — and one later live run's panel bill is compared against run
 1's ~50% baseline in HANDOFF, because this item exists to move a measured number.
+
+**REFUTED — the premise was a misreading, and the code already contained the optimization.**
+The item was built in full (config key, tier derivation, pin/carry protection, 17 tests, all
+green) and then **reverted unlanded**, because the implementer reported — and the hostile
+reviewer and a hand check both confirmed — that `driveRun` convenes the panel **only behind the
+gates-green check**: `!gateOutcome.ok` sets a gates objective and `continue`s before any
+review, with a comment stating the reason in words ("no reason to pay for a cold read of
+something that does not pass"). Run 1's own artifacts agree: panels sat at iterations 2, 3, 5,
+7, 8 — the green iterations — while the gate failures at 1, 4, 6 convened no panel at all. The
+origin's claim that run-1 panels judged failing trees came from misreading log interleaving.
+The triage tier would therefore be unreachable machinery: the ~50% panel bill is the price of
+**ship-deciding panels on green trees**, already narrowed by the carry, and cheapening those
+would soften the actual ship gate — forbidden. The reviewer also showed the built version made
+a malformed `gateOutcome.ok` (a typedef-violating truthy non-boolean) strictly worse: it would
+ship through a sonnet panel where today it ships through opus. Two lessons kept: **price an
+optimization against the code, not against the log**, and the panel-bill lever that actually
+remains is the carry (widening what counts as unchanged evidence), not the model. The full
+tier-contract design (pin protection by tier, the `===  true` pinnable-needs-positive-evidence
+shape) is archived in the workflow transcript should a future flow ever convene panels on
+failing trees.
 
 ### 27. Health-probe fail-fast — INVESTIGATED, **DROPPED (14 Aug 2026)**
 

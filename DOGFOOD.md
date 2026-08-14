@@ -1134,3 +1134,42 @@ Two numbers this session could not produce and explicitly parked:
 2. **Whether ship-time mutation ever fires** (item 11). The path has never been reached by a real
    run, and the cost figures behind it come from a nine-module synthetic fixture rather than from
    any real suite.
+
+---
+
+## Case I follow-up — the uncapped 0.144.0 run (14 August 2026): a race null, and five mechanisms verified live
+
+Launched at 15:39 on the case I target with the standing rejection PRD (PRD-4.1, sub-millisecond
+latency), uncapped ceilings, `race: { enabled: true, n: 2, after: 2 }`, `maxIterations: 8`.
+Ended **BUDGET (iteration limit, 8 of 8)** at 17:32 — one hour fifty-three minutes — at
+**80,994,093 tokens, $74.9086, 171 passing tests**.
+
+**The race objective returned the null this page predicted verbatim** ("a run that never stalls
+is a null result rather than a pass") — with a twist worth keeping: the PRD did not fail to
+stall because it was satisfiable, but because **an impossible non-functional requirement only
+blocks shipping, not improving.** On a fresh ratchet the builder found eight consecutive
+iterations of genuine gate improvement (0 → 171 passing), so no stall pair ever formed and the
+race never armed. Zero `meeseeks-race-*` worktrees exist after the run; `applyWinner` remains
+unfired live. **Follow-up staged:** relaunch on the now-loaded ratchet — with 171 ids pinned and
+the buildable surface largely consumed, no-improvement iterations should arrive within an
+iteration or two and arm the race cheaply.
+
+What the run **did** verify, all firsts:
+
+- **The async driver + heartbeat (0.141.0–0.142.0), live.** Every child printed a pulse each
+  minute for ninety minutes; no silent gap ever exceeded one minute. A 17-minute reviewer read
+  and an 11-minute builder turn were both legible in real time from the log alone.
+- **The parallel panel (0.143.0) vs real rate limits.** Repeated panels of three concurrent
+  opus reviewers, zero API errors. Iteration 1's panel: 314s + 569s + 964s of reviewer time for
+  a 964s wall — ~15 minutes reclaimed in one panel, the predicted `max()`-for-`sum()` exchange
+  observed in the wild.
+- **The panel carry (0.92.0), live, four times** — skipped re-review of 2, 6, 7, then 8
+  unchanged-evidence requirements across the later iterations.
+- **The tracked-state preflight** refused the first launch outright (`.meeseeks/` had been
+  committed by a pre-0.9x run) and named its own fix; untracking it un-blocked the relaunch.
+- **The BUDGET terminal and outcome record**: `outcome.json` written, state at 171, no
+  artifacts leaked.
+
+Per-child costs for the ledger: design 5.74M tokens / 529s; builder turns 1.1M–8.0M / 80s–748s;
+reviewer reads 1.0M–5.5M / 314s–1031s. An iteration of this loop remains a 5–9M-token object,
+exactly as measured at improve18.
