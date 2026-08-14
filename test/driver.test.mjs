@@ -599,6 +599,55 @@ describe('shouldContinue', () => {
   });
 });
 
+describe('zero ceilings mean no ceiling', () => {
+  const base = {
+    iteration: 0,
+    spentTokens: 0,
+    spentUsd: 0,
+    stalledIterations: 0,
+    bestGateScore: 0,
+    bestGateShare: 0,
+    bestPassingCount: 0,
+  };
+  const uncapped = { ...defaultConfig(), maxIterations: 5, tokenCeiling: 0, costCeiling: 0 };
+
+  it('never ends BUDGET however much has been spent', () => {
+    const result = shouldContinue({ ...base, spentTokens: 999_999_999, spentUsd: 100_000 }, uncapped);
+    assert.deepStrictEqual(result, { continue: true });
+  });
+
+  it('still ends on the iteration cap, which is what bounds the run', () => {
+    // The reason this is safe to offer. maxIterations, the stall limit and the ratchet are
+    // untouched; the ceilings bound the bill, not termination.
+    const result = shouldContinue({ ...base, iteration: 5, spentTokens: 999_999_999 }, uncapped);
+    assert.equal(result.continue === false ? result.state : '', 'BUDGET');
+  });
+
+  it('still ends STALLED with no ceilings at all', () => {
+    const result = shouldContinue({ ...base, stalledIterations: 99 }, uncapped);
+    assert.equal(result.continue === false ? result.state : '', 'STALLED');
+  });
+
+  it('does not pin the airtime counter at zero percent for the whole run', () => {
+    // A disabled ceiling contributes 1 to the minimum, not 0. Reporting 0 would have shown
+    // "0% of budget remaining" from the first iteration of an unlimited run.
+    const airtime = airtimeRemaining({ ...base, iteration: 1, spentTokens: 5_000_000 }, uncapped);
+    assert.equal(airtime.fractionLeft, 0.8);
+  });
+
+  it('hands a child no budget flag when there is no ceiling to divide', () => {
+    // --max-budget-usd bounds a child against what the run has left. With the ceiling off there
+    // is nothing to divide, and inventing a number would reimpose the limit the operator removed.
+    assert.deepStrictEqual(childBudget({ ...uncapped, maxChildTurns: 0 }, 0), {});
+    assert.deepStrictEqual(childBudget({ ...uncapped, maxChildTurns: 12 }, 0), { maxTurns: 12 });
+  });
+
+  it('still derives one when a cost ceiling exists', () => {
+    const budget = childBudget({ ...defaultConfig(), costCeiling: 50, maxChildTurns: 0 }, 10);
+    assert.deepStrictEqual(budget, { maxBudgetUsd: 40 });
+  });
+});
+
 describe('recordProgress', () => {
   const base = {
     iteration: 0,

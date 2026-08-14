@@ -258,19 +258,23 @@ function requireCountOrZero(value, key) {
 }
 
 /**
- * A positive amount of money. Not an integer: a ceiling of $2.50 is a reasonable thing to want,
- * and rounding it to $2 or $3 would silently change what the operator asked for.
+ * A non-negative, finite amount, where **zero means no ceiling**.
+ *
+ * The money counterpart to `requireCountOrZero`. Kept separate from `requirePositiveNumber`
+ * because most amounts in this configuration genuinely must be positive, and a validator that
+ * quietly accepted zero everywhere would let a typo disable a limit rather than refuse it.
  *
  * @param {unknown} value
  * @param {string} key
  * @returns {number}
  */
-function requirePositiveNumber(value, key) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    throw new ConfigError(`${key} must be a positive, finite number; got ${JSON.stringify(value)}.`);
+function requireAmountOrZero(value, key) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new ConfigError(`${key} must be a non-negative, finite number; got ${JSON.stringify(value)}.`);
   }
   return value;
 }
+
 
 /**
  * A confidence, not a count. Advisory findings carry one, and the threshold they are
@@ -433,8 +437,11 @@ export function validateConfig(input) {
 
   if ('maxIterations' in source) merged.maxIterations = requirePositiveInteger(source.maxIterations, 'maxIterations');
   if ('stallLimit' in source) merged.stallLimit = requirePositiveInteger(source.stallLimit, 'stallLimit');
-  if ('tokenCeiling' in source) merged.tokenCeiling = requirePositiveInteger(source.tokenCeiling, 'tokenCeiling');
-  if ('costCeiling' in source) merged.costCeiling = requirePositiveNumber(source.costCeiling, 'costCeiling');
+  // Zero is accepted and means **no ceiling** — see `shouldContinue`. Intended for development
+  // and dogfooding where spend is not the constraint. `maxIterations`, the stall limit and the
+  // ratchet still bound the run, so this removes a limit on the bill and not on termination.
+  if ('tokenCeiling' in source) merged.tokenCeiling = requireCountOrZero(source.tokenCeiling, 'tokenCeiling');
+  if ('costCeiling' in source) merged.costCeiling = requireAmountOrZero(source.costCeiling, 'costCeiling');
   if ('childTimeoutMs' in source) merged.childTimeoutMs = requirePositiveInteger(source.childTimeoutMs, 'childTimeoutMs');
   if ('maxChildTurns' in source) merged.maxChildTurns = requireCountOrZero(source.maxChildTurns, 'maxChildTurns');
   if ('gateTimeoutMs' in source) merged.gateTimeoutMs = requirePositiveInteger(source.gateTimeoutMs, 'gateTimeoutMs');

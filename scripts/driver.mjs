@@ -745,7 +745,16 @@ export function gateScore(results) {
  * @returns {{ continue: true } | { continue: false, state: TerminalState, reason: string }}
  */
 export function shouldContinue(progress, config) {
-  if (progress.spentTokens >= config.tokenCeiling) {
+  // **Zero means no ceiling**, the convention `maxChildTurns` already uses. Intended for
+  // development and dogfooding on a plan where spend is not the constraint, and deliberately not
+  // the default: `BRIEF.md` §E lists hard budget limits among the things to preserve, so this is
+  // an operator switching one off in their own configuration rather than a softened default.
+  //
+  // **The run still terminates**, which is what makes it safe to offer. `maxIterations`, the
+  // stall limit and the ratchet are untouched, and they are the mechanisms that bound the loop;
+  // the ceilings bound the *bill*. A run with no ceilings ends on completion, on the iteration
+  // cap, or on a stall, and cannot run forever.
+  if (config.tokenCeiling > 0 && progress.spentTokens >= config.tokenCeiling) {
     return {
       continue: false,
       state: 'BUDGET',
@@ -757,7 +766,7 @@ export function shouldContinue(progress, config) {
   // dominated the count. The same token figure at uncached input rates would have been an
   // order of magnitude more. A token ceiling bounds *work*; only a cost ceiling bounds spend,
   // and an operator who sets one has said something the other cannot express.
-  if (progress.spentUsd >= config.costCeiling) {
+  if (config.costCeiling > 0 && progress.spentUsd >= config.costCeiling) {
     return {
       continue: false,
       state: 'BUDGET',
@@ -845,10 +854,15 @@ export function airtimeRemaining(progress, config) {
   const tokensLeft = Math.max(0, config.tokenCeiling - progress.spentTokens);
   const usdLeft = Math.max(0, config.costCeiling - progress.spentUsd);
   const byIterations = config.maxIterations === 0 ? 0 : iterationsLeft / config.maxIterations;
-  const byTokens = config.tokenCeiling === 0 ? 0 : tokensLeft / config.tokenCeiling;
+  // **A disabled ceiling contributes 1, not 0.** Zero means "no ceiling" (see `shouldContinue`),
+  // and a limit that can never bind must not be the one the counter reports — reporting 0 would
+  // pin the display at "0% of budget remaining" for the whole of an unlimited run. The `*Left`
+  // figures above stay 0 for a disabled ceiling because nothing displays them; `fractionLeft` is
+  // what reaches an operator.
+  const byTokens = config.tokenCeiling === 0 ? 1 : tokensLeft / config.tokenCeiling;
   // The tightest of the three, so the counter reports the limit that will actually end the
   // run rather than the most flattering one.
-  const byUsd = config.costCeiling === 0 ? 0 : usdLeft / config.costCeiling;
+  const byUsd = config.costCeiling === 0 ? 1 : usdLeft / config.costCeiling;
   return { iterationsLeft, tokensLeft, usdLeft, fractionLeft: Math.min(byIterations, byTokens, byUsd) };
 }
 
@@ -885,9 +899,16 @@ const MIN_CHILD_BUDGET_USD = 0.0001;
  *
  * @param {{ costCeiling: number, maxChildTurns: number }} config
  * @param {number} spentUsd what the run has already spent
- * @returns {{ maxBudgetUsd: number, maxTurns?: number }}
+ * @returns {{ maxBudgetUsd?: number, maxTurns?: number }}
  */
 export function childBudget(config, spentUsd) {
+  // **No cost ceiling means no per-child allowance to derive.** `--max-budget-usd` exists to
+  // bound a child against what the *run* has left, and with the ceiling off there is nothing to
+  // divide. Passing a number anyway would be inventing a limit the operator switched off; passing
+  // `Infinity` would hand the CLI a string it has no reason to accept.
+  if (config.costCeiling === 0) {
+    return config.maxChildTurns > 0 ? { maxTurns: config.maxChildTurns } : {};
+  }
   const left = config.costCeiling - spentUsd;
   // Four decimals because the flag takes dollars and a child's cost is measured in cents; more
   // precision would be a claim about accuracy the upstream stop does not have.

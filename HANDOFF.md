@@ -1,11 +1,13 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.127.0`. Measured at 0.127.0: `npm test` **1851 pass**,
+**State:** `main` at `0.128.0`. Measured at 0.128.0: `npm test` **1859 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
-**`npm run test:live` at 0.110.0: 27 of 27 across 11 files, 0 failures.** The suite has now been
-run whole since the 0.106.0 fix, and the caveat this line carried for four versions is closed.
+**`npm run test:live` at 0.126.0: 27 of 27 across 11 files, 0 failures.** Re-run after `main`
+gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
+which `CLAUDE.md` requires tier 3 for. The header had been carrying a 0.110.0 result across
+sixteen versions of spawn-path changes.
 
 **Keep the history, because it is the evidence and not a footnote.** The suite read **26 of 27**
 before 0.106.0 and **the one failure was real** — a builder emitting a correct, cited assumption
@@ -56,6 +58,33 @@ Phase 6 sets it, so a fully green iteration happened and the old code would have
 **Early banking remains unconfirmed in the wild.**
 
 **Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
+
+### 0.128.0 — zero means no ceiling, for development on a plan where spend is not the constraint
+
+**Asked for as "budget = infinity"; literal infinity would have broken two things.** `childBudget`
+derives `--max-budget-usd` from the remaining ceiling and `Infinity.toFixed(4)` is not a number a
+CLI should be handed. `airtimeRemaining` divides by the ceiling, so `Infinity/Infinity` would have
+printed **NaN% of budget remaining** every iteration. Very large finite numbers would dodge both
+and leave `10000000000` in a config for someone to puzzle over later.
+
+**So: `0` means no ceiling**, the convention `maxChildTurns` already uses, on `tokenCeiling` and
+`costCeiling`. A disabled ceiling contributes **1** to the airtime minimum rather than 0 — pinning
+the display at "0% remaining" for an entire unlimited run was the obvious wrong answer. And a
+child gets **no** `--max-budget-usd` at all, because there is nothing to divide and inventing a
+number would quietly reimpose the limit the operator removed.
+
+**Termination is untouched, which is the whole reason this is safe to offer.** `maxIterations`, the
+stall limit and the ratchet still bound the loop; the ceilings bound the *bill*. Tests assert that
+an uncapped run still ends on the iteration cap and still ends `STALLED` — a run with no ceilings
+cannot run forever.
+
+**Not the default, deliberately.** `BRIEF.md` §E lists hard budget limits among the things to
+preserve, so this is an operator switching one off in their own configuration. A negative or
+infinite ceiling is still refused: that is a typo, not a choice.
+
+**Also in this commit:** tier 3 re-run at 0.126.0, **27 of 27**. The header had been advertising a
+0.110.0 result across sixteen versions during which the spawn path changed twice — exactly the
+stale-evidence claim I have corrected in five other documents tonight, sitting in my own file.
 
 ### 0.127.0 — the race can now win: strictly better than main, and nothing regressed
 

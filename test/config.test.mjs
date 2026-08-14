@@ -296,7 +296,23 @@ describe('validateConfig merges over the defaults', () => {
     // what the operator asked for.
     assert.equal(validateConfig({ costCeiling: 2.5 }).costCeiling, 2.5);
     assert.equal(validateConfig({ costCeiling: 0.01 }).costCeiling, 0.01);
-    for (const bad of [0, -1, '50', null, Number.POSITIVE_INFINITY, Number.NaN]) {
+    for (const bad of [-1, '50', null, Number.POSITIVE_INFINITY, Number.NaN]) {
+      assert.throws(() => validateConfig({ costCeiling: bad }), ConfigError, `accepted ${bad}`);
+    }
+  });
+
+  it('takes zero on either ceiling as "no ceiling"', () => {
+    // For development and dogfooding on a plan where spend is not the constraint. Deliberately
+    // not the default: BRIEF section E lists hard budget limits among the things to preserve, so
+    // this is an operator switching one off rather than a softened default. Termination is
+    // untouched -- maxIterations, the stall limit and the ratchet still bound the run.
+    assert.equal(validateConfig({ costCeiling: 0 }).costCeiling, 0);
+    assert.equal(validateConfig({ tokenCeiling: 0 }).tokenCeiling, 0);
+  });
+
+  it('still refuses a negative or infinite ceiling, which is a typo rather than a choice', () => {
+    for (const bad of [-1, Number.POSITIVE_INFINITY, Number.NaN]) {
+      assert.throws(() => validateConfig({ tokenCeiling: bad }), ConfigError, `accepted ${bad}`);
       assert.throws(() => validateConfig({ costCeiling: bad }), ConfigError, `accepted ${bad}`);
     }
   });
