@@ -564,7 +564,15 @@ describe('runGates', () => {
 
 describe('shouldContinue', () => {
   const config = { ...defaultConfig(), maxIterations: 5, stallLimit: 3, tokenCeiling: 1000 };
-  const base = { iteration: 0, spentTokens: 0, spentUsd: 0, stalledIterations: 0, bestGateScore: 0, bestPassingCount: 0 };
+  const base = {
+    iteration: 0,
+    spentTokens: 0,
+    spentUsd: 0,
+    stalledIterations: 0,
+    bestGateScore: 0,
+    bestGateShare: 0,
+    bestPassingCount: 0,
+  };
 
   it('allows a fresh run', () => {
     assert.deepStrictEqual(shouldContinue(base, config), { continue: true });
@@ -592,7 +600,47 @@ describe('shouldContinue', () => {
 });
 
 describe('recordProgress', () => {
-  const base = { iteration: 0, spentTokens: 0, spentUsd: 0, stalledIterations: 2, bestGateScore: 3, bestPassingCount: 10 };
+  const base = {
+    iteration: 0,
+    spentTokens: 0,
+    spentUsd: 0,
+    stalledIterations: 2,
+    bestGateScore: 3,
+    bestGateShare: 0.5,
+    bestPassingCount: 10,
+  };
+
+
+  it('reads a better share of a smaller roster as progress, not as a stall', () => {
+    // Measured against the real function before the fix: a node iteration passing 4 of 6 set the
+    // best count to 4, and after a toolchain switch declined two operations, passing 3 of 4 and
+    // then **4 of 4** both counted as stalls. A fully green iteration marched the run toward
+    // STALLED. Rosters change size every iteration because capabilities are re-detected.
+    let p = { ...base, stalledIterations: 0, bestGateScore: 0, bestGateShare: 0, bestPassingCount: 0 };
+    p = recordProgress(p, { gateScore: 4, gateTotal: 6, passingCount: 0 });
+    assert.equal(p.stalledIterations, 0);
+    p = recordProgress(p, { gateScore: 3, gateTotal: 4, passingCount: 0 });
+    assert.equal(p.stalledIterations, 0, 'a better share of a smaller roster read as a stall');
+    p = recordProgress(p, { gateScore: 4, gateTotal: 4, passingCount: 0 });
+    assert.equal(p.stalledIterations, 0, 'a fully green roster read as a stall');
+  });
+
+  it('still stalls a run that is green every iteration and going nowhere', () => {
+    // The case the count comparison got right, and the reason this is a ratio rather than a
+    // special case for "everything passes" -- that would have made a green-but-stuck run
+    // immortal, resetting the counter forever while the panel kept failing it.
+    let p = { ...base, stalledIterations: 0, bestGateScore: 0, bestGateShare: 0, bestPassingCount: 0 };
+    p = recordProgress(p, { gateScore: 4, gateTotal: 4, passingCount: 0 });
+    p = recordProgress(p, { gateScore: 4, gateTotal: 4, passingCount: 0 });
+    p = recordProgress(p, { gateScore: 4, gateTotal: 4, passingCount: 0 });
+    assert.equal(p.stalledIterations, 2);
+  });
+
+  it('scores a roster of no gates as zero rather than dividing by it', () => {
+    const p = recordProgress({ ...base, bestGateShare: 0 }, { gateScore: 0, gateTotal: 0, passingCount: 0 });
+    assert.equal(Number.isFinite(p.bestGateShare), true, 'divided by an empty roster');
+    assert.equal(p.bestGateShare, 0);
+  });
 
   it('resets the stall counter when a gate newly passes', () => {
     assert.equal(recordProgress(base, { gateScore: 4, passingCount: 10 }).stalledIterations, 0);
@@ -621,7 +669,7 @@ describe('airtimeRemaining', () => {
   it('reports whichever budget is closer to running out', () => {
     const config = { ...defaultConfig(), maxIterations: 10, tokenCeiling: 1000 };
     const airtime = airtimeRemaining(
-      { iteration: 2, spentTokens: 900, spentUsd: 0, stalledIterations: 0, bestGateScore: 0, bestPassingCount: 0 },
+      { iteration: 2, spentTokens: 900, spentUsd: 0, stalledIterations: 0, bestGateScore: 0, bestGateShare: 0, bestPassingCount: 0 },
       config,
     );
     assert.deepStrictEqual(airtime, { iterationsLeft: 8, tokensLeft: 100, usdLeft: 50, fractionLeft: 0.1 });
@@ -632,7 +680,7 @@ describe('airtimeRemaining', () => {
     // counter has to be able to say "you are nearly out of budget" while tokens look fine.
     const config = { ...defaultConfig(), maxIterations: 10, tokenCeiling: 1_000_000, costCeiling: 10 };
     const airtime = airtimeRemaining(
-      { iteration: 1, spentTokens: 1000, spentUsd: 9.5, stalledIterations: 0, bestGateScore: 0, bestPassingCount: 0 },
+      { iteration: 1, spentTokens: 1000, spentUsd: 9.5, stalledIterations: 0, bestGateScore: 0, bestGateShare: 0, bestPassingCount: 0 },
       config,
     );
     assert.equal(airtime.usdLeft, 0.5);
@@ -642,7 +690,7 @@ describe('airtimeRemaining', () => {
   it('never goes negative', () => {
     const config = { ...defaultConfig(), maxIterations: 2, tokenCeiling: 100 };
     const airtime = airtimeRemaining(
-      { iteration: 9, spentTokens: 900, spentUsd: 0, stalledIterations: 0, bestGateScore: 0, bestPassingCount: 0 },
+      { iteration: 9, spentTokens: 900, spentUsd: 0, stalledIterations: 0, bestGateScore: 0, bestGateShare: 0, bestPassingCount: 0 },
       config,
     );
     assert.deepStrictEqual(airtime, { iterationsLeft: 0, tokensLeft: 0, usdLeft: 50, fractionLeft: 0 });

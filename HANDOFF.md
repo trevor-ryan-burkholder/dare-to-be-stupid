@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.125.0`. Measured at 0.125.0: `npm test` **1842 pass**,
+**State:** `main` at `0.126.0`. Measured at 0.126.0: `npm test` **1845 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -23,6 +23,35 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.126.0 — a fully green iteration was counted as a stall
+
+**Found by asking what `gateScore` does when the roster changes size**, which it does constantly:
+capabilities are re-detected every iteration (§3.7) and a toolchain switch declines whole
+operations — `dotnet` declines `types` and `e2e` by name. `gateScore` is a raw count and
+improvement meant beating the best-ever count, so:
+
+```
+node   iteration, 4 of 6 gates pass  -> best 4, not stalled
+dotnet iteration, 3 of 4 gates pass  -> stalled 1   (a better share)
+dotnet iteration, 4 of 4 gates pass  -> stalled 2   (everything applicable passes)
+```
+
+**An iteration in which every applicable gate passed marched the run toward `STALLED`.** Measured
+against the real function, not reasoned about.
+
+**Comparing the share fixes it without losing what the count got right.** Those three read 0.67,
+0.75 and 1.0 — two genuine improvements. And a run that is green every iteration while the panel
+keeps failing has a share of 1.0 that never rises, so it **still** stalls. That is exactly why this
+is a ratio and not a special case for "everything passes", which would have made a green-but-stuck
+run immortal. Both behaviours have tests.
+
+**A caller that cannot say how many gates ran degrades to the old count comparison**, not to a
+share of one — a first draft did the latter, which would have read every iteration as perfect.
+
+**Fifth jsdoc-adjacency break of the night**, same shape, caught by `typecheck` again. At five it
+is not carelessness in the moment, it is a habit: I insert a new declaration immediately above the
+function I am reading, which is exactly between that function's docblock and itself.
 
 ### 0.125.0 — a gate that passed on a comment, in the file warning about comments
 

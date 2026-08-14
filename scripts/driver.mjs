@@ -729,7 +729,7 @@ export function gateScore(results) {
 /**
  * @typedef {{
  *   iteration: number, spentTokens: number, spentUsd: number, stalledIterations: number,
- *   bestGateScore: number, bestPassingCount: number
+ *   bestGateScore: number, bestGateShare: number, bestPassingCount: number
  * }} RunProgress
  *
  * `spentUsd` sits beside `spentTokens` rather than outside the record, because a limit the
@@ -784,20 +784,51 @@ export function shouldContinue(progress, config) {
 /**
  * Did this iteration improve anything measurable?
  *
- * Improvement is either a gate that now passes and did not before, or a test id the
- * ratchet did not hold. Anything else is a stalled iteration, however busy it looked.
+ * Improvement is a larger *share* of the applicable gates passing than ever before, or a test id
+ * the ratchet did not hold. Anything else is a stalled iteration, however busy it looked.
+ *
+ * **The share, not the count, and the difference is a measured defect.** Gate rosters change
+ * size mid-run: capabilities are re-detected every iteration (§3.7) and a toolchain switch
+ * declines whole operations — `dotnet` declines `types` and `e2e` by name. Comparing raw counts
+ * against a best-ever count then punishes a shrinking roster:
+ *
+ * ```
+ * node   iteration, 4 of 6 gates pass  -> best 4, not stalled
+ * dotnet iteration, 3 of 4 gates pass  -> stalled 1   (a better share)
+ * dotnet iteration, 4 of 4 gates pass  -> stalled 2   (everything applicable passes)
+ * ```
+ *
+ * **A fully green iteration marched the run toward `STALLED`.** By share those read 0.67, 0.75
+ * and 1.0 — two genuine improvements, correctly.
+ *
+ * The share also keeps the case the count got right: a run that is green every iteration while
+ * the panel keeps failing has a share of 1.0 that never rises, so it still stalls. That is why
+ * this is a ratio rather than a special case for "everything passes", which would have made such
+ * a run immortal.
+ *
+ * A roster of zero applicable gates scores zero rather than dividing by it — no gates ran, so
+ * nothing was demonstrated.
  *
  * @param {RunProgress} progress
- * @param {{ gateScore: number, passingCount: number }} iteration
+ * @param {{ gateScore: number, gateTotal?: number, passingCount: number }} iteration
+ *   `gateTotal` is how many gates actually ran; omitted, the score is treated as its own total
+ *   so a caller that cannot say degrades to the old count comparison rather than to nonsense
  * @returns {RunProgress}
  */
 export function recordProgress(progress, iteration) {
-  const improved = iteration.gateScore > progress.bestGateScore || iteration.passingCount > progress.bestPassingCount;
+  const total = iteration.gateTotal;
+  const share = total !== undefined && total > 0 ? iteration.gateScore / total : 0;
+  // A caller that cannot say how many gates ran degrades to the old count comparison rather
+  // than to a share of one, which would read every iteration as perfect.
+  const gateImproved =
+    total === undefined ? iteration.gateScore > progress.bestGateScore : share > progress.bestGateShare;
+  const improved = gateImproved || iteration.passingCount > progress.bestPassingCount;
   return {
     ...progress,
     iteration: progress.iteration + 1,
     stalledIterations: improved ? 0 : progress.stalledIterations + 1,
     bestGateScore: Math.max(progress.bestGateScore, iteration.gateScore),
+    bestGateShare: Math.max(progress.bestGateShare, share),
     bestPassingCount: Math.max(progress.bestPassingCount, iteration.passingCount),
   };
 }
@@ -1396,6 +1427,7 @@ export function driveRun(options) {
     spentUsd: options.alreadySpent?.costUsd ?? 0,
     stalledIterations: 0,
     bestGateScore: 0,
+    bestGateShare: 0,
     bestPassingCount: 0,
   };
 
@@ -1582,6 +1614,13 @@ export function driveRun(options) {
   };
 
   /**
+   * How many gates ran in the current iteration, for `recordProgress`'s share comparison.
+   * Reset at the top of each iteration so a path that closes before the gates -- a malformed
+   * assumptions block, for one -- cannot inherit a previous iteration's roster size.
+   */
+  let lastGateTotal = 0;
+
+  /**
    * Close out an iteration: record what failed, consider a lesson, and score progress.
    *
    * @param {number} iteration
@@ -1593,7 +1632,7 @@ export function driveRun(options) {
   const closeIteration = (iteration, failures, score, passingCount) => {
     iterationHistory.push({ iteration, failures, changed: effects.changedFiles?.() ?? [] });
     maybeExtractLesson();
-    progress = recordProgress(progress, { gateScore: score, passingCount });
+    progress = recordProgress(progress, { gateScore: score, gateTotal: lastGateTotal, passingCount });
   };
 
   /**
@@ -1754,6 +1793,7 @@ export function driveRun(options) {
     // ---- Phase 3: gates -------------------------------------------------
     const gateOutcome = effects.gates();
     const score = gateScore(gateOutcome.results);
+    lastGateTotal = gateOutcome.results.length;
     const failedGates = gateOutcome.results.filter((result) => !result.ok);
 
     // Reported the moment they are known, not only in the gate-failure branch far below, because
