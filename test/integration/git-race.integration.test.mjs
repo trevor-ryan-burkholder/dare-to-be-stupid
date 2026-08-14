@@ -81,12 +81,12 @@ function worktreeParent(repo, suffix) {
 }
 
 describe('worktrees against real git', () => {
-  it('creates detached worktrees at the base commit, and removes every one', () => {
+  it('creates detached worktrees at the base commit, and removes every one', async () => {
     const repo = makeRepo();
     const base = git(repo, ['rev-parse', 'HEAD']);
     const parentDir = worktreeParent(repo, 'worktrees');
 
-    const created = createWorktrees({ cwd: repo, run: defaultRunner, n: 3, base, parentDir });
+    const created = await createWorktrees({ cwd: repo, run: defaultRunner, n: 3, base, parentDir });
     assert.deepEqual(created.problems, []);
     assert.deepEqual(
       created.worktrees.map((worktree) => path.basename(worktree.dir)),
@@ -100,7 +100,7 @@ describe('worktrees against real git', () => {
     }
     assert.equal(git(repo, ['worktree', 'list']).split('\n').length, 4);
 
-    const removed = removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: created.worktrees });
+    const removed = await removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: created.worktrees });
     assert.deepEqual(removed.problems, []);
     assert.equal(removed.removed.length, 3);
     // The failure this guards: `git worktree add` refuses a directory it already knows about,
@@ -109,25 +109,25 @@ describe('worktrees against real git', () => {
     assert.equal(git(repo, ['worktree', 'list']).split('\n').length, 1);
   });
 
-  it('lets a later race reuse the same names, which is the real cost of a leak', () => {
+  it('lets a later race reuse the same names, which is the real cost of a leak', async () => {
     const repo = makeRepo();
     const base = git(repo, ['rev-parse', 'HEAD']);
     const parentDir = worktreeParent(repo, 'reuse');
 
-    const first = createWorktrees({ cwd: repo, run: defaultRunner, n: 2, base, parentDir });
-    removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: first.worktrees });
-    const second = createWorktrees({ cwd: repo, run: defaultRunner, n: 2, base, parentDir });
+    const first = await createWorktrees({ cwd: repo, run: defaultRunner, n: 2, base, parentDir });
+    await removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: first.worktrees });
+    const second = await createWorktrees({ cwd: repo, run: defaultRunner, n: 2, base, parentDir });
     assert.deepEqual(second.problems, []);
     assert.equal(second.worktrees.length, 2);
-    removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: second.worktrees });
+    await removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: second.worktrees });
   });
 
-  it('fast-forwards the main tree onto a candidate commit', () => {
+  it('fast-forwards the main tree onto a candidate commit', async () => {
     const repo = makeRepo();
     const base = git(repo, ['rev-parse', 'HEAD']);
     const parentDir = worktreeParent(repo, 'winner');
 
-    const created = createWorktrees({ cwd: repo, run: defaultRunner, n: 1, base, parentDir });
+    const created = await createWorktrees({ cwd: repo, run: defaultRunner, n: 1, base, parentDir });
     const candidate = created.worktrees[0];
     writeFileSync(path.join(candidate.dir, 'a.txt'), 'one\ntwo\n', 'utf8');
     writeFileSync(path.join(candidate.dir, 'b.txt'), 'new\n', 'utf8');
@@ -135,24 +135,24 @@ describe('worktrees against real git', () => {
     git(candidate.dir, ['commit', '--quiet', '--no-verify', '-m', 'candidate 1']);
     const commit = git(candidate.dir, ['rev-parse', 'HEAD']);
 
-    const merged = applyWinner({ cwd: repo, run: defaultRunner, commit });
+    const merged = await applyWinner({ cwd: repo, run: defaultRunner, commit });
     assert.equal(merged.ok, true, merged.detail);
     assert.equal(git(repo, ['rev-parse', 'HEAD']), commit);
     assert.equal(readFileSync(path.join(repo, 'b.txt'), 'utf8'), 'new\n');
     // A pointer move, not a merge commit nobody reviewed.
     assert.equal(git(repo, ['rev-list', '--count', `${base}..HEAD`]), '1');
 
-    removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: created.worktrees });
+    await removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: created.worktrees });
   });
 
-  it('refuses to merge a commit that does not descend from the main tree', () => {
+  it('refuses to merge a commit that does not descend from the main tree', async () => {
     // The whole safety argument for `--ff-only`. If the main tree has moved, the merge must
     // fail loudly rather than invent a merge commit.
     const repo = makeRepo();
     const base = git(repo, ['rev-parse', 'HEAD']);
     const parentDir = worktreeParent(repo, 'diverged');
 
-    const created = createWorktrees({ cwd: repo, run: defaultRunner, n: 1, base, parentDir });
+    const created = await createWorktrees({ cwd: repo, run: defaultRunner, n: 1, base, parentDir });
     const candidate = created.worktrees[0];
     writeFileSync(path.join(candidate.dir, 'a.txt'), 'candidate\n', 'utf8');
     git(candidate.dir, ['add', '-A']);
@@ -163,11 +163,11 @@ describe('worktrees against real git', () => {
     git(repo, ['add', '-A']);
     git(repo, ['commit', '--quiet', '--no-verify', '-m', 'main moved']);
 
-    const merged = applyWinner({ cwd: repo, run: defaultRunner, commit });
+    const merged = await applyWinner({ cwd: repo, run: defaultRunner, commit });
     assert.equal(merged.ok, false);
     assert.equal(merged.detail.length > 0, true, 'a refused merge must say why');
 
-    removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: created.worktrees });
+    await removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: created.worktrees });
   });
 });
 
@@ -218,11 +218,11 @@ describe('parseNumstat against real git output', () => {
 // --include-untracked` actually clears a tree enough for `merge --ff-only` to proceed is git's
 // contract, not ours, and that is exactly the distinction tier 2 exists for.
 describe('landing a winner on the dirty tree a race actually finds', () => {
-  it('fast-forwards anyway, and leaves the ungated changes in the stash rather than in the tree', () => {
+  it('fast-forwards anyway, and leaves the ungated changes in the stash rather than in the tree', async () => {
     const repo = makeRepo();
     const parentDir = worktreeParent(repo, 'dirty');
     const base = git(repo, ['rev-parse', 'HEAD']);
-    const created = createWorktrees({ cwd: repo, run: defaultRunner, n: 1, base, parentDir });
+    const created = await createWorktrees({ cwd: repo, run: defaultRunner, n: 1, base, parentDir });
     const worktree = created.worktrees[0];
 
     // The candidate does its work from the base commit, exactly as a real one does.
@@ -236,7 +236,7 @@ describe('landing a winner on the dirty tree a race actually finds', () => {
     writeFileSync(path.join(repo, 'a.txt'), 'one\ntwo\n', 'utf8');
     writeFileSync(path.join(repo, 'debris.txt'), 'stryker\n', 'utf8');
 
-    const applied = applyWinner({ cwd: repo, run: defaultRunner, commit });
+    const applied = await applyWinner({ cwd: repo, run: defaultRunner, commit });
 
     assert.equal(applied.ok, true, applied.detail);
     assert.equal(git(repo, ['rev-parse', 'HEAD']), commit);
@@ -245,14 +245,14 @@ describe('landing a winner on the dirty tree a race actually finds', () => {
     assert.equal(readFileSync(path.join(repo, 'a.txt'), 'utf8'), 'one\n');
     assert.equal(git(repo, ['stash', 'list']).includes('set aside before landing a race winner'), true);
 
-    removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: created.worktrees });
+    await removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: created.worktrees });
   });
 
-  it('restores the tree when the merge fails for a reason stashing cannot fix', () => {
+  it('restores the tree when the merge fails for a reason stashing cannot fix', async () => {
     const repo = makeRepo();
     writeFileSync(path.join(repo, 'a.txt'), 'one\ntwo\n', 'utf8');
 
-    const applied = applyWinner({ cwd: repo, run: defaultRunner, commit: 'not-a-commit' });
+    const applied = await applyWinner({ cwd: repo, run: defaultRunner, commit: 'not-a-commit' });
 
     assert.equal(applied.ok, false);
     assert.equal(applied.detail.includes('restored'), true, applied.detail);
@@ -262,24 +262,24 @@ describe('landing a winner on the dirty tree a race actually finds', () => {
   });
 
   // The benign neighbour: the clean-tree path must not gain a stash it never needed.
-  it('leaves a clean tree untouched, with nothing stashed', () => {
+  it('leaves a clean tree untouched, with nothing stashed', async () => {
     const repo = makeRepo();
     const parentDir = worktreeParent(repo, 'clean');
     const base = git(repo, ['rev-parse', 'HEAD']);
-    const created = createWorktrees({ cwd: repo, run: defaultRunner, n: 1, base, parentDir });
+    const created = await createWorktrees({ cwd: repo, run: defaultRunner, n: 1, base, parentDir });
     const worktree = created.worktrees[0];
     writeFileSync(path.join(worktree.dir, 'winner.txt'), 'candidate work\n', 'utf8');
     git(worktree.dir, ['add', '-A']);
     git(worktree.dir, ['commit', '--quiet', '--no-verify', '-m', 'candidate 1']);
     const commit = git(worktree.dir, ['rev-parse', 'HEAD']);
 
-    const applied = applyWinner({ cwd: repo, run: defaultRunner, commit });
+    const applied = await applyWinner({ cwd: repo, run: defaultRunner, commit });
 
     assert.equal(applied.ok, true, applied.detail);
     assert.equal(applied.detail, `fast-forwarded to ${commit}`);
     assert.equal(git(repo, ['stash', 'list']), '');
 
-    removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: created.worktrees });
+    await removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: created.worktrees });
   });
 });
 
@@ -289,41 +289,41 @@ describe('landing a winner on the dirty tree a race actually finds', () => {
 // the repository to a state where racing works again. Neither half is visible to a unit test,
 // because both belong to git's administrative area rather than to our argv.
 describe('a race abandoned by a killed driver', () => {
-  it('really does break the next race, and the sweep really does repair it', () => {
+  it('really does break the next race, and the sweep really does repair it', async () => {
     const repo = makeRepo();
     const base = git(repo, ['rev-parse', 'HEAD']);
     const parentDir = worktreeParent(repo, 'abandoned');
 
     // A race that was killed: worktrees created, never removed.
-    const abandoned = createWorktrees({ cwd: repo, run: defaultRunner, n: 2, base, parentDir });
+    const abandoned = await createWorktrees({ cwd: repo, run: defaultRunner, n: 2, base, parentDir });
     assert.equal(abandoned.worktrees.length, 2);
     assert.equal(git(repo, ['worktree', 'list']).split('\n').length, 3);
 
     // The next race asks for the same directory names under the same parent, exactly as a rerun
     // in the same shell would.
-    const blocked = createWorktrees({ cwd: repo, run: defaultRunner, n: 2, base, parentDir });
+    const blocked = await createWorktrees({ cwd: repo, run: defaultRunner, n: 2, base, parentDir });
     assert.equal(blocked.worktrees.length, 0, 'the second race started despite the abandoned worktrees');
     assert.equal(blocked.problems.length, 2);
 
-    const swept = sweepRaceWorktrees({ cwd: repo, run: defaultRunner });
+    const swept = await sweepRaceWorktrees({ cwd: repo, run: defaultRunner });
     assert.deepStrictEqual(swept.problems, []);
     assert.equal(swept.removed.length, 2);
     assert.equal(git(repo, ['worktree', 'list']).split('\n').length, 1, 'the sweep left an entry behind');
 
     // And now the race that was blocked can start.
-    const recovered = createWorktrees({ cwd: repo, run: defaultRunner, n: 2, base, parentDir });
+    const recovered = await createWorktrees({ cwd: repo, run: defaultRunner, n: 2, base, parentDir });
     assert.equal(recovered.worktrees.length, 2, 'racing did not recover after the sweep');
-    removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: recovered.worktrees });
+    await removeWorktrees({ cwd: repo, run: defaultRunner, worktrees: recovered.worktrees });
   });
 
-  it('leaves a worktree that is not ours exactly where it is', () => {
+  it('leaves a worktree that is not ours exactly where it is', async () => {
     const repo = makeRepo();
     const base = git(repo, ['rev-parse', 'HEAD']);
     const mine = path.join(path.dirname(repo), `${path.basename(repo)}-operator-work`);
     temporaryDirs.push(mine);
     git(repo, ['worktree', 'add', '--detach', mine, base]);
 
-    const swept = sweepRaceWorktrees({ cwd: repo, run: defaultRunner });
+    const swept = await sweepRaceWorktrees({ cwd: repo, run: defaultRunner });
 
     assert.deepStrictEqual(swept.removed, []);
     assert.deepStrictEqual(swept.problems, []);

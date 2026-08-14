@@ -68,10 +68,10 @@ export function citedLocations(findings) {
  * How many commits this repository has, capped so the count stays cheap on a large one.
  *
  * @param {{ cwd: string, run: Runner }} options
- * @returns {number}
+ * @returns {Promise<number>}
  */
-export function commitCount(options) {
-  const result = options.run('git', ['rev-list', '--count', `-n${MIN_REPOSITORY_COMMITS + 1}`, 'HEAD'], {
+export async function commitCount(options) {
+  const result = await options.run('git', ['rev-list', '--count', `-n${MIN_REPOSITORY_COMMITS + 1}`, 'HEAD'], {
     cwd: options.cwd,
   });
   if (!result.ok) return 0;
@@ -83,19 +83,19 @@ export function commitCount(options) {
  * Is this repository old enough to have opinions?
  *
  * @param {{ cwd: string, run: Runner }} options
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function hasMeaningfulHistory(options) {
-  return commitCount(options) >= MIN_REPOSITORY_COMMITS;
+export async function hasMeaningfulHistory(options) {
+  return (await commitCount(options)) >= MIN_REPOSITORY_COMMITS;
 }
 
 /**
  * @param {string} file
  * @param {{ cwd: string, run: Runner }} options
- * @returns {{ sha: string, subject: string }[]}
+ * @returns {Promise<{ sha: string, subject: string }[]>}
  */
-function commitsTouching(file, options) {
-  const result = options.run('git', ['log', `-n${MAX_COMMITS}`, '--format=%h %s', '--', file], { cwd: options.cwd });
+async function commitsTouching(file, options) {
+  const result = await options.run('git', ['log', `-n${MAX_COMMITS}`, '--format=%h %s', '--', file], { cwd: options.cwd });
   if (!result.ok) return [];
   return result.stdout
     .split('\n')
@@ -111,10 +111,10 @@ function commitsTouching(file, options) {
  * @param {string} file
  * @param {number} line
  * @param {{ cwd: string, run: Runner }} options
- * @returns {string | null}
+ * @returns {Promise<string | null>}
  */
-function blameLine(file, line, options) {
-  const result = options.run('git', ['blame', `-L${line},${line}`, '--porcelain', '--', file], { cwd: options.cwd });
+async function blameLine(file, line, options) {
+  const result = await options.run('git', ['blame', `-L${line},${line}`, '--porcelain', '--', file], { cwd: options.cwd });
   if (!result.ok) return null;
   const lines = result.stdout.split('\n');
   const sha = (lines[0] ?? '').split(' ')[0].slice(0, 8);
@@ -133,12 +133,12 @@ function blameLine(file, line, options) {
  * @param {{
  *   cwd: string, run: Runner, findings?: string[], files?: string[], greenfield?: boolean
  * }} options
- * @returns {HistoryNote[]}
+ * @returns {Promise<HistoryNote[]>}
  */
-export function historyContext(options) {
+export async function historyContext(options) {
   // A run that generated this application from nothing has no history but its own.
   if (options.greenfield === true) return [];
-  if (!hasMeaningfulHistory(options)) return [];
+  if (!(await hasMeaningfulHistory(options))) return [];
 
   const cited = citedLocations(options.findings ?? []);
   /** @type {Map<string, number[]>} */
@@ -149,13 +149,13 @@ export function historyContext(options) {
   const notes = [];
   for (const [file, lines] of [...wanted.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
     if (notes.length >= MAX_FILES) break;
-    const commits = commitsTouching(file, options);
+    const commits = await commitsTouching(file, options);
     // One commit means this run created it. There is no prior intent to respect.
     if (commits.length < MIN_FILE_COMMITS) continue;
-    const blame = lines
-      .slice(0, MAX_COMMITS)
-      .map((line) => blameLine(file, line, options))
-      .filter((entry) => entry !== null);
+    /** @type {(string | null)[]} */
+    const asked = [];
+    for (const line of lines.slice(0, MAX_COMMITS)) asked.push(await blameLine(file, line, options));
+    const blame = asked.filter((entry) => entry !== null);
     notes.push({ file, commits, blame: /** @type {string[]} */ (blame) });
   }
   return notes;

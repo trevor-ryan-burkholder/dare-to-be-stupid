@@ -33,9 +33,9 @@ export function parseArgs(argv, cwd) {
 /**
  * @param {string[]} argv
  * @param {{ log?: (line: string) => void, cwd?: string, interactive?: boolean }} [io]
- * @returns {number} process exit code
+ * @returns {Promise<number>} process exit code
  */
-export function main(argv, io = {}) {
+export async function main(argv, io = {}) {
   const log = io.log ?? ((/** @type {string} */ line) => process.stdout.write(`${line}\n`));
   const { yes, cwd, scaffoldOnly } = parseArgs(argv, io.cwd ?? process.cwd());
   const meeseeksDir = path.join(cwd, '.meeseeks');
@@ -57,7 +57,7 @@ export function main(argv, io = {}) {
     // has a larger problem than whether it asked to be sandboxed.
   }
 
-  const result = runPreflight({
+  const result = await runPreflight({
     cwd,
     yes,
     interactive: io.interactive ?? process.stdout.isTTY === true,
@@ -69,5 +69,5 @@ export function main(argv, io = {}) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  process.exitCode = main(process.argv.slice(2));
+  process.exitCode = await main(process.argv.slice(2));
 }

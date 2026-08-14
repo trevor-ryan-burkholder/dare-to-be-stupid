@@ -280,9 +280,9 @@ export function worktreeName(index) {
  * interrupted race cannot leave the repository pointing somewhere unexpected.
  *
  * @param {{ cwd: string, run: Runner, n: number, base: string, parentDir: string }} options
- * @returns {{ worktrees: { index: number, dir: string }[], problems: string[] }}
+ * @returns {Promise<{ worktrees: { index: number, dir: string }[], problems: string[] }>}
  */
-export function createWorktrees(options) {
+export async function createWorktrees(options) {
   /** @type {{ index: number, dir: string }[]} */
   const worktrees = [];
   /** @type {string[]} */
@@ -290,7 +290,7 @@ export function createWorktrees(options) {
 
   for (let index = 1; index <= options.n; index += 1) {
     const dir = path.join(options.parentDir, worktreeName(index));
-    const result = options.run('git', ['worktree', 'add', '--detach', dir, options.base], { cwd: options.cwd });
+    const result = await options.run('git', ['worktree', 'add', '--detach', dir, options.base], { cwd: options.cwd });
     if (!result.ok) {
       problems.push(`worktree ${index} could not be created: ${(result.stderr || result.stdout).trim()}`);
       continue;
@@ -309,16 +309,16 @@ export function createWorktrees(options) {
  * the race that left it behind.
  *
  * @param {{ cwd: string, run: Runner, worktrees: { index: number, dir: string }[] }} options
- * @returns {{ removed: string[], problems: string[] }}
+ * @returns {Promise<{ removed: string[], problems: string[] }>}
  */
-export function removeWorktrees(options) {
+export async function removeWorktrees(options) {
   /** @type {string[]} */
   const removed = [];
   /** @type {string[]} */
   const problems = [];
 
   for (const worktree of options.worktrees) {
-    const result = options.run('git', ['worktree', 'remove', '--force', worktree.dir], { cwd: options.cwd });
+    const result = await options.run('git', ['worktree', 'remove', '--force', worktree.dir], { cwd: options.cwd });
     if (result.ok) {
       removed.push(worktree.dir);
       continue;
@@ -327,7 +327,7 @@ export function removeWorktrees(options) {
   }
   // Prune whatever the removals could not, so a stale administrative entry does not block
   // the next race even when a directory survived.
-  options.run('git', ['worktree', 'prune'], { cwd: options.cwd });
+  await options.run('git', ['worktree', 'prune'], { cwd: options.cwd });
   return { removed, problems };
 }
 
@@ -365,15 +365,15 @@ function looksLikeRaceWorktree(worktreePath) {
  * sweep" and "could not look" are different answers and only one of them is evidence.
  *
  * @param {{ cwd: string, run: Runner }} options
- * @returns {{ removed: string[], problems: string[] }}
+ * @returns {Promise<{ removed: string[], problems: string[] }>}
  */
-export function sweepRaceWorktrees(options) {
+export async function sweepRaceWorktrees(options) {
   /** @type {string[]} */
   const removed = [];
   /** @type {string[]} */
   const problems = [];
 
-  const listed = options.run('git', ['worktree', 'list', '--porcelain'], { cwd: options.cwd });
+  const listed = await options.run('git', ['worktree', 'list', '--porcelain'], { cwd: options.cwd });
   if (!listed.ok) {
     problems.push(`could not list worktrees before racing: ${(listed.stderr || listed.stdout).trim()}`);
     return { removed, problems };
@@ -386,7 +386,7 @@ export function sweepRaceWorktrees(options) {
     .filter((entry) => entry.length > 0 && looksLikeRaceWorktree(entry));
 
   for (const entry of stale) {
-    const result = options.run('git', ['worktree', 'remove', '--force', entry], { cwd: options.cwd });
+    const result = await options.run('git', ['worktree', 'remove', '--force', entry], { cwd: options.cwd });
     if (result.ok) {
       removed.push(entry);
       continue;
@@ -396,7 +396,7 @@ export function sweepRaceWorktrees(options) {
 
   // Always, even when nothing was listed: an entry whose directory is already gone is invisible
   // to the loop above and still refuses the next `worktree add` on that path.
-  options.run('git', ['worktree', 'prune'], { cwd: options.cwd });
+  await options.run('git', ['worktree', 'prune'], { cwd: options.cwd });
   return { removed, problems };
 }
 
@@ -433,10 +433,10 @@ export function sweepRaceWorktrees(options) {
  * found it.
  *
  * @param {{ cwd: string, run: Runner, commit: string, stashLabel?: string }} options
- * @returns {{ ok: boolean, detail: string }}
+ * @returns {Promise<{ ok: boolean, detail: string }>}
  */
-export function applyWinner(options) {
-  const status = options.run('git', ['status', '--porcelain'], { cwd: options.cwd });
+export async function applyWinner(options) {
+  const status = await options.run('git', ['status', '--porcelain'], { cwd: options.cwd });
   if (!status.ok) {
     // Not knowing whether the tree is dirty is not the same as it being clean, and merging on
     // the second reading when the first is what we have is how a race lands on a tree nobody
@@ -447,7 +447,7 @@ export function applyWinner(options) {
   let stashed = false;
   if (changes.length > 0) {
     const label = options.stashLabel ?? 'set aside before landing a race winner';
-    const stash = options.run('git', ['stash', 'push', '--include-untracked', '--message', label], { cwd: options.cwd });
+    const stash = await options.run('git', ['stash', 'push', '--include-untracked', '--message', label], { cwd: options.cwd });
     if (!stash.ok) {
       return {
         ok: false,
@@ -459,11 +459,11 @@ export function applyWinner(options) {
     stashed = true;
   }
 
-  const merged = options.run('git', ['merge', '--ff-only', options.commit], { cwd: options.cwd });
+  const merged = await options.run('git', ['merge', '--ff-only', options.commit], { cwd: options.cwd });
   if (!merged.ok) {
     const detail = (merged.stderr || merged.stdout).trim();
     if (!stashed) return { ok: false, detail };
-    const restored = options.run('git', ['stash', 'pop'], { cwd: options.cwd });
+    const restored = await options.run('git', ['stash', 'pop'], { cwd: options.cwd });
     return {
       ok: false,
       detail: restored.ok

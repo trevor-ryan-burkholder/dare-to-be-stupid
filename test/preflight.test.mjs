@@ -78,9 +78,9 @@ function probeWith(overrides = {}) {
  *   cwd?: string,
  * }} [options]
  */
-function preflight(options = {}) {
+async function preflight(options = {}) {
   const cwd = options.cwd ?? makeTempDir();
-  return runPreflight({
+  return await runPreflight({
     cwd,
     meeseeksDir: path.join(cwd, '.meeseeks'),
     probe: options.probe ?? probeWith(),
@@ -90,7 +90,7 @@ function preflight(options = {}) {
 }
 
 /**
- * @param {ReturnType<typeof runPreflight>} result
+ * @param {Awaited<ReturnType<typeof runPreflight>>} result
  * @returns {string[]}
  */
 function failedNames(result) {
@@ -98,15 +98,15 @@ function failedNames(result) {
 }
 
 describe('a healthy machine passes', () => {
-  it('reports ok with no failures', () => {
-    const result = preflight();
+  it('reports ok with no failures', async () => {
+    const result = await preflight();
     assert.equal(result.ok, true);
     assert.deepStrictEqual(failedNames(result), []);
   });
 
-  it('runs every check named in DESIGN.md §3.5', () => {
+  it('runs every check named in DESIGN.md §3.5', async () => {
     assert.deepStrictEqual(
-      preflight().checks.map((entry) => entry.name),
+      (await preflight()).checks.map((entry) => entry.name),
       [
         'node-version',
         'claude-cli',
@@ -125,8 +125,8 @@ describe('a healthy machine passes', () => {
     );
   });
 
-  it('scaffolds .meeseeks/config.json on the way through', () => {
-    const config = preflight({ cwd: makeTempDir() }).checks.find((entry) => entry.name === 'config');
+  it('scaffolds .meeseeks/config.json on the way through', async () => {
+    const config = (await preflight({ cwd: makeTempDir() })).checks.find((entry) => entry.name === 'config');
     assert.equal(config?.ok, true);
     assert.equal(config?.detail.startsWith('scaffolded '), true);
   });
@@ -153,32 +153,32 @@ describe('each check fails on its own', () => {
     [{ yes: false }, 'danger-acknowledged'],
   ];
   for (const [options, name] of cases) {
-    it(`fails ${name}`, () => {
-      const result = preflight(options);
+    it(`fails ${name}`, async () => {
+      const result = await preflight(options);
       assert.equal(result.ok, false);
       assert.deepStrictEqual(failedNames(result), [name]);
     });
   }
 
-  it('fails when the repository carries a committed credential', () => {
+  it('fails when the repository carries a committed credential', async () => {
     const cwd = makeTempDir();
     writeFileSync(path.join(cwd, 'keys.ts'), `const id = "AKIA${'QWERTYUIOPASDFGH'}";\n`, 'utf8');
-    assert.deepStrictEqual(failedNames(preflight({ cwd })), ['agent-surface']);
+    assert.deepStrictEqual(failedNames(await preflight({ cwd })), ['agent-surface']);
   });
 
-  it('fails when .meeseeks/config.json cannot be understood', () => {
+  it('fails when .meeseeks/config.json cannot be understood', async () => {
     const cwd = makeTempDir();
     const meeseeksDir = path.join(cwd, '.meeseeks');
-    const first = preflight({ cwd });
+    const first = await preflight({ cwd });
     assert.equal(first.ok, true);
     writeFileSync(path.join(meeseeksDir, 'config.json'), '{ not json', 'utf8');
-    assert.deepStrictEqual(failedNames(preflight({ cwd })), ['config']);
+    assert.deepStrictEqual(failedNames(await preflight({ cwd })), ['config']);
   });
 });
 
 describe('every failure is reported at once', () => {
-  it('does not stop at the first one', () => {
-    const result = preflight({
+  it('does not stop at the first one', async () => {
+    const result = await preflight({
       nodeVersion: '18.0.0',
       yes: false,
       probe: probeWith({
@@ -194,8 +194,8 @@ describe('every failure is reported at once', () => {
     ]);
   });
 
-  it('every failure carries a fix and is blocking', () => {
-    for (const failure of preflight({ nodeVersion: '18.0.0', yes: false }).failures) {
+  it('every failure carries a fix and is blocking', async () => {
+    for (const failure of (await preflight({ nodeVersion: '18.0.0', yes: false })).failures) {
       assert.equal(failure.fix.length > 0, true, `${failure.name} has no fix`);
       assert.equal(failure.blocking, true, `${failure.name} is not blocking`);
     }
@@ -292,15 +292,15 @@ describe('compareVersions', () => {
 });
 
 describe('formatPreflight', () => {
-  it('marks each check and lists the fixes for the failures', () => {
-    const rendered = formatPreflight(preflight({ yes: false }));
+  it('marks each check and lists the fixes for the failures', async () => {
+    const rendered = formatPreflight(await preflight({ yes: false }));
     assert.equal(rendered.includes('ok   node-version:'), true);
     assert.equal(rendered.includes('FAIL danger-acknowledged:'), true);
     assert.equal(rendered.includes('preflight failed. Fix these before starting a run:'), true);
   });
 
-  it('lists no fixes when everything passed', () => {
-    assert.equal(formatPreflight(preflight()).includes('preflight failed'), false);
+  it('lists no fixes when everything passed', async () => {
+    assert.equal(formatPreflight(await preflight()).includes('preflight failed'), false);
   });
 });
 
@@ -309,16 +309,16 @@ describe('formatPreflight', () => {
 // launched into the same tree. Two drivers were then mutating one repository, each able to
 // `git reset --hard` it and commit over the other. Run 15's result is void.
 describe('checkStateNotTracked', () => {
-  it('passes when git tracks nothing under .meeseeks', () => {
-    const result = checkStateNotTracked(probeWith());
+  it('passes when git tracks nothing under .meeseeks', async () => {
+    const result = await checkStateNotTracked(probeWith());
     assert.equal(result.ok, true);
   });
 
-  it('blocks when the state directory is tracked, and names the first file', () => {
+  it('blocks when the state directory is tracked, and names the first file', async () => {
     // Measured: a dogfood target with .meeseeks committed ran with a stale config after a
     // git reset --hard silently restored the committed copy. The only visible symptom was the
     // iteration count in the banner. Gitignore cannot help a file that is already tracked.
-    const result = checkStateNotTracked(
+    const result = await checkStateNotTracked(
       probeWith({ 'git ls-files .meeseeks': { ok: true, stdout: '.meeseeks/config.json\n.meeseeks/state.json\n' } }),
     );
     assert.equal(result.ok, false);
@@ -327,10 +327,10 @@ describe('checkStateNotTracked', () => {
     assert.equal(result.fix.includes('git rm -r --cached'), true, result.fix);
   });
 
-  it('defers to the git-repository check when git cannot answer', () => {
+  it('defers to the git-repository check when git cannot answer', async () => {
     // No opinion about a tree git cannot describe: reporting "tracked state" from a failed
     // listing would be inventing a finding.
-    const result = checkStateNotTracked(probeWith({ 'git ls-files .meeseeks': { ok: false, stderr: 'not a repo' } }));
+    const result = await checkStateNotTracked(probeWith({ 'git ls-files .meeseeks': { ok: false, stderr: 'not a repo' } }));
     assert.equal(result.ok, true);
   });
 });

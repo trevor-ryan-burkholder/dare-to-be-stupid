@@ -1,10 +1,10 @@
 # START HERE — handoff, last swept 14 August 2026
 
-**State:** `main` at `0.140.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.140.0: `npm test` **1889 pass**,
+**State:** `main` at `0.141.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.141.0: `npm test` **1889 pass**,
 `npm run test:integration` **37 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
-**`npm run test:live` at 0.140.0: 27 of 27 (11 suites, 8 files), 0 failures** — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
+**`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
 gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
 which `CLAUDE.md` requires tier 3 for. The header had been carrying a 0.110.0 result across
 sixteen versions of spawn-path changes.
@@ -101,6 +101,37 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.141.0 — the driver goes async: item 10 steps 1 and 2, zero behaviour change, all four tiers green
+
+**The event loop is free for the first time in the project's life.** `shell()` is now
+`child_process.spawn` behind the *identical* `ShellResult` contract — completion is exit AND both
+pipes at EOF, the 64MB per-stream cap, `stderr: ''` on success, `reaped` only on timeout, and a
+resolve-only promise that cannot reject unhandled. Async propagated along the exact transitive
+closure of shell's consumers: fourteen driver functions (`runGates`, `spawnClaude`, `runDeploy`,
+`driveRun`, `main` among them), plus `plugins`, `history`, `preflight`→`init`, `race`, and
+`oracle`. The module foot is `process.exitCode = await main(...)`.
+
+**What deliberately did not change:** the panel is still sequential — one reviewer awaited at a
+time in declared order, charged in that order (the parallel panel is the *next* slice, not this
+one). `sweepLeakedGroup`'s sampled-before-subtraction semantics are untouched, and detached
+groups stay rejected. `hardReset`/`restorePaths`, `processGroupMembers`' `ps` snapshot, and
+`health-probe` keep their own sync internals on stated grounds.
+
+**Built by a workflow, reviewed hostilely, finished by hand.** The implementer held the exact
+baselines (1889 / 37) and audited its own diff for scope creep. The hostile reviewer's one real
+finding was a doubly-degenerate discriminator flip — a >64MB overflow SIGTERM overlapping the
+ceiling's window reported `timedOut: true` and swept, where `execFileSync` reported a buffer
+failure. **Fixed by ordering: overflow now outranks timeout in the exit handler, because
+whichever fired first owns the verdict and only the cap can fire first.** Two `assert.throws` →
+`await assert.rejects` conversions were flagged and judged equivalent (forced by async, predicates
+unchanged, both awaited).
+
+**Tier 3 ran the same hour: 27 of 27** — a real `claude -p` child through the new plumbing, as
+`CLAUDE.md` demands for any spawn-path change.
+
+**Next, in order: the heartbeat** (the operator's named top blocker, now possible), **then the
+parallel panel** (the measured 73% of wall clock), then the Components item queued in memory.
 
 ### 0.140.0 — the move to `~/dev/meeseeks`, a lossy copy repaired, and the tracked-state wiring finished
 

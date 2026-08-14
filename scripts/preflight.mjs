@@ -319,11 +319,15 @@ export function checkConfig(meeseeksDir) {
  *
  * **Blocking, because every run in such a repository misbehaves**, and the fix is one command.
  *
- * @param {Probe} probe
- * @returns {CheckResult}
+ * The one check that accepts an asynchronous probe as well as the plain one, because the
+ * driver's direct-launch path runs it through the async `shell` while preflight proper still
+ * uses `defaultProbe`. `await` passes a plain result through unchanged.
+ *
+ * @param {(command: string, args: string[]) => ReturnType<Probe> | Promise<ReturnType<Probe>>} probe
+ * @returns {Promise<CheckResult>}
  */
-export function checkStateNotTracked(probe) {
-  const result = probe('git', ['ls-files', '.meeseeks']);
+export async function checkStateNotTracked(probe) {
+  const result = await probe('git', ['ls-files', '.meeseeks']);
   if (!result.ok) {
     // No git or not a repository: `git-repository` reports that properly; this check has no
     // opinion of its own about a tree git cannot describe.
@@ -452,9 +456,9 @@ export function checkDangerAcknowledged(options) {
  *   meeseeksDir?: string,
  *   sandbox?: boolean,
  * }} options
- * @returns {{ ok: boolean, checks: CheckResult[], failures: CheckResult[] }}
+ * @returns {Promise<{ ok: boolean, checks: CheckResult[], failures: CheckResult[] }>}
  */
-export function runPreflight(options) {
+export async function runPreflight(options) {
   const cwd = options.cwd;
   const probe = options.probe ?? defaultProbe(cwd);
   const meeseeksDir = options.meeseeksDir ?? path.join(cwd, '.meeseeks');
@@ -469,7 +473,7 @@ export function runPreflight(options) {
     checkNetwork(probe),
     checkConfig(meeseeksDir),
     checkNoConcurrentRun(meeseeksDir),
-    checkStateNotTracked(probe),
+    await checkStateNotTracked(probe),
     checkSandboxAvailable(probe, options.sandbox ?? false),
     checkAgentSurface(cwd),
     checkDangerAcknowledged({ yes: options.yes ?? false, interactive: options.interactive ?? false }),

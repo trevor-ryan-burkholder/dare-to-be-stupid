@@ -20,8 +20,9 @@
  *     reason to spend a panel of cold reads on something that does not compile.
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn as spawnProcess } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { clearTimeout, setTimeout } from 'node:timers';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -643,9 +644,9 @@ export function combinePanel(reports, options) {
  *
  * @param {Gate[]} gates
  * @param {{ cwd: string, run: import('./plugins.mjs').Runner, timeoutMs?: number }} options
- * @returns {{ ok: boolean, results: GateResult[] }}
+ * @returns {Promise<{ ok: boolean, results: GateResult[] }>}
  */
-export function runGates(gates, options) {
+export async function runGates(gates, options) {
   /** @type {GateResult[]} */
   const results = [];
   for (const gate of gates) {
@@ -683,7 +684,7 @@ export function runGates(gates, options) {
       if (out !== '' && err !== '') return `stderr:\n${err}\n\nstdout:\n${out}`;
       return out || err || `exit ${result.status}`;
     };
-    const outcome = options.run(gate.command[0], gate.command.slice(1), {
+    const outcome = await options.run(gate.command[0], gate.command.slice(1), {
       cwd: options.cwd,
       // Absent unless supplied, so every existing caller and test double keeps the unbounded
       // wait gates had before 0.81.0. `main` always supplies it.
@@ -759,7 +760,7 @@ export function shouldContinue(progress, config, elapsedMs = 0) {
   // also switched off for development, that product is unbounded in practice.
   //
   // Checked between iterations, which is where it can be checked: a child that hangs is bounded
-  // by `childTimeoutMs`, and a blocking `execFileSync` cannot be interrupted by a timer anyway.
+  // by `childTimeoutMs`, and ending a run mid-iteration would abandon a tree nothing has judged.
   if (config.deadlineMs > 0 && elapsedMs >= config.deadlineMs) {
     return {
       continue: false,
@@ -1396,25 +1397,30 @@ export function repeatedRegressionNote(counts, regressions) {
 /** @typedef {{ applied: boolean, detail: string, tokens: number, costUsd: number }} RaceOutcome */
 
 /**
+ * Every effect that shells out or spawns a child may now return a promise, because the real
+ * implementations in `main` do; the loop awaits each one at its call site. A synchronous
+ * double — which is what every unit test injects — satisfies the same signature, since
+ * `await` passes a plain value through unchanged.
+ *
  * @typedef {{
- *   build: (brief: string) => ClaudeResult,
- *   review: (reviewer: string, ids: string[]) => ClaudeResult,
- *   realityCheck: () => ClaudeResult,
- *   extractLesson?: (evidence: string) => ClaudeResult,
- *   race?: (objective: import('./brief.mjs').Objective, iteration: number, baselineShare?: number) => RaceOutcome,
- *   history?: (findings: string[]) => import('./brief.mjs').HistoryNote[],
+ *   build: (brief: string) => ClaudeResult | Promise<ClaudeResult>,
+ *   review: (reviewer: string, ids: string[]) => ClaudeResult | Promise<ClaudeResult>,
+ *   realityCheck: () => ClaudeResult | Promise<ClaudeResult>,
+ *   extractLesson?: (evidence: string) => ClaudeResult | Promise<ClaudeResult>,
+ *   race?: (objective: import('./brief.mjs').Objective, iteration: number, baselineShare?: number) => RaceOutcome | Promise<RaceOutcome>,
+ *   history?: (findings: string[]) => import('./brief.mjs').HistoryNote[] | Promise<import('./brief.mjs').HistoryNote[]>,
  *   capabilities?: () => string[],
  *   toolchainGuidance?: () => { name: string, guidance: string } | undefined,
- *   changedFiles?: () => string[],
+ *   changedFiles?: () => string[] | Promise<string[]>,
  *   readSource?: (file: string) => string | null,
- *   securityEscalation?: (pin: import('./pins.mjs').SecurityPin) => ClaudeResult,
- *   gates: () => { ok: boolean, results: GateResult[] },
- *   shipTimeMutation?: () => { ok: boolean, detail: string },
+ *   securityEscalation?: (pin: import('./pins.mjs').SecurityPin) => ClaudeResult | Promise<ClaudeResult>,
+ *   gates: () => { ok: boolean, results: GateResult[] } | Promise<{ ok: boolean, results: GateResult[] }>,
+ *   shipTimeMutation?: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
  *   readTestReports: () => unknown[],
- *   commit: (message: string) => string,
- *   diffStat: () => string,
- *   deploy?: () => { ok: boolean, detail: string },
- *   ship: (iteration: number) => void,
+ *   commit: (message: string) => string | Promise<string>,
+ *   diffStat: () => string | Promise<string>,
+ *   deploy?: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
+ *   ship: (iteration: number) => void | Promise<void>,
  *   now: () => string,
  *   log: (line: string) => void,
  *   event?: (event: import('./style.mjs').StyleEvent) => void,
@@ -1458,9 +1464,9 @@ export function repeatedRegressionNote(counts, regressions) {
  * when the loop begins, and a run configured for 2M tokens can spend the PRD phase, the design
  * phase, and then 2M more. Observed: a design child spent 2,965,864 tokens against a 2,000,000
  * ceiling while the airtime counter reported the full budget remaining.
- * @returns {RunOutcome}
+ * @returns {Promise<RunOutcome>}
  */
-export function driveRun(options) {
+export async function driveRun(options) {
   const { config, meeseeksDir, rootDir, requiredIds, effects } = options;
 
   // Settled before anything is spawned. An id no reviewer owns cannot be judged, and a
@@ -1593,10 +1599,10 @@ export function driveRun(options) {
    * @param {ClaudeResult} result
    * @param {number} iteration
    * @param {string} what
-   * @returns {RunOutcome}
+   * @returns {Promise<RunOutcome>}
    */
-  const landCleanly = (result, iteration, what) => {
-    effects.commit(`meeseeks: stopped during ${what} at iteration ${iteration} (work in progress)`);
+  const landCleanly = async (result, iteration, what) => {
+    await effects.commit(`meeseeks: stopped during ${what} at iteration ${iteration} (work in progress)`);
     return result.exhausted
       ? finish('BUDGET', `the ${what} ran out of allowance mid-iteration; the tree is committed and the run can resume`)
       : finish('ABORTED', `the ${what} failed and returned no usable output: ${result.raw.slice(0, 400)}`);
@@ -1624,9 +1630,9 @@ export function driveRun(options) {
    * informs a later brief and nothing else, so a broken extractor, an unparseable answer or
    * a store that will not write must never be able to end a run that is otherwise fine.
    *
-   * @returns {void}
+   * @returns {Promise<void>}
    */
-  const maybeExtractLesson = () => {
+  const maybeExtractLesson = async () => {
     if (!config.lessons.enabled || effects.extractLesson === undefined) return;
     try {
       const struggle = findResolvedStruggles(iterationHistory).find((entry) => !lessonsAttempted.has(entry.key));
@@ -1644,7 +1650,7 @@ export function driveRun(options) {
         ),
       ].join('\n');
 
-      const result = effects.extractLesson(evidence);
+      const result = await effects.extractLesson(evidence);
       // Charged but not acted on: this runs while an iteration is closing and returns void,
       // so it has no way to end the run. The spend still counts, and `shouldContinue` sees
       // it at the top of the next iteration — one step later than the other five sites.
@@ -1694,11 +1700,11 @@ export function driveRun(options) {
    * @param {string[]} failures stable keys, so the same failure reads the same next time
    * @param {number} score
    * @param {number} passingCount
-   * @returns {void}
+   * @returns {Promise<void>}
    */
-  const closeIteration = (iteration, failures, score, passingCount) => {
-    iterationHistory.push({ iteration, failures, changed: effects.changedFiles?.() ?? [] });
-    maybeExtractLesson();
+  const closeIteration = async (iteration, failures, score, passingCount) => {
+    iterationHistory.push({ iteration, failures, changed: (await effects.changedFiles?.()) ?? [] });
+    await maybeExtractLesson();
     progress = recordProgress(progress, { gateScore: score, gateTotal: lastGateTotal, passingCount });
   };
 
@@ -1779,7 +1785,7 @@ export function driveRun(options) {
       objective,
       protectedTests: loadState(meeseeksDir).passing,
       lessons: relevant,
-      history: effects.history?.(objective.findings ?? []) ?? [],
+      history: (await effects.history?.(objective.findings ?? [])) ?? [],
       deniedLastIteration,
       gates: options.gateNames ?? [],
       // Re-asked every iteration rather than resolved once, for the same reason the design
@@ -1798,7 +1804,7 @@ export function driveRun(options) {
     });
     let raced = false;
     if (raceDecision.race && effects.race !== undefined) {
-      const outcome = effects.race(objective, iterationNumber, lastGateShare);
+      const outcome = await effects.race(objective, iterationNumber, lastGateShare);
       const exhausted = charge(outcome);
       effects.log(`race: ${outcome.detail}`);
       raced = outcome.applied;
@@ -1819,14 +1825,14 @@ export function driveRun(options) {
     if (growth !== '') effects.log(growth);
 
     if (!raced) {
-      const built = effects.build(brief);
+      const built = await effects.build(brief);
       deniedLastIteration = built.denials ?? [];
       builderTokens += built.tokens;
       builderRuns += 1;
       const exhausted = charge(built);
       // A child that failed is reported as a failure, not as a budget death: the run needs
       // to know which of the two it was, and the failure is the more specific answer.
-      if (!built.ok) return landCleanly(built, iterationNumber, 'builder');
+      if (!built.ok) return await landCleanly(built, iterationNumber, 'builder');
       if (exhausted) return finish('BUDGET', ceilingReason());
 
       // ---- Phase 2c: the assumptions log (DESIGN.md §8.3) ---------------
@@ -1847,7 +1853,7 @@ export function driveRun(options) {
         };
         // The ratchet count is the previous one, because this fails before any test report is
         // read. Reporting zero here would look like a run that lost every passing test.
-        closeIteration(iterationNumber, ['assumptions:malformed'], 0, loadState(meeseeksDir).passing.length);
+        await closeIteration(iterationNumber, ['assumptions:malformed'], 0, loadState(meeseeksDir).passing.length);
         continue;
       }
       if (declared.recovered) {
@@ -1868,7 +1874,7 @@ export function driveRun(options) {
     }
 
     // ---- Phase 3: gates -------------------------------------------------
-    const gateOutcome = effects.gates();
+    const gateOutcome = await effects.gates();
     const score = gateScore(gateOutcome.results);
     lastGateTotal = gateOutcome.results.length;
     lastGateShare = lastGateTotal === 0 ? 0 : score / lastGateTotal;
@@ -1953,7 +1959,7 @@ export function driveRun(options) {
       appendBlooper(meeseeksDir, {
         iteration: iterationNumber,
         regressions: decision.regressions,
-        diffStat: effects.diffStat(),
+        diffStat: await effects.diffStat(),
         at: effects.now(),
       });
       // ---- scoped restore before the whole-tree one (DESIGN.md §1.2) -----
@@ -1968,12 +1974,13 @@ export function driveRun(options) {
       // and nothing has been lost but one deterministic gate pass. Nothing defaults to pass here
       // either: a scoped restore that cannot be verified **is** a failed scoped restore.
       let scopedHeld = false;
-      const scoped = decision.target === null ? [] : scopedRestorePaths(decision.regressions, effects.changedFiles?.() ?? []);
+      const scoped =
+        decision.target === null ? [] : scopedRestorePaths(decision.regressions, (await effects.changedFiles?.()) ?? []);
       if (scoped.length > 0 && decision.target !== null) {
         restorePaths({ cwd: rootDir, commit: decision.target, paths: scoped });
         try {
           const back = new Set();
-          effects.gates();
+          await effects.gates();
           for (const report of effects.readTestReports()) {
             for (const id of extractTestIds(report, { rootDir })) back.add(id);
           }
@@ -2009,7 +2016,7 @@ export function driveRun(options) {
           (repeatNote === '' ? '' : `. ${repeatNote}`),
         regressions: decision.regressions,
       };
-      closeIteration(iterationNumber, decision.regressions, score, state.passing.length);
+      await closeIteration(iterationNumber, decision.regressions, score, state.passing.length);
       continue;
     }
 
@@ -2025,7 +2032,7 @@ export function driveRun(options) {
           'written for a runner that command cannot collect reports zero tests however green your own test ' +
           'script looks',
       };
-      closeIteration(iterationNumber, ['ratchet:no-passing-tests'], score, 0);
+      await closeIteration(iterationNumber, ['ratchet:no-passing-tests'], score, 0);
       continue;
     }
 
@@ -2043,7 +2050,7 @@ export function driveRun(options) {
           (stuckGates === '' ? '' : `. ${stuckGates}`),
         gateFailures: failedGates.map((result) => ({ name: result.name, detail: result.detail })),
       };
-      closeIteration(
+      await closeIteration(
         iterationNumber,
         failedGates.map((result) => `gate:${result.name}`),
         score,
@@ -2072,7 +2079,7 @@ export function driveRun(options) {
       for (const [index, pin] of pins.security.entries()) {
         if (verifySecurityPin(pin, readSource) === 'present') continue;
         effects.log(`pinned security element ${pin.id} at ${pin.evidence} did not re-verify; asking`);
-        const call = escalate(pin);
+        const call = await escalate(pin);
         const exhausted = charge(call);
         const verdict = call.ok
           ? parseSecurityEscalation(call.text)
@@ -2125,7 +2132,7 @@ export function driveRun(options) {
             'gradually across iterations and no single iteration looks wrong',
           regressions: removedElements,
         };
-        closeIteration(iterationNumber, removedElements, score, passing.size);
+        await closeIteration(iterationNumber, removedElements, score, passing.size);
         continue;
       }
     }
@@ -2153,19 +2160,24 @@ export function driveRun(options) {
     /**
      * Run one panel over a set of assignments.
      *
+     * Sequential on purpose, and still sequential after the async conversion: reviewers run
+     * one after another, in declared order. Parallelising the panel is a separate change with
+     * its own constraint (collect all children, then parse and charge in declared order), and
+     * it does not ride along with a mechanical rewrite.
+     *
      * @param {{ reviewer: string, ids: string[] }[]} assignments
-     * @returns {{ done: true, reports: ReviewerReport[] } | { done: false, outcome: RunOutcome }}
+     * @returns {Promise<{ done: true, reports: ReviewerReport[] } | { done: false, outcome: RunOutcome }>}
      */
-    const runPanel = (assignments) => {
+    const runPanel = async (assignments) => {
       /** @type {ReviewerReport[]} */
       const collected = [];
       for (const { reviewer, ids } of assignments) {
-        const result = effects.review(reviewer, ids);
+        const result = await effects.review(reviewer, ids);
         const exhausted = charge(result);
         // A reviewer that died is not a reviewer that found problems. Scoring it as a
         // failing audit would hand the builder "output could not be parsed" as though it
         // were a finding, and burn the remaining iterations against a wall.
-        if (!result.ok) return { done: false, outcome: landCleanly(result, iterationNumber, `${reviewer} audit`) };
+        if (!result.ok) return { done: false, outcome: await landCleanly(result, iterationNumber, `${reviewer} audit`) };
         // Ending here abandons the reviewers that have not run. That is correct: a panel is
         // only unanimous if every member answered, so a partial panel cannot ship anyway.
         if (exhausted) return { done: false, outcome: finish('BUDGET', ceilingReason()) };
@@ -2176,7 +2188,7 @@ export function driveRun(options) {
       return { done: true, reports: collected };
     };
 
-    const first = runPanel(plan.assignments);
+    const first = await runPanel(plan.assignments);
     if (!first.done) return first.outcome;
     /** @type {ReviewerReport[]} */
     let reports = plan.carried.length === 0 ? first.reports : [...first.reports, carriedReport(plan.carried)];
@@ -2186,7 +2198,7 @@ export function driveRun(options) {
       // The pre-filter said yes, so the answer now costs what it always cost. Nothing that
       // reaches a ship decision was carried.
       effects.log(`panel carry: ${plan.carried.length} requirement(s) were carried, and the full panel now runs before any ship`);
-      const full = runPanel(panelPlan.assignments);
+      const full = await runPanel(panelPlan.assignments);
       if (!full.done) return full.outcome;
       reports = full.reports;
       panel = combinePanel(reports, { requireUnanimous: config.requireUnanimous, requiredIds });
@@ -2279,7 +2291,7 @@ export function driveRun(options) {
     }
 
     // ---- Phase 6: ship, or bank the progress and hand the findings back ---
-    const commit = effects.commit(
+    const commit = await effects.commit(
       panel.verdict === 'pass'
         ? `meeseeks: iteration ${iterationNumber}`
         : `meeseeks: iteration ${iterationNumber} (review outstanding)`,
@@ -2302,7 +2314,7 @@ export function driveRun(options) {
           'protection, and a run may not ship while one stands',
         findings: blockers,
       };
-      closeIteration(iterationNumber, blockers, score, passing.size);
+      await closeIteration(iterationNumber, blockers, score, passing.size);
       continue;
     }
 
@@ -2325,7 +2337,7 @@ export function driveRun(options) {
     // worth paying for — and never on an ordinary iteration, where per-file scoping already
     // costs what it should.
     if (panel.verdict === 'pass' && !sensitivity.proven && effects.shipTimeMutation !== undefined) {
-      const attempt = effects.shipTimeMutation();
+      const attempt = await effects.shipTimeMutation();
       effects.log(`ship-time mutation: ${attempt.detail}`);
       if (attempt.ok) sensitivity = { proven: true, how: attempt.detail };
       else sensitivity = { proven: false, how: attempt.detail };
@@ -2342,7 +2354,7 @@ export function driveRun(options) {
           'iteration failed. Changing any first-party source makes the mutation gate apply again',
         findings: [sensitivity.how],
       };
-      closeIteration(iterationNumber, ['ship:unproven-suite'], score, passing.size);
+      await closeIteration(iterationNumber, ['ship:unproven-suite'], score, passing.size);
       continue;
     }
 
@@ -2352,7 +2364,7 @@ export function driveRun(options) {
       // written — and its failure was printed and ignored, so a run could announce a grand
       // prize having deployed nothing. A deploy that cannot withhold the tag is not evidence
       // about the tag (DESIGN.md §10.1).
-      const deployed = effects.deploy?.() ?? { ok: true, detail: 'no deploy configured' };
+      const deployed = (await effects.deploy?.()) ?? { ok: true, detail: 'no deploy configured' };
       if (!deployed.ok) {
         // Withheld, not failed — the same shape as the unproven-suite check above. A blinking
         // network or a box that is down is not a reason to `git reset --hard` a tree that
@@ -2367,12 +2379,12 @@ export function driveRun(options) {
             'sent, so the ship is withheld rather than the iteration failed',
           findings: [deployed.detail],
         };
-        closeIteration(iterationNumber, ['ship:deploy'], score, passing.size);
+        await closeIteration(iterationNumber, ['ship:deploy'], score, passing.size);
         continue;
       }
       if (deployed.detail !== 'no deploy configured') effects.log(deployed.detail);
       effects.event?.({ kind: 'ship', iteration: iterationNumber });
-      effects.ship(iterationNumber);
+      await effects.ship(iterationNumber);
       return finish('SHIPPED', `panel unanimous on ${requiredIds.length} requirement(s)`);
     }
 
@@ -2393,7 +2405,7 @@ export function driveRun(options) {
         repairHint: advisory.repairHint,
       })),
     };
-    closeIteration(
+    await closeIteration(
       iterationNumber,
       reports.flatMap((report) =>
         report.requirements.filter((entry) => entry.status === 'fail').map((entry) => `requirement:${entry.id}`),
@@ -2404,7 +2416,7 @@ export function driveRun(options) {
 
     // ---- §13.3 reality-check circuit-breaker ----------------------------
     if (progress.stalledIterations === config.realityCheck.after) {
-      const verdict = effects.realityCheck();
+      const verdict = await effects.realityCheck();
       const exhausted = charge(verdict);
       if (verdict.ok && /unbuildable/i.test(verdict.text)) {
         mkdirSync(meeseeksDir, { recursive: true });
@@ -2638,10 +2650,10 @@ export function conditionalCommandGates(root, meeseeksDir, changedFiles) {
  * it declines on an empty set with a stated reason, which is a louder and more accurate
  * outcome than mutating an entire repository on iteration 1.
  *
- * @param {{ cwd: string, since: string | null, run?: typeof shell }} options
- * @returns {string[]}
+ * @param {{ cwd: string, since: string | null, run?: import('./plugins.mjs').Runner }} options
+ * @returns {Promise<string[]>}
  */
-export function changedSince(options) {
+export async function changedSince(options) {
   if (options.since === null) return [];
   const run = options.run ?? shell;
   /** @param {{ ok: boolean, stdout: string }} result */
@@ -2652,7 +2664,7 @@ export function changedSince(options) {
           .map((line) => line.trim())
           .filter((line) => line !== '')
       : [];
-  const tracked = lines(run('git', ['diff', '--name-only', options.since, '--'], { cwd: options.cwd }));
+  const tracked = lines(await run('git', ['diff', '--name-only', options.since, '--'], { cwd: options.cwd }));
   // `git diff` lists tracked changes only, and gates run **before** the iteration's commit —
   // so until 0.64.0 every brand-new file an iteration created was invisible here. A builder
   // that satisfied its objective by adding a module drew the same "nothing changed since the
@@ -2662,7 +2674,7 @@ export function changedSince(options) {
   //
   // `--exclude-standard` so ignored files stay ignored: `node_modules` and build output are
   // not this iteration's work, and mutating them is not a thing anybody wants.
-  const untracked = lines(run('git', ['ls-files', '--others', '--exclude-standard'], { cwd: options.cwd }));
+  const untracked = lines(await run('git', ['ls-files', '--others', '--exclude-standard'], { cwd: options.cwd }));
   // A failed listing degrades to fewer files rather than none: the gate then scopes to less
   // and says so, which is the recoverable direction. Losing the tracked half because the
   // second command failed would be the loud one.
@@ -3050,9 +3062,9 @@ export function hasStructuredLogging(contents) {
  *
  * @param {string} cwd
  * @param {{ run?: import('./plugins.mjs').Runner, probeTimeoutMs?: number }} [options]
- * @returns {GateResult}
+ * @returns {Promise<GateResult>}
  */
-export function observabilityGate(cwd, options = {}) {
+export async function observabilityGate(cwd, options = {}) {
   const hasLogger = anySourceMatches(cwd, 0, hasStructuredLogging);
   const healthPath = findHealthPath(cwd);
 
@@ -3077,7 +3089,7 @@ export function observabilityGate(cwd, options = {}) {
   }
 
   const timeout = options.probeTimeoutMs ?? 30_000;
-  const probe = options.run(
+  const probe = await options.run(
     process.execPath,
     [HEALTH_PROBE, '--command', start, '--path', healthPath, '--timeout', String(timeout)],
     { cwd },
@@ -3117,9 +3129,9 @@ export function observabilityGate(cwd, options = {}) {
  * @param {string} cwd
  * @param {string} meeseeksDir
  * @param {{ run?: import('./plugins.mjs').Runner }} [options]
- * @returns {GateResult}
+ * @returns {Promise<GateResult>}
  */
-export function oracleGate(cwd, meeseeksDir, options = {}) {
+export async function oracleGate(cwd, meeseeksDir, options = {}) {
   const command = resolveArtifactCommand(cwd);
   if (command === null) {
     return {
@@ -3132,7 +3144,7 @@ export function oracleGate(cwd, meeseeksDir, options = {}) {
         'or inert passes every other gate here (run 10).',
     };
   }
-  return runOracle({ meeseeksDir, root: cwd, command, run: options.run ?? shell });
+  return await runOracle({ meeseeksDir, root: cwd, command, run: options.run ?? shell });
 }
 
 /**
@@ -3164,9 +3176,9 @@ export function openApiDocument(cwd) {
 /**
  * @param {string} cwd
  * @param {{ run?: import('./plugins.mjs').Runner, capabilities?: string[] | null, probeTimeoutMs?: number, meeseeksDir?: string, oracle?: boolean }} [options]
- * @returns {GateResult[]}
+ * @returns {Promise<GateResult[]>}
  */
-export function staticGates(cwd, options = {}) {
+export async function staticGates(cwd, options = {}) {
   const ci = inspectCiWorkflows(cwd, options.capabilities ?? null);
 
   const readme = isSubstantial(path.join(cwd, 'README.md'), 200);
@@ -3217,7 +3229,7 @@ export function staticGates(cwd, options = {}) {
           : `missing or stubbed: ${missing.join(', ')}`,
       };
     })(),
-    observabilityGate(cwd, options),
+    await observabilityGate(cwd, options),
     // The gates judge the builder; this one judges the gates. `npm run lint` is only worth
     // running while `lint` still means something, and the builder writes what it means.
     integrityGate(cwd),
@@ -3226,7 +3238,7 @@ export function staticGates(cwd, options = {}) {
     // pass over nothing, and this is the one gate whose entire value is being independent of
     // everything the builder wrote.
     ...(options.oracle === true && options.meeseeksDir !== undefined
-      ? [oracleGate(cwd, options.meeseeksDir, options)]
+      ? [await oracleGate(cwd, options.meeseeksDir, options)]
       : []),
   ];
 }
@@ -3270,9 +3282,9 @@ export function playwrightConfigPresent(cwd) {
  *
  * @param {{ cwd: string, meeseeksDir: string, run: import('./plugins.mjs').Runner,
  *          capabilities?: readonly string[] | null }} options
- * @returns {{ installed: boolean, detail: string }}
+ * @returns {Promise<{ installed: boolean, detail: string }>}
  */
-export function ensurePlaywrightBrowsers(options) {
+export async function ensurePlaywrightBrowsers(options) {
   const { cwd, meeseeksDir, run } = options;
   const capabilities = options.capabilities ?? null;
   if (capabilities !== null) {
@@ -3282,7 +3294,7 @@ export function ensurePlaywrightBrowsers(options) {
   if (!playwrightConfigPresent(cwd)) return { installed: false, detail: 'no playwright config yet' };
   const marker = path.join(meeseeksDir, 'playwright-installed');
   if (existsSync(marker)) return { installed: false, detail: 'browsers already provisioned' };
-  const result = run('npx', ['playwright', 'install', 'chromium'], { cwd });
+  const result = await run('npx', ['playwright', 'install', 'chromium'], { cwd });
   if (!result.ok) {
     return { installed: false, detail: `playwright install failed: ${(result.stderr || result.stdout).trim()}` };
   }
@@ -3875,13 +3887,13 @@ const VERSION_PROBES = [
  *
  * @param {import('./plugins.mjs').Runner} run
  * @param {string} cwd
- * @returns {Record<string, string>}
+ * @returns {Promise<Record<string, string>>}
  */
-export function toolVersions(run, cwd) {
+export async function toolVersions(run, cwd) {
   /** @type {Record<string, string>} */
   const versions = {};
   for (const probe of VERSION_PROBES) {
-    const result = run(probe.argv[0], probe.argv.slice(1), { cwd });
+    const result = await run(probe.argv[0], probe.argv.slice(1), { cwd });
     const text = (result.stdout || '').trim();
     if (result.ok && text !== '') versions[probe.tool] = text.split('\n')[0];
   }
@@ -4027,70 +4039,217 @@ function sweepLeakedGroup(before) {
   return killed;
 }
 
+/** The output cap `execFileSync` enforced, kept at the same 64MB now the collection is manual. */
+const MAX_SHELL_BUFFER = 64 * 1024 * 1024;
+
 /**
  * Really shell out. Exported for tier 2 only.
  *
  * Every unit test drives the gate runners through an injected double, which is what makes the
  * loop's decisions testable without spending anything — and is exactly why no unit test can
  * see this function's behaviour. The orphan sweep is a claim about what the operating system
- * does to processes after `execFileSync` gives up, so it can only be checked against real
- * ones. `§11.1`'s argument, again: an assertion about the array you build says nothing about
- * what the callee does with it.
+ * does to processes after the ceiling gives up on a command, so it can only be checked against
+ * real ones. `§11.1`'s argument, again: an assertion about the array you build says nothing
+ * about what the callee does with it.
+ *
+ * Asynchronous since R21 step 1: `spawn` collected into the same `ShellResult` that
+ * `execFileSync` used to produce, so a caller awaits the shape it always read. The sync
+ * semantics are preserved deliberately, because tier 2 asserts them:
+ *
+ *   - Completion is exit **and** both pipes reaching EOF. A grandchild that inherited the
+ *     write end keeps the wait alive exactly as it kept the synchronous read alive — that is
+ *     the mechanism the orphan sweep exists for, and it must not quietly change shape.
+ *   - The ceiling bounds that whole wait. When it fires, the direct child gets `SIGTERM`
+ *     (the same signal `execFileSync` sent), the group is swept by subtraction, and whatever
+ *     output was collected is returned under `timedOut: true`.
+ *   - Output is still capped at 64MB per stream; past the cap the child is killed and the
+ *     call fails, exactly as `maxBuffer` failed it.
  *
  * @param {string} command
  * @param {string[]} args
  * @param {{ cwd: string, env?: Record<string, string | undefined>, input?: string, timeoutMs?: number }} options
- * @returns {ShellResult}
+ * @returns {Promise<ShellResult>}
  */
 export function shell(command, args, options) {
   // Only sampled when a ceiling exists, because the sweep only runs when one fires. A caller
-  // with no timeout cannot time out, so the `ps` would be pure cost.
+  // with no timeout cannot time out, so the `ps` would be pure cost. Sampled before the spawn,
+  // which is the half of the subtraction that must precede the command.
   const before = options.timeoutMs === undefined ? null : processGroupMembers();
-  try {
-    const stdout = execFileSync(command, args, {
-      cwd: options.cwd,
-      // Defaults to this process's environment, so gates and git calls are unaffected.
-      env: options.env ?? process.env,
-      // Only the Claude children send anything; gates and git calls pass no input and are
-      // left on the inherited stdin they have always had.
-      ...(options.input === undefined ? {} : { input: options.input }),
-      // Absent by default, so every existing caller keeps the unbounded wait it has always
-      // had. Only the deploy asks for a ceiling, because only the deploy runs a command
-      // whose other end is a machine that can decide to say nothing forever.
-      ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
-      stdio: 'pipe',
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    return { ok: true, status: 0, stdout, stderr: '', timedOut: false };
-  } catch (error) {
-    const failure = /** @type {{ status?: number, code?: string, signal?: string, stdout?: string, stderr?: string, message: string }} */ (
-      error
-    );
-    // `ETIMEDOUT`, and nothing else, for the same reason the `timedOut` flag below uses it: a
-    // command that failed on its own merits took its children with it or never had any, and
-    // sweeping the group after an ordinary non-zero exit would kill processes this driver
-    // never started.
-    const timedOut = options.timeoutMs !== undefined && failure.code === 'ETIMEDOUT';
-    return {
-      ok: false,
-      // A killed child reports `status: null`, so without the flag a timeout arrives here as
-      // a plain `exit 1` and reads as a command that ran and failed. Those need opposite
-      // responses from an operator and must not be collapsed into one message.
-      status: typeof failure.status === 'number' ? failure.status : 1,
-      stdout: failure.stdout ?? '',
-      stderr: failure.stderr ?? failure.message,
-      // `ETIMEDOUT`, and nothing else, measured against a real `execFileSync` rather than
-      // assumed. `killed` is undefined here — that flag belongs to the asynchronous API, and
-      // the first version of this line used it and silently never fired. `signal` is no good
-      // either: a command that kills *itself* with SIGTERM reports `signal: 'SIGTERM'` and
-      // must not be read as a timeout. The error code is the only exact discriminator.
-      timedOut,
-      // Absent rather than empty when no sweep ran, so a reader can tell "swept, found
-      // nothing" from "never looked".
-      ...(timedOut ? { reaped: sweepLeakedGroup(before) } : {}),
+  return new Promise((resolve) => {
+    /** @type {import('node:child_process').ChildProcess} */
+    let child;
+    try {
+      child = spawnProcess(command, args, {
+        cwd: options.cwd,
+        // Defaults to this process's environment, so gates and git calls are unaffected.
+        env: options.env ?? process.env,
+        stdio: 'pipe',
+      });
+    } catch (error) {
+      // A spawn that throws synchronously never started anything: nothing to sweep, nothing
+      // collected. The sync version reported this as a plain failure and so does this.
+      resolve({ ok: false, status: 1, stdout: '', stderr: /** @type {Error} */ (error).message, timedOut: false });
+      return;
+    }
+
+    /** @type {Buffer[]} */
+    const outChunks = [];
+    /** @type {Buffer[]} */
+    const errChunks = [];
+    let outBytes = 0;
+    let errBytes = 0;
+    let timedOut = false;
+    let overflowed = false;
+    let exited = false;
+    let settled = false;
+    /** @type {NodeJS.Timeout | undefined} */
+    let timer;
+
+    const text = (/** @type {Buffer[]} */ chunks) => Buffer.concat(chunks).toString('utf8');
+
+    /** @param {ShellResult} result */
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      // Close this side of the pipes. On the timed-out path a leaked descendant may still hold
+      // the write end, and the sync teardown dropped its read end exactly like this.
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      child.stdin?.destroy();
+      resolve(result);
     };
-  }
+
+    const finishTimedOut = () =>
+      settle({
+        ok: false,
+        // A killed child reports no exit code, so without the flag a timeout arrives as a
+        // plain `exit 1` and reads as a command that ran and failed. Those need opposite
+        // responses from an operator and must not be collapsed into one message.
+        status: 1,
+        stdout: text(outChunks),
+        stderr: text(errChunks),
+        // Set only by the ceiling firing, and nothing else — a command that kills *itself*
+        // with SIGTERM must not be read as a timeout, which is why the exit signal is never
+        // consulted for this flag.
+        timedOut: true,
+        // Absent rather than empty when no sweep ran, so a reader can tell "swept, found
+        // nothing" from "never looked". `before` was sampled above; the survivors are killed
+        // here, after the command is done being waited on.
+        reaped: sweepLeakedGroup(before),
+      });
+
+    const finishOverflowed = () =>
+      settle({
+        ok: false,
+        status: 1,
+        stdout: text(outChunks),
+        stderr: text(errChunks),
+        timedOut: false,
+      });
+
+    /**
+     * Collect one stream under the cap; past it, kill the child as `maxBuffer` did.
+     *
+     * @param {NodeJS.ReadableStream | null} stream
+     * @param {Buffer[]} chunks
+     * @param {(bytes: number) => number} grow returns the new total for the stream
+     */
+    const collect = (stream, chunks, grow) => {
+      stream?.on('data', (/** @type {Buffer} */ chunk) => {
+        if (settled || overflowed) return;
+        const total = grow(chunk.length);
+        if (total <= MAX_SHELL_BUFFER) {
+          chunks.push(chunk);
+          return;
+        }
+        chunks.push(chunk.subarray(0, chunk.length - (total - MAX_SHELL_BUFFER)));
+        overflowed = true;
+        if (exited) {
+          finishOverflowed();
+          return;
+        }
+        try {
+          child.kill('SIGTERM');
+        } catch {
+          // Already gone between the read and the signal.
+        }
+      });
+    };
+    collect(child.stdout, outChunks, (bytes) => (outBytes += bytes));
+    collect(child.stderr, errChunks, (bytes) => (errBytes += bytes));
+
+    // Writing to a child that exits without reading raises EPIPE here; the sync call swallowed
+    // that, and a command's refusal to read its stdin is not a result about the command.
+    child.stdin?.on('error', () => {});
+    // Only the Claude children send anything; gates and git calls pass no input and see EOF at
+    // once, which is what the piped-but-unwritten stdin always gave them.
+    if (options.input === undefined) child.stdin?.end();
+    else child.stdin?.end(options.input);
+
+    child.on('error', (error) => {
+      // The command could not be spawned at all — ENOENT, mostly. Same shape the sync call
+      // produced: empty stdout, the error message where stderr would be.
+      settle({ ok: false, status: 1, stdout: '', stderr: error.message, timedOut: false });
+    });
+
+    child.on('exit', () => {
+      exited = true;
+      // The ceiling or the cap already decided this call's outcome; the exit is what they
+      // were waiting on. The ordinary path keeps waiting for 'close' below, because a command
+      // is not done being read until both pipes reach EOF.
+      //
+      // Overflow is checked FIRST, because whichever fired first owns the verdict and the cap
+      // can only have fired first: it SIGTERMs the child the instant a stream crosses 64MB,
+      // while `timedOut` can still flip true if the ceiling lands inside that SIGTERM-to-exit
+      // window. The sync `execFileSync` reported that doubly-degenerate overlap as a buffer
+      // failure (ok:false, timedOut:false, no sweep), and `timedOut` is the discriminator
+      // `runDeploy`'s operator messaging keys on — it must not change meaning in a race the
+      // operator cannot see.
+      if (overflowed) finishOverflowed();
+      else if (timedOut) finishTimedOut();
+    });
+
+    child.on('close', (code) => {
+      if (timedOut || overflowed) return;
+      if (typeof code === 'number' && code === 0) {
+        // stderr is discarded on success, which is what the sync call returned. A consumer
+        // that needs a successful command's stderr must not learn to expect it here while the
+        // injected doubles are the only place it can appear.
+        settle({ ok: true, status: 0, stdout: text(outChunks), stderr: '', timedOut: false });
+        return;
+      }
+      settle({
+        ok: false,
+        // A child killed by a signal reports no exit code and lands on 1, exactly as the
+        // sync call's `status: null` did.
+        status: typeof code === 'number' ? code : 1,
+        stdout: text(outChunks),
+        stderr: text(errChunks),
+        timedOut: false,
+      });
+    });
+
+    if (options.timeoutMs !== undefined) {
+      // Absent by default, so every caller that supplies no ceiling keeps the unbounded wait
+      // it has always had.
+      timer = setTimeout(() => {
+        timedOut = true;
+        // The direct child may already be gone — a gate whose own process exits at once while
+        // a grandchild holds the pipe is the measured shape — and a kill on a dead pid is not
+        // an error, it is the sweep's problem now.
+        if (exited) {
+          finishTimedOut();
+          return;
+        }
+        try {
+          child.kill('SIGTERM');
+        } catch {
+          // Already gone between the check and the signal; 'exit' has fired or is about to.
+        }
+      }, options.timeoutMs);
+    }
+  });
 }
 
 /**
@@ -4105,16 +4264,16 @@ export function shell(command, args, options) {
  * enters a prompt. That is an invariant, not an accident (DESIGN.md §10.1).
  *
  * @param {import('./config.mjs').DeployConfig} deploy
- * @param {{ cwd: string, log?: (line: string) => void, shell?: (command: string, args: string[], options: { cwd: string, timeoutMs?: number }) => ShellResult }} options
- * @returns {{ ok: boolean, detail: string }}
+ * @param {{ cwd: string, log?: (line: string) => void, shell?: (command: string, args: string[], options: { cwd: string, timeoutMs?: number }) => ShellResult | Promise<ShellResult> }} options
+ * @returns {Promise<{ ok: boolean, detail: string }>}
  */
-export function runDeploy(deploy, options) {
+export async function runDeploy(deploy, options) {
   if (!deploy.enabled) return { ok: true, detail: 'no deploy configured' };
   const log = options.log ?? (() => {});
   const run = options.shell ?? shell;
   const [command, ...args] = deploy.command;
   log(`deploying: ${command} ${args.join(' ')}`);
-  const deployed = run(command, args, { cwd: options.cwd, timeoutMs: deploy.timeoutMs });
+  const deployed = await run(command, args, { cwd: options.cwd, timeoutMs: deploy.timeoutMs });
   if (!deployed.ok) {
     if (deployed.timedOut === true) {
       return {
@@ -4129,7 +4288,7 @@ export function runDeploy(deploy, options) {
   const probeArgs = ['--url', deploy.url];
   for (const check of deploy.smoke) probeArgs.push('--expect', `${check.path}=${check.status}`);
   log(`smoke: ${deploy.smoke.length} check(s) against ${deploy.url}`);
-  const smoked = run('node', [HEALTH_PROBE, ...probeArgs], { cwd: options.cwd });
+  const smoked = await run('node', [HEALTH_PROBE, ...probeArgs], { cwd: options.cwd });
   // Exit code, like every other check here. A non-zero probe is a failure whatever it
   // printed, and an empty stdout still fails rather than defaulting to pass.
   if (!smoked.ok) return { ok: false, detail: smoked.stdout.trim() || 'the smoke check failed and said nothing' };
@@ -4236,13 +4395,13 @@ export function overlayGates(qualityGates, extraGates) {
  * @param {string} meeseeksDir the driver's own directory in that tree
  * @param {string} startCommit the commit this run began at
  * @param {number} timeoutMs the gate ceiling, so a slow mutation run is a named failure
- * @returns {{ ok: boolean, detail: string }}
+ * @returns {Promise<{ ok: boolean, detail: string }>}
  */
-export function shipTimeMutation(cwd, meeseeksDir, startCommit, timeoutMs) {
+export async function shipTimeMutation(cwd, meeseeksDir, startCommit, timeoutMs) {
   if (startCommit === '') {
     return { ok: false, detail: 'no start commit was recorded for this run, so its own changes cannot be identified' };
   }
-  const changedFiles = changedSince({ cwd, since: startCommit, run: shell });
+  const changedFiles = await changedSince({ cwd, since: startCommit, run: shell });
   const scope = shipTimeMutationScope({ changedFiles });
   if (!scope.can) return { ok: false, detail: scope.reason };
 
@@ -4255,7 +4414,7 @@ export function shipTimeMutation(cwd, meeseeksDir, startCommit, timeoutMs) {
     const declined = built.skipped.find((candidate) => candidate.name === 'mutation');
     return { ok: false, detail: `the mutation gate could not run at ship time: ${declined?.reason ?? 'no reason given'}` };
   }
-  const outcome = runGates([gate], { cwd, run: shell, timeoutMs });
+  const outcome = await runGates([gate], { cwd, run: shell, timeoutMs });
   const result = outcome.results[0];
   return outcome.ok
     ? { ok: true, detail: `${scope.reason}: every mutant was caught, so the suite is sensitive to this run's code` }
@@ -4274,10 +4433,10 @@ export function shipTimeMutation(cwd, meeseeksDir, startCommit, timeoutMs) {
  *   maxBudgetUsd?: number, maxTurns?: number, sandbox?: boolean,
  *   run?: (command: string, args: string[],
  *     options: { cwd: string, env?: Record<string, string | undefined>, input?: string, timeoutMs?: number }) =>
- *     ShellResult }} options
- * @returns {ClaudeResult}
+ *     ShellResult | Promise<ShellResult> }} options
+ * @returns {Promise<ClaudeResult>}
  */
-export function spawnClaude(options) {
+export async function spawnClaude(options) {
   // The context budget is checked here rather than at any call site, for the reason
   // `builderSystemPrompt` gives for being a function: every child in the loop passes through
   // this one door, so a phase added later cannot forget the check. Refusing before `run`
@@ -4294,7 +4453,7 @@ export function spawnClaude(options) {
   // Every Claude child carries the re-entrancy marker. This is the half of the no-nesting
   // rule the guard hook cannot enforce: the hook sees tool calls, not our own children.
   // The prompt goes on stdin rather than in argv; see `claudeArgs` for the bug that cost.
-  const result = run('claude', args, {
+  const result = await run('claude', args, {
     cwd: options.cwd,
     env: childEnvironment(options.env),
     input: options.prompt,
@@ -4405,9 +4564,9 @@ export function childEndLine(phase, result, seconds) {
  *   the roster, the scoped restore firing, the prompt-growth note), each carrying the shape of
  *   the guard defect: correct code that nothing proved was ever called. Defaults to the real
  *   spawner, so production behaviour is untouched.
- * @returns {number} process exit code
+ * @returns {Promise<number>} process exit code
  */
-export function main(argv, io = {}) {
+export async function main(argv, io = {}) {
   const cwd = io.cwd ?? process.cwd();
   // Read straight from argv rather than from `parseDriverArgs`, because `assertNotNested` runs
   // before the arguments are parsed and this is the one flag that has to be visible to it.
@@ -4434,13 +4593,14 @@ export function main(argv, io = {}) {
   /**
    * Run one `claude -p` child, bracketed by the only progress an operator ever gets.
    *
-   * Children are spawned with `execFileSync`, so the event loop is blocked for the whole
-   * call: a periodic tick is impossible without making the entire driver async, which is a
-   * rewrite rather than a fix. What is possible is the information that was actually
-   * missing — which phase started, on which model, that nothing will print until it
-   * returns, and how long it took once it has. An observed design phase sat silent for nine
-   * and a half minutes, indistinguishable from a hung process, and the cheapest wrong
-   * response to that is killing a run that was working.
+   * Children are awaited one at a time — the loop is still strictly sequential — but the
+   * event loop is free while a child runs. A periodic tick is now *possible*; it is
+   * deliberately not added here, because this change is the mechanical conversion and
+   * nothing else. What the bracket carries is the information that was actually missing —
+   * which phase started, on which model, that nothing will print until it returns, and how
+   * long it took once it has. An observed design phase sat silent for nine and a half
+   * minutes, indistinguishable from a hung process, and the cheapest wrong response to that
+   * is killing a run that was working.
    *
    * Unstyled on purpose: this is progress, and progress that lies about its own timing is
    * worse than none.
@@ -4448,12 +4608,12 @@ export function main(argv, io = {}) {
    * @param {Parameters<typeof spawnClaude>[0]} options
    * @returns {ReturnType<typeof spawnClaude>}
    */
-  const runChild = (options) => {
+  const runChild = async (options) => {
     const measured = measurePrompt({ systemPrompt: options.systemPrompt, prompt: options.prompt });
     write(verbatim(childStartLine(options.phase, options.model, measured.characters, config.childTimeoutMs)));
     const startedAt = Date.now();
     const allowance = childBudget(config, handedOutUsd);
-    const result = spawn({
+    const result = await spawn({
       ...options,
       contextLimit: config.contextBudget.maxCharacters,
       // Supplied here rather than at each call site, for the same reason the context budget
@@ -4529,7 +4689,7 @@ export function main(argv, io = {}) {
   // that names it. **Checked here, before Phase 0, because it is a static property of the
   // repository** — a first draft placed it beside the lock claim, downstream of the PRD and
   // design phases, and the refusal arrived only after two children had been paid for.
-  const tracked = checkStateNotTracked((command, args) => shell(command, args, { cwd }));
+  const tracked = await checkStateNotTracked((command, args) => shell(command, args, { cwd }));
   if (!tracked.ok) {
     write(verbatim(`${tracked.detail}\n${tracked.fix}`));
     return 1;
@@ -4595,7 +4755,7 @@ export function main(argv, io = {}) {
   // Measured before the run commits anything of its own. A repository that was empty when
   // meeseeks arrived never has history worth quoting back at a builder, however many commits
   // meeseeks goes on to add — those are the builder's own work, restated (DESIGN.md §8.2).
-  const greenfield = !hasMeaningfulHistory({ cwd, run: shell });
+  const greenfield = !(await hasMeaningfulHistory({ cwd, run: shell }));
 
   write(banner({ mode }));
 
@@ -4624,9 +4784,9 @@ export function main(argv, io = {}) {
    *
    * @param {string} message
    */
-  const commitPhase = (message) => {
-    shell('git', ['add', '-A'], { cwd });
-    shell('git', ['commit', '--no-verify', '-m', message], { cwd });
+  const commitPhase = async (message) => {
+    await shell('git', ['add', '-A'], { cwd });
+    await shell('git', ['commit', '--no-verify', '-m', message], { cwd });
   };
 
   // ---- Phase 0: ideate --------------------------------------------------
@@ -4648,7 +4808,7 @@ export function main(argv, io = {}) {
       return 1;
     }
     write(verbatim(input === '' ? 'authoring PRD.md from this repository' : `authoring PRD.md from this repository, focused on: ${input}`));
-    const authored = runChild({
+    const authored = await runChild({
       prompt:
         `${template('improve-author.md')}\n\n---\n\n` +
         (input === ''
@@ -4688,7 +4848,7 @@ export function main(argv, io = {}) {
       return 1;
     }
     write(verbatim('authoring PRD.md'));
-    const authored = runChild({
+    const authored = await runChild({
       prompt: `${template('prd-author.md')}\n\n---\n\nThe idea:\n\n${idea}`,
       model: config.prdModel,
       phase: 'prd',
@@ -4708,7 +4868,7 @@ export function main(argv, io = {}) {
     if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
   }
 
-  commitPhase(improve ? 'meeseeks: author PRD.md from the existing repository' : 'meeseeks: author PRD.md');
+  await commitPhase(improve ? 'meeseeks: author PRD.md from the existing repository' : 'meeseeks: author PRD.md');
   if (confirmPrd) {
     write(verbatim('PRD.md is written and committed. Review it, then re-run without --confirm-prd.'));
     return 0;
@@ -4731,7 +4891,7 @@ export function main(argv, io = {}) {
   // nothing, and this is the one gate whose entire value is independence.
   if (config.oracle.enabled && !existsSync(path.join(meeseeksDir, 'oracle.json'))) {
     write(verbatim('authoring held-out acceptance cases from the PRD'));
-    const authored = runChild({
+    const authored = await runChild({
       prompt: `${template('oracle-author.md')}\n\n---\n\nPRD.md:\n\n${prd}`,
       model: config.reviewerModel,
       phase: 'oracle-author',
@@ -4758,7 +4918,7 @@ export function main(argv, io = {}) {
 
   // ---- Phase 1: design + quality plugins --------------------------------
   write(verbatim('designing'));
-  const designed = runChild({
+  const designed = await runChild({
     prompt: `${template('architect.md')}\n\n---\n\n${architectGateFragment(gateSummary(cwd, meeseeksDir).gates)}\n\n---\n\nPRD.md:\n\n${prd}`,
     model: config.designModel,
     phase: 'design',
@@ -4798,7 +4958,7 @@ export function main(argv, io = {}) {
     // failure aborts exactly as before — this widens nothing about what is accepted.
     const parseError = /** @type {Error} */ (error).message;
     write(verbatim(`design declaration unreadable, asking once more: ${parseError}`));
-    const redeclared = runChild({
+    const redeclared = await runChild({
       prompt:
         'The design phase for this repository just completed, but its closing capability declaration ' +
         `could not be parsed: ${parseError}\n\n` +
@@ -4840,10 +5000,10 @@ export function main(argv, io = {}) {
   };
   write(verbatim(`this project is: ${runCapabilities().join(', ')}`));
 
-  const provisioning = installQualityPlugins({ cwd, plugins: config.qualityPlugins, runner: shell });
+  const provisioning = await installQualityPlugins({ cwd, plugins: config.qualityPlugins, runner: shell });
   for (const warning of provisioning.warnings) write(verbatim(warning));
 
-  commitPhase('meeseeks: design documents');
+  await commitPhase('meeseeks: design documents');
 
   // ---- Phases 2-6: the loop ---------------------------------------------
   // Whatever the resolved toolchain says it writes, not node's two filenames. Hardcoding
@@ -4869,7 +5029,7 @@ export function main(argv, io = {}) {
   // Captured once, into a name, because two things read it now: the run manifest below and
   // the ship-time mutation scope. Asking git twice would invite the two to disagree after the
   // first commit of the run, which is exactly when the scope stops being empty.
-  const runStartCommit = shell('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim();
+  const runStartCommit = (await shell('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim();
   writeRunManifest(
     meeseeksDir,
     buildRunManifest({
@@ -4897,7 +5057,7 @@ export function main(argv, io = {}) {
         evidence: resolvedToolchain.evidence,
       },
       capabilities: capabilityRecord,
-      tools: toolVersions(shell, cwd),
+      tools: await toolVersions(shell, cwd),
     }),
   );
 
@@ -4949,9 +5109,9 @@ export function main(argv, io = {}) {
    * as a regression (DESIGN.md §13.6).
    *
    * @param {string} dir
-   * @returns {{ ok: boolean, results: GateResult[], passing: Set<string> }}
+   * @returns {Promise<{ ok: boolean, results: GateResult[], passing: Set<string> }>}
    */
-  const gateTree = (dir) => {
+  const gateTree = async (dir) => {
     const treeStateDir = path.join(dir, '.meeseeks');
     // Arming is a question about the code, so it is asked where the code is, every
     // iteration. Resolving it once at provisioning time asked it of a repository holding a
@@ -4983,9 +5143,9 @@ export function main(argv, io = {}) {
       capabilities,
     );
     for (const skip of applicable.skipped) write(verbatim(`gate ${skip.name} does not apply: ${skip.reason}`));
-    const browsers = ensurePlaywrightBrowsers({ cwd: dir, meeseeksDir: treeStateDir, run: shell, capabilities });
+    const browsers = await ensurePlaywrightBrowsers({ cwd: dir, meeseeksDir: treeStateDir, run: shell, capabilities });
     if (browsers.installed) write(verbatim(browsers.detail));
-    const commandResults = runGates(applicable.gates, { cwd: dir, run: shell, timeoutMs: config.gateTimeoutMs });
+    const commandResults = await runGates(applicable.gates, { cwd: dir, run: shell, timeoutMs: config.gateTimeoutMs });
 
     // ---- the conditional second pass (DESIGN.md §4.4) -------------------
     // Only when every gate in the first pass passed. A failure above costs nothing extra,
@@ -4997,7 +5157,7 @@ export function main(argv, io = {}) {
       // it gives are different sentences, because "I have no baseline" and "nothing changed" are
       // different facts — see the mutation entry in `toolchains/node.mjs`.
       const lastGood = loadState(meeseeksDir).lastGoodCommit;
-      const changedFiles = lastGood === null ? undefined : changedSince({ cwd: dir, since: lastGood, run: shell });
+      const changedFiles = lastGood === null ? undefined : await changedSince({ cwd: dir, since: lastGood, run: shell });
       writeMutationConfig(treeStateDir);
       const second = conditionalCommandGates(dir, treeStateDir, changedFiles);
       for (const skip of second.skipped) write(verbatim(`gate ${skip.name} declined: ${skip.reason}`));
@@ -5005,7 +5165,7 @@ export function main(argv, io = {}) {
       for (const skip of secondApplicable.skipped) {
         write(verbatim(`gate ${skip.name} does not apply: ${skip.reason}`));
       }
-      const secondResults = runGates(secondApplicable.gates, { cwd: dir, run: shell, timeoutMs: config.gateTimeoutMs });
+      const secondResults = await runGates(secondApplicable.gates, { cwd: dir, run: shell, timeoutMs: config.gateTimeoutMs });
       commandResults.results.push(...secondResults.results);
       commandResults.ok = secondResults.ok;
     }
@@ -5040,7 +5200,7 @@ export function main(argv, io = {}) {
       // demands is filtered by the same capabilities, which is why they are passed in as well
       // as applied outside. Without that, a browserless project could not satisfy `ci` at all.
       ...applicableGates(
-        staticGates(dir, { run: shell, capabilities, meeseeksDir: treeStateDir, oracle: config.oracle.enabled }),
+        await staticGates(dir, { run: shell, capabilities, meeseeksDir: treeStateDir, oracle: config.oracle.enabled }),
         capabilities,
       ).gates,
       redEvidenceGate(evidence),
@@ -5061,15 +5221,15 @@ export function main(argv, io = {}) {
    * uncommitted answer is the true one; a committed iteration has a clean tree, so the last
    * commit is.
    *
-   * @returns {string[]}
+   * @returns {Promise<string[]>}
    */
-  const changedFiles = () => {
-    const dirty = shell('git', ['diff', '--name-only', 'HEAD'], { cwd }).stdout.split('\n').filter(Boolean);
-    const untracked = shell('git', ['ls-files', '--others', '--exclude-standard'], { cwd })
-      .stdout.split('\n')
+  const changedFiles = async () => {
+    const dirty = (await shell('git', ['diff', '--name-only', 'HEAD'], { cwd })).stdout.split('\n').filter(Boolean);
+    const untracked = (await shell('git', ['ls-files', '--others', '--exclude-standard'], { cwd })).stdout
+      .split('\n')
       .filter(Boolean);
     if (dirty.length > 0 || untracked.length > 0) return [...new Set([...dirty, ...untracked])].sort();
-    return shell('git', ['diff', '--name-only', 'HEAD~1', 'HEAD'], { cwd }).stdout.split('\n').filter(Boolean).sort();
+    return (await shell('git', ['diff', '--name-only', 'HEAD~1', 'HEAD'], { cwd })).stdout.split('\n').filter(Boolean).sort();
   };
 
   /**
@@ -5082,19 +5242,19 @@ export function main(argv, io = {}) {
    *
    * @param {import('./brief.mjs').Objective} objective
    * @param {number} iteration
-   * @returns {RaceOutcome}
+   * @returns {Promise<RaceOutcome>}
    */
-  const runRace = (objective, iteration, baselineShare = 1) => {
-    const base = shell('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim();
+  const runRace = async (objective, iteration, baselineShare = 1) => {
+    const base = (await shell('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim();
     const parentDir = path.join(os.tmpdir(), `meeseeks-race-${process.pid}-${iteration}`);
     mkdirSync(parentDir, { recursive: true });
     // Before creating anything, clear whatever a killed race left registered. Cleanup on the
     // way out cannot cover `-9`, and `git worktree add` refuses a path git already knows about,
     // so without this one abandoned race breaks every later race in the repository.
-    const swept = sweepRaceWorktrees({ cwd, run: shell });
+    const swept = await sweepRaceWorktrees({ cwd, run: shell });
     for (const entry of swept.removed) write(verbatim(`race: removed an abandoned worktree at ${entry}`));
     for (const problem of swept.problems) write(verbatim(`race: ${problem}`));
-    const created = createWorktrees({ cwd, run: shell, n: config.race.n, base, parentDir });
+    const created = await createWorktrees({ cwd, run: shell, n: config.race.n, base, parentDir });
     for (const problem of created.problems) write(verbatim(problem));
 
     let tokens = 0;
@@ -5124,7 +5284,7 @@ export function main(argv, io = {}) {
         });
         writeBrief(meeseeksDir, iteration, candidateBrief, worktree.index);
 
-        const built = runChild({
+        const built = await runChild({
           prompt: candidateBrief,
           model: config.builderModel,
           systemPrompt: builderSystemPrompt(cwd),
@@ -5147,18 +5307,18 @@ export function main(argv, io = {}) {
           continue;
         }
 
-        shell('git', ['add', '-A'], { cwd: worktree.dir });
-        shell('git', ['commit', '--no-verify', '-m', `meeseeks: race candidate ${worktree.index} (iteration ${iteration})`], {
+        await shell('git', ['add', '-A'], { cwd: worktree.dir });
+        await shell('git', ['commit', '--no-verify', '-m', `meeseeks: race candidate ${worktree.index} (iteration ${iteration})`], {
           cwd: worktree.dir,
         });
-        const commit = shell('git', ['rev-parse', 'HEAD'], { cwd: worktree.dir }).stdout.trim();
-        const gated = gateTree(worktree.dir);
+        const commit = (await shell('git', ['rev-parse', 'HEAD'], { cwd: worktree.dir })).stdout.trim();
+        const gated = await gateTree(worktree.dir);
         candidates.push({
           ...worktree,
           commit: commit === base ? null : commit,
           gates: gated.results,
           regressions: ratchetPassing.filter((id) => !gated.passing.has(id)),
-          ...parseNumstat(shell('git', ['diff', '--numstat', `${base}..HEAD`], { cwd: worktree.dir }).stdout),
+          ...parseNumstat((await shell('git', ['diff', '--numstat', `${base}..HEAD`], { cwd: worktree.dir })).stdout),
         });
       }
 
@@ -5166,10 +5326,10 @@ export function main(argv, io = {}) {
       if (selection.winner === null || selection.winner.commit === null) {
         return { applied: false, detail: selection.reason, tokens, costUsd };
       }
-      const merged = applyWinner({ cwd, run: shell, commit: selection.winner.commit });
+      const merged = await applyWinner({ cwd, run: shell, commit: selection.winner.commit });
       return { applied: merged.ok, detail: `${selection.reason}; ${merged.detail}`, tokens, costUsd };
     } finally {
-      const cleaned = removeWorktrees({ cwd, run: shell, worktrees: created.worktrees });
+      const cleaned = await removeWorktrees({ cwd, run: shell, worktrees: created.worktrees });
       for (const problem of cleaned.problems) write(verbatim(problem));
       rmSync(parentDir, { recursive: true, force: true });
     }
@@ -5190,7 +5350,7 @@ export function main(argv, io = {}) {
   /** @type {RunOutcome} */
   let outcome;
   try {
-    outcome = driveRun({
+    outcome = await driveRun({
     config,
     meeseeksDir,
     rootDir: cwd,
@@ -5315,8 +5475,8 @@ export function main(argv, io = {}) {
       },
       history: (findings) => historyContext({ cwd, run: shell, findings, greenfield }),
       changedFiles,
-      gates: () => {
-        const gated = gateTree(cwd);
+      gates: async () => {
+        const gated = await gateTree(cwd);
         return { ok: gated.ok, results: gated.results };
       },
       shipTimeMutation: () => shipTimeMutation(cwd, meeseeksDir, runStartCommit, config.gateTimeoutMs),
@@ -5324,22 +5484,22 @@ export function main(argv, io = {}) {
         reportFiles(cwd)
           .filter((file) => existsSync(file))
           .map((file) => readFileSync(file, 'utf8')),
-      commit: (message) => {
+      commit: async (message) => {
         // Re-asserted here rather than once before the loop: a hard reset can land on a
         // commit that predates the stanza, which would quietly un-ignore the ratchet and
         // start committing it again.
         ensureMeeseeksIgnored(cwd);
-        shell('git', ['add', '-A'], { cwd });
-        shell('git', ['commit', '--no-verify', '-m', message], { cwd });
-        return shell('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim();
+        await shell('git', ['add', '-A'], { cwd });
+        await shell('git', ['commit', '--no-verify', '-m', message], { cwd });
+        return (await shell('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim();
       },
-      diffStat: () => shell('git', ['diff', '--stat', 'HEAD~1'], { cwd }).stdout.trim(),
-      ship: (iteration) => {
+      diffStat: async () => (await shell('git', ['diff', '--stat', 'HEAD~1'], { cwd })).stdout.trim(),
+      ship: async (iteration) => {
         const tag = `meeseeks/iter-${String(iteration).padStart(3, '0')}`;
-        shell('git', ['tag', '-f', tag], { cwd });
+        await shell('git', ['tag', '-f', tag], { cwd });
         // Annotated, not bare. An audit of the first SHIPPED found only an unannotated tag and
         // could not verify the claim behind it; a tag that carries no reason is not evidence.
-        shell(
+        await shell(
           'git',
           [
             'tag',
@@ -5391,5 +5551,5 @@ export function main(argv, io = {}) {
 const invokedDirectly =
   typeof process.argv[1] === 'string' && pathToFileURL(process.argv[1]).href === import.meta.url;
 if (invokedDirectly) {
-  process.exitCode = main(process.argv.slice(2));
+  process.exitCode = await main(process.argv.slice(2));
 }

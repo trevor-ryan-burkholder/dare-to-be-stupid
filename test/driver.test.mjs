@@ -390,10 +390,10 @@ describe('runGates', () => {
     /** @type {import('../scripts/driver.mjs').ShellResult} */
     const hung = { ok: false, status: 1, stdout: '', stderr: 'spawnSync npm ETIMEDOUT', timedOut: true };
 
-    it('hands the ceiling to the runner rather than trusting a gate to finish', () => {
+    it('hands the ceiling to the runner rather than trusting a gate to finish', async () => {
       /** @type {(number | undefined)[]} */
       const seen = [];
-      runGates([{ name: 'test', command: ['npm', 'test'], required: true }], {
+      await runGates([{ name: 'test', command: ['npm', 'test'], required: true }], {
         cwd: '/repo',
         timeoutMs: 2_700_000,
         run: (_command, _args, options) => {
@@ -404,10 +404,10 @@ describe('runGates', () => {
       assert.deepStrictEqual(seen, [2_700_000]);
     });
 
-    it('fails the gate and says it was killed, rather than reporting a bare exit code', () => {
+    it('fails the gate and says it was killed, rather than reporting a bare exit code', async () => {
       // The detail is not cosmetic: it is copied into the brief the builder is handed. A
       // builder told `exit 1` for a suite that hung will go looking for a broken assertion.
-      const outcome = runGates([{ name: 'test', command: ['npm', 'test'], required: true }], {
+      const outcome = await runGates([{ name: 'test', command: ['npm', 'test'], required: true }], {
         cwd: '/repo',
         timeoutMs: 2_700_000,
         run: () => hung,
@@ -427,8 +427,8 @@ describe('runGates', () => {
     // driver says so, because a gate failure detail is copied verbatim into the brief the
     // builder is handed, and "killed after 45 minutes" and "killed after 45 minutes, and it
     // had left a server running" are different diagnoses.
-    it('names the leaked descendants it killed, when there were any', () => {
-      const outcome = runGates([{ name: 'e2e', command: ['npx', 'playwright', 'test'], required: true }], {
+    it('names the leaked descendants it killed, when there were any', async () => {
+      const outcome = await runGates([{ name: 'e2e', command: ['npx', 'playwright', 'test'], required: true }], {
         cwd: '/repo',
         timeoutMs: 1000,
         run: () => ({ ok: false, status: 1, stdout: '', stderr: '', timedOut: true, reaped: [4242, 4243] }),
@@ -440,10 +440,10 @@ describe('runGates', () => {
       );
     });
 
-    it('says nothing about a sweep that ran and found nothing, rather than reporting zero', () => {
+    it('says nothing about a sweep that ran and found nothing, rather than reporting zero', async () => {
       // An empty sweep is the ordinary case and a sentence for it would be noise in every
       // timeout detail the builder ever reads.
-      const outcome = runGates([{ name: 'e2e', command: ['npx', 'playwright', 'test'], required: true }], {
+      const outcome = await runGates([{ name: 'e2e', command: ['npx', 'playwright', 'test'], required: true }], {
         cwd: '/repo',
         timeoutMs: 1000,
         run: () => ({ ok: false, status: 1, stdout: '', stderr: '', timedOut: true, reaped: [] }),
@@ -454,10 +454,10 @@ describe('runGates', () => {
       );
     });
 
-    it('does not report a sweep for a gate that failed on its own merits', () => {
+    it('does not report a sweep for a gate that failed on its own merits', async () => {
       // A non-zero exit is not a timeout, and the sweep does not run for one. A gate that
       // simply failed must not read as one that leaked.
-      const outcome = runGates([{ name: 'lint', command: ['npm', 'run', 'lint'], required: true }], {
+      const outcome = await runGates([{ name: 'lint', command: ['npm', 'run', 'lint'], required: true }], {
         cwd: '/repo',
         timeoutMs: 1000,
         run: () => ({ ok: false, status: 1, stdout: 'two problems', stderr: '', timedOut: false }),
@@ -465,9 +465,9 @@ describe('runGates', () => {
       assert.equal(outcome.results[0].detail, 'two problems');
     });
 
-    it('keeps running the gates after the one that hung', () => {
+    it('keeps running the gates after the one that hung', async () => {
       let calls = 0;
-      const outcome = runGates(
+      const outcome = await runGates(
         [
           { name: 'test', command: ['npm', 'test'], required: true },
           { name: 'lint', command: ['npm', 'run', 'lint'], required: true },
@@ -493,8 +493,8 @@ describe('runGates', () => {
 
     // The benign neighbour. A gate that ran and failed must keep the output that says why —
     // 0.78.0 exists because a mutation failure reached the operator as two npm warnings.
-    it('leaves an ordinary failure reporting what it printed', () => {
-      const outcome = runGates([{ name: 'test', command: ['npm', 'test'], required: true }], {
+    it('leaves an ordinary failure reporting what it printed', async () => {
+      const outcome = await runGates([{ name: 'test', command: ['npm', 'test'], required: true }], {
         cwd: '/repo',
         timeoutMs: 2_700_000,
         run: () => ({ ok: false, status: 1, stdout: '2 failed', stderr: '', timedOut: false }),
@@ -503,8 +503,8 @@ describe('runGates', () => {
     });
   });
 
-  it('passes only when every gate exits zero', () => {
-    const outcome = runGates(
+  it('passes only when every gate exits zero', async () => {
+    const outcome = await runGates(
       [
         { name: 'lint', command: ['npm', 'run', 'lint'], required: true },
         { name: 'test', command: ['npm', 'test'], required: true },
@@ -521,8 +521,8 @@ describe('runGates', () => {
     );
   });
 
-  it('fails the set when one gate exits non-zero, and keeps running the rest', () => {
-    const outcome = runGates(
+  it('fails the set when one gate exits non-zero, and keeps running the rest', async () => {
+    const outcome = await runGates(
       [
         { name: 'lint', command: ['npm', 'run', 'lint'], required: true },
         { name: 'test', command: ['npm', 'test'], required: true },
@@ -540,8 +540,8 @@ describe('runGates', () => {
     assert.equal(outcome.results[0].detail, 'boom');
   });
 
-  it('fails a gate that has no command, because a gate that cannot run is a failure', () => {
-    const outcome = runGates([{ name: 'ci', command: [], required: true }], { cwd: '/repo', run: runnerFor({}) });
+  it('fails a gate that has no command, because a gate that cannot run is a failure', async () => {
+    const outcome = await runGates([{ name: 'ci', command: [], required: true }], { cwd: '/repo', run: runnerFor({}) });
     assert.equal(outcome.ok, false);
     assert.equal(outcome.results[0].detail, 'gate has no command; a gate that cannot run is a failure');
   });
@@ -1147,14 +1147,14 @@ describe('childEnvironment', () => {
 describe('the re-entrancy marker reaches the child', () => {
   /**
    * @param {string} phase
-   * @returns {{ calls: { command: string, args: string[], env: Record<string, string | undefined>,
-   *   input: string | undefined }[] }}
+   * @returns {Promise<{ calls: { command: string, args: string[], env: Record<string, string | undefined>,
+   *   input: string | undefined }[] }>}
    */
-  function spawnWithRecorder(phase) {
+  async function spawnWithRecorder(phase) {
     /** @type {{ command: string, args: string[], env: Record<string, string | undefined>,
      *   input: string | undefined }[]} */
     const calls = [];
-    spawnClaude({
+    await spawnClaude({
       prompt: 'do it',
       model: 'claude-sonnet-5',
       phase,
@@ -1168,42 +1168,42 @@ describe('the re-entrancy marker reaches the child', () => {
     return { calls };
   }
 
-  it('delivers the prompt on stdin for every phase, and never in argv', () => {
+  it('delivers the prompt on stdin for every phase, and never in argv', async () => {
     // Both halves matter. A prompt missing from argv but also missing from stdin is a child
     // that exits with "Input must be provided", which is the failure this replaced.
     for (const phase of Object.keys(PHASE_PERMISSIONS)) {
-      const { calls } = spawnWithRecorder(phase);
+      const { calls } = await spawnWithRecorder(phase);
       assert.equal(calls[0].input, 'do it', `${phase} did not receive the prompt on stdin`);
       assert.equal(calls[0].args.includes('do it'), false, `${phase} also put the prompt in argv`);
     }
   });
 
-  it('passes the marker in the environment of every phase, not merely computes it', () => {
+  it('passes the marker in the environment of every phase, not merely computes it', async () => {
     // The bug this defends against shipped once: the marker was built and then discarded,
     // because the shell wrapper had no way to carry an environment. `assertNotNested` was
     // therefore unreachable from a child, and the driver half of the no-nesting rule did
     // nothing at all.
     for (const phase of Object.keys(PHASE_PERMISSIONS)) {
-      const { calls } = spawnWithRecorder(phase);
+      const { calls } = await spawnWithRecorder(phase);
       assert.equal(calls.length, 1, `${phase} spawned ${calls.length} children`);
       assert.equal(calls[0].env[REENTRANCY_ENV], '1', `${phase} child did not carry the marker`);
     }
   });
 
-  it('leaves the rest of the environment intact, so the child still finds its tools', () => {
-    assert.equal(spawnWithRecorder('builder').calls[0].env.PATH, '/usr/bin');
+  it('leaves the rest of the environment intact, so the child still finds its tools', async () => {
+    assert.equal((await spawnWithRecorder('builder')).calls[0].env.PATH, '/usr/bin');
   });
 
-  it('produces an environment the driver would refuse to start in', () => {
-    const inherited = spawnWithRecorder('review').calls[0].env;
+  it('produces an environment the driver would refuse to start in', async () => {
+    const inherited = (await spawnWithRecorder('review')).calls[0].env;
     assert.throws(() => assertNotNested(inherited), DriverError);
   });
 
-  it('carries the phase permissions through to the real argv', () => {
-    assert.equal(spawnWithRecorder('builder').calls[0].args.includes('--dangerously-skip-permissions'), true);
+  it('carries the phase permissions through to the real argv', async () => {
+    assert.equal((await spawnWithRecorder('builder')).calls[0].args.includes('--dangerously-skip-permissions'), true);
     for (const phase of Object.keys(PHASE_PERMISSIONS).filter((name) => name !== 'builder')) {
       assert.equal(
-        spawnWithRecorder(phase).calls[0].args.includes('--dangerously-skip-permissions'),
+        (await spawnWithRecorder(phase)).calls[0].args.includes('--dangerously-skip-permissions'),
         false,
         `${phase} was spawned in dangerous mode`,
       );
@@ -1443,7 +1443,7 @@ describe('appendBlooper', () => {
 // ---------------------------------------------------------------------------
 
 describe('the lines that bracket a child', () => {
-  // Children run under execFileSync, so nothing can tick while one is out. These two lines
+  // Children are awaited one at a time and nothing ticks while one is out yet. These two lines
   // are the whole of the progress an operator gets, which is why their content is asserted
   // exactly rather than for substrings.
   it('warns that silence is expected, and names the model doing the waiting', () => {
@@ -1488,10 +1488,10 @@ describe('spawnClaude checks the context budget before it spends anything', () =
    * @param {number} promptLength
    * @param {number} limit
    */
-  function spawnWith(promptLength, limit) {
+  async function spawnWith(promptLength, limit) {
     /** @type {string[][]} */
     const calls = [];
-    const result = spawnClaude({
+    const result = await spawnClaude({
       prompt: 'x'.repeat(promptLength),
       systemPrompt: 'sys',
       model: 'claude-sonnet-5',
@@ -1507,31 +1507,31 @@ describe('spawnClaude checks the context budget before it spends anything', () =
     return { calls, result };
   }
 
-  it('does not spawn at all when the prompt is over budget', () => {
+  it('does not spawn at all when the prompt is over budget', async () => {
     // Refusing after the child has run would cost the full price of the mistake and teach
     // the operator nothing they could not read in the bill.
-    const { calls, result } = spawnWith(500, 100);
+    const { calls, result } = await spawnWith(500, 100);
     assert.deepEqual(calls, []);
     assert.equal(result.ok, false);
     assert.equal(result.tokens, 0);
     assert.equal(result.costUsd, 0);
   });
 
-  it('reports the measurement rather than a bare failure', () => {
-    const { result } = spawnWith(500, 100);
+  it('reports the measurement rather than a bare failure', async () => {
+    const { result } = await spawnWith(500, 100);
     assert.equal(result.raw.includes('builder: prompt is 503 characters'), true);
     assert.equal(result.raw.includes('over the 100 character budget'), true);
   });
 
-  it('counts the system prompt too, since the child is handed both', () => {
+  it('counts the system prompt too, since the child is handed both', async () => {
     // 'sys' is three characters. A budget that measured only the user prompt would miss the
     // frontend-direction fragment appended to every builder on a UI project.
-    const { calls } = spawnWith(98, 100);
+    const { calls } = await spawnWith(98, 100);
     assert.deepEqual(calls, []);
   });
 
-  it('spawns normally when the prompt fits', () => {
-    const { calls, result } = spawnWith(50, 100);
+  it('spawns normally when the prompt fits', async () => {
+    const { calls, result } = await spawnWith(50, 100);
     assert.equal(calls.length, 1);
     assert.equal(calls[0][0], 'claude');
     assert.equal(result.ok, true);
@@ -1540,18 +1540,18 @@ describe('spawnClaude checks the context budget before it spends anything', () =
 });
 
 // The operator's top blocker, 13 August 2026: "when there's a run it'll hang sometimes and sit
-// there for hours until I say something." Children run under `execFileSync`, which blocks the
-// event loop for the whole call, so no heartbeat is possible while one is in flight and a hung
-// child looks exactly like a working one. `tokenCeiling` and `costCeiling` are no help — they
-// bind a child that *returns*, which makes them accounting rather than a watchdog.
+// there for hours until I say something." Children ran under `execFileSync` then and are awaited
+// now, but nothing ticks while one is in flight, so a hung child still looks exactly like a
+// working one. `tokenCeiling` and `costCeiling` are no help — they bind a child that *returns*,
+// which makes them accounting rather than a watchdog.
 describe('a child that never returns is killed and named', () => {
   /**
    * @param {{ timeoutMs?: number, result: import('../scripts/driver.mjs').ShellResult }} parts
    */
-  function spawnWith(parts) {
+  async function spawnWith(parts) {
     /** @type {{ command: string, timeoutMs: number | undefined }[]} */
     const seen = [];
-    const result = spawnClaude({
+    const result = await spawnClaude({
       prompt: 'do the thing',
       systemPrompt: 'sys',
       model: 'claude-sonnet-5',
@@ -1571,16 +1571,16 @@ describe('a child that never returns is killed and named', () => {
   /** @type {import('../scripts/driver.mjs').ShellResult} */
   const timedOut = { ok: false, status: 1, stdout: '', stderr: 'spawnSync claude ETIMEDOUT', timedOut: true };
 
-  it('hands the ceiling to the shell rather than trusting the child to come back', () => {
-    const { seen } = spawnWith({
+  it('hands the ceiling to the shell rather than trusting the child to come back', async () => {
+    const { seen } = await spawnWith({
       timeoutMs: 1_800_000,
       result: { ok: true, status: 0, stdout: JSON.stringify({ result: 'done', is_error: false }), stderr: '', timedOut: false },
     });
     assert.deepStrictEqual(seen, [{ command: 'claude', timeoutMs: 1_800_000 }]);
   });
 
-  it('reports the timeout by name, with the phase and the ceiling that killed it', () => {
-    const { result } = spawnWith({ timeoutMs: 1_800_000, result: timedOut });
+  it('reports the timeout by name, with the phase and the ceiling that killed it', async () => {
+    const { result } = await spawnWith({ timeoutMs: 1_800_000, result: timedOut });
     assert.equal(result.ok, false);
     assert.equal(result.raw.includes('builder'), true, result.raw);
     assert.equal(result.raw.includes('1800000ms'), true, result.raw);
@@ -1590,8 +1590,8 @@ describe('a child that never returns is killed and named', () => {
   // old order — parse whatever arrived — would hand that fragment to the envelope parser and
   // report whatever it made of it. A killed child has no verdict, and a fragment of one is
   // not a smaller verdict, it is a different one.
-  it('does not parse the output of a child it killed, however much of it arrived', () => {
-    const { result } = spawnWith({
+  it('does not parse the output of a child it killed, however much of it arrived', async () => {
+    const { result } = await spawnWith({
       timeoutMs: 1_800_000,
       result: { ...timedOut, stdout: '{"result":"looks fine to me","is_error":false}' },
     });
@@ -1600,8 +1600,8 @@ describe('a child that never returns is killed and named', () => {
     assert.equal(result.raw.includes('1800000ms'), true, result.raw);
   });
 
-  it('charges nothing for a child that was killed, because no envelope reported a cost', () => {
-    const { result } = spawnWith({ timeoutMs: 1_800_000, result: timedOut });
+  it('charges nothing for a child that was killed, because no envelope reported a cost', async () => {
+    const { result } = await spawnWith({ timeoutMs: 1_800_000, result: timedOut });
     assert.equal(result.tokens, 0);
     assert.equal(result.costUsd, 0);
   });
@@ -1609,8 +1609,8 @@ describe('a child that never returns is killed and named', () => {
   // The benign neighbour. A ceiling that also broke children which return on time would be
   // caught by every other test in this file, but a test proving only the kill proves only
   // that it kills.
-  it('leaves a child that returns inside the ceiling completely alone', () => {
-    const { result } = spawnWith({
+  it('leaves a child that returns inside the ceiling completely alone', async () => {
+    const { result } = await spawnWith({
       timeoutMs: 1_800_000,
       result: { ok: true, status: 0, stdout: JSON.stringify({ result: 'done', is_error: false }), stderr: '', timedOut: false },
     });
@@ -1635,10 +1635,10 @@ describe('changedSince', () => {
   // changes only the repair — a diff against the previous iteration would hand a scoped gate
   // an almost empty set and it would report a clean pass over nothing.
 
-  it('asks git for names changed since the ratchet-advancing commit', () => {
+  it('asks git for names changed since the ratchet-advancing commit', async () => {
     /** @type {string[][]} */
     const calls = [];
-    const files = changedSince({
+    const files = await changedSince({
       cwd: '/repo',
       since: 'abc123',
       run: (command, args) => {
@@ -1660,10 +1660,10 @@ describe('changedSince', () => {
   // invisible here. A builder that satisfied an objective by adding a module got the same
   // "nothing changed since the last ratchet-advancing commit" as one that did nothing, and the
   // mutation gate declined over work that was sitting right there.
-  it('includes files the iteration created but has not committed yet', () => {
+  it('includes files the iteration created but has not committed yet', async () => {
     /** @type {string[][]} */
     const calls = [];
-    const files = changedSince({
+    const files = await changedSince({
       cwd: '/repo',
       since: 'abc123',
       run: (command, args) => {
@@ -1677,8 +1677,8 @@ describe('changedSince', () => {
     assert.equal(calls.length, 2, 'untracked files were never asked about');
   });
 
-  it('does not report the same file twice when it is both changed and listed', () => {
-    const files = changedSince({
+  it('does not report the same file twice when it is both changed and listed', async () => {
+    const files = await changedSince({
       cwd: '/repo',
       since: 'abc123',
       run: (_command, args) =>
@@ -1689,10 +1689,10 @@ describe('changedSince', () => {
     assert.deepEqual(files, ['src/a.ts']);
   });
 
-  it('still returns the tracked changes when the untracked listing fails', () => {
+  it('still returns the tracked changes when the untracked listing fails', async () => {
     // Degrading to fewer files is the safe direction: the gate scopes to less and says so.
     // Losing the tracked half because the second command failed would be the loud one.
-    const files = changedSince({
+    const files = await changedSince({
       cwd: '/repo',
       since: 'abc123',
       run: (_command, args) =>
@@ -1703,12 +1703,12 @@ describe('changedSince', () => {
     assert.deepEqual(files, ['src/a.ts']);
   });
 
-  it('returns nothing when there is no baseline, rather than the whole tree', () => {
+  it('returns nothing when there is no baseline, rather than the whole tree', async () => {
     // Iteration 1 has no ratchet-advancing commit. Returning everything would mutate an
     // entire repository on the iteration least likely to benefit from it; the gate declines
     // on an empty set with a stated reason instead, which is louder and more accurate.
     let asked = 0;
-    const files = changedSince({
+    const files = await changedSince({
       cwd: '/repo',
       since: null,
       run: () => {
@@ -1720,18 +1720,18 @@ describe('changedSince', () => {
     assert.equal(asked, 0, 'git was consulted with no baseline to consult it about');
   });
 
-  it('returns nothing when git itself failed', () => {
+  it('returns nothing when git itself failed', async () => {
     // A failed diff is not evidence that nothing changed. It yields an empty list, the gate
     // declines and says so, and no gate reports a pass over an unknown.
     assert.deepEqual(
-      changedSince({ cwd: '/repo', since: 'abc', run: () => ({ ok: false, status: 128, stdout: '', stderr: 'bad' }) }),
+      await changedSince({ cwd: '/repo', since: 'abc', run: () => ({ ok: false, status: 128, stdout: '', stderr: 'bad' }) }),
       [],
     );
   });
 
-  it('drops blank lines rather than passing an empty path to a mutator', () => {
+  it('drops blank lines rather than passing an empty path to a mutator', async () => {
     assert.deepEqual(
-      changedSince({
+      await changedSince({
         cwd: '/repo',
         since: 'abc',
         run: () => ({ ok: true, status: 0, stdout: 'src/a.ts\n\n  \n', stderr: '' }),
@@ -1813,7 +1813,7 @@ describe('driveRun', () => {
    * @param {string[]} [seedPassing]
    * @param {string[]} [requiredIds]
    */
-  function run(overrides, configOverrides = {}, seedPassing = [], requiredIds = ['PRD-1.1'], unitCommand = 'npx vitest run --reporter=json') {
+  async function run(overrides, configOverrides = {}, seedPassing = [], requiredIds = ['PRD-1.1'], unitCommand = 'npx vitest run --reporter=json') {
     const root = makeTempDir();
     const meeseeksDir = path.join(root, '.meeseeks');
     if (seedPassing.length > 0) {
@@ -1834,7 +1834,7 @@ describe('driveRun', () => {
         lastGoodCommit: git(['rev-parse', 'HEAD']),
       });
     }
-    const outcome = driveRun({
+    const outcome = await driveRun({
       config: { ...defaultConfig(), maxIterations: 5, stallLimit: 3, reviewers: ['correctness'], ...configOverrides },
       meeseeksDir,
       rootDir: root,
@@ -1860,10 +1860,10 @@ describe('driveRun', () => {
       timeoutMs: 1000,
     };
 
-    it('hands the configured timeout to the shell rather than trusting it to return', () => {
+    it('hands the configured timeout to the shell rather than trusting it to return', async () => {
       /** @type {Record<string, unknown>[]} */
       const seen = [];
-      runDeploy(deploy, {
+      await runDeploy(deploy, {
         cwd: '/repo',
         shell: (command, args, options) => {
           seen.push({ command, timeoutMs: options.timeoutMs });
@@ -1873,8 +1873,8 @@ describe('driveRun', () => {
       assert.deepStrictEqual(seen[0], { command: 'ssh', timeoutMs: 1000 });
     });
 
-    it('names the timeout instead of reporting an ordinary failure, because the two need different fixes', () => {
-      const result = runDeploy(deploy, {
+    it('names the timeout instead of reporting an ordinary failure, because the two need different fixes', async () => {
+      const result = await runDeploy(deploy, {
         cwd: '/repo',
         shell: () => ({ ok: false, status: 1, stdout: '', stderr: '', timedOut: true }),
       });
@@ -1882,9 +1882,9 @@ describe('driveRun', () => {
       assert.match(result.detail, /did not finish within 1000ms/);
     });
 
-    it('does not run the smoke checks against a host the deploy never reached', () => {
+    it('does not run the smoke checks against a host the deploy never reached', async () => {
       let calls = 0;
-      runDeploy(deploy, {
+      await runDeploy(deploy, {
         cwd: '/repo',
         shell: () => {
           calls += 1;
@@ -1896,8 +1896,8 @@ describe('driveRun', () => {
 
     // The benign neighbour. A deploy that ran and failed is a different fact from one that
     // hung, and collapsing them would send the operator looking for the wrong thing.
-    it('still reports an ordinary non-zero exit as a failure, not as a timeout', () => {
-      const result = runDeploy(deploy, {
+    it('still reports an ordinary non-zero exit as a failure, not as a timeout', async () => {
+      const result = await runDeploy(deploy, {
         cwd: '/repo',
         shell: () => ({ ok: false, status: 7, stdout: '', stderr: 'host key verification failed', timedOut: false }),
       });
@@ -1905,9 +1905,9 @@ describe('driveRun', () => {
       assert.equal(result.detail, 'the deploy command failed: host key verification failed');
     });
 
-    it('leaves a disabled deploy alone, so the ceiling costs nothing to runs that never deploy', () => {
+    it('leaves a disabled deploy alone, so the ceiling costs nothing to runs that never deploy', async () => {
       let calls = 0;
-      const result = runDeploy({ ...deploy, enabled: false }, {
+      const result = await runDeploy({ ...deploy, enabled: false }, {
         cwd: '/repo',
         shell: () => {
           calls += 1;
@@ -1933,25 +1933,25 @@ describe('driveRun', () => {
       },
     ];
 
-    it('ships when no deploy is configured, which is the default', () => {
+    it('ships when no deploy is configured, which is the default', async () => {
       // The benign neighbour. A check that blocked every run without a deploy would make the
       // feature mandatory by accident.
-      assert.equal(run({ readTestReports: oneGreenTest }).outcome.state, 'SHIPPED');
+      assert.equal((await run({ readTestReports: oneGreenTest })).outcome.state, 'SHIPPED');
     });
 
-    it('ships when the deploy and its smoke checks pass', () => {
-      const { outcome } = run({
+    it('ships when the deploy and its smoke checks pass', async () => {
+      const { outcome } = await run({
         readTestReports: oneGreenTest,
         deploy: () => ({ ok: true, detail: '2 smoke check(s) passed' }),
       });
       assert.equal(outcome.state, 'SHIPPED');
     });
 
-    it('does not tag when the smoke check fails', () => {
+    it('does not tag when the smoke check fails', async () => {
       // The value that matters: `ship` writes the tag, so counting its calls is the only
       // assertion that distinguishes "withheld" from "shipped and complained".
       let shipped = 0;
-      const { outcome } = run({
+      const { outcome } = await run({
         deploy: () => ({ ok: false, detail: 'smoke: /health expected 200, answered 502' }),
         ship: () => {
           shipped += 1;
@@ -1961,11 +1961,11 @@ describe('driveRun', () => {
       assert.equal(shipped, 0, 'the tag was written despite a failed deploy');
     });
 
-    it('withholds rather than failing the iteration, so a host being down cannot reset the tree', () => {
+    it('withholds rather than failing the iteration, so a host being down cannot reset the tree', async () => {
       // A blinking network must not `git reset --hard` a tree that just passed a unanimous
       // panel. The run keeps going and asks the builder again; it does not destroy work.
       let builders = 0;
-      const { outcome } = run({
+      const { outcome } = await run({
         deploy: () => ({ ok: false, detail: 'connection refused' }),
         build: () => {
           builders += 1;
@@ -1976,8 +1976,8 @@ describe('driveRun', () => {
       assert.equal(builders > 1, true, 'the run stopped instead of iterating after a failed deploy');
     });
 
-    it('carries the deploy failure into the next objective, so the builder is told what broke', () => {
-      const { meeseeksDir } = run({ readTestReports: oneGreenTest, deploy: () => ({ ok: false, detail: 'smoke: /api/items expected 200, answered 404' }) });
+    it('carries the deploy failure into the next objective, so the builder is told what broke', async () => {
+      const { meeseeksDir } = await run({ readTestReports: oneGreenTest, deploy: () => ({ ok: false, detail: 'smoke: /api/items expected 200, answered 404' }) });
       const briefs = readdirSync(path.join(meeseeksDir, 'briefs'));
       const text = briefs.map((file) => readFileSync(path.join(meeseeksDir, 'briefs', file), 'utf8')).join('\n');
       assert.match(text, /answered 404/);
@@ -1994,10 +1994,10 @@ describe('driveRun', () => {
      * @param {{ tokens: number, costUsd: number }} alreadySpent
      * @param {Partial<import('../scripts/driver.mjs').Effects>} [overrides]
      */
-    function runWithSpend(alreadySpent, overrides = {}) {
+    async function runWithSpend(alreadySpent, overrides = {}) {
       const root = makeTempDir();
       let builders = 0;
-      const outcome = driveRun({
+      const outcome = await driveRun({
         config: { ...defaultConfig(), maxIterations: 4, tokenCeiling: 2_000_000, reviewers: ['correctness'] },
         meeseeksDir: path.join(root, '.meeseeks'),
         rootDir: root,
@@ -2015,45 +2015,45 @@ describe('driveRun', () => {
       return { outcome, builders };
     }
 
-    it('ends BUDGET without spawning a builder when the pre-loop phases exhausted the ceiling', () => {
+    it('ends BUDGET without spawning a builder when the pre-loop phases exhausted the ceiling', async () => {
       // The exact numbers from the run: 2,965,864 spent against a 2,000,000 ceiling.
-      const { outcome, builders } = runWithSpend({ tokens: 2_965_864, costUsd: 12.5 });
+      const { outcome, builders } = await runWithSpend({ tokens: 2_965_864, costUsd: 12.5 });
       assert.equal(outcome.state, 'BUDGET');
       assert.equal(builders, 0, 'a builder ran on a ceiling that was already exhausted');
     });
 
-    it('names the real total in the reason, not the loop’s own subtotal', () => {
-      const { outcome } = runWithSpend({ tokens: 2_965_864, costUsd: 12.5 });
+    it('names the real total in the reason, not the loop’s own subtotal', async () => {
+      const { outcome } = await runWithSpend({ tokens: 2_965_864, costUsd: 12.5 });
       assert.equal(outcome.reason.includes('2965864'), true);
       assert.equal(outcome.reason.includes('2000000'), true);
     });
 
-    it('reports the pre-loop spend in the outcome, so the final line is honest', () => {
+    it('reports the pre-loop spend in the outcome, so the final line is honest', async () => {
       // `iterations: 0 tokens: … cost: …` is what an operator reads. Reporting only the
       // loop's share understates the bill by the most expensive child in the pipeline.
-      const { outcome } = runWithSpend({ tokens: 2_965_864, costUsd: 12.5 });
+      const { outcome } = await runWithSpend({ tokens: 2_965_864, costUsd: 12.5 });
       assert.equal(outcome.spentTokens >= 2_965_864, true);
       assert.equal(outcome.costUsd >= 12.5, true);
     });
 
-    it('adds loop spend on top of it rather than replacing it', () => {
-      const { outcome } = runWithSpend({ tokens: 1000, costUsd: 1 });
+    it('adds loop spend on top of it rather than replacing it', async () => {
+      const { outcome } = await runWithSpend({ tokens: 1000, costUsd: 1 });
       assert.equal(outcome.spentTokens > 1000, true, 'the loop overwrote the pre-loop total');
       assert.equal(outcome.costUsd > 1, true);
     });
 
-    it('still runs normally when nothing was spent before the loop', () => {
+    it('still runs normally when nothing was spent before the loop', async () => {
       // The benign neighbour. A budget that refuses every run is not a budget.
       // Asserted on *which* limit fired, not merely on the state: exhausting maxIterations
       // is also BUDGET, and a broader assertion would pass for the wrong reason.
-      const { outcome, builders } = runWithSpend({ tokens: 0, costUsd: 0 });
+      const { outcome, builders } = await runWithSpend({ tokens: 0, costUsd: 0 });
       assert.equal(builders > 0, true);
       assert.equal(outcome.reason.includes('token ceiling'), false, `stopped on tokens: ${outcome.reason}`);
     });
 
-    it('treats an absent alreadySpent as zero, so existing callers are unaffected', () => {
+    it('treats an absent alreadySpent as zero, so existing callers are unaffected', async () => {
       const root = makeTempDir();
-      const outcome = driveRun({
+      const outcome = await driveRun({
         config: { ...defaultConfig(), maxIterations: 1, reviewers: ['correctness'] },
         meeseeksDir: path.join(root, '.meeseeks'),
         rootDir: root,
@@ -2071,10 +2071,10 @@ describe('driveRun', () => {
     // an absence.
 
     /** @param {string} text what the builder's final message says */
-    function runWithBuilderSaying(text) {
+    async function runWithBuilderSaying(text) {
       const root = makeTempDir();
       const meeseeksDir = path.join(root, '.meeseeks');
-      const outcome = driveRun({
+      const outcome = await driveRun({
         config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
         meeseeksDir,
         rootDir: root,
@@ -2095,8 +2095,8 @@ describe('driveRun', () => {
       return { outcome, meeseeksDir };
     }
 
-    it('records a cited assumption where the reviewer will see it', () => {
-      const { meeseeksDir } = runWithBuilderSaying(
+    it('records a cited assumption where the reviewer will see it', async () => {
+      const { meeseeksDir } = await runWithBuilderSaying(
         'Added the handler.\n\n```json\n' +
           JSON.stringify({ assumptions: [{ cites: 'PRD-2.4', assumed: '410 Gone' }] }) +
           '\n```\n',
@@ -2106,36 +2106,36 @@ describe('driveRun', () => {
       ]);
     });
 
-    it('discards an uncited assumption instead of recording it', () => {
+    it('discards an uncited assumption instead of recording it', async () => {
       // The citation bar, end to end. An unverifiable assumption in the auditor's hands is
       // worse than no assumption, because it costs a cold read and cannot be checked.
-      const { meeseeksDir } = runWithBuilderSaying(
+      const { meeseeksDir } = await runWithBuilderSaying(
         'Added the handler.\n\n```json\n' + JSON.stringify({ assumptions: [{ assumed: 'probably json' }] }) + '\n```\n',
       );
       assert.deepEqual(readAssumptions(meeseeksDir).entries, []);
     });
 
-    it('ships normally when the builder says nothing about assumptions', () => {
+    it('ships normally when the builder says nothing about assumptions', async () => {
       // The common case, and the benign neighbour: a contract that punished silence would
       // fail every iteration that had nothing ambiguous to report.
-      const { outcome, meeseeksDir } = runWithBuilderSaying('Added the handler.');
+      const { outcome, meeseeksDir } = await runWithBuilderSaying('Added the handler.');
       assert.equal(outcome.state, 'SHIPPED');
       assert.deepEqual(readAssumptions(meeseeksDir).entries, []);
     });
 
-    it('fails the iteration on a malformed block rather than treating it as silence', () => {
+    it('fails the iteration on a malformed block rather than treating it as silence', async () => {
       // Unparseable output is a failure everywhere else here and is one here. A block that
       // will not parse is not evidence that nothing was assumed.
-      const { outcome } = runWithBuilderSaying('Added it.\n\n```json\n{"assumptions": [ }\n```\n');
+      const { outcome } = await runWithBuilderSaying('Added it.\n\n```json\n{"assumptions": [ }\n```\n');
       assert.notEqual(outcome.state, 'SHIPPED');
     });
 
-    it('never calls a reviewer on an iteration whose assumptions block was malformed', () => {
+    it('never calls a reviewer on an iteration whose assumptions block was malformed', async () => {
       // The iteration failed before it was judgeable. Paying for a panel on it would spend a
       // cold read on output the driver already knows it cannot trust.
       const root = makeTempDir();
       let reviewed = 0;
-      driveRun({
+      await driveRun({
         config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
         meeseeksDir: path.join(root, '.meeseeks'),
         rootDir: root,
@@ -2163,11 +2163,11 @@ describe('driveRun', () => {
      * @param {import('../scripts/pins.mjs').PinStore} pins
      * @param {Partial<import('../scripts/driver.mjs').Effects>} overrides
      */
-    function runWithPins(pins, overrides) {
+    async function runWithPins(pins, overrides) {
       const root = makeTempDir();
       const meeseeksDir = path.join(root, '.meeseeks');
       writePins(meeseeksDir, pins);
-      const outcome = driveRun({
+      const outcome = await driveRun({
         config: { ...defaultConfig(), maxIterations: 2, stallLimit: 3, reviewers: ['correctness'] },
         meeseeksDir,
         rootDir: root,
@@ -2203,27 +2203,27 @@ describe('driveRun', () => {
     const activePin = () =>
       pinSecurityElement({ id: 'DoD-2-security', evidence: 'src/a.ts:1', snippet: GUARD, iteration: 1 });
 
-    it('does not ship while an element is quarantined, even on a unanimous panel', () => {
+    it('does not ship while an element is quarantined, even on a unanimous panel', async () => {
       // Without this, quarantine is a word. With it, a recorded loss of protection is
       // something the run has to resolve rather than absorb.
       const pins = { version: 1, security: [quarantinePin(activePin(), 'could not tell')], requirements: [] };
-      const { outcome } = runWithPins(pins, { readSource: () => GUARD, securityEscalation: () => escalationSaying('unknown') });
+      const { outcome } = await runWithPins(pins, { readSource: () => GUARD, securityEscalation: () => escalationSaying('unknown') });
       assert.notEqual(outcome.state, 'SHIPPED');
     });
 
-    it('ships once the quarantined element is gone from the store', () => {
+    it('ships once the quarantined element is gone from the store', async () => {
       // The benign neighbour. A block that never lifts is a stall, not a gate.
       const pins = { version: 1, security: [activePin()], requirements: [] };
-      const { outcome } = runWithPins(pins, { readSource: () => GUARD, securityEscalation: () => escalationSaying('unknown') });
+      const { outcome } = await runWithPins(pins, { readSource: () => GUARD, securityEscalation: () => escalationSaying('unknown') });
       assert.equal(outcome.state, 'SHIPPED');
     });
 
-    it('never asks a reviewer while the cheap check still finds the guard', () => {
+    it('never asks a reviewer while the cheap check still finds the guard', async () => {
       // The economic argument. Re-verification runs every iteration; escalation is the
       // exception, not the routine.
       let asked = 0;
       const pins = { version: 1, security: [activePin()], requirements: [] };
-      runWithPins(pins, {
+      await runWithPins(pins, {
         readSource: () => `some other code\n${GUARD}\n`,
         securityEscalation: () => {
           asked += 1;
@@ -2233,10 +2233,10 @@ describe('driveRun', () => {
       assert.equal(asked, 0);
     });
 
-    it('escalates rather than resetting when the guard cannot be found', () => {
+    it('escalates rather than resetting when the guard cannot be found', async () => {
       let asked = 0;
       const pins = { version: 1, security: [activePin()], requirements: [] };
-      runWithPins(pins, {
+      await runWithPins(pins, {
         readSource: () => 'the guard is gone\n',
         securityEscalation: () => {
           asked += 1;
@@ -2246,9 +2246,9 @@ describe('driveRun', () => {
       assert.equal(asked, 1);
     });
 
-    it('re-pins at the new location when the reviewer says it moved, and does not ship-block', () => {
+    it('re-pins at the new location when the reviewer says it moved, and does not ship-block', async () => {
       const pins = { version: 1, security: [activePin()], requirements: [] };
-      const { outcome, meeseeksDir } = runWithPins(pins, {
+      const { outcome, meeseeksDir } = await runWithPins(pins, {
         readSource: (/** @type {string} */ file) => (file === 'src/moved.ts' ? GUARD : 'gone'),
         securityEscalation: () => escalationSaying('moved', { evidence: 'src/moved.ts:3', snippet: GUARD }),
       });
@@ -2257,9 +2257,9 @@ describe('driveRun', () => {
       assert.equal(outcome.state, 'SHIPPED');
     });
 
-    it('quarantines, and records why, when the reviewer cannot tell', () => {
+    it('quarantines, and records why, when the reviewer cannot tell', async () => {
       const pins = { version: 1, security: [activePin()], requirements: [] };
-      const { meeseeksDir } = runWithPins(pins, {
+      const { meeseeksDir } = await runWithPins(pins, {
         readSource: () => 'gone',
         securityEscalation: () => escalationSaying('unknown'),
       });
@@ -2268,23 +2268,23 @@ describe('driveRun', () => {
       assert.equal(stored.reason, 'because');
     });
 
-    it('treats an unparseable escalation as unknown, never as a removal', () => {
+    it('treats an unparseable escalation as unknown, never as a removal', async () => {
       // Fail-closed here is quarantine, not a hard reset. An unreadable answer is not
       // evidence a guard was deleted, and resetting on one hands the builder an objective
       // it cannot satisfy.
       const pins = { version: 1, security: [activePin()], requirements: [] };
-      const { meeseeksDir } = runWithPins(pins, {
+      const { meeseeksDir } = await runWithPins(pins, {
         readSource: () => 'gone',
         securityEscalation: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: 'I am not sure, sorry.' }),
       });
       assert.equal(readPins(meeseeksDir).security[0].status, 'quarantined');
     });
 
-    it('aborts rather than carrying pins forward unverified when nothing can read the tree', () => {
+    it('aborts rather than carrying pins forward unverified when nothing can read the tree', async () => {
       // A run that cannot re-verify its pins is a run with no security monotonicity at all.
       // Continuing would report the same clean pass as a run that checked everything.
       const pins = { version: 1, security: [activePin()], requirements: [] };
-      const { outcome } = runWithPins(pins, {});
+      const { outcome } = await runWithPins(pins, {});
       assert.equal(outcome.state, 'ABORTED');
     });
   });
@@ -2313,8 +2313,8 @@ describe('driveRun', () => {
     ],
   };
 
-  it('withholds the ship when nothing has shown the suite can fail', () => {
-    const { outcome } = run({
+  it('withholds the ship when nothing has shown the suite can fail', async () => {
+    const { outcome } = await run({
       readTestReports: () => [ONE_PASSING],
       gates: () => ({ ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }] }),
     });
@@ -2327,10 +2327,10 @@ describe('driveRun', () => {
   // already-correct tree there is no such line, so run 9 spent 7.5M tokens and about $6 on an
   // iteration with no legal move. The driver runs the gate itself instead.
   describe('ship-time mutation, run by the driver', () => {
-    it('ships when it proves the suite, without spending an iteration on theatre', () => {
+    it('ships when it proves the suite, without spending an iteration on theatre', async () => {
       /** @type {string[]} */
       const lines = [];
-      const { outcome } = run({
+      const { outcome } = await run({
         readTestReports: () => [ONE_PASSING],
         gates: () => ({ ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }] }),
         log: (line) => lines.push(line),
@@ -2347,10 +2347,10 @@ describe('driveRun', () => {
       );
     });
 
-    it('withholds the ship when it fails, and carries the real reason rather than the generic one', () => {
+    it('withholds the ship when it fails, and carries the real reason rather than the generic one', async () => {
       /** @type {string[]} */
       const lines = [];
-      const { outcome } = run({
+      const { outcome } = await run({
         readTestReports: () => [ONE_PASSING],
         gates: () => ({ ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }] }),
         log: (line) => lines.push(line),
@@ -2364,8 +2364,8 @@ describe('driveRun', () => {
       );
     });
 
-    it('withholds when the effect is absent, because an absent check is not a passing one', () => {
-      const { outcome } = run({
+    it('withholds when the effect is absent, because an absent check is not a passing one', async () => {
+      const { outcome } = await run({
         readTestReports: () => [ONE_PASSING],
         gates: () => ({ ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }] }),
       });
@@ -2373,15 +2373,15 @@ describe('driveRun', () => {
     });
   });
 
-  it('ships once the mutation gate has proven the suite', () => {
+  it('ships once the mutation gate has proven the suite', async () => {
     // The neighbour that keeps this from being a way to never ship: the default harness carries
     // a passing mutation gate, and that is the ordinary condition.
-    assert.equal(run({ readTestReports: () => [ONE_PASSING] }).outcome.state, 'SHIPPED');
+    assert.equal((await run({ readTestReports: () => [ONE_PASSING] })).outcome.state, 'SHIPPED');
   });
 
-  it('ships when the gates pass, nothing regressed and the panel is unanimous', () => {
+  it('ships when the gates pass, nothing regressed and the panel is unanimous', async () => {
     let shipped = 0;
-    const { outcome } = run({
+    const { outcome } = await run({
       readTestReports: () => [ONE_PASSING],
       ship: () => {
         shipped += 1;
@@ -2391,14 +2391,14 @@ describe('driveRun', () => {
     assert.equal(shipped, 1);
   });
 
-  it('records the passing tests in the ratchet when it ships', () => {
-    const { outcome, meeseeksDir } = run({ readTestReports: () => [ONE_PASSING] });
+  it('records the passing tests in the ratchet when it ships', async () => {
+    const { outcome, meeseeksDir } = await run({ readTestReports: () => [ONE_PASSING] });
     assert.deepStrictEqual(outcome.passing, ['test/a.test.js::works']);
     assert.equal(loadState(meeseeksDir).lastGoodCommit, 'commit1');
   });
 
-  it('does not ship when a reviewer withholds evidence', () => {
-    const { outcome } = run({
+  it('does not ship when a reviewer withholds evidence', async () => {
+    const { outcome } = await run({
       readTestReports: () => [ONE_PASSING],
       review: () => ({
         ok: true,
@@ -2411,17 +2411,17 @@ describe('driveRun', () => {
     assert.notEqual(outcome.state, 'SHIPPED');
   });
 
-  it('does not ship when a reviewer process dies', () => {
-    const { outcome } = run({
+  it('does not ship when a reviewer process dies', async () => {
+    const { outcome } = await run({
       readTestReports: () => [ONE_PASSING],
       review: () => ({ ok: false, costUsd: 0, tokens: 0, raw: 'segfault', text: '' }),
     });
     assert.notEqual(outcome.state, 'SHIPPED');
   });
 
-  it('never calls the reviewer when the gates failed', () => {
+  it('never calls the reviewer when the gates failed', async () => {
     let reviews = 0;
-    run(
+    await run(
       {
         readTestReports: () => [ONE_PASSING],
         gates: () => ({ ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'boom' }] }),
@@ -2435,14 +2435,14 @@ describe('driveRun', () => {
     assert.equal(reviews, 0, 'gates are free and run first; a panel of cold reads is not');
   });
 
-  it('names the failing gates even when the ratchet resets in the same iteration', () => {
+  it('names the failing gates even when the ratchet resets in the same iteration', async () => {
     // Dogfood run 6's operator saw `regression:` followed by 75 test names and not one word
     // about a failing gate, because the reset path `continue`s before the gate-failure branch
     // that does the reporting. The unit gate had collected nothing; the loop knew and did not
     // say. A diagnosis unreachable on the path that needs it is not a diagnosis.
     /** @type {string[]} */
     const logs = [];
-    run(
+    await run(
       {
         log: (line) => logs.push(line),
         gates: () => ({
@@ -2462,8 +2462,8 @@ describe('driveRun', () => {
     assert.equal(logs.some((line) => line.startsWith('regression:')), true, 'expected a reset too');
   });
 
-  it('hard-resets and writes a blooper when a passing test disappears', () => {
-    const { outcome, meeseeksDir } = run(
+  it('hard-resets and writes a blooper when a passing test disappears', async () => {
+    const { outcome, meeseeksDir } = await run(
       { readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE] },
       { maxIterations: 2 },
       ['test/a.test.js::works'],
@@ -2477,14 +2477,14 @@ describe('driveRun', () => {
     assert.notEqual(outcome.state, 'SHIPPED');
   });
 
-  it('says so out loud when the same test regresses a second time', () => {
+  it('says so out loud when the same test regresses a second time', async () => {
     // The wiring, not the string. `repeatedRegressionNote` is unit-tested above and that proves
     // nothing about whether the loop ever calls it — which is the shape of the guard defect,
     // correct for eleven versions and never invoked. Two iterations, the same missing id both
     // times, is the `ship1` position that made this necessary.
     /** @type {string[]} */
     const logs = [];
-    run(
+    await run(
       { log: (line) => logs.push(line), readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE] },
       { maxIterations: 2 },
       ['test/a.test.js::works'],
@@ -2495,10 +2495,10 @@ describe('driveRun', () => {
     assert.equal(repeats[0].includes('may not rename or delete it'), true, repeats[0]);
   });
 
-  it('does not cry repeat on a single reset, however loud the first one was', () => {
+  it('does not cry repeat on a single reset, however loud the first one was', async () => {
     /** @type {string[]} */
     const logs = [];
-    run(
+    await run(
       { log: (line) => logs.push(line), readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE] },
       { maxIterations: 1 },
       ['test/a.test.js::works'],
@@ -2507,7 +2507,7 @@ describe('driveRun', () => {
     assert.equal(logs.some((line) => line.startsWith('repeated regression:')), false, JSON.stringify(logs));
   });
 
-  it('really restores the working tree on a regression, not just the log line', () => {
+  it('really restores the working tree on a regression, not just the log line', async () => {
     // The blooper log and the ratchet state can both look right while the reset never
     // happened. This asserts the file on disk went back to the last good commit.
     const root = makeTempDir();
@@ -2527,7 +2527,7 @@ describe('driveRun', () => {
       lastGoodCommit: git(['rev-parse', 'HEAD']),
     });
 
-    driveRun({
+    await driveRun({
       config: { ...defaultConfig(), maxIterations: 1, reviewers: ['correctness'] },
       meeseeksDir,
       rootDir: root,
@@ -2545,8 +2545,8 @@ describe('driveRun', () => {
     assert.equal(readFileSync(path.join(root, 'app.txt'), 'utf8'), 'good\n');
   });
 
-  it('never loses a ratchet id to a reset', () => {
-    const { meeseeksDir } = run(
+  it('never loses a ratchet id to a reset', async () => {
+    const { meeseeksDir } = await run(
       { readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE] },
       { maxIterations: 2 },
       ['test/a.test.js::works'],
@@ -2554,8 +2554,8 @@ describe('driveRun', () => {
     assert.deepStrictEqual(loadState(meeseeksDir).passing, ['test/a.test.js::works']);
   });
 
-  it('ends BUDGET when the iteration limit is reached', () => {
-    const { outcome } = run(
+  it('ends BUDGET when the iteration limit is reached', async () => {
+    const { outcome } = await run(
       {
         readTestReports: () => [ONE_PASSING],
         review: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: '{"requirements":[]}' }),
@@ -2566,8 +2566,8 @@ describe('driveRun', () => {
     assert.equal(outcome.iterations, 2);
   });
 
-  it('ends BUDGET when the token ceiling is reached', () => {
-    const { outcome } = run(
+  it('ends BUDGET when the token ceiling is reached', async () => {
+    const { outcome } = await run(
       {
         readTestReports: () => [ONE_PASSING],
         review: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: '{"requirements":[]}' }),
@@ -2577,8 +2577,8 @@ describe('driveRun', () => {
     assert.equal(outcome.state, 'BUDGET');
   });
 
-  it('ends STALLED when nothing improves', () => {
-    const { outcome } = run(
+  it('ends STALLED when nothing improves', async () => {
+    const { outcome } = await run(
       {
         readTestReports: () => [ONE_PASSING],
         review: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: '{"requirements":[]}' }),
@@ -2588,20 +2588,20 @@ describe('driveRun', () => {
     assert.equal(outcome.state, 'STALLED');
   });
 
-  it('ends ABORTED when the builder process fails', () => {
-    const { outcome } = run({ build: () => ({ ok: false, text: '', costUsd: 0, tokens: 0, raw: 'no auth' }) });
+  it('ends ABORTED when the builder process fails', async () => {
+    const { outcome } = await run({ build: () => ({ ok: false, text: '', costUsd: 0, tokens: 0, raw: 'no auth' }) });
     assert.equal(outcome.state, 'ABORTED');
     assert.equal(outcome.reason.includes('no auth'), true);
   });
 
-  it('ends ABORTED when the test report cannot be read, rather than assuming nothing regressed', () => {
-    const { outcome } = run({ readTestReports: () => [{ nonsense: true }] });
+  it('ends ABORTED when the test report cannot be read, rather than assuming nothing regressed', async () => {
+    const { outcome } = await run({ readTestReports: () => [{ nonsense: true }] });
     assert.equal(outcome.state, 'ABORTED');
     assert.equal(outcome.reason.includes('test report could not be read'), true);
   });
 
-  it('ends ABORTED when the reality check says the PRD is unbuildable', () => {
-    const { outcome, meeseeksDir } = run(
+  it('ends ABORTED when the reality check says the PRD is unbuildable', async () => {
+    const { outcome, meeseeksDir } = await run(
       {
         readTestReports: () => [ONE_PASSING],
         review: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: '{"requirements":[]}' }),
@@ -2622,8 +2622,8 @@ describe('driveRun', () => {
     );
   });
 
-  it('carries on when the reality check says the PRD is buildable', () => {
-    const { outcome } = run(
+  it('carries on when the reality check says the PRD is buildable', async () => {
+    const { outcome } = await run(
       {
         readTestReports: () => [ONE_PASSING],
         review: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: '{"requirements":[]}' }),
@@ -2634,10 +2634,10 @@ describe('driveRun', () => {
     assert.equal(outcome.state, 'BUDGET');
   });
 
-  it('hands the failing gate names back in the next brief', () => {
+  it('hands the failing gate names back in the next brief', async () => {
     /** @type {string[]} */
     const briefs = [];
-    run(
+    await run(
       {
         readTestReports: () => [ONE_PASSING],
         gates: () => ({ ok: false, results: [{ name: 'typecheck', ok: false, status: 1, detail: 'TS2339' }] }),
@@ -2654,14 +2654,14 @@ describe('driveRun', () => {
     assert.equal(briefs[1].includes('### Failing gates'), true);
   });
 
-  it('re-asks what the project is on every iteration, and puts the answer in the brief', () => {
+  it('re-asks what the project is on every iteration, and puts the answer in the brief', async () => {
     // Not resolved once and reused: the declared half is fixed for the run but the detected
     // half describes the tree, and the builder changes the tree every iteration. A brief
     // compiled from a stale answer would describe the project as it was before it existed.
     /** @type {string[]} */
     const briefs = [];
     let asked = 0;
-    run(
+    await run(
       {
         readTestReports: () => [ONE_PASSING],
         gates: () => ({ ok: false, results: [{ name: 'typecheck', ok: false, status: 1, detail: 'TS2339' }] }),
@@ -2682,12 +2682,12 @@ describe('driveRun', () => {
     assert.equal(briefs[1].includes('- persistent-storage'), true);
   });
 
-  it('compiles a brief with no capability section when nothing supplies one', () => {
+  it('compiles a brief with no capability section when nothing supplies one', async () => {
     // `capabilities` is an optional effect. A driver assembled without it must still produce
     // a brief rather than throwing on an absent function.
     /** @type {string[]} */
     const briefs = [];
-    run(
+    await run(
       {
         readTestReports: () => [ONE_PASSING],
         build: (brief) => {
@@ -2700,13 +2700,13 @@ describe('driveRun', () => {
     assert.equal(briefs[0].includes('What this project is'), false);
   });
 
-  it('stops at the first child past the ceiling, rather than finishing the iteration', () => {
+  it('stops at the first child past the ceiling, rather than finishing the iteration', async () => {
     // Observed: a run configured for 1000000 ended `2100900 of 1000000`, because the ceiling
     // was only read between iterations and a child's cost is unknown until it returns.
     // One builder child at 900 against a ceiling of 500 must end the run then and there —
     // the reviewers that would have followed it in the same iteration never run.
     let reviews = 0;
-    const { outcome } = run(
+    const { outcome } = await run(
       {
         // A passing report matters here: without one the run takes the no-tests path and
         // never reaches the panel anyway, so the test would pass with or without the guard.
@@ -2725,14 +2725,14 @@ describe('driveRun', () => {
     assert.equal(outcome.spentTokens, 900);
   });
 
-  it('names the runner in the no-tests brief, because a green npm test hides the real cause', () => {
+  it('names the runner in the no-tests brief, because a green npm test hides the real cause', async () => {
     // Observed against a real run: the builder wrote a correct `node:test` suite, `npm test`
     // passed, and `npx vitest run` collected zero tests from it. Told only that no test
     // passed, a builder rewrites tests that were never wrong. The runner is the fact it
     // cannot discover on its own, so the brief has to carry it.
     /** @type {string[]} */
     const briefs = [];
-    run(
+    await run(
       {
         readTestReports: () => [{ numTotalTests: 0, testResults: [] }],
         build: (brief) => {
@@ -2753,10 +2753,10 @@ describe('driveRun', () => {
     assert.equal(briefs[1].includes('npx vitest run'), false, 'the runner is still hardcoded');
   });
 
-  it('hands the regression back in the next brief, above everything else', () => {
+  it('hands the regression back in the next brief, above everything else', async () => {
     /** @type {string[]} */
     const briefs = [];
-    run(
+    await run(
       {
         readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE],
         build: (brief) => {
@@ -2772,10 +2772,10 @@ describe('driveRun', () => {
     assert.equal(briefs[1].includes('outrank everything else'), true);
   });
 
-  it('archives a brief for every iteration', () => {
+  it('archives a brief for every iteration', async () => {
     // The brief is the only record of what the builder was actually asked for. A run that
     // ends badly is diagnosed from these; reconstructing them from what it did is guesswork.
-    const { meeseeksDir } = run(
+    const { meeseeksDir } = await run(
       {
         readTestReports: () => [ONE_PASSING],
         gates: () => ({ ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'no' }] }),
@@ -2789,10 +2789,10 @@ describe('driveRun', () => {
     ]);
   });
 
-  it('asks each reviewer only about the ids it owns', () => {
+  it('asks each reviewer only about the ids it owns', async () => {
     /** @type {[string, string[]][]} */
     const asked = [];
-    run(
+    await run(
       {
         readTestReports: () => [ONE_PASSING],
         review: (reviewer, ids) => {
@@ -2819,14 +2819,14 @@ describe('driveRun', () => {
     ]);
   });
 
-  it('extracts a lesson only after a failure resisted one repair and fell to another', () => {
+  it('extracts a lesson only after a failure resisted one repair and fell to another', async () => {
     // The evidence pattern from DESIGN.md §13.8, driven through the real loop: lint fails,
     // a repair does not fix it, a different repair does. Nothing asks the builder what it
     // learned; the driver notices the shape and pays for one cold extraction.
     let iteration = 0;
     /** @type {string[]} */
     const extractions = [];
-    const { meeseeksDir } = run(
+    const { meeseeksDir } = await run(
       {
         readTestReports: () => [ONE_PASSING],
         gates: () => {
@@ -2883,9 +2883,9 @@ describe('driveRun', () => {
     assert.equal(later.includes('Read the playwright config'), true, 'the stored lesson never reached a brief');
   });
 
-  it('does not let a broken lesson extractor end an otherwise healthy run', () => {
+  it('does not let a broken lesson extractor end an otherwise healthy run', async () => {
     // Lesson memory is advisory. Nothing it does may decide a run.
-    const { outcome } = run(
+    const { outcome } = await run(
       {
         readTestReports: () => [ONE_PASSING],
         extractLesson: () => {
@@ -2897,11 +2897,11 @@ describe('driveRun', () => {
     assert.equal(outcome.state, 'SHIPPED');
   });
 
-  it('races only once the loop has stalled, and skips the ordinary build when a winner lands', () => {
+  it('races only once the loop has stalled, and skips the ordinary build when a winner lands', async () => {
     let builds = 0;
     /** @type {number[]} */
     const raced = [];
-    run(
+    await run(
       {
         // Nothing passes, so no iteration improves anything and the stall counter climbs.
         readTestReports: () => [{ numTotalTests: 0, testResults: [] }],
@@ -2926,9 +2926,9 @@ describe('driveRun', () => {
     assert.equal(builds, 2, 'the ordinary builder ran during an iteration a race had already won');
   });
 
-  it('never races while racing is disabled, however long the loop stalls', () => {
+  it('never races while racing is disabled, however long the loop stalls', async () => {
     let raced = 0;
-    run(
+    await run(
       {
         readTestReports: () => [{ numTotalTests: 0, testResults: [] }],
         gates: () => ({ ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'no' }] }),
@@ -2942,9 +2942,9 @@ describe('driveRun', () => {
     assert.equal(raced, 0);
   });
 
-  it('falls back to the ordinary builder when a race produces no winner', () => {
+  it('falls back to the ordinary builder when a race produces no winner', async () => {
     let builds = 0;
-    run(
+    await run(
       {
         readTestReports: () => [{ numTotalTests: 0, testResults: [] }],
         gates: () => ({ ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'no' }] }),
@@ -2959,10 +2959,10 @@ describe('driveRun', () => {
     assert.equal(builds, 3, 'a race that landed nothing should still leave the iteration a builder');
   });
 
-  it('refuses to start when no reviewer owns a required id', () => {
+  it('refuses to start when no reviewer owns a required id', async () => {
     // Before the panel, not during it. An unowned id would ship having never been judged,
     // and discovering that after paying for three whole-repository reads is too late.
-    assert.throws(
+    await assert.rejects(
       () =>
         driveRun({
           config: { ...defaultConfig(), reviewers: ['security'] },
@@ -2976,10 +2976,10 @@ describe('driveRun', () => {
     );
   });
 
-  it('lands on BUDGET, not ABORTED, when the builder runs out of allowance', () => {
+  it('lands on BUDGET, not ABORTED, when the builder runs out of allowance', async () => {
     /** @type {string[]} */
     const commits = [];
-    const { outcome } = run({
+    const { outcome } = await run({
       readTestReports: () => [ONE_PASSING],
       build: () => ({ ok: false, text: '', costUsd: 0.2, tokens: 5, raw: 'rate limit reached', exhausted: true }),
       commit: (message) => {
@@ -2993,11 +2993,11 @@ describe('driveRun', () => {
     assert.equal(commits[0].includes('work in progress'), true);
   });
 
-  it('commits the tree even when the builder failed for an ordinary reason', () => {
+  it('commits the tree even when the builder failed for an ordinary reason', async () => {
     // Leaving it dirty strands the run: the next preflight refuses a dirty tree.
     /** @type {string[]} */
     const commits = [];
-    const { outcome } = run({
+    const { outcome } = await run({
       build: () => ({ ok: false, text: '', costUsd: 0, tokens: 0, raw: 'no auth' }),
       commit: (message) => {
         commits.push(message);
@@ -3008,11 +3008,11 @@ describe('driveRun', () => {
     assert.equal(commits.length, 1);
   });
 
-  it('stops instead of scoring a dead reviewer as a failing audit', () => {
+  it('stops instead of scoring a dead reviewer as a failing audit', async () => {
     // Scoring it would hand the builder "output could not be parsed" as though it were a
     // finding, and burn every remaining iteration against a wall that will not move.
     let reviews = 0;
-    const { outcome } = run(
+    const { outcome } = await run(
       {
         readTestReports: () => [ONE_PASSING],
         review: () => {
@@ -3027,8 +3027,8 @@ describe('driveRun', () => {
     assert.equal(outcome.iterations, 0, 'must not burn iterations against the wall');
   });
 
-  it('leaves lastGoodCommit alone when it lands early, so the ratchet stays trustworthy', () => {
-    const { meeseeksDir } = run(
+  it('leaves lastGoodCommit alone when it lands early, so the ratchet stays trustworthy', async () => {
+    const { meeseeksDir } = await run(
       {
         readTestReports: () => [ONE_PASSING],
         review: () => ({ ok: false, costUsd: 0, tokens: 0, raw: 'rate limit', text: '', exhausted: true }),
@@ -3041,16 +3041,16 @@ describe('driveRun', () => {
     assert.deepStrictEqual(state.passing, ['test/a.test.js::works']);
   });
 
-  it('still reports what the run spent when it lands early', () => {
-    const { outcome } = run({
+  it('still reports what the run spent when it lands early', async () => {
+    const { outcome } = await run({
       build: () => ({ ok: false, text: '', costUsd: 0.42, tokens: 7, raw: 'rate limit', exhausted: true }),
     });
     assert.equal(outcome.costUsd, 0.42);
     assert.equal(outcome.spentTokens, 7);
   });
 
-  it('accumulates the real cost and tokens the children reported', () => {
-    const { outcome } = run(
+  it('accumulates the real cost and tokens the children reported', async () => {
+    const { outcome } = await run(
       {
         readTestReports: () => [ONE_PASSING],
         build: () => ({ ok: true, text: '', costUsd: 0.5, tokens: 40, raw: '' }),
@@ -3086,13 +3086,13 @@ describe('driveRun', () => {
 });
 
 describe('zero ceilings inside the loop', () => {
-  it('does not end BUDGET mid-iteration either, which is where the first fix missed', () => {
+  it('does not end BUDGET mid-iteration either, which is where the first fix missed', async () => {
     // 0.128.0 fixed shouldContinue and not the mid-iteration charge, so with both ceilings at
     // zero the first charged child satisfied spent >= 0 and case J2 died on iteration 1 with
     // "cost ceiling reached: $4.38 of $0". This drives the real loop: a builder that reports
     // real cost, ceilings at zero, and the run must reach its iteration cap rather than BUDGET
     // on the first charge.
-    const { outcome } = run(
+    const { outcome } = await run(
       { build: () => ({ ok: true, text: 'done', costUsd: 4.38, tokens: 2_000_000, raw: '{}' }) },
       { maxIterations: 2, tokenCeiling: 0, costCeiling: 0 },
       [],
@@ -3104,11 +3104,11 @@ describe('zero ceilings inside the loop', () => {
 
   describe('the ratchet banks ids before an iteration is fully green', () => {
 
-    it('records passing ids when the unit gate passed but another gate failed', () => {
+    it('records passing ids when the unit gate passed but another gate failed', async () => {
       // Case I held 71 passing tests across 8 iterations and never wrote state.json, because
       // saveState was reachable only after the panel. A regression in any of those 71 would have
       // gone unnoticed for the whole run.
-      const { meeseeksDir: dir } = run(
+      const { meeseeksDir: dir } = await run(
         {
           gates: () => ({
             ok: false,
@@ -3133,10 +3133,10 @@ describe('zero ceilings inside the loop', () => {
       assert.equal(state.passing.length > 0, true, 'nothing was banked despite a passing unit gate');
     });
 
-    it('banks nothing when the unit gate itself failed', () => {
+    it('banks nothing when the unit gate itself failed', async () => {
       // The deny path. A failing unit gate is the case where the report cannot be trusted, and
       // banking from it would ratchet in ids the suite never really proved.
-      const { meeseeksDir: dir } = run(
+      const { meeseeksDir: dir } = await run(
         {
           gates: () => ({
             ok: false,
@@ -3400,13 +3400,13 @@ describe('staticGates', () => {
 
   const PROSE = 'x'.repeat(400);
 
-  it('fails the evidence gates on an empty repository', () => {
+  it('fails the evidence gates on an empty repository', async () => {
     // gate-integrity is the exception, and deliberately: an empty repository has no
     // package.json, so nothing has been weakened yet. It is not standing there alone -
     // the `lint` and `types` command gates already fail on a repository with no scripts,
     // and reporting the same absence twice under two names would be noise, not rigour.
     assert.deepStrictEqual(
-      staticGates(repoWith({})).map((gate) => [gate.name, gate.ok]),
+      (await staticGates(repoWith({}))).map((gate) => [gate.name, gate.ok]),
       [
         ['ci', false],
         ['docs', false],
@@ -3416,9 +3416,9 @@ describe('staticGates', () => {
     );
   });
 
-  it('fails gate-integrity when the repository stubs out a gate it is judged by', () => {
+  it('fails gate-integrity when the repository stubs out a gate it is judged by', async () => {
     const dir = repoWith({ 'package.json': JSON.stringify({ scripts: { lint: 'true' } }) });
-    const integrity = staticGates(dir).find((gate) => gate.name === 'gate-integrity');
+    const integrity = (await staticGates(dir)).find((gate) => gate.name === 'gate-integrity');
     assert.equal(integrity?.ok, false);
     assert.equal(integrity?.detail, 'npm script "lint" runs nothing: "true"');
   });
@@ -3436,61 +3436,61 @@ describe('staticGates', () => {
     '      - run: npx playwright test',
   ].join('\n');
 
-  it('passes ci when a workflow runs the whole validation set', () => {
-    const gate = staticGates(repoWith({ '.github/workflows/ci.yml': REAL_WORKFLOW })).find((g) => g.name === 'ci');
+  it('passes ci when a workflow runs the whole validation set', async () => {
+    const gate = (await staticGates(repoWith({ '.github/workflows/ci.yml': REAL_WORKFLOW }))).find((g) => g.name === 'ci');
     assert.equal(gate?.ok, true);
     assert.equal(gate?.detail.includes('build'), true);
   });
 
-  it('fails ci for a workflow that exists but runs nothing', () => {
+  it('fails ci for a workflow that exists but runs nothing', async () => {
     // The presence check this replaced passed on exactly this file. A builder under
     // pressure to satisfy a gate called `ci` writes the smallest file that quiets it.
-    const gate = staticGates(repoWith({ '.github/workflows/ci.yml': 'on: push' })).find((g) => g.name === 'ci');
+    const gate = (await staticGates(repoWith({ '.github/workflows/ci.yml': 'on: push' }))).find((g) => g.name === 'ci');
     assert.equal(gate?.ok, false);
     assert.equal(gate?.detail.includes('never run'), true);
   });
 
-  it('fails ci when the workflow runs some commands but not all of them', () => {
+  it('fails ci when the workflow runs some commands but not all of them', async () => {
     const partial = ['on: push', 'jobs:', '  check:', '    steps:', '      - run: npm run lint'].join('\n');
-    const gate = staticGates(repoWith({ '.github/workflows/ci.yml': partial })).find((g) => g.name === 'ci');
+    const gate = (await staticGates(repoWith({ '.github/workflows/ci.yml': partial }))).find((g) => g.name === 'ci');
     assert.equal(gate?.ok, false);
     assert.equal(gate?.detail.includes('types'), true, `expected the missing commands named, got ${gate?.detail}`);
   });
 
-  it('fails ci when there is no workflow at all', () => {
-    const gate = staticGates(repoWith({ '.github/workflows/notes.txt': 'x' })).find((g) => g.name === 'ci');
+  it('fails ci when there is no workflow at all', async () => {
+    const gate = (await staticGates(repoWith({ '.github/workflows/notes.txt': 'x' }))).find((g) => g.name === 'ci');
     assert.equal(gate?.ok, false);
     assert.equal(gate?.detail, 'no workflow under .github/workflows');
   });
 
-  it('reads the validation set across several workflow files', () => {
+  it('reads the validation set across several workflow files', async () => {
     // Splitting lint and tests across two workflows is normal, and is not a failure.
     const dir = repoWith({
       '.github/workflows/lint.yml': 'steps:\n  - run: npm run lint\n  - run: npm run typecheck',
       '.github/workflows/test.yml': 'steps:\n  - run: npm run build\n  - run: npx vitest run\n  - run: npx playwright test',
     });
-    assert.equal(staticGates(dir).find((gate) => gate.name === 'ci')?.ok, true);
+    assert.equal((await staticGates(dir)).find((gate) => gate.name === 'ci')?.ok, true);
   });
 
-  it('fails docs when a required document is a stub rather than absent', () => {
+  it('fails docs when a required document is a stub rather than absent', async () => {
     const dir = repoWith({ 'README.md': PROSE, 'docs/api-contract.md': '# TODO\n' });
-    const docs = staticGates(dir).find((gate) => gate.name === 'docs');
+    const docs = (await staticGates(dir)).find((gate) => gate.name === 'docs');
     assert.equal(docs?.ok, false);
     assert.equal(docs?.detail.includes('docs/api-contract.md'), true);
   });
 
-  it('passes docs when both documents are substantial', () => {
+  it('passes docs when both documents are substantial', async () => {
     const dir = repoWith({ 'README.md': PROSE, 'docs/api-contract.md': PROSE });
-    assert.equal(staticGates(dir).find((gate) => gate.name === 'docs')?.ok, true);
+    assert.equal((await staticGates(dir)).find((gate) => gate.name === 'docs')?.ok, true);
   });
 
-  it('requires both structured logging and a health endpoint for observability', () => {
+  it('requires both structured logging and a health endpoint for observability', async () => {
     const loggerOnly = repoWith({ 'src/app.ts': 'logger.info("up");' });
     const healthOnly = repoWith({ 'src/app.ts': 'app.get("/health", handler);' });
     const both = repoWith({ 'src/app.ts': 'logger.info("up");\napp.get("/healthz", handler);' });
-    assert.equal(staticGates(loggerOnly).find((gate) => gate.name === 'observability')?.ok, false);
-    assert.equal(staticGates(healthOnly).find((gate) => gate.name === 'observability')?.ok, false);
-    assert.equal(staticGates(both).find((gate) => gate.name === 'observability')?.ok, true);
+    assert.equal((await staticGates(loggerOnly)).find((gate) => gate.name === 'observability')?.ok, false);
+    assert.equal((await staticGates(healthOnly)).find((gate) => gate.name === 'observability')?.ok, false);
+    assert.equal((await staticGates(both)).find((gate) => gate.name === 'observability')?.ok, true);
   });
 
   it('reports which validation commands a workflow covers', () => {
@@ -3501,7 +3501,7 @@ describe('staticGates', () => {
     assert.deepStrictEqual(inspected.missing, []);
   });
 
-  it('refuses a workflow whose unit step is a runner the unit gate cannot collect', () => {
+  it('refuses a workflow whose unit step is a runner the unit gate cannot collect', async () => {
     // The contradiction this closes, in full. `CI_REQUIRED_COMMANDS` accepted `node --test`
     // while the unit gate ran `npx vitest run --reporter=json`, so a project could satisfy
     // the ci gate with a suite the ratchet would never see a single id from. That is not
@@ -3519,7 +3519,7 @@ describe('staticGates', () => {
     });
     const inspected = inspectCiWorkflows(dir);
     assert.deepStrictEqual(inspected.missing, ['unit']);
-    assert.equal(staticGates(dir).find((gate) => gate.name === 'ci')?.ok, false);
+    assert.equal((await staticGates(dir)).find((gate) => gate.name === 'ci')?.ok, false);
   });
 
   /**
@@ -3537,7 +3537,7 @@ describe('staticGates', () => {
     '      - run: npx vitest run',
   ].join('\n');
 
-  it('does not require a browser step in CI from a project with no browser', () => {
+  it('does not require a browser step in CI from a project with no browser', async () => {
     // The defect, as observed live. `toolchain.ci` requires Playwright unconditionally, so an
     // api project whose `e2e` gate had just been declined as inapplicable still could not
     // satisfy `ci` - not by any honest workflow. Dogfood run 2's `.meeseeks/assumptions.json`
@@ -3545,24 +3545,24 @@ describe('staticGates', () => {
     // `npx playwright test` under `continue-on-error: true`; run 3's cold panel then reported
     // that step as one that always succeeds by construction. The loop built the defect it caught.
     const dir = repoWith({ '.github/workflows/ci.yml': BROWSERLESS_WORKFLOW });
-    const gate = staticGates(dir, { capabilities: ['api', 'persistent-storage'] }).find((g) => g.name === 'ci');
+    const gate = (await staticGates(dir, { capabilities: ['api', 'persistent-storage'] })).find((g) => g.name === 'ci');
     assert.equal(gate?.ok, true, `expected ci to pass without a browser step, got: ${gate?.detail}`);
   });
 
-  it('names the requirement it dropped, and why, in the ci detail', () => {
+  it('names the requirement it dropped, and why, in the ci detail', async () => {
     // A skip nobody can read is a skip nobody can audit. `running build, lint, types, unit`
     // alone does not distinguish a project that needs four steps from one being let off a fifth.
     const dir = repoWith({ '.github/workflows/ci.yml': BROWSERLESS_WORKFLOW });
-    const gate = staticGates(dir, { capabilities: ['api'] }).find((g) => g.name === 'ci');
+    const gate = (await staticGates(dir, { capabilities: ['api'] })).find((g) => g.name === 'ci');
     assert.equal(gate?.detail.includes('not required here: e2e'), true, `got: ${gate?.detail}`);
     assert.equal(gate?.detail.includes('none of web-ui, desktop-ui'), true, `got: ${gate?.detail}`);
   });
 
-  it('still requires the browser step in CI from a project that has a browser', () => {
+  it('still requires the browser step in CI from a project that has a browser', async () => {
     // The benign neighbour. A filter that dropped `e2e` for everybody would read exactly like
     // this fix from a green suite, and would have removed the check rather than scoped it.
     const dir = repoWith({ '.github/workflows/ci.yml': BROWSERLESS_WORKFLOW });
-    const gate = staticGates(dir, { capabilities: ['web-ui'] }).find((g) => g.name === 'ci');
+    const gate = (await staticGates(dir, { capabilities: ['web-ui'] })).find((g) => g.name === 'ci');
     assert.equal(gate?.ok, false);
     assert.equal(gate?.detail.includes('never run: e2e'), true, `got: ${gate?.detail}`);
   });
@@ -3613,7 +3613,7 @@ describe('staticGates', () => {
 
     /** @type {string[]} */
     const argumentLists = [];
-    const call = 'staticGates(';
+    const call = 'await staticGates(';
     for (let at = source.indexOf(call); at !== -1; at = source.indexOf(call, at + 1)) {
       if (source.slice(0, at).endsWith('export function ')) continue;
       let depth = 0;
@@ -3644,7 +3644,7 @@ describe('staticGates', () => {
     assert.equal(startCommand(repoWith({})), null);
   });
 
-  it('probes the health endpoint when the application declares how to start', () => {
+  it('probes the health endpoint when the application declares how to start', async () => {
     // The static check is satisfied by the string being present. This one asks.
     /** @type {string[][]} */
     const invoked = [];
@@ -3652,7 +3652,7 @@ describe('staticGates', () => {
       'src/app.ts': 'logger.info("up");\napp.get("/healthz", handler);',
       'package.json': '{"scripts":{"start":"node server.js"}}',
     });
-    const gate = observabilityGate(dir, {
+    const gate = await observabilityGate(dir, {
       run: (command, args) => {
         invoked.push([command, ...args]);
         return { ok: true, status: 0, stdout: 'health endpoint answered 200', stderr: '' };
@@ -3665,30 +3665,30 @@ describe('staticGates', () => {
     assert.equal(invoked[0].includes('npm start'), true);
   });
 
-  it('fails observability when the health endpoint does not answer', () => {
+  it('fails observability when the health endpoint does not answer', async () => {
     const dir = repoWith({
       'src/app.ts': 'logger.info("up");\napp.get("/health", handler);',
       'package.json': '{"scripts":{"start":"node server.js"}}',
     });
-    const gate = observabilityGate(dir, {
+    const gate = await observabilityGate(dir, {
       run: () => ({ ok: false, status: 1, stdout: 'health endpoint answered 404', stderr: '' }),
     });
     assert.equal(gate.ok, false);
     assert.equal(gate.detail.includes('404'), true);
   });
 
-  it('says so when it passed observability without probing anything', () => {
+  it('says so when it passed observability without probing anything', async () => {
     // Honest about being a static finding rather than claiming it asked.
     const dir = repoWith({ 'src/app.ts': 'logger.info("up");\napp.get("/health", handler);' });
-    const gate = observabilityGate(dir, { run: () => ({ ok: true, status: 0, stdout: '', stderr: '' }) });
+    const gate = await observabilityGate(dir, { run: () => ({ ok: true, status: 0, stdout: '', stderr: '' }) });
     assert.equal(gate.ok, true);
     assert.equal(gate.detail.includes('not probed'), true);
   });
 
-  it('never reaches the probe when the source has no health endpoint at all', () => {
+  it('never reaches the probe when the source has no health endpoint at all', async () => {
     let probed = false;
     const dir = repoWith({ 'src/app.ts': 'logger.info("up");', 'package.json': '{"scripts":{"start":"node s.js"}}' });
-    const gate = observabilityGate(dir, {
+    const gate = await observabilityGate(dir, {
       run: () => {
         probed = true;
         return { ok: true, status: 0, stdout: '', stderr: '' };
@@ -3698,12 +3698,12 @@ describe('staticGates', () => {
     assert.equal(probed, false, 'started an application to look for a route that is not written');
   });
 
-  it('does not count a health route found inside node_modules', () => {
+  it('does not count a health route found inside node_modules', async () => {
     const dir = repoWith({
       'node_modules/pkg/index.js': 'logger.info("x");\napp.get("/health", h);',
       'src/app.ts': 'export const x = 1;',
     });
-    assert.equal(staticGates(dir).find((gate) => gate.name === 'observability')?.ok, false);
+    assert.equal((await staticGates(dir)).find((gate) => gate.name === 'observability')?.ok, false);
   });
 });
 
@@ -4321,28 +4321,28 @@ describe('ensurePlaywrightBrowsers', () => {
     };
   }
 
-  it('does nothing until the repo has a playwright config', () => {
+  it('does nothing until the repo has a playwright config', async () => {
     const cwd = makeTempDir();
     /** @type {string[]} */
     const calls = [];
-    const result = ensurePlaywrightBrowsers({ cwd, meeseeksDir: path.join(cwd, '.meeseeks'), run: runnerRecording(calls) });
+    const result = await ensurePlaywrightBrowsers({ cwd, meeseeksDir: path.join(cwd, '.meeseeks'), run: runnerRecording(calls) });
     assert.equal(result.installed, false);
     assert.deepStrictEqual(calls, []);
   });
 
-  it('installs chromium once a config appears, then never again', () => {
+  it('installs chromium once a config appears, then never again', async () => {
     const cwd = makeTempDir();
     writeFileSync(path.join(cwd, 'playwright.config.js'), 'module.exports = {};\n', 'utf8');
     /** @type {string[]} */
     const calls = [];
     const meeseeksDir = path.join(cwd, '.meeseeks');
-    assert.equal(ensurePlaywrightBrowsers({ cwd, meeseeksDir, run: runnerRecording(calls) }).installed, true);
+    assert.equal((await ensurePlaywrightBrowsers({ cwd, meeseeksDir, run: runnerRecording(calls) })).installed, true);
     assert.deepStrictEqual(calls, ['npx playwright install chromium']);
-    assert.equal(ensurePlaywrightBrowsers({ cwd, meeseeksDir, run: runnerRecording(calls) }).installed, false);
+    assert.equal((await ensurePlaywrightBrowsers({ cwd, meeseeksDir, run: runnerRecording(calls) })).installed, false);
     assert.deepStrictEqual(calls, ['npx playwright install chromium'], 'must not reinstall');
   });
 
-  it('downloads no browser for a project whose e2e gate does not apply', () => {
+  it('downloads no browser for a project whose e2e gate does not apply', async () => {
     // Dogfood run 3 logged `installed chromium for the e2e gate` one line after logging that the
     // e2e gate does not apply to that project. A config existed - because the `ci` gate was
     // demanding a Playwright step from a browserless project - and a config was the only question
@@ -4351,7 +4351,7 @@ describe('ensurePlaywrightBrowsers', () => {
     writeFileSync(path.join(cwd, 'playwright.config.js'), 'module.exports = {};\n', 'utf8');
     /** @type {string[]} */
     const calls = [];
-    const result = ensurePlaywrightBrowsers({
+    const result = await ensurePlaywrightBrowsers({
       cwd,
       meeseeksDir: path.join(cwd, '.meeseeks'),
       run: runnerRecording(calls),
@@ -4362,7 +4362,7 @@ describe('ensurePlaywrightBrowsers', () => {
     assert.deepStrictEqual(calls, [], 'a browser was downloaded for a gate that will not run');
   });
 
-  it('still downloads the browser for a project whose e2e gate does apply', () => {
+  it('still downloads the browser for a project whose e2e gate does apply', async () => {
     // The neighbour, and the asymmetry worth stating: under-provisioning is the worse error here,
     // because a missing browser fails a gate that genuinely applies. Over-provisioning only wastes
     // minutes, which is why omitting capabilities provisions as before.
@@ -4370,7 +4370,7 @@ describe('ensurePlaywrightBrowsers', () => {
     writeFileSync(path.join(cwd, 'playwright.config.js'), 'module.exports = {};\n', 'utf8');
     /** @type {string[]} */
     const calls = [];
-    const result = ensurePlaywrightBrowsers({
+    const result = await ensurePlaywrightBrowsers({
       cwd,
       meeseeksDir: path.join(cwd, '.meeseeks'),
       run: runnerRecording(calls),
@@ -4380,17 +4380,17 @@ describe('ensurePlaywrightBrowsers', () => {
     assert.deepStrictEqual(calls, ['npx playwright install chromium']);
   });
 
-  it('does not record success when the install failed', () => {
+  it('does not record success when the install failed', async () => {
     const cwd = makeTempDir();
     writeFileSync(path.join(cwd, 'playwright.config.ts'), 'export default {};\n', 'utf8');
     /** @type {string[]} */
     const calls = [];
     const meeseeksDir = path.join(cwd, '.meeseeks');
-    const result = ensurePlaywrightBrowsers({ cwd, meeseeksDir, run: runnerRecording(calls, false) });
+    const result = await ensurePlaywrightBrowsers({ cwd, meeseeksDir, run: runnerRecording(calls, false) });
     assert.equal(result.installed, false);
     assert.equal(result.detail.includes('no browser'), true);
     // A failed install must be retried next iteration, not remembered as done.
-    ensurePlaywrightBrowsers({ cwd, meeseeksDir, run: runnerRecording(calls, false) });
+    await ensurePlaywrightBrowsers({ cwd, meeseeksDir, run: runnerRecording(calls, false) });
     assert.equal(calls.length, 2);
   });
 
@@ -4479,10 +4479,10 @@ describe('.meeseeks/outcome.json', () => {
   // be reconstructed from `.meeseeks/`, `git log` and the reflog.
 
   /** @param {Partial<import('../scripts/driver.mjs').Effects>} overrides */
-  function outcomeOf(overrides) {
+  async function outcomeOf(overrides) {
     const root = makeTempDir();
     const meeseeksDir = path.join(root, '.meeseeks');
-    const result = driveRun({
+    const result = await driveRun({
       config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
       meeseeksDir,
       rootDir: root,
@@ -4494,8 +4494,8 @@ describe('.meeseeks/outcome.json', () => {
     return { result, written: existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null };
   }
 
-  it('records the terminal state, and the values match what the driver returned', () => {
-    const { result, written } = outcomeOf({});
+  it('records the terminal state, and the values match what the driver returned', async () => {
+    const { result, written } = await outcomeOf({});
     assert.notEqual(written, null, 'no terminal record was written');
     assert.equal(written.state, result.state);
     assert.equal(written.reason, result.reason);
@@ -4503,13 +4503,13 @@ describe('.meeseeks/outcome.json', () => {
     assert.equal(written.costUsd, result.costUsd);
   });
 
-  it('carries a timestamp from the injected clock, not from a hidden one', () => {
+  it('carries a timestamp from the injected clock, not from a hidden one', async () => {
     // Same discipline as the Build Brief: nothing here consults a clock it was not handed.
-    const { written } = outcomeOf({ now: () => '2026-08-12T00:00:00.000Z' });
+    const { written } = await outcomeOf({ now: () => '2026-08-12T00:00:00.000Z' });
     assert.equal(written.endedAt, '2026-08-12T00:00:00.000Z');
   });
 
-  it('does not fail the run when the record cannot be written', () => {
+  it('does not fail the run when the record cannot be written', async () => {
     // Forensics. Destroying a completed run's result because its receipt could not be filed
     // would be exactly the wrong way round — so the failure is reported, not raised.
     const root = makeTempDir();
@@ -4519,7 +4519,7 @@ describe('.meeseeks/outcome.json', () => {
     mkdirSync(path.join(meeseeksDir, 'outcome.json'), { recursive: true });
     /** @type {string[]} */
     const logged = [];
-    const result = driveRun({
+    const result = await driveRun({
       config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
       meeseeksDir,
       rootDir: root,
@@ -4625,31 +4625,31 @@ describe('a failing gate reports both streams', () => {
   // Dogfood run 14's mutation failure reached the operator as two npm warnings and nothing else.
 
   /** @param {{ stdout: string, stderr: string }} streams */
-  const detailOf = (streams) =>
-    runGates([{ name: 'unit', command: ['x'], required: true }], {
+  const detailOf = async (streams) =>
+    (await runGates([{ name: 'unit', command: ['x'], required: true }], {
       cwd: '/repo',
       run: () => ({ ok: false, status: 1, ...streams }),
-    }).results[0].detail;
+    })).results[0].detail;
 
-  it('keeps stdout when stderr holds only noise', () => {
-    const detail = detailOf({ stdout: 'Mutation score 41.2 under threshold 60', stderr: 'npm warn Unknown user config' });
+  it('keeps stdout when stderr holds only noise', async () => {
+    const detail = await detailOf({ stdout: 'Mutation score 41.2 under threshold 60', stderr: 'npm warn Unknown user config' });
     assert.match(detail, /Mutation score 41\.2/);
   });
 
-  it('labels the two, because an error and a report are different claims', () => {
+  it('labels the two, because an error and a report are different claims', async () => {
     // Concatenating them unlabelled invents a third thing that neither stream said.
-    const detail = detailOf({ stdout: 'the report', stderr: 'the error' });
+    const detail = await detailOf({ stdout: 'the report', stderr: 'the error' });
     assert.match(detail, /stderr:\n the error|stderr:\nthe error/);
     assert.match(detail, /stdout:\nthe report/);
   });
 
-  it('falls back to the exit code when the command said nothing at all', () => {
-    assert.equal(detailOf({ stdout: '', stderr: '' }), 'exit 1');
+  it('falls back to the exit code when the command said nothing at all', async () => {
+    assert.equal(await detailOf({ stdout: '', stderr: '' }), 'exit 1');
   });
 
-  it('still reports a lone stream unlabelled', () => {
-    assert.equal(detailOf({ stdout: '', stderr: 'boom' }), 'boom');
-    assert.equal(detailOf({ stdout: 'boom', stderr: '' }), 'boom');
+  it('still reports a lone stream unlabelled', async () => {
+    assert.equal(await detailOf({ stdout: '', stderr: 'boom' }), 'boom');
+    assert.equal(await detailOf({ stdout: 'boom', stderr: '' }), 'boom');
   });
 });
 
@@ -4993,7 +4993,7 @@ describe('hasStructuredLogging', () => {
 });
 
 describe('the ci gate explains why a runner must be named', () => {
-  it('adds the hint when unit is missing, because "never run: unit" reads as false', () => {
+  it('adds the hint when unit is missing, because "never run: unit" reads as false', async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-ci-'));
     mkdirSync(path.join(dir, '.github', 'workflows'), { recursive: true });
     // A workflow that plainly runs the tests, by the ecosystem's default idiom. The gate is
@@ -5002,14 +5002,14 @@ describe('the ci gate explains why a runner must be named', () => {
       path.join(dir, '.github', 'workflows', 'ci.yml'),
       'jobs:\n  t:\n    steps:\n      - run: npm run build\n      - run: npm run lint\n      - run: npx tsc\n      - run: npm test\n',
     );
-    const ci = staticGates(dir).find((gate) => gate.name === 'ci');
+    const ci = (await staticGates(dir)).find((gate) => gate.name === 'ci');
     rmSync(dir, { recursive: true, force: true });
     assert.equal(ci?.ok, false);
     assert.equal(ci?.detail.includes('Name the runner explicitly'), true, ci?.detail);
     assert.equal(ci?.detail.includes('`npm test` does not count'), true, ci?.detail);
   });
 
-  it('says nothing extra when the missing steps are not runner-matched', () => {
+  it('says nothing extra when the missing steps are not runner-matched', async () => {
     // The deny path for the hint itself. `build` and `lint` match `npm run <op>`, so a builder
     // told they are missing needs no explanation about runners.
     const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-ci-'));
@@ -5018,7 +5018,7 @@ describe('the ci gate explains why a runner must be named', () => {
       path.join(dir, '.github', 'workflows', 'ci.yml'),
       'jobs:\n  t:\n    steps:\n      - run: npx vitest run\n      - run: npx playwright test\n      - run: npx tsc\n',
     );
-    const ci = staticGates(dir).find((gate) => gate.name === 'ci');
+    const ci = (await staticGates(dir)).find((gate) => gate.name === 'ci');
     rmSync(dir, { recursive: true, force: true });
     assert.equal(ci?.ok, false);
     assert.equal(ci?.detail.includes('Name the runner explicitly'), false, ci?.detail);

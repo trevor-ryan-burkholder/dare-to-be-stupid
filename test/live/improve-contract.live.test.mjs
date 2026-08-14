@@ -79,9 +79,9 @@ function makeRepo() {
 }
 
 describe('the improvement authoring contract', { skip: ARMED ? false : 'MEESEEKS_LIVE is not set' }, () => {
-  it('returns a grounded, bounded PRD from a real repository', { timeout: LIVE_TIMEOUT }, () => {
+  it('returns a grounded, bounded PRD from a real repository', { timeout: LIVE_TIMEOUT }, async () => {
     const repo = makeRepo();
-    const result = spawnClaude({
+    const result = await spawnClaude({
       prompt:
         `${readFileSync(new URL('../../templates/improve-author.md', import.meta.url), 'utf8')}\n\n---\n\n` +
         'No area was named. Examine the repository as a whole.',

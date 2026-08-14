@@ -73,12 +73,12 @@ describe('the sandbox declaration reaches a real child', { skip: ARMED ? false :
     assert.equal('sandbox' in blob, false);
   });
 
-  it('is accepted by a real claude, which still starts and still answers', { timeout: LIVE_TIMEOUT }, () => {
+  it('is accepted by a real claude, which still starts and still answers', { timeout: LIVE_TIMEOUT }, async () => {
     // The live half, and the reason unit tests cannot replace it. Print mode silently ignores a
     // settings file that fails validation, so an unrecognised `sandbox` key would take the whole
     // blob down — guard included — and say nothing. A child that answers proves the CLI accepted
     // the shape.
-    const result = spawnClaude({
+    const result = await spawnClaude({
       prompt: 'Reply with exactly the word: pineapple. No punctuation, no explanation.',
       model: CHEAP_MODEL,
       phase: 'builder',

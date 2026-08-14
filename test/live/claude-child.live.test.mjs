@@ -32,10 +32,10 @@ const CHEAP_MODEL = 'claude-haiku-4-5-20251001';
 
 /**
  * @param {string} prompt
- * @returns {import('../../scripts/driver.mjs').ClaudeResult}
+ * @returns {Promise<import('../../scripts/driver.mjs').ClaudeResult>}
  */
-function ask(prompt) {
-  return spawnClaude({ prompt, model: CHEAP_MODEL, phase: 'reality-check', cwd: process.cwd(), env: process.env });
+async function ask(prompt) {
+  return await spawnClaude({ prompt, model: CHEAP_MODEL, phase: 'reality-check', cwd: process.cwd(), env: process.env });
 }
 
 describe('the live tier', () => {
@@ -52,19 +52,19 @@ describe('the live tier', () => {
 });
 
 describe('a real claude -p child', { skip: ARMED ? false : 'MEESEEKS_LIVE is not set' }, () => {
-  it('accepts the argv the driver builds, and answers the prompt', { timeout: LIVE_TIMEOUT }, () => {
+  it('accepts the argv the driver builds, and answers the prompt', { timeout: LIVE_TIMEOUT }, async () => {
     // The regression this whole tier exists for. If the prompt is ever parsed as an operand
     // again, the child exits with "Input must be provided either through stdin or as a prompt
     // argument" and this fails.
-    const result = ask('Reply with exactly the word: pineapple. No punctuation, no explanation.');
+    const result = await ask('Reply with exactly the word: pineapple. No punctuation, no explanation.');
     assert.equal(result.ok, true, `the child failed: ${result.raw.slice(0, 800)}`);
     assert.equal(result.text.toLowerCase().includes('pineapple'), true, `unexpected answer: ${result.text}`);
   });
 
-  it('returns an envelope carrying the fields budget accounting reads', { timeout: LIVE_TIMEOUT }, () => {
+  it('returns an envelope carrying the fields budget accounting reads', { timeout: LIVE_TIMEOUT }, async () => {
     // Nothing here estimates cost, so these field names are load-bearing. If the CLI renames
     // one, the ceiling silently stops counting and a run overspends without noticing.
-    const result = ask('Reply with exactly the word: ok.');
+    const result = await ask('Reply with exactly the word: ok.');
     assert.equal(result.ok, true, result.raw.slice(0, 800));
     assert.equal(Number.isFinite(result.costUsd), true);
     assert.equal(result.costUsd > 0, true, 'a real call that cost nothing means the envelope changed shape');
@@ -72,16 +72,16 @@ describe('a real claude -p child', { skip: ARMED ? false : 'MEESEEKS_LIVE is not
     assert.equal(result.tokens > 0, true, 'a real call that used no tokens means the usage breakdown moved');
   });
 
-  it('does not inherit the operator output style', { timeout: LIVE_TIMEOUT }, () => {
+  it('does not inherit the operator output style', { timeout: LIVE_TIMEOUT }, async () => {
     // A correctness fix, not a cosmetic one: the reviewer's output is machine-parsed, and a
     // child answering in the operator's persona is a child whose JSON does not parse.
-    const result = ask('Reply with exactly the word: plain.');
+    const result = await ask('Reply with exactly the word: plain.');
     assert.equal(result.ok, true, result.raw.slice(0, 800));
     assert.equal(result.text.trim().length < 60, true, `the child editorialised: ${result.text}`);
   });
 
-  it('parses its own envelope through the driver parser, not an approximation', { timeout: LIVE_TIMEOUT }, () => {
-    const result = ask('Reply with exactly the word: ok.');
+  it('parses its own envelope through the driver parser, not an approximation', { timeout: LIVE_TIMEOUT }, async () => {
+    const result = await ask('Reply with exactly the word: ok.');
     const reparsed = parseClaudeEnvelope(result.raw);
     assert.equal(reparsed.ok, true);
     assert.equal(reparsed.text, result.text);
@@ -94,11 +94,11 @@ describe('per-phase reasoning effort reaches a real child', { skip: ARMED ? fals
   // `builder` was dead and no assertion about the array could have found it. `--effort` is a
   // new flag in that same array, owned by the same other binary, so it gets one live check.
 
-  it('accepts every level the config will let an operator write', { timeout: LIVE_TIMEOUT }, () => {
+  it('accepts every level the config will let an operator write', { timeout: LIVE_TIMEOUT }, async () => {
     // Not just one. A level the CLI rejects makes the child exit non-zero on startup, which an
     // unattended run would report as a failed phase rather than as a bad setting.
     for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
-      const result = spawnClaude({
+      const result = await spawnClaude({
         prompt: 'Reply with exactly the word: pineapple. No punctuation, no explanation.',
         model: CHEAP_MODEL,
         phase: 'reality-check',
@@ -111,8 +111,8 @@ describe('per-phase reasoning effort reaches a real child', { skip: ARMED ? fals
     }
   });
 
-  it('still works when no effort is given, so the flag is optional rather than required', { timeout: LIVE_TIMEOUT }, () => {
-    const result = ask('Reply with exactly the word: pineapple. No punctuation, no explanation.');
+  it('still works when no effort is given, so the flag is optional rather than required', { timeout: LIVE_TIMEOUT }, async () => {
+    const result = await ask('Reply with exactly the word: pineapple. No punctuation, no explanation.');
     assert.equal(result.ok, true, result.raw.slice(0, 400));
   });
 });
@@ -127,8 +127,8 @@ describe('cold phases are actually isolated', { skip: ARMED ? false : 'MEESEEKS_
   const askAs = (phase, prompt) =>
     spawnClaude({ prompt, model: CHEAP_MODEL, phase, cwd: process.cwd(), env: process.env });
 
-  it('starves a reviewer of the operator plugin surface', { timeout: LIVE_TIMEOUT }, () => {
-    const result = askAs(
+  it('starves a reviewer of the operator plugin surface', { timeout: LIVE_TIMEOUT }, async () => {
+    const result = await askAs(
       'review',
       'Do not use any tools. Answer only from context already given to you. Does your context ' +
         'contain the exact phrase "You have superpowers"? Answer YES or NO only.',
@@ -137,10 +137,10 @@ describe('cold phases are actually isolated', { skip: ARMED ? false : 'MEESEEKS_
     assert.equal(/\bno\b/i.test(result.text), true, `the panel still inherits plugin injections: ${result.text}`);
   });
 
-  it('leaves a reviewer able to work — isolation is not a lobotomy', { timeout: LIVE_TIMEOUT }, () => {
+  it('leaves a reviewer able to work — isolation is not a lobotomy', { timeout: LIVE_TIMEOUT }, async () => {
     // The other half. A cold phase that cannot answer is not isolated, it is broken, and the
     // reviewer's output is machine-parsed.
-    const result = askAs('review', 'Reply with exactly the word: pineapple. No punctuation, no explanation.');
+    const result = await askAs('review', 'Reply with exactly the word: pineapple. No punctuation, no explanation.');
     assert.equal(result.ok, true, result.raw.slice(0, 400));
     assert.equal(result.text.toLowerCase().includes('pineapple'), true, result.text);
   });

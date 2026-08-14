@@ -103,24 +103,24 @@ describe('citedLocations', () => {
 });
 
 describe('hasMeaningfulHistory', () => {
-  it('is false for a repository this run just created', () => {
+  it('is false for a repository this run just created', async () => {
     const root = makeRepo([{ file: 'a.txt', contents: 'a\n', message: 'first' }]);
-    assert.equal(commitCount({ cwd: root, run }), 1);
-    assert.equal(hasMeaningfulHistory({ cwd: root, run }), false);
+    assert.equal(await commitCount({ cwd: root, run }), 1);
+    assert.equal(await hasMeaningfulHistory({ cwd: root, run }), false);
   });
 
-  it('is true once there is a real history behind the code', () => {
-    assert.equal(hasMeaningfulHistory({ cwd: matureRepo(), run }), true);
+  it('is true once there is a real history behind the code', async () => {
+    assert.equal(await hasMeaningfulHistory({ cwd: matureRepo(), run }), true);
   });
 
-  it('is false where git will not answer at all', () => {
-    assert.equal(hasMeaningfulHistory({ cwd: makeTempDir(), run }), false);
+  it('is false where git will not answer at all', async () => {
+    assert.equal(await hasMeaningfulHistory({ cwd: makeTempDir(), run }), false);
   });
 });
 
 describe('historyContext', () => {
-  it('returns the commits behind a cited file, and the blame for the cited line', () => {
-    const notes = historyContext({ cwd: matureRepo(), run, findings: ['PRD-1.1: src/auth.ts:2 is unguarded'] });
+  it('returns the commits behind a cited file, and the blame for the cited line', async () => {
+    const notes = await historyContext({ cwd: matureRepo(), run, findings: ['PRD-1.1: src/auth.ts:2 is unguarded'] });
     assert.equal(notes.length, 1);
     assert.equal(notes[0].file, 'src/auth.ts');
     assert.equal(notes[0].commits.length, 4);
@@ -129,39 +129,39 @@ describe('historyContext', () => {
     assert.equal(notes[0].blame[0].startsWith('line 2 last changed in'), true);
   });
 
-  it('says nothing about a file this run created', () => {
+  it('says nothing about a file this run created', async () => {
     // One commit means there is no prior intent to respect.
-    assert.deepStrictEqual(historyContext({ cwd: matureRepo(), run, findings: ['PRD-2.1: src/new.ts:1 is wrong'] }), []);
+    assert.deepStrictEqual(await historyContext({ cwd: matureRepo(), run, findings: ['PRD-2.1: src/new.ts:1 is wrong'] }), []);
   });
 
-  it('says nothing at all on a greenfield run, however many commits meeseeks has added', () => {
+  it('says nothing at all on a greenfield run, however many commits meeseeks has added', async () => {
     // Every commit is the builder's own work. Quoting them back is quoting the builder.
     assert.deepStrictEqual(
-      historyContext({ cwd: matureRepo(), run, findings: ['PRD-1.1: src/auth.ts:2 bad'], greenfield: true }),
+      await historyContext({ cwd: matureRepo(), run, findings: ['PRD-1.1: src/auth.ts:2 bad'], greenfield: true }),
       [],
     );
   });
 
-  it('says nothing when the repository has barely any history', () => {
+  it('says nothing when the repository has barely any history', async () => {
     const root = makeRepo([
       { file: 'src/auth.ts', contents: 'a\n', message: 'one' },
       { file: 'src/auth.ts', contents: 'b\n', message: 'two' },
     ]);
-    assert.deepStrictEqual(historyContext({ cwd: root, run, findings: ['PRD-1.1: src/auth.ts:1 bad'] }), []);
+    assert.deepStrictEqual(await historyContext({ cwd: root, run, findings: ['PRD-1.1: src/auth.ts:1 bad'] }), []);
   });
 
-  it('says nothing when no finding cited a location', () => {
-    assert.deepStrictEqual(historyContext({ cwd: matureRepo(), run, findings: ['DoD-3-ci: no workflow'] }), []);
+  it('says nothing when no finding cited a location', async () => {
+    assert.deepStrictEqual(await historyContext({ cwd: matureRepo(), run, findings: ['DoD-3-ci: no workflow'] }), []);
   });
 
-  it('caps how many files it will describe', () => {
+  it('caps how many files it will describe', async () => {
     const root = makeRepo(
       ['a', 'b', 'c', 'd'].flatMap((name) => [
         { file: `${name}.ts`, contents: '1\n', message: `add ${name}` },
         { file: `${name}.ts`, contents: '1\n2\n', message: `change ${name}` },
       ]),
     );
-    const notes = historyContext({ cwd: root, run, findings: ['a.ts:1 x', 'b.ts:1 x', 'c.ts:1 x', 'd.ts:1 x'] });
+    const notes = await historyContext({ cwd: root, run, findings: ['a.ts:1 x', 'b.ts:1 x', 'c.ts:1 x', 'd.ts:1 x'] });
     assert.equal(notes.length, 3);
   });
 });

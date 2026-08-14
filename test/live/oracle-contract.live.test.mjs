@@ -37,8 +37,8 @@ naming the 1-based line number to stderr, prints nothing to stdout, and exits 3.
 `;
 
 describe('the oracle authoring contract', { skip: ARMED ? false : 'MEESEEKS_LIVE is not set' }, () => {
-  it('returns cases the parser accepts, from a real child', { timeout: LIVE_TIMEOUT }, () => {
-    const result = spawnClaude({
+  it('returns cases the parser accepts, from a real child', { timeout: LIVE_TIMEOUT }, async () => {
+    const result = await spawnClaude({
       prompt: `${readFileSync(new URL('../../templates/oracle-author.md', import.meta.url), 'utf8')}\n\n---\n\nPRD.md:\n\n${PRD}`,
       model: 'claude-sonnet-5',
       phase: 'review',

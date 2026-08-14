@@ -124,12 +124,12 @@ function leaksAGrandchild(pidFile) {
 }
 
 describe('a timed-out gate takes its leaked descendants with it', { skip: process.platform === 'win32' }, () => {
-  it('kills a grandchild that outlived the gate, and names it in the detail', () => {
+  it('kills a grandchild that outlived the gate, and names it in the detail', async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-orphan-'));
     const pidFile = path.join(dir, 'sleeper.pid');
     try {
       const started = Date.now();
-      const outcome = runGates([{ name: 'leaky', command: leaksAGrandchild(pidFile), required: true }], {
+      const outcome = await runGates([{ name: 'leaky', command: leaksAGrandchild(pidFile), required: true }], {
         cwd: dir,
         run: shell,
         timeoutMs: 4000,
@@ -137,7 +137,7 @@ describe('a timed-out gate takes its leaked descendants with it', { skip: proces
       const elapsed = Date.now() - started;
 
       // The gate command finishes in milliseconds. It is the grandchild holding the write end
-      // of the pipe that keeps `execFileSync` reading, so this must be the ceiling firing and
+      // of the pipe that keeps the shell reading, so this must be the ceiling firing and
       // not the command running to completion.
       assert.equal(outcome.ok, false, 'a gate that had to be killed is not a passing gate');
       assert.equal(outcome.results.length, 1);
@@ -164,7 +164,7 @@ describe('a timed-out gate takes its leaked descendants with it', { skip: proces
   // simply runs long and is killed must not take unrelated processes in the driver's group
   // with it — the sweep is a set difference, and this is the half that proves the subtraction
   // is real rather than the whole group being signalled.
-  it('leaves a process that was already there before the gate started', () => {
+  it('leaves a process that was already there before the gate started', async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-orphan-'));
     try {
       // A bystander in the driver's own process group, started before any gate runs. Nothing
@@ -172,7 +172,7 @@ describe('a timed-out gate takes its leaked descendants with it', { skip: proces
       // test can distinguish a set difference from a blanket group signal.
       //
       // `stdio: 'ignore'` rather than the driver's `shell`, and that is not a shortcut: with a
-      // pipe, `execFileSync` waits for EOF and the sleeper holds the write end, so calling
+      // pipe, the shell waits for EOF and the sleeper holds the write end, so awaiting
       // `shell` here with no ceiling would block this test for ten minutes. That is the same
       // mechanism the file is about, arriving from the other side.
       const bystanderFile = path.join(dir, 'bystander.pid');
@@ -183,7 +183,7 @@ describe('a timed-out gate takes its leaked descendants with it', { skip: proces
       assert.equal(alive(keep), true, 'the bystander died before the gate under test even ran');
 
       const victimFile = path.join(dir, 'victim.pid');
-      const outcome = runGates([{ name: 'leaky', command: leaksAGrandchild(victimFile), required: true }], {
+      const outcome = await runGates([{ name: 'leaky', command: leaksAGrandchild(victimFile), required: true }], {
         cwd: dir,
         run: shell,
         timeoutMs: 4000,

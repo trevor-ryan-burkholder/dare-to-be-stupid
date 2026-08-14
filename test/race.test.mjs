@@ -45,8 +45,14 @@ after(() => {
 });
 
 /**
- * A runner that really shells out, for the tests that use a real repository.
- * @type {import('../scripts/plugins.mjs').Runner}
+ * A runner that really shells out, for the tests that use a real repository. Synchronous, so
+ * the git assertions around each race call can read `.stdout` directly; the race functions
+ * under test accept either shape of `Runner`.
+ *
+ * @param {string} command
+ * @param {string[]} args
+ * @param {{ cwd: string }} options
+ * @returns {import('../scripts/plugins.mjs').RunResult}
  */
 const realRunner = (command, args, options) => {
   try {
@@ -274,45 +280,45 @@ describe('parseNumstat', () => {
 });
 
 describe('worktree lifecycle', () => {
-  it('creates the requested number of worktrees at the base commit', () => {
+  it('creates the requested number of worktrees at the base commit', async () => {
     const { root, head } = makeRepo();
     const parentDir = makeTempDir();
-    const created = createWorktrees({ cwd: root, run: realRunner, n: 2, base: head, parentDir });
+    const created = await createWorktrees({ cwd: root, run: realRunner, n: 2, base: head, parentDir });
     assert.deepStrictEqual(created.problems, []);
     assert.equal(created.worktrees.length, 2);
     for (const worktree of created.worktrees) {
       assert.equal(existsSync(path.join(worktree.dir, 'app.txt')), true, `${worktree.dir} is not a checkout`);
     }
-    removeWorktrees({ cwd: root, run: realRunner, worktrees: created.worktrees });
+    await removeWorktrees({ cwd: root, run: realRunner, worktrees: created.worktrees });
   });
 
-  it('removes every worktree it created', () => {
+  it('removes every worktree it created', async () => {
     const { root, head } = makeRepo();
     const parentDir = makeTempDir();
-    const created = createWorktrees({ cwd: root, run: realRunner, n: 2, base: head, parentDir });
-    const cleaned = removeWorktrees({ cwd: root, run: realRunner, worktrees: created.worktrees });
+    const created = await createWorktrees({ cwd: root, run: realRunner, n: 2, base: head, parentDir });
+    const cleaned = await removeWorktrees({ cwd: root, run: realRunner, worktrees: created.worktrees });
     assert.deepStrictEqual(cleaned.problems, []);
     assert.equal(cleaned.removed.length, 2);
     for (const worktree of created.worktrees) assert.equal(existsSync(worktree.dir), false);
     assert.equal(realRunner('git', ['worktree', 'list'], { cwd: root }).stdout.trim().split('\n').length, 1);
   });
 
-  it('leaves a repository that can race again', () => {
+  it('leaves a repository that can race again', async () => {
     // A leaked worktree is not cosmetic: `git worktree add` refuses a directory it already
     // knows about, so one abandoned race breaks every later one.
     const { root, head } = makeRepo();
     const parentDir = makeTempDir();
-    const first = createWorktrees({ cwd: root, run: realRunner, n: 1, base: head, parentDir });
-    removeWorktrees({ cwd: root, run: realRunner, worktrees: first.worktrees });
-    const second = createWorktrees({ cwd: root, run: realRunner, n: 1, base: head, parentDir });
+    const first = await createWorktrees({ cwd: root, run: realRunner, n: 1, base: head, parentDir });
+    await removeWorktrees({ cwd: root, run: realRunner, worktrees: first.worktrees });
+    const second = await createWorktrees({ cwd: root, run: realRunner, n: 1, base: head, parentDir });
     assert.deepStrictEqual(second.problems, []);
     assert.equal(second.worktrees.length, 1);
-    removeWorktrees({ cwd: root, run: realRunner, worktrees: second.worktrees });
+    await removeWorktrees({ cwd: root, run: realRunner, worktrees: second.worktrees });
   });
 
-  it('reports a worktree it could not create rather than pretending it exists', () => {
+  it('reports a worktree it could not create rather than pretending it exists', async () => {
     const { root } = makeRepo();
-    const created = createWorktrees({
+    const created = await createWorktrees({
       cwd: root,
       run: realRunner,
       n: 1,
@@ -378,23 +384,23 @@ describe('sweepRaceWorktrees', () => {
     return { calls, run };
   }
 
-  it('removes every abandoned race worktree it finds', () => {
+  it('removes every abandoned race worktree it finds', async () => {
     const { run } = runnerFor();
-    const swept = sweepRaceWorktrees({ cwd: '/repo', run });
+    const swept = await sweepRaceWorktrees({ cwd: '/repo', run });
     assert.deepStrictEqual(swept.removed, ['/tmp/meeseeks-race-55237-4/meeseeks-race-01', '/tmp/meeseeks-race-55237-4/meeseeks-race-02']);
     assert.deepStrictEqual(swept.problems, []);
   });
 
   // The benign neighbour, and the one that matters most: this runs against the operator's real
   // repository, where a worktree of their own must survive untouched.
-  it('leaves the main worktree and anything not ours completely alone', () => {
+  it('leaves the main worktree and anything not ours completely alone', async () => {
     const { calls, run } = runnerFor({
       list: {
         ok: true,
         stdout: ['worktree /repo', 'branch refs/heads/main', '', 'worktree /home/me/feature-branch', 'branch refs/heads/feature', ''].join('\n'),
       },
     });
-    const swept = sweepRaceWorktrees({ cwd: '/repo', run });
+    const swept = await sweepRaceWorktrees({ cwd: '/repo', run });
     assert.deepStrictEqual(swept.removed, []);
     assert.equal(
       calls.some((call) => call.includes('remove')),
@@ -403,23 +409,23 @@ describe('sweepRaceWorktrees', () => {
     );
   });
 
-  it('prunes afterwards, so an administrative entry cannot block the next race on its own', () => {
+  it('prunes afterwards, so an administrative entry cannot block the next race on its own', async () => {
     const { calls, run } = runnerFor();
-    sweepRaceWorktrees({ cwd: '/repo', run });
+    await sweepRaceWorktrees({ cwd: '/repo', run });
     assert.deepStrictEqual(calls[calls.length - 1], ['git', 'worktree', 'prune']);
   });
 
-  it('reports a removal it could not perform rather than reporting a clean sweep', () => {
+  it('reports a removal it could not perform rather than reporting a clean sweep', async () => {
     const { run } = runnerFor({ remove: false });
-    const swept = sweepRaceWorktrees({ cwd: '/repo', run });
+    const swept = await sweepRaceWorktrees({ cwd: '/repo', run });
     assert.deepStrictEqual(swept.removed, []);
     assert.equal(swept.problems.length, 2);
     assert.equal(swept.problems[0].includes('meeseeks-race-01'), true, swept.problems[0]);
   });
 
-  it('reports a list it could not read, instead of concluding there is nothing to sweep', () => {
+  it('reports a list it could not read, instead of concluding there is nothing to sweep', async () => {
     const { run } = runnerFor({ list: { ok: false, stdout: '' } });
-    const swept = sweepRaceWorktrees({ cwd: '/repo', run });
+    const swept = await sweepRaceWorktrees({ cwd: '/repo', run });
     assert.deepStrictEqual(swept.removed, []);
     assert.equal(swept.problems.length, 1);
     assert.equal(swept.problems[0].includes('not a git repository'), true, swept.problems[0]);
@@ -469,9 +475,9 @@ describe('applyWinner against a dirty main tree', () => {
     return { calls, run };
   }
 
-  it('merges directly when the tree is already clean, without inventing a stash', () => {
+  it('merges directly when the tree is already clean, without inventing a stash', async () => {
     const { calls, run } = runnerFor({ status: '' });
-    const applied = applyWinner({ cwd: '/repo', run, commit: 'abc123' });
+    const applied = await applyWinner({ cwd: '/repo', run, commit: 'abc123' });
     assert.equal(applied.ok, true);
     assert.deepStrictEqual(calls, [
       ['git', 'status', '--porcelain'],
@@ -479,11 +485,11 @@ describe('applyWinner against a dirty main tree', () => {
     ]);
   });
 
-  it('sets the tree aside before merging, untracked files included', () => {
+  it('sets the tree aside before merging, untracked files included', async () => {
     // `--include-untracked` and not `--all`: ignored paths are left alone, which is what keeps
     // `.meeseeks/` — the ratchet, the pins, the briefs — out of the stash entirely.
     const { calls, run } = runnerFor({ status: ' M docs/architecture.md\n?? .stryker-tmp/\n' });
-    const applied = applyWinner({ cwd: '/repo', run, commit: 'abc123' });
+    const applied = await applyWinner({ cwd: '/repo', run, commit: 'abc123' });
     assert.equal(applied.ok, true, applied.detail);
     assert.deepStrictEqual(calls[0], ['git', 'status', '--porcelain']);
     assert.equal(calls[1][1], 'stash');
@@ -491,9 +497,9 @@ describe('applyWinner against a dirty main tree', () => {
     assert.deepStrictEqual(calls[2], ['git', 'merge', '--ff-only', 'abc123']);
   });
 
-  it('says how many changes it set aside, and that nothing gated them', () => {
+  it('says how many changes it set aside, and that nothing gated them', async () => {
     const { run } = runnerFor({ status: ' M docs/architecture.md\n M src/bin.ts\n?? .stryker-tmp/\n' });
-    const applied = applyWinner({ cwd: '/repo', run, commit: 'abc123' });
+    const applied = await applyWinner({ cwd: '/repo', run, commit: 'abc123' });
     assert.equal(applied.detail.includes('3 uncommitted change(s)'), true, applied.detail);
     assert.equal(applied.detail.includes('git stash'), true, applied.detail);
   });
@@ -501,9 +507,9 @@ describe('applyWinner against a dirty main tree', () => {
   // The stash is deliberately NOT popped after a successful merge. Those changes were absent
   // from every candidate's gates, so re-applying them would rebuild the exact tree the ceiling
   // above exists to prevent — and could conflict with the winner's diff while doing it.
-  it('does not put the changes back after a successful merge', () => {
+  it('does not put the changes back after a successful merge', async () => {
     const { calls, run } = runnerFor({ status: ' M docs/architecture.md\n' });
-    applyWinner({ cwd: '/repo', run, commit: 'abc123' });
+    await applyWinner({ cwd: '/repo', run, commit: 'abc123' });
     assert.equal(
       calls.some((call) => call.join(' ').includes('stash pop')),
       false,
@@ -514,9 +520,9 @@ describe('applyWinner against a dirty main tree', () => {
   // A failed race must leave the tree as it found it. Otherwise a merge that refuses for some
   // other reason silently converts the operator's tree into a clean one plus a stash they were
   // never told to look for.
-  it('puts the changes back when the merge fails anyway', () => {
+  it('puts the changes back when the merge fails anyway', async () => {
     const { calls, run } = runnerFor({ status: ' M docs/architecture.md\n', merge: false });
-    const applied = applyWinner({ cwd: '/repo', run, commit: 'abc123' });
+    const applied = await applyWinner({ cwd: '/repo', run, commit: 'abc123' });
     assert.equal(applied.ok, false);
     assert.equal(
       calls.some((call) => call.join(' ') === 'git stash pop'),
@@ -528,9 +534,9 @@ describe('applyWinner against a dirty main tree', () => {
 
   // Nothing defaults to pass. A stash that fails leaves the tree dirty, so merging anyway is
   // the original defect with an extra step.
-  it('does not merge at all when the tree could not be set aside', () => {
+  it('does not merge at all when the tree could not be set aside', async () => {
     const { calls, run } = runnerFor({ status: ' M docs/architecture.md\n', stash: false });
-    const applied = applyWinner({ cwd: '/repo', run, commit: 'abc123' });
+    const applied = await applyWinner({ cwd: '/repo', run, commit: 'abc123' });
     assert.equal(applied.ok, false);
     assert.equal(
       calls.some((call) => call.includes('merge')),
@@ -539,23 +545,23 @@ describe('applyWinner against a dirty main tree', () => {
     );
   });
 
-  it('fails rather than guessing when git status itself cannot be read', () => {
+  it('fails rather than guessing when git status itself cannot be read', async () => {
     /** @type {import('../scripts/race.mjs').Runner} */
     const run = (_command, args) =>
       args[0] === 'status'
         ? { ok: false, status: 128, stdout: '', stderr: 'not a git repository' }
         : { ok: true, status: 0, stdout: '', stderr: '' };
-    const applied = applyWinner({ cwd: '/repo', run, commit: 'abc123' });
+    const applied = await applyWinner({ cwd: '/repo', run, commit: 'abc123' });
     assert.equal(applied.ok, false);
     assert.equal(applied.detail.includes('not a git repository'), true, applied.detail);
   });
 });
 
 describe('applyWinner', () => {
-  it('fast-forwards the main tree onto the winner', () => {
+  it('fast-forwards the main tree onto the winner', async () => {
     const { root, head } = makeRepo();
     const parentDir = makeTempDir();
-    const created = createWorktrees({ cwd: root, run: realRunner, n: 1, base: head, parentDir });
+    const created = await createWorktrees({ cwd: root, run: realRunner, n: 1, base: head, parentDir });
     const worktree = created.worktrees[0];
 
     writeFileSync(path.join(worktree.dir, 'app.txt'), 'candidate work\n', 'utf8');
@@ -563,15 +569,15 @@ describe('applyWinner', () => {
     realRunner('git', ['commit', '--no-verify', '-m', 'candidate 1'], { cwd: worktree.dir });
     const commit = realRunner('git', ['rev-parse', 'HEAD'], { cwd: worktree.dir }).stdout.trim();
 
-    const applied = applyWinner({ cwd: root, run: realRunner, commit });
+    const applied = await applyWinner({ cwd: root, run: realRunner, commit });
     assert.equal(applied.ok, true, applied.detail);
     assert.equal(realRunner('git', ['rev-parse', 'HEAD'], { cwd: root }).stdout.trim(), commit);
-    removeWorktrees({ cwd: root, run: realRunner, worktrees: created.worktrees });
+    await removeWorktrees({ cwd: root, run: realRunner, worktrees: created.worktrees });
   });
 
-  it('refuses rather than inventing a merge commit nobody reviewed', () => {
+  it('refuses rather than inventing a merge commit nobody reviewed', async () => {
     const { root } = makeRepo();
-    const applied = applyWinner({ cwd: root, run: realRunner, commit: 'not-a-commit' });
+    const applied = await applyWinner({ cwd: root, run: realRunner, commit: 'not-a-commit' });
     assert.equal(applied.ok, false);
   });
 });

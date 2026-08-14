@@ -46,10 +46,10 @@ const CHEAP_MODEL = 'claude-haiku-4-5-20251001';
  * contract, and there is no reason to hand a test child dangerous mode to do it.
  *
  * @param {string} prompt
- * @returns {import('../../scripts/driver.mjs').ClaudeResult}
+ * @returns {Promise<import('../../scripts/driver.mjs').ClaudeResult>}
  */
-function askBuilder(prompt) {
-  return spawnClaude({
+async function askBuilder(prompt) {
+  return await spawnClaude({
     prompt,
     systemPrompt: builderSystemPrompt(process.cwd()),
     model: CHEAP_MODEL,
@@ -65,9 +65,9 @@ describe('tier 3 — the assumptions output contract', { timeout: LIVE_TIMEOUT }
     assert.equal(ARMED, true, 'set MEESEEKS_LIVE=1 to run tier 3; it spends real money');
   });
 
-  it('emits a parseable, cited block when the specification is genuinely ambiguous', () => {
+  it('emits a parseable, cited block when the specification is genuinely ambiguous', async () => {
     if (!ARMED) return;
-    const result = askBuilder(
+    const result = await askBuilder(
       [
         'Do not write any files. This is a dry run and you are answering about one requirement only.',
         '',
@@ -89,11 +89,11 @@ describe('tier 3 — the assumptions output contract', { timeout: LIVE_TIMEOUT }
     );
   });
 
-  it('emits no block at all when nothing is ambiguous', () => {
+  it('emits no block at all when nothing is ambiguous', async () => {
     if (!ARMED) return;
     // The failure mode that matters more than the first. A model that answers because it was
     // asked fills the log with generalities, and the log reaches the reviewer.
-    const result = askBuilder(
+    const result = await askBuilder(
       [
         'Do not write any files. This is a dry run.',
         '',

@@ -339,11 +339,12 @@ export function resolveArtifactCommand(root) {
  * @param {{
  *   meeseeksDir: string, root: string, command: string[],
  *   run: (command: string, args: string[], options: { cwd: string }) =>
- *     { ok: boolean, status: number, stdout: string, stderr: string },
+ *     { ok: boolean, status: number, stdout: string, stderr: string }
+ *     | Promise<{ ok: boolean, status: number, stdout: string, stderr: string }>,
  * }} options
- * @returns {{ name: string, ok: boolean, status: number, detail: string }}
+ * @returns {Promise<{ name: string, ok: boolean, status: number, detail: string }>}
  */
-export function runOracle(options) {
+export async function runOracle(options) {
   /** @type {OracleCase[]} */
   let cases;
   try {
@@ -366,7 +367,7 @@ export function runOracle(options) {
         writeFileSync(target, file.content, 'utf8');
       }
       const [command, ...fixed] = options.command;
-      const result = options.run(command, [...fixed, ...testCase.argv], { cwd: scratch });
+      const result = await options.run(command, [...fixed, ...testCase.argv], { cwd: scratch });
       const verdict = judgeOracleCase(testCase, result);
       if (!verdict.ok) failures.push(verdict.detail);
 
@@ -382,7 +383,7 @@ export function runOracle(options) {
           mkdirSync(path.dirname(target), { recursive: true });
           writeFileSync(target, file.content, 'utf8');
         }
-        const second = options.run(command, [...fixed, ...testCase.relation.argv], { cwd: scratch });
+        const second = await options.run(command, [...fixed, ...testCase.relation.argv], { cwd: scratch });
         const related = judgeOracleRelation(testCase.id, testCase.relation, result, second);
         if (!related.ok) failures.push(related.detail);
       }

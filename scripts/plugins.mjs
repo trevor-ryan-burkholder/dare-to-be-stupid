@@ -30,7 +30,12 @@ import { execFileSync } from 'node:child_process';
  *
  * @typedef {{ ok: boolean, status: number, stdout: string, stderr: string, timedOut?: boolean, reaped?: number[] }} RunResult
  */
-/** @typedef {(command: string, args: string[], options: { cwd: string, timeoutMs?: number }) => RunResult} Runner */
+/**
+ * A runner may answer synchronously (every test double does) or with a promise (the driver's
+ * real `shell` does, since the async conversion); consumers `await` the call either way.
+ *
+ * @typedef {(command: string, args: string[], options: { cwd: string, timeoutMs?: number }) => RunResult | Promise<RunResult>} Runner
+ */
 /**
  * @typedef {{
  *   name: string, required: boolean, frontendOnly: boolean, capability?: string,
@@ -155,13 +160,13 @@ export function resolvePlugin(name) {
  * Install the configured quality plugins, idempotently.
  *
  * @param {{ cwd: string, plugins: string[], runner?: Runner }} options
- * @returns {{
+ * @returns {Promise<{
  *   installed: string[], skipped: string[], warnings: string[],
  *   gates: { plugin: string, command: string[], frontendOnly: boolean, capability?: string }[]
- * }}
+ * }>}
  * @throws {PluginInstallError} when a required plugin cannot be provisioned
  */
-export function installQualityPlugins(options) {
+export async function installQualityPlugins(options) {
   const { cwd, plugins } = options;
   const run = options.runner ?? defaultRunner;
 
@@ -177,11 +182,11 @@ export function installQualityPlugins(options) {
   for (const name of plugins) {
     const spec = resolvePlugin(name);
 
-    const present = run(spec.detect[0], spec.detect.slice(1), { cwd });
+    const present = await run(spec.detect[0], spec.detect.slice(1), { cwd });
     if (present.ok) {
       skipped.push(spec.name);
     } else {
-      const result = run(spec.install[0], spec.install.slice(1), { cwd });
+      const result = await run(spec.install[0], spec.install.slice(1), { cwd });
       if (!result.ok) {
         const detail = (result.stderr || result.stdout || `exit ${result.status}`).trim();
         if (spec.required) {

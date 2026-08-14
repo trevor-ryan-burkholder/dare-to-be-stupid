@@ -68,34 +68,34 @@ const DETECT = 'npx --no-install impeccable --version';
 const INSTALL = 'npx -y impeccable install';
 
 describe('installQualityPlugins', () => {
-  it('installs a plugin that is not present yet', () => {
+  it('installs a plugin that is not present yet', async () => {
     const cwd = makeProject({ 'index.html': '<!doctype html>\n' });
     const { runner, calls } = fakeRunner({ [DETECT]: { ok: false }, [INSTALL]: { ok: true } });
-    const result = installQualityPlugins({ cwd, plugins: ['impeccable'], runner });
+    const result = await installQualityPlugins({ cwd, plugins: ['impeccable'], runner });
     assert.deepStrictEqual(result.installed, ['impeccable']);
     assert.deepStrictEqual(result.skipped, []);
     assert.deepStrictEqual(calls, [DETECT, INSTALL]);
   });
 
-  it('skips a plugin that is already installed, and does not run the installer', () => {
+  it('skips a plugin that is already installed, and does not run the installer', async () => {
     const cwd = makeProject({ 'index.html': '<!doctype html>\n' });
     const { runner, calls } = fakeRunner({ [DETECT]: { ok: true, stdout: '1.0.0' } });
-    const result = installQualityPlugins({ cwd, plugins: ['impeccable'], runner });
+    const result = await installQualityPlugins({ cwd, plugins: ['impeccable'], runner });
     assert.deepStrictEqual(result.skipped, ['impeccable']);
     assert.deepStrictEqual(result.installed, []);
     assert.deepStrictEqual(calls, [DETECT]);
   });
 
-  it('carries the gate with its arming condition rather than resolving it', () => {
+  it('carries the gate with its arming condition rather than resolving it', async () => {
     const cwd = makeProject({ 'index.html': '<!doctype html>\n' });
     const { runner } = fakeRunner({ [DETECT]: { ok: true } });
-    const result = installQualityPlugins({ cwd, plugins: ['impeccable'], runner });
+    const result = await installQualityPlugins({ cwd, plugins: ['impeccable'], runner });
     assert.deepStrictEqual(result.gates, [
       { plugin: 'impeccable', command: ['npx', 'impeccable', 'detect', 'src/'], frontendOnly: true },
     ]);
   });
 
-  it('still carries a frontend-only gate on a repository that has no frontend yet', () => {
+  it('still carries a frontend-only gate on a repository that has no frontend yet', async () => {
     // The bug this defends against shipped, and it silently disabled the design gate for
     // every greenfield run. Provisioning happens once, after the design phase and before the
     // builder has written a line, so the repository is a PRD and some docs. Resolving
@@ -107,22 +107,22 @@ describe('installQualityPlugins', () => {
     // still skips - it is only decided at a moment when the answer can be true.
     const cwd = makeProject({ 'PRD.md': '# Build a React dashboard\n' });
     const { runner } = fakeRunner({ [DETECT]: { ok: true } });
-    const result = installQualityPlugins({ cwd, plugins: ['impeccable'], runner });
+    const result = await installQualityPlugins({ cwd, plugins: ['impeccable'], runner });
     assert.deepStrictEqual(result.gates, [
       { plugin: 'impeccable', command: ['npx', 'impeccable', 'detect', 'src/'], frontendOnly: true },
     ]);
     assert.deepStrictEqual(result.warnings, []);
   });
 
-  it('marks a plugin that inspects any codebase as not frontend-only', () => {
+  it('marks a plugin that inspects any codebase as not frontend-only', async () => {
     const cwd = makeProject({ 'package.json': '{"name":"api"}\n' });
     const { runner } = fakeRunner({ ['npx --no-install knip --version']: { ok: true } });
-    const result = installQualityPlugins({ cwd, plugins: ['knip'], runner });
+    const result = await installQualityPlugins({ cwd, plugins: ['knip'], runner });
     assert.equal(result.gates.length, 1);
     assert.equal(result.gates[0].frontendOnly, false);
   });
 
-  it('warns rather than aborting when an optional detector will not install', () => {
+  it('warns rather than aborting when an optional detector will not install', async () => {
     // semgrep needs python3 and a reachable registry. Neither is worth killing a run over,
     // and unlike impeccable it does not carry a definition-of-done line on its own.
     const cwd = makeProject({ 'package.json': '{"name":"api"}\n' });
@@ -130,16 +130,16 @@ describe('installQualityPlugins', () => {
       ['semgrep --version']: { ok: false },
       ['python3 -m pip install --user --quiet semgrep']: { ok: false, stderr: 'no python3' },
     });
-    const result = installQualityPlugins({ cwd, plugins: ['semgrep'], runner });
+    const result = await installQualityPlugins({ cwd, plugins: ['semgrep'], runner });
     assert.deepStrictEqual(result.gates, []);
     assert.equal(result.warnings.length, 1);
     assert.equal(result.warnings[0].includes('semgrep'), true);
   });
 
-  it('aborts when a required plugin will not install', () => {
+  it('aborts when a required plugin will not install', async () => {
     const cwd = makeProject({ 'index.html': '<!doctype html>\n' });
     const { runner } = fakeRunner({ [DETECT]: { ok: false }, [INSTALL]: { ok: false, stderr: 'network is down' } });
-    assert.throws(
+    await assert.rejects(
       () => installQualityPlugins({ cwd, plugins: ['impeccable'], runner }),
       (error) =>
         error instanceof PluginInstallError &&
@@ -148,16 +148,16 @@ describe('installQualityPlugins', () => {
     );
   });
 
-  it('refuses a plugin it does not know how to install', () => {
+  it('refuses a plugin it does not know how to install', async () => {
     const cwd = makeProject();
     const { runner, calls } = fakeRunner({});
-    assert.throws(() => installQualityPlugins({ cwd, plugins: ['mystery-plugin'], runner }), PluginInstallError);
+    await assert.rejects(() => installQualityPlugins({ cwd, plugins: ['mystery-plugin'], runner }), PluginInstallError);
     assert.deepStrictEqual(calls, [], 'must not shell out before it knows what it is running');
   });
 
-  it('does nothing when no plugins are configured', () => {
+  it('does nothing when no plugins are configured', async () => {
     const { runner, calls } = fakeRunner({});
-    const result = installQualityPlugins({ cwd: makeProject(), plugins: [], runner });
+    const result = await installQualityPlugins({ cwd: makeProject(), plugins: [], runner });
     assert.deepStrictEqual(result, { installed: [], skipped: [], warnings: [], gates: [] });
     assert.deepStrictEqual(calls, []);
   });
