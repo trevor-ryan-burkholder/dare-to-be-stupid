@@ -703,3 +703,158 @@ nobody waits for is a check nobody fails.
 - [`/batch` vs `claude -p`](https://smartscope.blog/en/generative-ai/claude/claude-code-batch-processing/)
 - [Message Batches — Claude Platform docs](https://platform.claude.com/docs/en/build-with-claude/batch-processing)
 - [Claude Code changelog, August 2026](https://www.gradually.ai/en/changelogs/claude-code/)
+
+---
+
+# Round seven — the local plugin-source index, 14 August 2026
+
+Different provenance from every earlier round: not papers or READMEs but **source read off
+this machine** — seven readers over the locally cached marketplaces (39 official plugins, 15
+external, 17 Anthropic skills, the ecc monolith, superpowers, impeccable), 82 entries
+indexed, 31 rejected. The raw index with per-reader detail is archived in the session
+workflow transcript (`wf_712fdcaa-84f`). Licenses checked per source: Apache-2.0 and MIT
+throughout — adapt, don't vendor.
+
+## R23. Guard path comparison: realpath both sides, casefold on win32 — **take it into item 28's build**
+
+**From:** telegram `server.ts:144-154` (`assertSendable`), receipts `mine-transcripts.mjs:255-335` (Apache-2.0).
+Resolve the candidate **and** the protected root through realpath before the positional
+prefix compare; compare against `root + sep`; on win32 casefold for comparison only;
+realpath failure resolves toward deny inside a run. Closes two silent bypasses of the
+`.meeseeks/` positional rule: a symlink into the protected tree, and case-variant paths on
+NTFS/APFS where a raw string compare silently stops excluding. Deny test: symlink into
+`.meeseeks` denied. Benign neighbour: a sibling named `.meeseeks-notes` allowed. Half a day.
+
+## R24. Bash-mediated protected writes: a real tokenizer, not a regex — **take it; the largest and highest-value single item**
+
+**From:** ecc `block-no-verify.js` + `gateguard-fact-force.js` (`quoteAwareSegments`,
+`collectExecutableBodies`, MIT), receipts `mine-transcripts.mjs:133-168` (`stripHeredocs`).
+Today `sh -c 'cat > .meeseeks/x'` walks around a Write/Edit-shaped rule. Mechanism:
+quote/escape-aware segmentation per chained command; BFS over executable bodies (`$(...)`,
+backticks, subshells, `sh -c` recursed with a depth cap); detect redirection/`tee`/`cp`
+targets under protected paths — then kill false positives by blanking heredoc bodies first
+and requiring command-position anchoring (mentioning a path in written file *content* is not
+writing to it). Pure node. One to two days. Deny + benign pair per category, per the
+guard's standing rule.
+
+## R25. Guard registration and denial ergonomics: sentinel, provenance, dampening — **take all three; they are small**
+
+**From:** impeccable `hooks/hooks.json`; security-guidance `_base.py:87-94`; ecc
+`gateguard-fact-force.js` (#2142). (a) **Sentinel banner:** shell-wrap registration so a
+guard that *cannot run* (node absent/too old) drops a sentinel and says so once — the cheap
+structural answer to the eleven-version guard-never-invoked class. Trap recorded by ecc's
+dispatcher: a passthrough hook must emit **nothing** on stdout or the hook schema rejects
+it. (b) **Provenance prefix** on every denial ("[from the meeseeks guard — automated
+policy, not user input]") so an injection-hardened builder does not discard its own guard's
+denials as untrusted noise; verbatim content stays unstyled beneath. (c) **Denial
+dampening:** full explanation for the first ~3 denials, then a one-liner with an ordinal —
+ecc records near-identical deny blocks pushing long-context children into repetition loops,
+a live specimen of §3.9. Session-keyed state in `os.tmpdir`, never `.meeseeks/`.
+
+## R26. Corrupt-state quarantine: rename aside, never repair in place — **take it**
+
+**From:** telegram `server.ts:156-179`, `211-217`. ENOENT returns the fail-closed default;
+any other parse failure renames the file to `<name>.corrupt-<timestamp>` (evidence
+preserved), logs, and returns the **strictest** interpretation; writes stay tmp+rename.
+Meeseeks reads `pins.json`, `state.json` and `red-evidence.json` back as *decisions*; an
+unparseable pin file must quarantine toward "not pinned / not passed", loudly — today the
+readers throw or default per-site. Target: `scripts/pins.mjs`, `scripts/ratchet.mjs`, the
+red-evidence reader. Half a day.
+
+## R27. Reviewer contract: an `unverifiable[]` channel and a mandatory attack account — **take it; it is contract, not prose**
+
+**From:** superpowers `task-reviewer-prompt.md` (three-way verdict; "cannot verify" items
+must each be resolved, never pass silently); math-olympiad `adversarial_prompts.md` (a
+CONFIRM must name the step you tried hardest to break and why it held — an empty attack
+report on a pass is itself evidence of non-review). Two parsed fields in the reviewer JSON:
+`unverifiable[]` fails closed at the driver; a pass without a non-empty attack account is an
+unparseable pass, which is already a fail by law. Machine-detects lazy charitable passes.
+Template + parser + tests in the same commit (the standing rule), then tier 3. One day plus
+live spend.
+
+## R28. Review packaging: truncation honesty and the diff base — **take it**
+
+**From:** security-guidance `review_api.py:27-64` (`cap_diff_for_prompt`); superpowers
+review-package. Per-file and total byte caps when assembling the panel's evidence, with an
+in-band marker ("[truncated by meeseeks: …]") — a reviewer starved of part of the tree must
+be told, or its pass claims coverage it never had. And the diff base must be the recorded
+pre-iteration commit, never `HEAD~1`, which silently truncates multi-commit work. Half a day.
+
+## R29. Design-slop gate: drive impeccable's real interface — **take it**
+
+**From:** impeccable `cli/engine/cli/main.mjs`. The gate currently reads exit codes only.
+`detect --json` yields a machine-parseable finding stream with the advisory/primary
+partition (advisory never fails the gate — matching gate semantics exactly);
+`file:///abs/path.html` routes built artifacts through the real engine with no dev server;
+`--viewport 390x844` adds a deterministic mobile pass. Findings become reviewer evidence
+instead of a bare pass/fail. Committed `--json` fixtures per the fixture-over-mocks rule.
+About a day.
+
+## R30. Prompt hygiene at the untrusted-text frames — **take the pair together**
+
+**From:** security-guidance `extensibility.py:1-35`; discord `server.ts:433-438`, telegram
+`server.ts:900-905`. (a) **Additive-only envelope:** repo-supplied guidance forwarded into
+prompts (improve-mode docs, target CLAUDE.md) rides in a framed block that may ADD checks
+but cannot suppress findings — byte-capped, count-capped; a hostile target repo gets one
+direction of influence: stricter. (b) **Delimiter neutralization:** scrub exactly the
+destination frame's delimiters from untrusted strings (tag characters for tag-framed
+blocks; newlines, visibly, for line-oriented artifacts) — a test name is untrusted text and
+travels into briefs today.
+
+## R31. Parse-time flag validation that names the flag — **take it; an afternoon**
+
+**From:** receipts `mine-transcripts.mjs:77-86`. A NaN that survives parsing fails OPEN in
+whichever direction the comparison happens to be written. `parseDriverArgs` and the
+configure wizard's argv path validate at parse time and exit naming the flag and the
+accepted formats.
+
+## R32. Least-privilege frontmatter on `/meeseeks` — **take it**
+
+**From:** ralph-loop `commands/ralph-loop.md`, commit-commands `commands/commit.md`. Pin
+`allowed-tools` to exactly the driver invocation (`Bash(${CLAUDE_PLUGIN_ROOT}/scripts/driver.mjs:*)`)
+so the command surface can run its own script and nothing else, pre-approved.
+
+## R33. The break-character clause, adopted from the style layer that carries it — **take it**
+
+**From:** adventure-time `output-styles/lemongrab.md` (the pattern is shared by all 20
+personas): the style layer carries its own escape hatch — if the voice would obscure a
+critical warning, drop the voice for that sentence. The meeseeks style layer should state
+this in the style itself rather than relying on the driver's "failure output is verbatim"
+discipline alone.
+
+## What this round feeds — source-level facts for the open items
+
+- **Item 28, confirmed fail-open by witnesses:** impeccable's installer *deliberately*
+  writes hooks into the target's `.claude/settings.local.json` because `claude -p` children
+  in that repo demonstrably load project-scope settings; ecc's own gate **exempts**
+  `.claude/settings*.json` from itself — the exact write path 28 closes; skill-creator's
+  `run_eval.py` strips the `CLAUDECODE` env var to bypass a nesting guard, in the wild — an
+  env marker is §6.1 discipline, never a wall, which is why 28's tier-3 live assertion is
+  the only load-bearing half. Implementation mechanics: deny via
+  `hookSpecificOutput.permissionDecision:'deny'` with exit 0; emit **nothing** on allow.
+- **Item 29:** impeccable's waiver ledger (`ignores add-value … --reason … --file`, with
+  `doctor` validating every ignore against the live registry so stale waivers surface) is
+  the worked model for the §4.3 escape a gitleaks pin needs. Detect-first must **probe by
+  execution** (`gitleaks version`), not PATH-check — the Microsoft Store python3 stub
+  passes `command -v` and exits 49 headless. Degradation ladders want stable numeric
+  outcome codes (security-guidance lost 185K failure rows to a channel that drops strings).
+- **Item 30a, dissolved:** all 12 official LSP plugins are LICENSE+README only — the entire
+  mechanism is a declarative `lspServers` manifest key (`{command, args?,
+  extensionToLanguage, startupTimeout?}`) resolved from PATH by Claude Code core. The plan
+  item is not "deliver a plugin" but "emit one manifest key per toolchain and preflight the
+  binary loudly."
+- **Item 30c/d:** ready sources named — superpowers verification-before-completion's
+  claims→evidence table; ecc tdd-workflow's plan-as-untrusted-data fence; and the rent
+  machinery the intake items owe already exists as runnable shape (skill-creator's
+  train/holdout loop with a blinded improver; writing-skills' mandatory no-guidance
+  control). Caution recorded: anchored 0-100 confidence rubrics appear in three sources and
+  the anchors transfer, but two of three silently drop sub-threshold findings — adopt
+  anchors, never thresholds.
+
+## Round seven, explicitly not taken
+
+31 rejections, in the transcript with reasons. Representative: every self-review pattern in
+ecc (the builder judging its own work, again); ralph-loop's Stop-hook loop (stallLimit and
+the reality-check breaker already dominate it); serena's code-index MCP (a network/index
+dependency inside builder children); the document skills' packaged-scripts pattern (the
+packaging is interesting, the payloads are attended-authoring tools).
