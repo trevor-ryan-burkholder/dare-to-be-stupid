@@ -48,10 +48,15 @@ generic `done` aborts the run at the design phase, which demands a parseable cap
 declaration. Each branch in that stub is a phase's *minimum acceptable answer*, written by hand,
 which makes the stub itself a readable statement of the output contracts.
 
-**Still open, and now genuinely smaller:** the prompt-growth note (0.113.0) has the same shape of
-gap and the same seam is available to close it. It was not done here because this commit already
-carries a rename of `main`'s signature and a new integration file, and one more assertion is not
-worth widening it.
+**Still open, and attempted:** the prompt-growth note (0.113.0) has the same shape of gap, and the
+new seam *does* reach it — but asserting it needs the projection to land inside the iteration cap,
+which means pinning the test to this fixture's exact brief sizes (5075 then 5510 characters,
+growing 435 per iteration). Any edit to a template moves those numbers and the test breaks for a
+reason unrelated to what it checks. **A probe through the seam established the loop does compute
+the note and correctly stayed silent** — from 5510 characters a 12,000 budget is fifteen
+iterations away on a run capped at three. That is the arithmetic observed rather than assumed, and
+it is recorded as a gap rather than counted as coverage. The comment at the foot of
+`test/integration/operator-gate.integration.test.mjs` says so where the next person will look.
 
 ### 0.113.0 — the builder's prompt now says when it is on course to hit the wall
 
