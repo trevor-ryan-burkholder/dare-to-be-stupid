@@ -325,6 +325,21 @@ describe('the prd-author template', () => {
     assert.equal(PRD_AUTHOR.includes('PRD-<section>.<n>'), true);
   });
 
+  it('tells the author to carry a stack the operator named, as a numbered requirement', () => {
+    // Case C: the operator asked for a service "in C#" and the PRD mentioned C#, .NET and
+    // dotnet exactly zero times. Detection then found nothing in an empty repository, defaulted
+    // to Node, and the builder wrote TypeScript. Every stage after Phase 0 behaved correctly.
+    // Nothing downstream ever sees the original idea, so this is the only place it can survive.
+    assert.equal(PRD_AUTHOR.includes('Carry every constraint the operator actually stated'), true);
+    assert.equal(PRD_AUTHOR.includes('in C#'), true, 'keeps the measured example');
+    assert.equal(PRD_AUTHOR.includes('PRD-0.1'), true, 'shows it written as a numbered requirement');
+  });
+
+  it('refuses the opposite error: inventing a stack nobody asked for', () => {
+    assert.equal(PRD_AUTHOR.includes('omit the section'), true);
+    assert.equal(PRD_AUTHOR.includes('inventing a stack is the opposite error'), true);
+  });
+
   it('shows a testable requirement beside an untestable one', () => {
     assert.equal(PRD_AUTHOR.includes('follow best practices'), true, 'keeps the counter-example');
     assert.equal(PRD_AUTHOR.includes('cannot fail'), true, 'says why the counter-example is worthless');

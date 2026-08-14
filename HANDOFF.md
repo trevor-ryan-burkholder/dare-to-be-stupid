@@ -1,7 +1,7 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.121.0`. Measured at 0.121.0: `npm test` **1830 pass**,
-`npm run test:integration` **35 pass**, `npm run lint` and `npm run typecheck` clean,
+**State:** `main` at `0.122.0`. Measured at 0.122.0: `npm test` **1832 pass**,
+`npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
 **`npm run test:live` at 0.110.0: 27 of 27 across 11 files, 0 failures.** The suite has now been
@@ -23,6 +23,38 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.122.0 — case C: the operator said "in C#" and the loop built TypeScript
+
+**Killed after two iterations, because it could not answer the question it exists to answer.**
+Case C is the .NET case — first live TRX extraction, first `api` capability arming
+`schemathesis`. The idea handed to it was *"A small HTTP service that stores and returns short
+notes, **in C#**."* Two iterations in, the tree held `src/index.ts`, `eslint.config.js`,
+`node_modules` and a `package.json` named `notes-service`. **No `.csproj`. No `.cs`. Anywhere.**
+
+**Root cause is Phase 0, and everything after it behaved correctly.** The authored PRD mentions
+`C#`, `.NET` and `dotnet` **exactly zero times** — grepped across `PRD.md`, `PRODUCT.md` and every
+document under `docs/`. From there the chain is faultless: no stack in the PRD → the design phase
+declares `api` → toolchain detection finds nothing in a repository holding only a PRD → **defaults
+to node** → the brief tells the builder the gates are npm → the builder writes TypeScript.
+
+**The default is self-fulfilling.** `DOGFOOD.md` already warned that iteration 1 "may be gated
+with npm commands against a .NET project". The real outcome is worse: it never *becomes* a .NET
+project. Nothing later can recover the constraint, because **nothing downstream ever sees the
+original idea** — Phase 0 is the only place it can survive, and it dropped it.
+
+**So the fix is in `templates/prd-author.md`, not in toolchain detection.** A named language,
+runtime, framework or datastore must be carried into the PRD as a **numbered requirement**, in the
+operator's own words, so it is gated and reviewed like anything else. And the opposite error is
+called out in the same breath: **inventing a stack nobody asked for** is just as expensive, so the
+section is omitted when no stack was named.
+
+**An operator can currently say "in C#" and get TypeScript, silently.** That is the whole finding,
+and it was invisible until someone read the tree rather than the log — every log line was correct.
+
+**Not fixed here, and worth deciding separately:** whether an undetectable toolchain should default
+at all, rather than refusing until iteration 1 has created project files. The default is what
+turned a dropped constraint into a wrong-language build, but it is not what dropped it.
 
 ### 0.121.0 — the ratchet banks ids as soon as the suite proves them, not only when everything is green
 

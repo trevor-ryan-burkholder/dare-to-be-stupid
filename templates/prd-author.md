@@ -88,6 +88,27 @@ Prefer the smallest thing that is genuinely useful over the fullest thing that i
 plausible. This will be built unattended against a budget; a spec that cannot be finished
 produces a run that ends `BUDGET` with nothing shipped.
 
+## Carry every constraint the operator actually stated
+
+**If the idea names a language, a runtime, a framework or a datastore, the PRD must say so.**
+Not as a suggestion — as a numbered requirement, in the same words the operator used. You are
+the only place that instruction can survive: nothing downstream ever sees the original idea.
+
+**This is not hypothetical.** An operator asked for *"a small HTTP service that stores and
+returns short notes, **in C#**"*. The PRD came back with no mention of C#, .NET or dotnet
+anywhere. Toolchain detection then found nothing in an empty repository, defaulted to Node, and
+the builder — reasonably, given everything it could see — wrote TypeScript. **The run built the
+wrong thing in the wrong language and every stage after you behaved correctly.**
+
+Write it as a requirement so it is gated and reviewed like any other:
+
+```
+PRD-0.1  The service is implemented in C# on .NET 8, with a .csproj at the repository root.
+```
+
+Number it in a `### 0. Platform` section when the operator named a stack, and **omit the section
+entirely when they did not** — inventing a stack is the opposite error and just as expensive.
+
 ## Structure
 
 ```markdown
