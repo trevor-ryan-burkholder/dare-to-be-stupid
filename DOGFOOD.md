@@ -759,6 +759,20 @@ kill -TERM "$(pgrep -f '[s]cripts/driver.mjs' | head -1)"
 ps -eo pid,args | grep '[c]laude --' | head       # kill any survivor by pid
 ```
 
+**Watch a run with `tail -f --pid=<driver>`, never a bare `tail -f`.** A bare `tail -f` never
+exits on its own: when the run dies the file simply stops growing, and the watcher sits there
+looking exactly like a live one. Two of them were left behind in a single session before anyone
+noticed, and "is that still running?" is a question the tooling should never make you ask.
+
+```bash
+DRIVER=$(ps -eo pid,args | grep 'driver[.]mjs' | grep -v 'zsh -c' | grep -v grep | awk '{print $1}')
+tail -f --pid="$DRIVER" ~/meeseeks-logs/run.log | grep -E --line-buffered 'SHIPPED|BUDGET|STALLED|ABORTED'
+```
+
+**Take the pid of `node …driver.mjs`, not the shell wrapping it.** `pgrep -f` matches the wrapper
+too — and, if the pattern appears in your own command line, it matches *your shell*. That has
+already killed one session's terminal.
+
 **Bracket the pattern.** `pkill -f 'scripts/driver.mjs'` matches *the shell running it* and kills
 its own caller. That is not hypothetical — it happened while following the previous version of
 this instruction.
