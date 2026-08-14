@@ -26,9 +26,21 @@
  *   here removes a declared capability, because "I looked and did not find it" and "it is not
  *   there" are the same sentence only when the detector is complete, and none of them are.
  *
- * Over-detection is the safe direction and under-detection is the dangerous one: an extra
+ * Over-detection is the **safer** direction and under-detection is the dangerous one: an extra
  * capability arms an extra gate, while a missing one skips one silently — which is the thing
  * DESIGN.md §4 exists to prevent.
+ *
+ * **Safer, not free, and 14 August put a number on the difference.** An extra gate is only a
+ * stricter bar when the project can satisfy it. Case I spent **40,000,137 tokens and \$20.45
+ * across eight iterations** failing one gate it never met, and an over-detected capability arming
+ * a gate whose artifact nobody was asked to build — `api` on a command-line tool, whose architect
+ * had no reason to write an OpenAPI document — is precisely that shape. Under-detection loses
+ * enforcement quietly; over-detection can end a run loudly. **Both cost; they cost differently,
+ * and the asymmetry is about which failure you can still see afterwards.**
+ *
+ * What makes the trade acceptable rather than merely chosen is that the loud failure is now
+ * *named*: `repeatedGateNote` (0.117.0) tells the builder and the operator when the same gate has
+ * failed three iterations running, which is the signal case I never got.
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
