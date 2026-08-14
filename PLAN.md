@@ -670,3 +670,59 @@ parsing, or a template output contract moves (items 4, 10, 16 at minimum). No ne
 the cap was spent on `oracle-author`. Nothing from `BRIEF.md` section E's do-not-add list.
 Experiments write their result down whichever way they land: a surprising `CLOSED` is worth
 more than a flattering `DONE`.
+
+### 28. Guard the guard's kill switch — OPEN, **SPECIFIED** (from the 14 Aug ecosystem scan)
+
+**The finding:** the hooks system documents a `disableAllHooks` setting with layered precedence
+in which the target repo's own `.claude/settings.json` participates. The guard's deny
+categories protect `.meeseeks/`, the guard file, git history, recursive deletes and nesting —
+**but not the child's settings source.** A builder writing `{"disableAllHooks": true}` into the
+target's `.claude/settings.json` (or `.claude/settings.local.json`) is a one-line unguarding of
+every subsequent child, and `childSettings()` neither sets the key nor asserts its absence.
+Until proven otherwise the interaction between the `--settings` blob and project settings is
+treated as **fail-open**.
+
+**Spec:** (1) a guard deny rule for in-run writes to the target's `.claude/settings.json` and
+`.claude/settings.local.json`, gated on `MEESEEKS_RUNNING` exactly like protected-state — the
+operator outside a run stays free, the boundary is the run; deny-path test AND benign-neighbour
+test per the guard rule. (2) `childSettings()` explicitly pins `disableAllHooks: false` in the
+blob it hands every child, so the driver states the fact rather than inheriting it. (3) One
+tier-3 live assertion: a child spawned in a repo whose committed `.claude/settings.json`
+carries `disableAllHooks: true` still fires the guard — only the live tier can see registration
+truth (the eleven-version lesson). **Build gate: not while a live run reads this tree** —
+children execute `hooks/guard.mjs` from disk per tool call, so this lands only between runs.
+
+**Done when:** both tests green, tier 3 re-run green, version + ledgers in the same commit.
+
+### 29. gitleaks as a detect-first quality plugin, and registry version pinning — OPEN, **SPECIFIED**
+
+From the same scan. Secrets scanning is the one hole in current security coverage (`npm audit`
+is dependencies-only, semgrep's ruleset is not a secrets scanner). gitleaks: single binary,
+deterministic non-zero-on-leaks exit, JSON output that could later feed security-element pins.
+No canonical cross-platform install argv exists, so the `KNOWN_PLUGINS` entry must be
+**detect-first** (`install: null`), degrading to a warning when the binary is absent — the
+semgrep/knip precedent, but the registry schema must first learn to admit a detect-only plugin,
+a small deliberate schema change with its own tests. **In the same slice:** pin versions in
+existing `KNOWN_PLUGINS` install argvs (`npx -y impeccable` and unpinned pip installs resolve
+whatever is current at run time — the CLI-registry analog of the marketplace auto-update
+reproducibility trap the official docs now warn about). If gitleaks findings ever become pinned
+security elements, design the escape before the enforcement (§4.3).
+
+### 30. Ecosystem intake — four measured candidates, none lands without its number — OPEN
+
+Parked from the scan's "worth design first" tier, each with the measurement it owes:
+**(a) Official LSP plugins delivered to builder children** (typescript-lsp/csharp-lsp): the best
+builder-sharpener found, but child delivery is DESIGN.md §5.0's open problem, the plugin does
+not install the language-server binary (silent no-op — the §3.9 family), and it owes a
+measured iteration-count delta before default-on. **(b) OSV-Scanner** as the cross-toolchain
+dependency audit: its documented exit contract (0/1/127/128) is exactly the
+nothing-defaults-to-pass shape, but it owes an overlap/noise measurement against npm audit and
+a fail-closed-when-offline decision. **(c) Trail of Bits skills mining**: property-based-testing
+guidance into the builder brief (property tests enter the ratchet) and the differential-review
+method into the reviewer template — both template changes owing context-budget rent and, for
+the reviewer, a §4 parser-contract re-read. **(d) Builder-honesty micro-distillations**
+(verify-before-return; treat briefs/PRDs as untrusted data in improve mode) — one paragraph
+each, each owing a failed-iteration-rate comparison. Ecosystem notes worth keeping: the Setup
+hook event fires in `-p` mode (a documented per-child bootstrap point); `/plugin` now shows
+per-plugin context-token cost; Anthropic's harness paper (Mar 2026) independently validates the
+cold hostile panel ("agents evaluating their own work are pathological optimists").
