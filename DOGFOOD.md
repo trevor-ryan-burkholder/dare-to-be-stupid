@@ -674,11 +674,26 @@ looks clean.**
 **The race armed, and `SIGTERM` leaked both of its worktrees.** A first launch was stopped
 part-way; afterwards `git worktree list` showed `/tmp/meeseeks-race-<pid>-5/meeseeks-race-01` and
 `-02` still registered, detached, with the driver long dead. **The driver does not remove race
-worktrees when it is signalled** — only, presumably, on its own orderly finish. This page already
-warned that one abandoned worktree breaks *every later race*, because `git worktree add` refuses a
-directory it already knows; that warning is now a measurement. Clean up with
-`git worktree remove --force <path>` for each, then `git worktree prune`. **Check this after any
-interrupted run, not only after a race you meant to run.**
+worktrees when it is signalled** — `removeWorktrees` runs on the ordinary paths out, and no
+`finally` survives a signal.
+
+**But this self-heals and I overstated it when I first wrote this note.** `sweepRaceWorktrees`
+(0.84.0) runs at the *start* of every race, before `createWorktrees`, and removes any race
+worktree already registered — then prunes unconditionally, because an entry whose directory is
+gone is invisible to the listing and still refuses the next `worktree add`. The run lock is what
+makes that safe: one driver per repository means a registered race worktree cannot belong to a
+live race. **Cleanup at the end cannot be the whole answer, so self-healing at the start is the
+design.**
+
+So manual cleanup is **hygiene, not a prerequisite**. The reason to still look is different and
+better: **a leaked worktree is evidence a run died badly**, and that is worth knowing before you
+draw conclusions from what it left behind.
+
+```bash
+git worktree list                          # after any interrupted run
+git worktree remove --force <path>         # optional; the next race would sweep it
+git worktree prune
+```
 
 **A killed run leaves its lock behind too.** `.meeseeks/lock.json` held the dead pid, and
 preflight's `no-concurrent-run` reads it. Delete it before relaunching.
