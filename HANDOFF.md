@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.119.0`. Measured at 0.119.0: `npm test` **1818 pass**,
+**State:** `main` at `0.120.0`. Measured at 0.120.0: `npm test` **1828 pass**,
 `npm run test:integration` **35 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -23,6 +23,48 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.120.0 — `gate-integrity` conflated "a class of values" with "one value", and polarity is the fix
+
+**Third static gate audited, third finding, and this one is a real false positive.** Case I's
+`gate-integrity` failure listed, side by side:
+
+```
+toBeDefined() asserts existence, not a value
+not.toBeNull() asserts existence, not a value
+toBeUndefined() asserts existence, not a value   <- wrong
+```
+
+**`expect(store.get('missing')).toBeUndefined()` asserts exactly one value**, and it is the
+idiomatic way to test a lookup miss. `toBe(undefined)` is not an improvement on it — it is the
+same assertion spelled longer.
+
+**Polarity flips every one of these, and the old rule ignored negation entirely:**
+
+| form | asserts | verdict |
+|---|---|---|
+| `toBeDefined()` | anything but `undefined` | weak |
+| `not.toBeDefined()` | exactly `undefined` | **precise** |
+| `toBeUndefined()` | exactly `undefined` | **precise** |
+| `not.toBeUndefined()` | anything but `undefined` | weak |
+| `toBeNull()` | exactly `null` | **precise** |
+| `not.toBeNull()` | anything but `null` | weak |
+| `toBeTruthy()` / `toBeFalsy()` | a class, either way | weak |
+
+**I checked for a reasoned defence before overriding, because an hour earlier that check stopped
+me being wrong.** The `ci` narrowness carried a specific, measured justification tied to two live
+runs (0.119.0) and I reverted. This one carried only the general principle — *"tests assert real
+values, not truthiness"* — and `toBeUndefined()` **satisfies** that principle. Different evidence,
+different answer. **The discipline is asking, not the outcome.**
+
+`CLAUDE.md`'s own wording already supported the distinction — *"a test that only proves something
+returned **something**"* — and now says it outright so nobody re-conflates them.
+
+**Three static gates examined tonight, three verdicts, none of them the same:** `observability`
+was broken and got fixed; `ci` was correct and got a better error message; `gate-integrity` was
+half right and got a polarity rule. **A gate being wrong in the failing direction is now a
+demonstrated failure mode of this codebase rather than a hypothetical**, and `docs` is the one
+static gate not yet re-derived.
 
 ### 0.119.0 — I nearly reopened a measured hole by pattern-matching the previous bug onto it
 

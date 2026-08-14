@@ -217,9 +217,8 @@ describe('weakAssertions', () => {
     ["expect(user.role).toBeTruthy();", 'toBeTruthy()'],
     ["expect(x).toBeFalsy();", 'toBeFalsy()'],
     ["expect(result).toBeDefined();", 'toBeDefined()'],
-    ["expect(result).toBeUndefined();", 'toBeUndefined()'],
-    ["expect(found).toBeNull();", 'toBeNull()'],
     ["expect(found).not.toBeNull();", 'not.toBeNull()'],
+    ["expect(found).not.toBeUndefined();", 'not.toBeUndefined()'],
     ["expect( ids ).toBeTruthy(  );", 'toBeTruthy(  )'],
   ];
   for (const [source, snippet] of denied) {
@@ -248,7 +247,7 @@ describe('weakAssertions', () => {
   });
 
   it('sorts by line, so a report reads in file order', () => {
-    const source = 'expect(b).toBeNull();\nassert(a);\n';
+    const source = 'expect(b).toBeDefined();\nassert(a);\n';
     assert.deepEqual(
       weakAssertions(source).map((weak) => weak.line),
       [1, 2],
@@ -281,8 +280,8 @@ describe('weakAssertions', () => {
   });
 
   it('ignores a block comment mentioning it, and still counts lines correctly', () => {
-    const source = '/**\n * Not toBeTruthy().\n */\nexpect(x).toBeNull();\n';
-    assert.deepEqual(weakAssertions(source), [{ line: 4, snippet: 'toBeNull()' }]);
+    const source = '/**\n * Not toBeTruthy().\n */\nexpect(x).toBeDefined();\n';
+    assert.deepEqual(weakAssertions(source), [{ line: 4, snippet: 'toBeDefined()' }]);
   });
 });
 
@@ -367,5 +366,49 @@ describe('integrityGate', () => {
       { name: result.name, ok: result.ok, status: result.status },
       { name: 'gate-integrity', ok: true, status: 0 },
     );
+  });
+});
+
+describe('truthinessAssertions distinguishes a class of values from a single value', () => {
+  /** @param {string} source @returns {string[]} */
+  const flagged = (source) => truthinessAssertions(repo({ files: { 'src/a.test.js': `${source}\n` } }));
+
+  /** @type {string[]} */
+  const weak = [
+    'expect(x).toBeTruthy();',
+    'expect(x).toBeFalsy();',
+    'expect(x).toBeDefined();',
+    'expect(x).not.toBeUndefined();',
+    'expect(x).not.toBeNull();',
+    'expect(x).not.toBeTruthy();',
+  ];
+  for (const source of weak) {
+    it(`flags ${source.trim()}, which accepts a class of values`, () => {
+      assert.equal(flagged(source).length, 1, source);
+    });
+  }
+
+  /** @type {string[]} */
+  const precise = [
+    'expect(store.get("missing")).toBeUndefined();',
+    'expect(node.parent).toBeNull();',
+    'expect(x).not.toBeDefined();',
+    'expect(x).toBe(undefined);',
+  ];
+  for (const source of precise) {
+    it(`leaves ${source.trim()} alone, because it names exactly one value`, () => {
+      // Measured in case I: `toBeUndefined()` was flagged on a note store's lookup of a missing
+      // key, which is the idiomatic and correct assertion for that behaviour. `toBe(undefined)`
+      // is not an improvement on it, it is the same assertion spelled longer — and a gate wrong
+      // in the failing direction reads as the project's fault.
+      assert.deepEqual(flagged(source), [], source);
+    });
+  }
+
+  it('flips its verdict with polarity, which is the whole correction', () => {
+    assert.equal(flagged('expect(x).toBeDefined();').length, 1);
+    assert.deepEqual(flagged('expect(x).not.toBeDefined();'), []);
+    assert.deepEqual(flagged('expect(x).toBeUndefined();'), []);
+    assert.equal(flagged('expect(x).not.toBeUndefined();').length, 1);
   });
 });

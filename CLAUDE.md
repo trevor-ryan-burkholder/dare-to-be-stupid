@@ -149,6 +149,13 @@ Rules:
   is tested against *real, committed* vitest and Playwright reporter JSON in
   `test/fixtures/` — not hand-written approximations of it. See `DESIGN.md` §11: this is
   the component most likely to fail silently.
+- **Assert values, not truthiness — and polarity decides which is which.** `toBeUndefined()` and
+  `toBeNull()` name **exactly one value** and are fine; `toBe(undefined)` is not an improvement on
+  `toBeUndefined()`, it is the same assertion spelled longer. What is refused is a matcher that
+  accepts a *class*: `toBeTruthy`, `toBeFalsy`, `toBeDefined`, and the negations `not.toBeNull()`
+  and `not.toBeUndefined()`. `not.toBeDefined()` means *is undefined* and is therefore fine.
+  Conflating these cost case I a `gate-integrity` failure on a note store's lookup of a missing
+  key, which was the correct assertion.
 - **Assert values, not truthiness.** `expect(ids).toEqual(new Set([...]))`, never
   `expect(ids).toBeTruthy()`. A test that only proves something returned *something* is
   worse than no test. (We enforce this on generated code; we hold ourselves to it too.)

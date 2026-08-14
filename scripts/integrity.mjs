@@ -209,15 +209,38 @@ export const TEST_FILE_RE = /\.(test|spec)\.[cm]?[jt]sx?$/;
 const TEST_DIRS = new Set(['test', 'tests', '__tests__', 'spec', 'e2e']);
 
 /**
- * The matchers that assert existence instead of value.
+ * The matchers that assert existence instead of value — **and polarity decides which those are.**
  *
- * This list is the one in `CLAUDE.md` and in the builder's own contract, and it is short on
- * purpose. Every entry has no honest use as a whole assertion: if the expected value is known
- * — and in a test it always is — then `toBe(expected)` says it, and if it is not known then
- * the test is not testing anything. Anything outside this list is left alone, including
- * matchers this module has never heard of.
+ * The rule is `CLAUDE.md`'s: assert values, not truthiness. The old list named five matchers and
+ * ignored negation, which conflated two different things and produced false positives measured in
+ * case I: `toBeUndefined()` was flagged on a note store's lookup of a missing key, and
+ * `not.toBeNull()` beside it, as though they were the same defect.
+ *
+ * They are not. **`toBeTruthy`, `toBeFalsy` and `toBeDefined` assert a *class* of values** — any
+ * of infinitely many, any of six, anything at all except `undefined` — and a test that accepts a
+ * class is not testing a value. **`toBeUndefined()` and `toBeNull()` assert exactly one value
+ * each**, and are the idiomatic way to write it; `toBe(undefined)` is not an improvement on
+ * `toBeUndefined()`, it is the same assertion spelled longer.
+ *
+ * Negation flips every one of them, which is why it cannot be ignored:
+ *
+ * | form | asserts | verdict |
+ * |---|---|---|
+ * | `toBeDefined()` | anything but `undefined` | weak |
+ * | `not.toBeDefined()` | exactly `undefined` | precise |
+ * | `toBeUndefined()` | exactly `undefined` | precise |
+ * | `not.toBeUndefined()` | anything but `undefined` | weak |
+ * | `toBeNull()` | exactly `null` | precise |
+ * | `not.toBeNull()` | anything but `null` | weak |
+ * | `toBeTruthy()` / `toBeFalsy()` | a class, either way | weak |
+ *
+ * Anything outside this is left alone, including matchers this module has never heard of. **A
+ * gate that is wrong in the failing direction is invisible as a defect** — it reads as the
+ * project's fault — which is what the observability detector cost at 0.118.0, and the reason this
+ * one was re-derived rather than trusted.
  */
-const WEAK_MATCHER_RE = /\.(?:not\.)?(toBeTruthy|toBeFalsy|toBeDefined|toBeUndefined|toBeNull)\s*\(\s*\)/g;
+const WEAK_MATCHER_RE =
+  /(?<!\.not)\.(?:toBeTruthy|toBeFalsy|toBeDefined)\s*\(\s*\)|\.not\.(?:toBeTruthy|toBeFalsy|toBeUndefined|toBeNull)\s*\(\s*\)/g;
 
 /** `assert(` and `assert.ok(`, but not `assert.equal(` and not `myassert(`. */
 const BARE_ASSERT_RE = /(?<![\w$])assert(\.ok)?\s*\(/g;
