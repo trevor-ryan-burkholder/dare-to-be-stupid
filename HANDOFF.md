@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.116.0`. Measured at 0.116.0: `npm test` **1789 pass**,
+**State:** `main` at `0.117.0`. Measured at 0.117.0: `npm test` **1795 pass**,
 `npm run test:integration` **35 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -23,6 +23,33 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.117.0 — the loop can now say "you have failed this same gate three times"
+
+**Case I's bill, turned into a mechanism.** That run spent **40,000,137 tokens and \$20.45** failing
+`observability` — *"missing: structured logging"* — on **all eight iterations**, while every
+individual iteration reported the failure correctly and **nothing counted them**. 0.109.0 gave the
+loop a voice for a repeating *test*; this is the same defect wearing the other hat, and case I is
+what it costs.
+
+**Consecutive, not cumulative, and cleared by a pass.** A gate that fails, passes, then fails again
+is a builder making progress and losing it — a different problem, and the streak resets so this
+does not fire for it. A gate that did not run at all keeps its streak, because *"not applicable
+today"* is not evidence it was fixed.
+
+**Threshold three, and two would be wrong.** Two failures are ordinary: a builder working on
+something else leaves a gate red, and that is not a signal. Three consecutive means it is not
+being addressed at all.
+
+**And it reaches the builder, which is the half that matters.** The log line is for the operator;
+**a builder never reads the log.** Case I's builder failed the identical gate eight times without
+once being told it was the identical gate, so the note is appended to the gate-failure objective
+as well.
+
+**Broke jsdoc/function adjacency doing it — third time tonight**, same shape each time: inserting
+a new block between an existing docblock and its declaration. Caught by `typecheck` immediately,
+which is exactly what that gate is for, but three occurrences is a pattern worth naming rather
+than three accidents.
 
 ### Case I — final: `BUDGET` at 8 of 8, **40M tokens spent without the ratchet ever advancing once**
 

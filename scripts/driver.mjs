@@ -1207,6 +1207,48 @@ export function appendBlooper(meeseeksDir, event) {
 }
 
 /**
+ * How many consecutive iterations a gate must fail before the loop says so.
+ *
+ * **Three, and two would be wrong.** A gate failing twice is ordinary — a builder working on
+ * something else leaves it failing, and that is not a signal. Three consecutive identical
+ * failures means the builder is not addressing it at all, which is a different fact.
+ */
+export const REPEATED_GATE_THRESHOLD = 3;
+
+/**
+ * What to tell a builder that has failed the same gate three iterations running.
+ *
+ * **Measured in case I, and the cost was the entire run.** Eight iterations, 40,000,137 tokens
+ * and \$20.45 went to a project that failed `observability` — *"missing: structured logging"* —
+ * on **every single one**. Nothing else failed. The gate was correctly armed and the requirement
+ * was a line of work; the builder simply never did it, and **no mechanism ever said "you have
+ * failed this same thing eight times."**
+ *
+ * 0.109.0 gave the loop a voice for a repeating *test*. This is the same defect wearing the other
+ * hat, and case I is what it costs: a run can spend its entire budget stalled on one static gate
+ * while every individual iteration reports its failure correctly and no one is counting.
+ *
+ * Consecutive, not cumulative. A gate that fails, passes, and fails again is a builder making
+ * progress and losing it — a different problem, and the streak resets so this note does not
+ * fire for it.
+ *
+ * @param {Map<string, number>} streaks consecutive failures per gate, *after* this iteration
+ * @returns {string} empty when nothing has reached the threshold
+ */
+export function repeatedGateNote(streaks) {
+  const stuck = [...streaks.entries()]
+    .filter(([, count]) => count >= REPEATED_GATE_THRESHOLD)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, count]) => `${name} (${count} iterations running)`);
+  if (stuck.length === 0) return '';
+  return (
+    `${stuck.join(', ')} has failed every iteration for some time and is the reason this run is not ` +
+    'progressing. Fix it before anything else: no amount of other work can end the run while it fails, ' +
+    'and the panel is never reached'
+  );
+}
+
+/**
  * What to tell a builder that has broken the same test twice.
  *
  * **Measured in `ship1` on 13 August 2026, and it is the reason this exists.** The ratcheted
@@ -1379,6 +1421,16 @@ export function driveRun(options) {
    * Zero until an iteration sets it: a run that never built a brief has nothing to compare.
    */
   let firstBriefChars = 0;
+
+  /**
+   * Consecutive failures per gate name, within this run. See `repeatedGateNote`.
+   *
+   * Cleared on a pass rather than decremented: the question is "is this still broken", and a
+   * gate that passes has answered it.
+   *
+   * @type {Map<string, number>}
+   */
+  const gateFailureStreaks = new Map();
 
   /** @type {import('./brief.mjs').Objective} */
   let objective = {
@@ -1716,6 +1768,17 @@ export function driveRun(options) {
       for (const line of formatGateFailure(failedGates)) effects.log(line);
     }
 
+    // Consecutive-failure streaks, counted here because this is the one place that sees every
+    // gate result on every path — the ratchet's reset and reject branches `continue` below.
+    // A gate that ran and passed clears its streak; a gate that did not run this iteration keeps
+    // whatever it had, because "not applicable today" is not evidence it was fixed.
+    for (const result of gateOutcome.results) {
+      if (result.ok) gateFailureStreaks.delete(result.name);
+      else gateFailureStreaks.set(result.name, (gateFailureStreaks.get(result.name) ?? 0) + 1);
+    }
+    const stuckGates = repeatedGateNote(gateFailureStreaks);
+    if (stuckGates !== '') effects.log(`stuck gate: ${stuckGates}`);
+
     // ---- Phase 4: ratchet ----------------------------------------------
     /** @type {Set<string>} */
     let passing;
@@ -1832,7 +1895,11 @@ export function driveRun(options) {
         reason:
           `${failedGates.length} gate(s) failed on iteration ${iterationNumber}. Gates run before the audit because ` +
           'they are free and deterministic, and there is no reason to pay for a cold read of something that does ' +
-          'not compile',
+          'not compile' +
+          // The half that matters. The log line above is for the operator; a builder never reads
+          // the log, and case I's builder failed the same gate eight times without once being
+          // told it was the same gate.
+          (stuckGates === '' ? '' : `. ${stuckGates}`),
         gateFailures: failedGates.map((result) => ({ name: result.name, detail: result.detail })),
       };
       closeIteration(

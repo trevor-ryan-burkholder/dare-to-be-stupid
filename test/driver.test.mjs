@@ -62,6 +62,8 @@ import {
   armingNote,
   overlayGates,
   repeatedRegressionNote,
+  repeatedGateNote,
+  REPEATED_GATE_THRESHOLD,
   childBudget,
   isSecurityId,
   isTestEvidence,
@@ -4636,5 +4638,42 @@ describe('--give-them-the-box: the refusal, and the one way past it', () => {
     assert.equal(parseDriverArgs(['PRD.md']).giveThemTheBox, false);
     // The config half is covered where config strictness lives: `validateConfig` rejects any
     // unknown key, so there is no spelling of this that a config file could smuggle in.
+  });
+});
+
+describe('repeatedGateNote', () => {
+  it('says nothing below the threshold, because two failures are ordinary', () => {
+    // The deny path. A builder working on something else leaves a gate failing, and a warning
+    // that fires on that is a warning nobody reads.
+    assert.equal(repeatedGateNote(new Map([['observability', 1]])), '');
+    assert.equal(repeatedGateNote(new Map([['observability', 2]])), '');
+  });
+
+  it('speaks at the threshold and names the gate and the count', () => {
+    const note = repeatedGateNote(new Map([['observability', REPEATED_GATE_THRESHOLD]]));
+    assert.equal(note.includes(`observability (${REPEATED_GATE_THRESHOLD} iterations running)`), true, note);
+    assert.equal(note.includes('Fix it before anything else'), true, note);
+  });
+
+  it('reports case I: eight iterations of one gate, which cost a whole run', () => {
+    // 40,000,137 tokens and $20.45 went to a project that failed this gate on every iteration
+    // while nothing counted them.
+    const note = repeatedGateNote(new Map([['observability', 8]]));
+    assert.equal(note.includes('observability (8 iterations running)'), true, note);
+  });
+
+  it('names several stuck gates in a stable order', () => {
+    const note = repeatedGateNote(new Map([['observability', 4], ['ci', 5]]));
+    assert.equal(note.indexOf('ci (') < note.indexOf('observability ('), true, note);
+  });
+
+  it('ignores gates below the threshold while reporting one above it', () => {
+    const note = repeatedGateNote(new Map([['observability', 4], ['lint', 1]]));
+    assert.equal(note.includes('observability'), true, note);
+    assert.equal(note.includes('lint'), false, note);
+  });
+
+  it('is empty for an empty streak map', () => {
+    assert.equal(repeatedGateNote(new Map()), '');
   });
 });
