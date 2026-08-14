@@ -1,6 +1,6 @@
 # START HERE — handoff, last swept 14 August 2026
 
-**State:** `master` at `0.140.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.140.0: `npm test` **1889 pass**,
+**State:** `main` at `0.140.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.140.0: `npm test` **1889 pass**,
 `npm run test:integration` **37 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
