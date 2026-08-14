@@ -64,6 +64,7 @@ import {
   repeatedRegressionNote,
   repeatedGateNote,
   hasStructuredLogging,
+  findHealthPath,
   REPEATED_GATE_THRESHOLD,
   childBudget,
   isSecurityId,
@@ -4817,5 +4818,37 @@ describe('the ci gate explains why a runner must be named', () => {
     rmSync(dir, { recursive: true, force: true });
     assert.equal(ci?.ok, false);
     assert.equal(ci?.detail.includes('Name the runner explicitly'), false, ci?.detail);
+  });
+});
+
+describe('findHealthPath ignores prose', () => {
+  /** @param {string} source @returns {string | null} */
+  const detect = (source) => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-health-'));
+    mkdirSync(path.join(dir, 'src'), { recursive: true });
+    writeFileSync(path.join(dir, 'src', 'a.ts'), source);
+    const found = findHealthPath(dir);
+    rmSync(dir, { recursive: true, force: true });
+    return found;
+  };
+
+  it('does not count a mention inside a comment', () => {
+    // Run against this repository the gate reported `/health` declared, matching a jsdoc line
+    // in health-probe.mjs that reads "`/health` establishes that somebody typed it, which is a
+    // different claim". The file documenting the hazard tripped it.
+    assert.equal(detect('/** `/health` establishes that somebody typed it. */\nexport const x = 1;\n'), null);
+    assert.equal(detect('// see "/health" for the convention\nexport const y = 2;\n'), null);
+  });
+
+  it('still counts a real string literal, which is all this check ever claimed', () => {
+    // The static half only ever asserted a *declaration*; the behavioural probe is the real
+    // check when a start command exists, and the detail says "declared but not probed" when it
+    // does not. A grep cannot tell a registered route from a literal and does not pretend to.
+    assert.equal(detect("app.get('/health', handler);\n"), '/health');
+    assert.equal(detect('router.get("/healthz", h);\n'), '/healthz');
+  });
+
+  it('finds nothing when nothing mentions it at all', () => {
+    assert.equal(detect('export const status = 200;\n'), null);
   });
 });

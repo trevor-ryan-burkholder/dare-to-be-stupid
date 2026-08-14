@@ -39,7 +39,7 @@ import { DEFAULT_OWNERSHIP, loadConfig } from './config.mjs';
 import { checkContextBudget, promptGrowthNote, measurePrompt } from './context-budget.mjs';
 import { applicableGates, gateApplies } from './gate-policy.mjs';
 import { hasMeaningfulHistory, historyContext } from './history.mjs';
-import { integrityGate } from './integrity.mjs';
+import { blankComments, integrityGate } from './integrity.mjs';
 import {
   addLesson,
   findResolvedStruggles,
@@ -2804,7 +2804,15 @@ export function findHealthPath(cwd) {
   /** @type {string | null} */
   let found = null;
   anySourceMatches(cwd, 0, (contents) => {
-    const match = contents.match(/['"`](\/(?:health|healthz|_health))\b/);
+    // **Comments are blanked first, and this repository is why.** Run against its own tree the
+    // gate reported `/health` declared — matching a jsdoc line in `health-probe.mjs` that reads
+    // *"`/health` establishes that somebody typed it, which is a different claim"*. The file
+    // documenting the hazard tripped it. A comment is not a route, and a gate wrong in the
+    // *passing* direction is the dangerous orientation: it reports protection nobody has.
+    //
+    // The behavioural probe below is still the real check when a start command exists; this
+    // static match only ever claimed a *declaration*, and a declaration in prose is not one.
+    const match = blankComments(contents).match(/['"`](\/(?:health|healthz|_health))\b/);
     if (match === null) return false;
     found = match[1];
     return true;

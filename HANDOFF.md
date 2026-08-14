@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.124.0`. Measured at 0.124.0: `npm test` **1839 pass**,
+**State:** `main` at `0.125.0`. Measured at 0.125.0: `npm test` **1842 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -23,6 +23,28 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.125.0 — a gate that passed on a comment, in the file warning about comments
+
+**Wrong in the *passing* direction, which is the dangerous orientation.** Run against this
+repository's own tree, `observabilityGate` reported `/health` declared. This repository serves no
+HTTP. The match was a jsdoc line in `health-probe.mjs`:
+
+> *"`/health` establishes that somebody typed it, which is a different claim: a route…"*
+
+**The file documenting the hazard tripped it.** `findHealthPath` now blanks comments first, reusing
+`blankComments` from `integrity.mjs` rather than growing a second one.
+
+**And it did not change this repository's verdict, which is the honest part.** A second match
+remains — `flags.path ?? '/health'`, the probe tool's own default, which is real code. A grep
+cannot tell a registered route from a string literal, the docblock has always said so, and the
+detail hedges to *"declared but not probed"* precisely because the behavioural probe is the real
+check. **What shipped removes prose mentions, a whole class, at no cost. It does not claim to fix
+the general case and the tests say which is which.**
+
+**Worth separating from the night's other gate findings.** `observability`'s logging detector was
+wrong in the failing direction and cost a 40M-token run. This is the mirror image: cheap to fix,
+impossible to notice, and it reports protection nobody has.
 
 ### 0.124.0 — the loudest channel: a greenfield builder was handed the whole Node guidance page
 
