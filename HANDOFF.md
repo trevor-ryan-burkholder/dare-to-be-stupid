@@ -24,6 +24,42 @@ line in the same commit.
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
 
+### Case I's open question, answered: **the ratchet protects nothing until the first fully-green iteration**
+
+**Not a bug in extraction.** Case I's final `test-report.json` holds **71 tests, `success: true`**,
+and running the real `extractTestIds` against that real file returns **71 ids**. The extractor is
+fine.
+
+**`saveState` is called in exactly one place** — Phase 6, *after* the panel. The Phase 4
+`evaluateIteration` decides only the reset; it never persists an advance. So the ratchet is written
+**only by an iteration that passed every gate and was reviewed.** Case I failed `observability` on
+all eight, never reached Phase 6, and therefore recorded `passing: 0` with no `state.json` at all —
+while sitting on 71 passing tests.
+
+**The consequence, stated plainly: for the entire run, the ratchet protected nothing.** If a
+builder had broken one of those 71 tests while chasing `observability`, **nothing would have
+noticed.** The single mechanism that turns an infinite loop into a terminating one is **inert until
+the first fully-green iteration** — which is to say it is absent exactly when a run is thrashing,
+which is exactly when it is needed.
+
+**The design is defensible and that is why this is a question, not a defect.** Banking ids from a
+tree the loop itself considers broken would ratchet in a state that never compiled or linted
+cleanly, and those ids would then have to keep passing forever. `README.md` and `DESIGN.md` §1.2
+both describe the ratchet as unconditional; **neither says it does not exist yet**, and a reader
+would not guess.
+
+**Options, recorded without preference** — this is the operator's call as the race one is:
+persist on a passing **`unit`** gate rather than on a fully-green iteration, which protects tests
+without claiming the tree is good; persist always but mark ids provisional until a green iteration
+confirms them; or document the current behaviour loudly and leave it. **What is not defensible is
+the docs continuing to imply protection that a stalled run never has.**
+
+**Related, and unexamined:** case I's very first extracted id is
+`test/log.test.ts::log > writes a single structured JSON line to stderr…`, while the
+`observability` gate insisted structured logging was *missing* on every iteration. Either the gate
+looks somewhere the logging isn't, or the tests test something the source lacks. **That is worth
+one look before anyone trusts that gate**, and it is not the same finding as this one.
+
 ### 0.117.0 — the loop can now say "you have failed this same gate three times"
 
 **Case I's bill, turned into a mechanism.** That run spent **40,000,137 tokens and \$20.45** failing
