@@ -147,7 +147,17 @@ and silently disabled A4 (fixed, 0.103.0).
 saving is real but it is a cost argument, and the panel's dominant cost is wall clock, `3×` where
 it could be `max()`. **Item 10 is therefore unblocked with the panel kept.**
 
-### 9. Case I — racing with live builders, current state — OPEN (verify first), **PREPARED**
+### 9. Case I — racing with live builders — **RUN 14 Aug. Machinery works; the win condition may be unreachable**
+
+**The race executed end to end for the first time** — armed on two stalls, two candidates in their
+own worktrees at 6.03M and 5.29M tokens, gated independently, each with its own archived brief,
+all discarded, worktrees cleaned. **`applyWinner` still never fired, and now we know why it may
+never.** `selectWinner` demands every gate pass, while the race only arms on stalls, which *are*
+gates failing — so a candidate must fix everything at once on a line that has fixed nothing for
+several iterations. Both halves are individually correct; the intersection is close to empty.
+**Full write-up in `HANDOFF.md`. The resolution is a design decision and is the operator's.**
+
+### 9a. Case I, original entry — OPEN (verify first), **PREPARED**
 Queue item 1 raced live builders and 0.83.0 fixed the landing. Decide whether a full case-I
 under current code is still owed; run it if yes, close it against the queue-item record if no.
 

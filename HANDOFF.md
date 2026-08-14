@@ -24,6 +24,40 @@ line in the same commit.
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
 
+### Case I — the race ran end to end for the first time, and the win condition may be unreachable by construction
+
+**Every step of the race worked except the one that has never worked.** Iteration 5 armed it after
+two stalls exactly as configured. Two candidate builders ran — **397s / 6.03M** and **376s /
+5.29M** tokens — each in its own worktree, each gated independently, each with **its own archived
+brief** (`iter-005-candidate-01.md`, `-02.md`). Both were discarded, the worktrees cleaned
+themselves up, and the run carried on to iteration 6.
+
+**`DOGFOOD.md`'s checklist, answered:** worktrees clean afterwards ✓ · one brief per candidate ✓ ·
+no candidate advanced or read the ratchet ✓ (the mutation gate reported no ratchet-advancing
+baseline throughout) · **cost of a race ≈ 11.3M against ~5–6M for a lone builder, so the doubling
+is real and measured** · winner selection — **still never exercised**, because there was no winner.
+
+**And here is why there may never be one.** `selectWinner` requires
+`candidate.gates.every((gate) => gate.ok)` — viability is **absolute**. But the race only arms
+after consecutive **stalls**, and a stall *is* the condition of gates failing. **So the race arms
+precisely when its win condition is hardest to satisfy:** a candidate must repair *everything, at
+once, in one iteration*, on a line that has failed to repair anything for several. In this run the
+outstanding gates included `ci`, `docs` and `observability` — none of them the thing the builders
+were racing on, and all of them fatal to a candidate.
+
+**Both halves of the tension are correct, which is what makes it a design question rather than a
+bug.** The absolute bar is right for the reason `race.mjs` states: merging a regressing candidate
+hands the main tree a regression the ratchet then has to reset out of, *"a worse position than
+never having raced."* And arming on stalls is right, because a healthy run has no reason to spend
+`n` builders. They are simply in tension, and the intersection is close to empty.
+
+**This is the operator's call and I am not making it.** The options, stated without preference:
+rank candidates by gate score and merge the best only when it is *strictly better* than main;
+arm the race on something other than a stall; or accept that the race is a lottery ticket for the
+case where one candidate happens to crack everything. **What is now established is that the
+machinery works and the odds are the problem** — which is the opposite of what everyone assumed
+while `applyWinner` sat unexercised.
+
 ### 0.116.0 — the growth note is asserted after all, by attacking the condition from the other side
 
 **The gap named at 0.113.0 and 0.114.0 is closed, and the fix was a framing error rather than a
