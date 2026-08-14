@@ -67,6 +67,8 @@ import { parseReport } from './reporters/index.mjs';
 import {
   evaluateIteration,
   extractTestIds,
+  restorePaths,
+  scopedRestorePaths,
   formatBlooperRecord,
   hardReset,
   loadState,
@@ -1682,7 +1684,42 @@ export function driveRun(options) {
         diffStat: effects.diffStat(),
         at: effects.now(),
       });
-      if (decision.target !== null) hardReset({ cwd: rootDir, commit: decision.target });
+      // ---- scoped restore before the whole-tree one (DESIGN.md §1.2) -----
+      // A hard reset is whole-tree, so it discards everything the iteration built, not only the
+      // change that broke something. Measured in `ship1`: two resets threw away the run's two
+      // *largest* builder spends, 7.5M and 7.7M tokens, about 10% of a 150M ceiling, because one
+      // parser regressed. The resets were right; the scope was the only thing wrong.
+      //
+      // So the narrow restore is **attempted and then verified**, never trusted. `sourceSiblings`
+      // is a naming convention, which is a guess — and a guess is only cheap when something
+      // checks it. If the regressed ids do not come back, the full reset runs exactly as before
+      // and nothing has been lost but one deterministic gate pass. Nothing defaults to pass here
+      // either: a scoped restore that cannot be verified **is** a failed scoped restore.
+      let scopedHeld = false;
+      const scoped = decision.target === null ? [] : scopedRestorePaths(decision.regressions, effects.changedFiles?.() ?? []);
+      if (scoped.length > 0 && decision.target !== null) {
+        restorePaths({ cwd: rootDir, commit: decision.target, paths: scoped });
+        try {
+          const back = new Set();
+          effects.gates();
+          for (const report of effects.readTestReports()) {
+            for (const id of extractTestIds(report, { rootDir })) back.add(id);
+          }
+          scopedHeld = decision.regressions.every((id) => back.has(id));
+        } catch {
+          // An unreadable report cannot confirm a restore. Fall through to the full reset.
+          scopedHeld = false;
+        }
+        if (scopedHeld) {
+          effects.log(
+            `scoped restore held: returned ${scoped.join(', ')} to the last good commit and kept the rest of ` +
+              'this iteration',
+          );
+        } else {
+          effects.log(`scoped restore did not return the failing test(s); falling back to the full reset`);
+        }
+      }
+      if (!scopedHeld && decision.target !== null) hardReset({ cwd: rootDir, commit: decision.target });
       effects.event?.({ kind: 'reset', regressions: decision.regressions.length });
       effects.log(`regression: ${decision.regressions.join(', ')}`);
       // Counted before the tally is updated, so the first repeat reads "2 times".

@@ -27,7 +27,11 @@ import {
   hardReset,
   loadState,
   recordAdvance,
+  restorePaths,
   saveState,
+  scopedRestorePaths,
+  sourceSiblings,
+  testFilePath,
 } from '../scripts/ratchet.mjs';
 
 /** @type {string[]} */
@@ -516,5 +520,81 @@ describe('a run across several iterations', () => {
       passing: ['a::1', 'b::2', 'c::3', 'd::4'],
       lastGoodCommit: 'commit4',
     });
+  });
+});
+
+describe('scoping a restore to what a regression implicates', () => {
+  it('recovers the file from an id', () => {
+    assert.equal(testFilePath('src/csv.test.ts::parseCsv > an unterminated quote'), 'src/csv.test.ts');
+  });
+
+  it('returns empty for an id carrying no path, rather than guessing one', () => {
+    // Nothing here defaults to pass, and a bare suite name names no file. An empty string is
+    // read by `scopedRestorePaths` as "no scoped restore available", never as "nothing to do".
+    assert.equal(testFilePath('adds two numbers'), '');
+    assert.equal(testFilePath('::orphan > case'), '');
+  });
+
+  /** @type {[string, string[]][]} */
+  const conventions = [
+    ['src/csv.test.ts', ['src/csv.ts']],
+    ['src/app.spec.tsx', ['src/app.tsx']],
+    ['pkg/util.test.mjs', ['pkg/util.mjs']],
+    ['tests/test_parser.py', ['tests/parser.py']],
+    ['tests/parser_test.py', ['tests/parser.py']],
+    ['internal/csv_test.go', ['internal/csv.go']],
+    ['src/PathsTests.cs', ['src/Paths.cs']],
+    ['src/PathsTest.cs', ['src/Paths.cs']],
+  ];
+  for (const [testPath, expected] of conventions) {
+    it(`maps ${testPath} to its source sibling`, () => {
+      assert.deepEqual(sourceSiblings(testPath), expected);
+    });
+  }
+
+  it('claims nothing for a file that matches no convention', () => {
+    // The deny path. A guess with no convention behind it is the shape that would restore an
+    // unrelated file, and the verification step would then blame the wrong change.
+    assert.deepEqual(sourceSiblings('src/csv.ts'), []);
+    assert.deepEqual(sourceSiblings('docs/attest.cs'), []);
+  });
+
+  it('intersects with what the iteration actually changed', () => {
+    // The intersection is what makes a scoped restore safe to attempt: a file this iteration
+    // never touched cannot be the cause, and restoring it would revert unrelated work.
+    const paths = scopedRestorePaths(
+      ['src/csv.test.ts::parseCsv > quote at EOF'],
+      ['src/csv.ts', 'src/csv.test.ts', 'src/summarize.ts', 'README.md'],
+    );
+    assert.deepEqual(paths, ['src/csv.test.ts', 'src/csv.ts']);
+  });
+
+  it('leaves out an implicated file the iteration never touched', () => {
+    const paths = scopedRestorePaths(['src/csv.test.ts::parseCsv > x'], ['src/summarize.ts']);
+    assert.deepEqual(paths, []);
+  });
+
+  it('is empty when nothing is implicated, which is not the same as nothing to restore', () => {
+    assert.deepEqual(scopedRestorePaths([], ['src/csv.ts']), []);
+    assert.deepEqual(scopedRestorePaths(['no-path-id'], ['src/csv.ts']), []);
+  });
+
+  it('deduplicates and sorts across several regressions in one file', () => {
+    const paths = scopedRestorePaths(
+      ['src/csv.test.ts::a > one', 'src/csv.test.ts::b > two', 'src/cli.test.ts::main > three'],
+      ['src/csv.ts', 'src/csv.test.ts', 'src/cli.ts', 'src/cli.test.ts'],
+    );
+    assert.deepEqual(paths, ['src/cli.test.ts', 'src/cli.ts', 'src/csv.test.ts', 'src/csv.ts']);
+  });
+});
+
+describe('restorePaths refuses the shapes that are not smaller restores', () => {
+  it('refuses no commit', () => {
+    assert.throws(() => restorePaths({ cwd: '/repo', commit: null, paths: ['src/csv.ts'] }), RatchetStateError);
+  });
+
+  it('refuses an empty path list rather than restoring everything', () => {
+    // `git checkout <commit> --` with no paths is not an error to git and not a small restore.
+    assert.throws(() => restorePaths({ cwd: '/repo', commit: 'abc123', paths: [] }), RatchetStateError);
   });
 });

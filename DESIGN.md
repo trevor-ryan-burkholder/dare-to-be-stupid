@@ -86,6 +86,23 @@ the next build task, nothing else proceeds. Monotonic. A test that has passed is
 allowed to fail again. This is the single mechanism that turns an infinite loop into a
 terminating one. **Build it first.**
 
+**The reset is scoped before it is total (0.112.0).** A hard reset is whole-tree, so it discards
+everything the iteration built rather than the change that broke something. Measured in `ship1`:
+two resets threw away that run's two **largest** builder spends — 7.5M and 7.7M tokens, ~10% of a
+150M ceiling — because one parser regressed. The resets were correct; the scope was the only thing
+wrong.
+
+So the driver first computes the narrowest set that could be responsible — the regressed ids' test
+files and their **source siblings by naming convention** (`foo.test.ts` ↔ `foo.ts`, `test_x.py`,
+`x_test.go`, `FooTests.cs`), intersected with the files this iteration actually changed — restores
+just those, and **re-runs the suite to check the regressed ids came back.** If they did, the rest
+of the iteration survives. If they did not, the full `git reset --hard` runs exactly as before.
+
+**The verification is the design, not a nicety.** The sibling mapping is a convention, which is a
+guess, and a guess is only cheap when something checks it. An unverifiable scoped restore is a
+failed scoped restore — nothing defaults to pass here either. The cost of being wrong is one
+deterministic gate pass with no model in it; the cost of not trying was measured at 15.2M tokens.
+
 **A ratcheted test can encode a defect, and 0.109.0 makes that sayable.** Measured in `ship1`:
 the builder wrote a test early asserting the exact behaviour the panel later called a bug, so
 every attempt to satisfy the review broke the test, reset, and destroyed the iteration —

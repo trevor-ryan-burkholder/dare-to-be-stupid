@@ -1,7 +1,7 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.111.0`. Measured at 0.111.0: `npm test` **1751 pass**,
-`npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
+**State:** `main` at `0.112.0`. Measured at 0.112.0: `npm test` **1768 pass**,
+`npm run test:integration` **33 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
 **`npm run test:live` at 0.110.0: 27 of 27 across 11 files, 0 failures.** The suite has now been
@@ -23,6 +23,43 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.112.0 — the partitioned ratchet: scope the reset, then prove the scope was right
+
+**The 15.2M tokens I watched burn.** `ship1` hard-reset twice and each reset discarded that run's
+**largest** builder spend — 7.5M and 7.7M, about 10% of a 150M ceiling — because one parser
+regressed and a hard reset is whole-tree. **The resets were correct. Only the scope was wrong.**
+
+**The mechanism, in three steps.** Compute the narrowest set that could be responsible: the
+regressed ids' test files plus their **source siblings by naming convention**, intersected with
+the files the iteration actually changed. Restore just those. **Then re-run the suite and check
+the regressed ids came back.** Held → the rest of the iteration survives. Not held → the full
+`git reset --hard` runs exactly as before.
+
+**The intersection and the verification are both load-bearing, and for different reasons.** The
+intersection means a file this iteration never touched can never be restored — it cannot be the
+cause, and reverting it would destroy unrelated work. The verification means the *convention* —
+`foo.test.ts` ↔ `foo.ts`, `test_x.py`, `x_test.go`, `FooTests.cs` — is a guess that something
+checks. **An unverifiable scoped restore is a failed scoped restore.** The cost of guessing wrong
+is one deterministic gate pass with no model in it.
+
+**Monotonicity is untouched.** No id leaves the passing set by this path; the ratchet still
+demands every regressed id come back, and the only question is how much *else* gets thrown away
+on the way. That is the difference between changing the invariant and changing its blast radius.
+
+**Tested at three levels, deliberately.** Seventeen unit tests on the pure core including the deny
+paths — an id with no path claims no file, a filename matching no convention claims no sibling, an
+empty restore list is refused rather than silently restoring everything. Then **tier 2 against
+real git**, because `git checkout <commit> -- <paths>` is another binary's contract and this whole
+design rests on it returning exactly those paths: it proves unrelated modifications survive, and
+that an **untracked file the iteration created is not destroyed** — a scoped restore that quietly
+deleted new work would be worse than the full reset it replaces.
+
+**Not verified:** the loop-level wiring. The scoped path only fires when `lastGoodCommit` exists
+*and* shells out to git, so the tier 1 harness — which has neither — skips it entirely, and the
+existing reset tests pass unchanged for that reason. `restorePaths` and `scopedRestorePaths` are
+proven; **that `driveRun` calls them is not.** Same gap as the `quality:` prefix and the same shape
+as the guard defect. The first real run with a regression closes it.
 
 ### 0.111.0 — renamed to Meeseeks, everywhere. **Read the install note before debugging anything.**
 

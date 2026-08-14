@@ -334,6 +334,125 @@ export function evaluateIteration(state, nowPassing, iteration = {}) {
 }
 
 /**
+ * The file a test id came from. Ids are `<path>::<suite> > <name>`.
+ *
+ * @param {string} id
+ * @returns {string} empty when the id carries no path
+ */
+export function testFilePath(id) {
+  const at = id.indexOf('::');
+  return at <= 0 ? '' : id.slice(0, at);
+}
+
+/** Suffixes that mark a file as the test for a sibling source file. */
+const TEST_SUFFIXES = [
+  // node / web: foo.test.ts, foo.spec.tsx
+  { pattern: /\.(?:test|spec)(\.[cm]?[jt]sx?)$/, replace: '$1' },
+  // python: test_foo.py and foo_test.py
+  { pattern: /(^|\/)test_([^/]+\.py)$/, replace: '$1$2' },
+  { pattern: /_test(\.py)$/, replace: '$1' },
+  // go: foo_test.go
+  { pattern: /_test(\.go)$/, replace: '$1' },
+  // .NET: FooTests.cs — case-sensitive on purpose, the same reason `isTestEvidence` is
+  { pattern: /Tests?(\.(?:cs|fs|vb))$/, replace: '$1' },
+];
+
+/**
+ * The source file a test file is the test *for*, by naming convention.
+ *
+ * **This is the load-bearing guess and it is deliberately narrow.** A regressed test id names a
+ * *test* file, but the change that broke it is almost always in *source*, so restoring the test
+ * alone would put back the assertion and leave the defect. Convention is the only mapping
+ * available without running a coverage tool, and `foo.test.ts` ↔ `foo.ts` is the one convention
+ * that holds across every ecosystem this project targets.
+ *
+ * Being wrong here is cheap **because nothing trusts it**: the caller restores this set, then
+ * re-runs the suite and checks the regressed ids actually came back. A wrong guess fails that
+ * check and falls through to the full reset. A guess nobody verified would be a different
+ * proposition entirely.
+ *
+ * @param {string} testPath
+ * @returns {string[]} candidates, empty when the path matches no convention
+ */
+export function sourceSiblings(testPath) {
+  const found = [];
+  for (const { pattern, replace } of TEST_SUFFIXES) {
+    if (!pattern.test(testPath)) continue;
+    const candidate = testPath.replace(pattern, replace);
+    if (candidate !== testPath) found.push(candidate);
+  }
+  return found;
+}
+
+/**
+ * The narrowest set of paths whose restoration could undo this regression.
+ *
+ * **Why this exists, measured:** `ship1` hard-reset twice, and each reset discarded the run's
+ * *largest* builder spends — 7.5M and 7.7M tokens, ~10% of a 150M ceiling — because a hard reset
+ * is whole-tree and the regression was one parser. Everything else that iteration built went with
+ * it. The resets were correct; the *scope* was the only thing wrong.
+ *
+ * So: intersect the files this iteration actually changed with the files implicated by the
+ * regressed ids — the test files themselves and their source siblings. **The intersection is what
+ * makes this safe to attempt**: a file the iteration never touched cannot be the cause, and
+ * restoring it would revert somebody else's work for no reason.
+ *
+ * Returns an empty list when nothing is implicated, which the caller must read as *"no scoped
+ * restore is available"* and **not** as *"nothing needs restoring"*. Those are different facts and
+ * this project has paid for confusing them.
+ *
+ * @param {string[]} regressions ids that stopped passing
+ * @param {string[]} changedFiles paths changed since the last ratchet-advancing commit
+ * @returns {string[]} sorted, deduplicated
+ */
+export function scopedRestorePaths(regressions, changedFiles) {
+  const changed = new Set(changedFiles);
+  /** @type {Set<string>} */
+  const implicated = new Set();
+  for (const id of regressions) {
+    const file = testFilePath(id);
+    if (file === '') continue;
+    for (const candidate of [file, ...sourceSiblings(file)]) {
+      if (changed.has(candidate)) implicated.add(candidate);
+    }
+  }
+  return [...implicated].sort();
+}
+
+/**
+ * Restore specific paths from a commit, leaving the rest of the tree alone.
+ *
+ * The scoped counterpart to `hardReset`. It is **not** a replacement for it: the caller attempts
+ * this, verifies the regression is actually gone, and falls back to the full reset when it is
+ * not. `--` separates the commit from the paths so a path that looks like a ref cannot be read
+ * as one.
+ *
+ * @param {{ cwd: string, commit: string | null, paths: string[] }} options
+ * @returns {void}
+ * @throws {RatchetStateError} when there is nothing to restore to, no paths, or git refuses
+ */
+export function restorePaths(options) {
+  const { cwd, commit, paths } = options;
+  if (typeof commit !== 'string' || commit.length === 0) {
+    throw new RatchetStateError(
+      'restorePaths was asked to restore from no commit. The ratchet has no recorded good state to return to.',
+    );
+  }
+  if (paths.length === 0) {
+    throw new RatchetStateError('restorePaths was given no paths. An empty restore is not a smaller restore.');
+  }
+  try {
+    execFileSync('git', ['checkout', commit, '--', ...paths], { cwd, stdio: 'pipe' });
+  } catch (error) {
+    const stderr = /** @type {{ stderr?: Buffer }} */ (error).stderr;
+    throw new RatchetStateError(
+      `git checkout ${commit} -- ${paths.join(' ')} failed in ${cwd}: ` +
+        `${stderr ? stderr.toString().trim() : /** @type {Error} */ (error).message}`,
+    );
+  }
+}
+
+/**
  * Perform the ratchet's hard reset.
  *
  * @param {{ cwd: string, commit: string | null }} options
