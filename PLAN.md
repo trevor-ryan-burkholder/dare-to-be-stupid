@@ -726,3 +726,44 @@ each, each owing a failed-iteration-rate comparison. Ecosystem notes worth keepi
 hook event fires in `-p` mode (a documented per-child bootstrap point); `/plugin` now shows
 per-plugin context-token cost; Anthropic's harness paper (Mar 2026) independently validates the
 cold hostile panel ("agents evaluating their own work are pathological optimists").
+
+---
+
+## DoD — the operator's done bar (set 14 August 2026)
+
+Two parts, both required, and they bound an otherwise-asymptotic backlog:
+
+1. **All outstanding features done, tested, fixed** — items 24 (→ DONE via the boxed dogfood),
+   28, 29, the `BORROWED.md` R23–R33 menu, item 30's four candidates, and the owed measurement
+   runs (oracle2, a race that actually applies a winner, cases A/B). Deferred/dropped stay out.
+2. **The Next.js enterprise capstone below runs.**
+
+Item 21 (the mirror — improve mode on this repo) remains the final act, un-deferrable once part 1
+is code-complete.
+
+### 31. Capstone — build a chunky enterprise Next.js app, unattended, that RUNS — OPEN, **STAGED**
+
+**DoD part 2.** The largest dogfood attempted and the first serious **web-ui** target, so it is
+the first live exercise of `templates/frontend-direction.md`, the impeccable design-slop gate,
+Playwright e2e as ratchet evidence at scale, and the health-probe confirming the dev server boots.
+
+**Target:** `~/dare-dogfood/nextjs-capstone` — "Ateliers", an internal project & resource tracker:
+Next.js App Router + TypeScript, email/password auth with hashed passwords and signed cookies,
+SQLite persistence via a typed data layer, two roles (admin/member) with server-side access
+integrity, project/task CRUD, a dashboard with live counts, a seed script, `/api/health`, and
+Playwright e2e over the core flows. 12 requirements across auth, data, roles, UI and a
+build-and-runs gate (PRD-5.1). Every requirement is satisfiable; none is a trap. Config: uncapped
+ceilings, `maxIterations: 20`, the standard quality-plugin trio.
+
+**Runs, not just ships:** PRD-5.1 requires `npm run build` to succeed and the server to serve
+`/login` 200; PRD-5.2 requires the e2e suite to pass against the running app. "That runs" is in
+the bar.
+
+**Launch discipline:** only after part-1 features are code-complete, with the finished machine.
+The PRD gets one hostile shippability review first (an impossible requirement would doom the run
+the way the rejection PRD does). Expect many iterations and 100M+ tokens; uncapped is intended
+(operator on max plan, budgets rank -0).
+
+**Done when:** the run produces a Next.js app that builds and serves, with the seeded core flow
+working end to end under Playwright — a full `SHIPPED` is the target, and a run that ends with a
+running-but-incomplete app is documented honestly as a partial, not dressed as a ship.
