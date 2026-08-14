@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.136.0`. Measured at 0.136.0: `npm test` **1884 pass**,
+**State:** `main` at `0.137.0`. Measured at 0.137.0: `npm test` **1884 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -58,6 +58,12 @@ Phase 6 sets it, so a fully green iteration happened and the old code would have
 **Early banking remains unconfirmed in the wild.**
 
 **Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
+
+### 0.137.0 — the slash command documents the flags the driver takes
+
+`commands/meeseeks.md` is what a user actually reads, and it never mentioned `--deadline` or
+`--give-them-the-box`. Both documented in the command's own register — the box entry says
+plainly that it is unsupported and why it exists anyway. Shipped-path change, hence the bump.
 
 ### 0.136.0 — an envelope cannot issue a refund
 

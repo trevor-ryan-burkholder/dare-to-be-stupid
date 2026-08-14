@@ -1,6 +1,6 @@
 ---
 description: Hand a PRD, an idea, an existing repository, or nothing at all to an autonomous build loop. Pre-production only.
-argument-hint: [path-to-PRD.md | "an idea in quotes" | --improve ["area"] | (nothing)]
+argument-hint: [path-to-PRD.md | "an idea in quotes" | --improve ["area"] | (nothing)] [--deadline=<min>]
 allowed-tools: Bash(node:*), Bash(git status:*), Bash(git rev-parse:*)
 ---
 
@@ -17,6 +17,15 @@ Start an autonomous run in the current repository.
   `file:line`, then the ordinary loop fixes them. Refused on a repository with no meaningful
   history, because an author with nothing to read invents requirements the builder cannot satisfy
 - nothing — "meeseeks me" mode invents its own idea, if `improvise.enabled` is set
+
+Two flags may accompany any of those:
+
+- `--deadline=<minutes>` — a wall clock on the whole run. Off unless given; `0` explicitly
+  disables one. The ordinary ceilings are completion or budget, so most runs never want this.
+- `--give-them-the-box` — **unsupported, deliberately.** Permits a run inside a run, to depth
+  two, and arms a 30-minute wall clock unless `--deadline` set one. Everything else still holds.
+  It exists because the canon's moral is a Meeseeks who cannot finish summoning another, and a
+  joke that only ever prints a refusal is one nobody sees happen.
 
 ## Do this, in order
 
