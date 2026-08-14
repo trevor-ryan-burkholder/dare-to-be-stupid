@@ -95,7 +95,7 @@ outside a unit test:
 | the mutation gate | 0.31.0 | provisioning closed at 0.43.0, threshold `break: 60` at 0.47.0 — **and it was still crashing rather than running until 0.65.0.** Stryker's tsconfig preprocessor imports `typescript` from its own npx install, where it is absent; run 10 lost three of six iterations to it |
 | `.meeseeks/runs/NNN/` archiving | 0.28.0 | **fired live in run 4** — `.meeseeks/runs/003/`, carrying `assumptions.json` beside `briefs/` and `run.json` |
 | the .NET toolchain | 0.32.0 | **all five commands executed against SDK 8.0.423** (13 Aug); **never driven by a run** — item 20 case C. The old "no SDK on this machine" note was stale: the SDK is installed |
-| the TRX reporter | 0.33.0 | only ever seen xunit output from a scaffolded solution. **Case C is running as of 14 Aug** — first live TRX extraction |
+| the TRX reporter | 0.33.0 | **real `dotnet test` output verified 14 Aug** — a live-captured fixture now covers parameterised `[Theory]` names beside a `[Fact(Skip)]`, each `InlineData` row its own ratchet id. Still never driven by a *run* (case C parked) |
 | per-toolchain guidance | 0.34.0 | proven selected and archived; never proven *read* |
 | a race with a live builder | 0.13.0 | **executed 14 Aug, case I.** Armed on two stalls, two candidates in their own worktrees at 6.03M and 5.29M tokens, gated independently, each with its own archived brief, all discarded, worktrees cleaned. **`applyWinner` still never fired** — `selectWinner` demands every gate pass while the race only arms on stalls, so a candidate must fix everything at once. `HANDOFF.md` |
 

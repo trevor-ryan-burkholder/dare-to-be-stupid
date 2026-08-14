@@ -436,7 +436,25 @@ describe('the reporter registry', () => {
 
 describe('TRX, against real dotnet output', () => {
   const TRX_PASSING = readFixture('dotnet-8.0.423-passing.trx');
+  const TRX_THEORIES = readFixture('dotnet-8.0.423-live.trx');
   const TRX_FAILING = readFixture('dotnet-8.0.423-failing.trx');
+
+  it('keeps each theory case as its own id, parameters and all', () => {
+    // Captured live from dotnet test 8.0.423 on 14 Aug 2026 (an xunit [Theory] with two
+    // [InlineData] rows plus a [Fact(Skip)]). Each InlineData case must be its own ratchet id:
+    // if `Counts_rows(n: 1)` and `(n: 2)` collapsed into one, a regression in either would hide
+    // behind the other, and the ratchet would under-protect every parameterised test in .NET.
+    const ids = extractTestIds(TRX_THEORIES, { rootDir: '/repo' });
+    assert.deepStrictEqual(
+      [...ids].sort(),
+      [
+        'RealTrx.ParserTests.Counts_rows(n: 1)',
+        'RealTrx.ParserTests.Counts_rows(n: 2)',
+        'RealTrx.ParserTests.Parses_a_quoted_field',
+        'RealTrx.ParserTests.Rejects_an_unterminated_quote',
+      ],
+    );
+  });
 
   it('is detected as trx rather than dying as invalid JSON', () => {
     // parseReport used to begin with JSON.parse, so XML died as "report is not valid JSON" —

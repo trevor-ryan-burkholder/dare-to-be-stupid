@@ -54,5 +54,11 @@
       },
       "notes": "xunit, one [Fact(Skip=...)] which TRX reports as NotExecuted rather than Skipped. The failing fixture also carries ResultSummary outcome=Failed and two RunInfo outcomes (Error, Warning) which are NOT test results - that is the trap trx.mjs exists to avoid."
     }
+  },
+  "dotnet-8.0.423-live": {
+    "runner": "trx",
+    "version": "8.0.423",
+    "command": "dotnet test --logger \"trx;LogFileName=live.trx\" --results-directory results",
+    "note": "captured live 14 Aug 2026 from a scaffolded xunit project; adds the shapes the earlier fixtures lack: a [Theory] with two [InlineData] rows (parameterised test names) beside a [Fact(Skip)]"
   }
 }
