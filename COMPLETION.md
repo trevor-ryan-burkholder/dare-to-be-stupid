@@ -227,7 +227,14 @@ first-party source itself** rather than handing a builder an objective with no l
 Measure the cost of a whole-tree mutation run at ship time first — run 12's scoped runs were
 minutes.
 
-## 2.2 Builder context inheritance
+## 2.2 Builder context inheritance — **DONE, discovered recorded nowhere and marked here 14 Aug**
+
+> Implemented exactly as specified: `isColdPhase` (driver.mjs:1190) splits by write capability —
+> read-only cold phases run under `--safe-mode`, writing phases keep the guard (`claudeArgs` adds
+> `--safe-mode` via `isColdPhase`), and the required template half exists too —
+> `templates/reviewer-system.md:216` tells the reviewer to read `CLAUDE.md` deliberately.
+> Found done-but-unledgered by the 0.140.0 survey — the inverse
+> of the usual staleness, and the reason this frozen file still gets its obituaries written.
 
 Every child receives the operator's plugin SessionStart injections, `MEMORY.md`, email and git
 status — measured, including in an empty temp directory. `--safe-mode` suppresses it and **cannot

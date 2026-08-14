@@ -1,4 +1,11 @@
-# AGENTS.md — meeseeks
+<!-- AGENTS.md is the agent-neutral mirror of CLAUDE.md, for tools that read this filename.
+     It is a VERBATIM copy plus this comment. Do not edit it directly: edit CLAUDE.md and re-copy.
+     A previous version was produced by a blind Claude->Codex text substitution, which corrupted
+     factual literals — the binary `claude -p`, the paths `.claude-plugin/plugin.json` and
+     `~/.claude/plugins/cache` — and drifted 11 lines behind. Facts about the host do not change
+     with the reader. -->
+
+# CLAUDE.md — meeseeks
 
 Conventions for working **on this repo** (the plugin itself). `DESIGN.md` is the spec and
 the source of truth; when this file and `DESIGN.md` disagree, `DESIGN.md` wins — fix this
@@ -11,7 +18,7 @@ file.
 
 ## What this is
 
-A Codex plugin. `/meeseeks <path|"idea"|∅>` hands a PRD to an autonomous loop that
+A Claude Code plugin. `/meeseeks <path|"idea"|∅>` hands a PRD to an autonomous loop that
 designs, builds, gates, reviews, and ships until it passes an enterprise definition of
 done, or the budget dies. Pre-production only.
 
@@ -38,7 +45,7 @@ These are the load-bearing properties. A change that breaks one is wrong even if
 - **The ratchet is monotonic.** A test ID that has ever passed may never be allowed to fail
   again. Any code path that removes an ID from the passing set without a `git reset --hard`
   + regression task is a bug.
-- **The builder cannot judge its own work.** Review happens in a *separate* `Codex -p`
+- **The builder cannot judge its own work.** Review happens in a *separate* `claude -p`
   process with no build log, no iteration history, no hint an agent wrote the code. Never
   "optimize" this into a subagent.
 - **Nothing defaults to pass.** Missing evidence, unparseable reviewer output, a crashed
@@ -49,7 +56,7 @@ These are the load-bearing properties. A change that breaks one is wrong even if
   enumeration was the original defect, because each new artifact defaulted to writable until
   somebody remembered to add it, and `red-evidence.json`, `test-report.json` and the archived
   briefs are all read back as decisions. Outside a run these are ordinary files, and the
-  operator edits them from wherever they like, including from inside Codex. The boundary
+  operator edits them from wherever they like, including from inside Claude Code. The boundary
   is the run, not the plugin being installed: a rule that also locks out the person who owns the
   repository has stopped being a guard and started being a nuisance.
   **And the file itself, since 0.88.0.** This bullet's title was true of `.meeseeks/` and false of
@@ -59,8 +66,8 @@ These are the load-bearing properties. A change that breaks one is wrong even if
   outside the tree — so it exists for the one case where the repository under test *is* the
   plugin.
 - **The driver must hand the guard to every child it spawns, and this is the one to break most
-  easily.** Registering the hook in `hooks/hooks.json` covers the *operator's* Codex
-  sessions; **a `Codex -p` child does not load the operator's plugin PreToolUse hooks.** For
+  easily.** Registering the hook in `hooks/hooks.json` covers the *operator's* Claude Code
+  sessions; **a `claude -p` child does not load the operator's plugin PreToolUse hooks.** For
   eleven versions every builder therefore ran completely unguarded while `test/guard.test.mjs`
   stayed correct and green, because it proves the guard's *logic* and nothing asserted its
   *invocation*. The hook now travels in `childSettings()`, read from the manifest rather than
@@ -71,7 +78,15 @@ These are the load-bearing properties. A change that breaks one is wrong even if
 - **Style never touches logic.** The Meeseeks layer renders at output only. It may not
   inform gate results, ratchet state, or reviewer JSON. `MEESEEKS_STYLE=plain` must fully
   bypass it.
-- **No nesting.** `meeseeks` never spawns `meeseeks`. Enforced at the driver *and* the guard hook.
+- **No nesting, unless the operator typed the words.** `meeseeks` never spawns `meeseeks`,
+  enforced at the driver *and* the guard hook — **except** under `--give-them-the-box`, which
+  permits it to a depth of **two** and is unsupported, loud, and deliberately absurd. The flag
+  arms `MEESEEKS_GIVE_THEM_THE_BOX` into the environment, which is how both enforcement points
+  see the same fact from the same place; a permission living in only one of them would be worse
+  than no permission at all. **It relaxes that one rule.** `.meeseeks/` stays guarded, review
+  stays cold, nothing still defaults to pass, and the depth cap is fail-closed on a malformed
+  marker. It is a **flag and never a config key**, because a flag is typed once by somebody
+  watching and config is read quietly by a machine at three in the morning.
 - **Monotonic means three properties now, not one.** Test ids (the ratchet), security elements
   and cold-passed requirements (`scripts/pins.mjs`, `DESIGN.md` §4.3). Each has a different
   escape from a false pin, and **the escape is the load-bearing half**: a security pin escalates
@@ -121,7 +136,7 @@ npm test              # tier 1: unit + fixture tests, no external binaries
 |---|---|---|
 | `npm test` | nothing but node | every change |
 | `npm run test:integration` | real `git`, `node`, `npm`; no network, no API, no money | before any commit touching `race.mjs`, `health-probe.mjs`, the toolchains, or anything that shells out |
-| `npm run test:live` | a real `Codex -p`, and **it spends money** | when changing `spawnClaude`, `claudeArgs`, envelope parsing, or a template's output contract |
+| `npm run test:live` | a real `claude -p`, and **it spends money** | when changing `spawnClaude`, `claudeArgs`, envelope parsing, or a template's output contract |
 
 `npm run test:all` is tiers 1 and 2.
 
@@ -141,6 +156,13 @@ Rules:
   is tested against *real, committed* vitest and Playwright reporter JSON in
   `test/fixtures/` — not hand-written approximations of it. See `DESIGN.md` §11: this is
   the component most likely to fail silently.
+- **Assert values, not truthiness — and polarity decides which is which.** `toBeUndefined()` and
+  `toBeNull()` name **exactly one value** and are fine; `toBe(undefined)` is not an improvement on
+  `toBeUndefined()`, it is the same assertion spelled longer. What is refused is a matcher that
+  accepts a *class*: `toBeTruthy`, `toBeFalsy`, `toBeDefined`, and the negations `not.toBeNull()`
+  and `not.toBeUndefined()`. `not.toBeDefined()` means *is undefined* and is therefore fine.
+  Conflating these cost case I a `gate-integrity` failure on a note store's lookup of a missing
+  key, which was the correct assertion.
 - **Assert values, not truthiness.** `expect(ids).toEqual(new Set([...]))`, never
   `expect(ids).toBeTruthy()`. A test that only proves something returned *something* is
   worse than no test. (We enforce this on generated code; we hold ourselves to it too.)
@@ -185,12 +207,12 @@ are the highest-leverage artifacts in the repo, and the reviewer prompt especial
 
 ## Releasing
 
-**Any change to a shipped file requires a version bump**, in `.Codex-plugin/plugin.json`
+**Any change to a shipped file requires a version bump**, in `.claude-plugin/plugin.json`
 and `package.json` together. Shipped means `hooks/`, `scripts/`, `commands/`, `templates/`,
 `output-styles/` and the manifests — everything except tests, docs and dev config.
 
-This is not bookkeeping. Codex installs a plugin into
-`~/.Codex/plugins/cache/<marketplace>/<plugin>/<version>/` and reads it from there. That
+This is not bookkeeping. Claude Code installs a plugin into
+`~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` and reads it from there. That
 directory is keyed by **version**, so an update at an unchanged version resolves to the
 existing folder and reuses the old code. Pushing, reinstalling and reloading all report
 success while the loader keeps running the previous build.
@@ -199,7 +221,7 @@ Two related traps, both silent:
 
 - `/plugin marketplace add` on an already-added marketplace reports success **without
   refetching**.
-- Pulling `~/.Codex/plugins/marketplaces/<name>` changes nothing — the loader reads the
+- Pulling `~/.claude/plugins/marketplaces/<name>` changes nothing — the loader reads the
   `cache/` snapshot, not the marketplace clone.
 
 Symptom in every case: a fix that appears not to work, indistinguishable from a wrong fix.
@@ -230,7 +252,3 @@ unreadable header is not evidence of a correct one.
 - Comedy is in the *output*, never in the code. Identifiers, comments, commit messages, and
   errors are plain and literal. A confusing stack trace is not a joke.
 - Failure output is verbatim and unstyled, always.
-
-## Imported Claude Cowork project instructions
-
-claude code plugin for autonomous but dangerous fast-fail development

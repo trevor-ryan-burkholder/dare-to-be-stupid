@@ -50,7 +50,7 @@ import {
   selectLessons,
 } from './lessons.mjs';
 import { OracleError, parseOracleCases, resolveArtifactCommand, runOracle, writeOracle } from './oracle.mjs';
-import { checkNoConcurrentRun } from './preflight.mjs';
+import { checkNoConcurrentRun, checkStateNotTracked } from './preflight.mjs';
 import { RUN_LOCK_FILE, claimRunLock, clearRunLock } from './run-lock.mjs';
 import { installQualityPlugins } from './plugins.mjs';
 import {
@@ -4521,6 +4521,19 @@ export function main(argv, io = {}) {
     return 1;
   }
   const { input, confirmPrd, improve } = args;
+
+  // The tracked-state refusal, wired to the direct-launch path. The full preflight runs in the
+  // `init` entry point, and an operator launching this file directly — which is how every
+  // dogfood run is launched — never passes through it. Measured within minutes of the check
+  // shipping: a repository with two tracked `.meeseeks` files sailed straight past the check
+  // that names it. **Checked here, before Phase 0, because it is a static property of the
+  // repository** — a first draft placed it beside the lock claim, downstream of the PRD and
+  // design phases, and the refusal arrived only after two children had been paid for.
+  const tracked = checkStateNotTracked((command, args) => shell(command, args, { cwd }));
+  if (!tracked.ok) {
+    write(verbatim(`${tracked.detail}\n${tracked.fix}`));
+    return 1;
+  }
 
   // `--deadline=<minutes>` outranks the config, because a flag is this session's instruction and
   // the config is the target's standing one.

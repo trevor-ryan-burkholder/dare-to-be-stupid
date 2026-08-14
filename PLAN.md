@@ -1,4 +1,4 @@
-# PLAN — what remains, 13 August 2026, from 0.88.0
+# PLAN — what remains. Compiled 13 August 2026 from 0.88.0; statuses last swept 14 August at 0.140.0
 
 **This is the only live plan.** `COMPLETION.md` is frozen as the 12 August plan; `BRIEF.md` is
 the reconciled ledger of the original brief, complete; `HANDOFF.md` records execution. Statuses
@@ -11,7 +11,7 @@ Nothing below is new invention; every item carries its origin.
 precede construction where a result can invalidate the construction — and one dependency this
 time is explicit: **item 8 gates the shape of item 10.**
 
-Statuses: `OPEN` → `IN PROGRESS` → `DONE (version)` / `CLOSED (reason)`.
+Statuses: `OPEN` → `IN PROGRESS` → `DONE (version)` / `CLOSED (reason)` — plus, as reality required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answered or moved), `ANSWERED` (measurement obtained), `DROPPED` (operator refused), `DEFERRED` (operator postponed).
 
 ---
 
@@ -157,7 +157,7 @@ gates failing — so a candidate must fix everything at once on a line that has 
 several iterations. Both halves are individually correct; the intersection is close to empty.
 **Full write-up in `HANDOFF.md`. The resolution is a design decision and is the operator's.**
 
-### 9a. Case I, original entry — OPEN (verify first), **PREPARED**
+### 9a. Case I, original entry — **SUPERSEDED by item 9's 14 Aug run.** What remains is not "run case I" but the operator's design question item 9 records (a winner has still never been applied)
 Queue item 1 raced live builders and 0.83.0 fixed the landing. Decide whether a full case-I
 under current code is still owed; run it if yes, close it against the queue-item record if no.
 
@@ -252,7 +252,7 @@ repeatedly and run 13's oscillation is costed. Invalidation stays fail-closed as
 **Done when:** an unchanged-evidence requirement is carried, a changed-evidence one is
 re-reviewed, both tested, and the measured review-cost delta lands in `HANDOFF.md`.
 
-**Mechanism landed; the measured delta is NOT and cannot be from here.** `narrowedPanelPlan` +
+**Mechanism landed; (A stale stratum here once said the delta could not be measured from a bench; panelB then measured it.)** `narrowedPanelPlan` +
 `carriedReport`, `panelCarry.enabled` on by default, with two refusals to narrow (everything
 carried, every reviewer emptied) and the guarantee that a narrowed `pass` triggers the **full**
 panel before any ship — because run 10's design auditor is exactly what carrying could skip.
@@ -285,7 +285,7 @@ here by reading the record instead of the summary.
 a stash and tier 2 covers it against real git, but the two halves have never run together. That
 is item 9's remaining content.
 
-### 14. R17 — metamorphic relations in the oracle — DONE (0.100.0)
+### 14. R17 — metamorphic relations in the oracle — DONE (0.100.0); **the live half is owed to the next oracle-armed run** (no run has yet had a relation judge real code — unverified and previously unowned)
 **Item 7's interim finding promotes this from a prediction to a measured requirement.** The first
 armed oracle authored 19 cases and **all 19 assert exit codes only** — correctly, because
 `oracle-author.md` instructs exit-only whenever the spec does not fix byte-for-byte output, which
@@ -380,7 +380,8 @@ overhead dominating a tiny denominator, not a scaling behaviour. Segmentation ne
 files. The outcome (`STALLED` on a parse/summarise oscillation, 83 ids banked) is the loop's
 story, not the author's. Genuinely large repos (hundreds of files) remain unmeasured; at every
 size measured so far, budget guidance belongs on iterations, not on the author phase.
-Segment one cost 7× segment two on a four-file repository. Measure on something mid-sized
+*(Original pre-answer instruction, kept as the question that was asked:)* Segment one cost 7×
+segment two on a four-file repository. Measure on something mid-sized
 before improve mode meets a real codebase; outcome is either a fix or written budget guidance
 in `commands/meeseeks.md`.
 
@@ -420,7 +421,7 @@ named `operator:release-check`, so a builder editing `scripts/` without bumping 
 iteration instead of breaking the install-cache invariant silently. **Both remaining blockers are
 the operator's:** suspending the `CLAUDE.md` scope note, and deciding to run at all.
 
-**Status of the three at 0.96.0:** the guard is protected (0.88.0's `protected-guard`, positional
+**Status of the three at 0.96.0 (stale stratum — the engineering half was met at 0.107.0, per the paragraph above; kept for the history of what was outstanding when):** the guard is protected (0.88.0's `protected-guard`, positional
 and self-referential — the first prerequisite is met by a stronger mechanism than the one named).
 `release-check` gained the header check at 0.89.0 but **is still not a declared gate**, so a
 builder editing `scripts/` without bumping still breaks the install-cache invariant silently —
@@ -458,8 +459,12 @@ every config default, the `$0.0001` child-budget floor, the canonical OpenAPI pa
 between the gate and the fuzzer argv, and the tool-cache list. All ten matched. Every
 `DESIGN.md` §10 config row exists for all 30 keys.
 
-**Statuses are terminal or explicitly parked:** 10 DONE, 1 NEEDS OPERATOR (17), 2 BLOCKED on an
-experiment (10, 14), 8 PREPARED and handed over, 1 refused (21).
+**Statuses as of the 14 Aug 0.140.0 sweep:** 17 DONE, 1 ANSWERED (18), 1 RUN with its design
+question owned by the operator (9, superseding 9a), 1 OPEN and specified for a fresh session
+(10), 1 OPEN/PREPARED (20: cases A and B; C parked), 1 DROPPED (17), 1 DEFERRED (21). The
+original tally this replaced ("10 DONE, 1 NEEDS OPERATOR, 2 BLOCKED, 8 PREPARED, 1 refused")
+was stale on every count within a day of being written — which is the argument for sweeping
+statuses in the same commit as the work, not after it
 
 ---
 

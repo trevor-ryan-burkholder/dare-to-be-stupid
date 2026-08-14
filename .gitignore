@@ -6,3 +6,4 @@ node_modules/
 
 # Left behind by the schemathesis gate when its argv was verified. A tool cache, never ours.
 .hypothesis/
+dare-to-be-stupid/

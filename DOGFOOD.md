@@ -614,7 +614,7 @@ PRD-1.2  Before writing it, run
          from the repository root and let it finish.
 PRD
 git add PRD.md && git commit --quiet -m 'PRD'
-node ~/dev/dare-to-be-stupid/scripts/driver.mjs PRD.md --yes --give-them-the-box \
+node ~/dev/meeseeks/scripts/driver.mjs PRD.md --yes --give-them-the-box \
   2>&1 | tee ~/meeseeks-logs/caseJ.log
 ```
 

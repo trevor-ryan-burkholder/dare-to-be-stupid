@@ -1,7 +1,7 @@
-# START HERE — handoff, 13 August 2026
+# START HERE — handoff, last swept 14 August 2026
 
-**State:** `main` at `0.139.0`. Measured at 0.139.0: `npm test` **1889 pass**,
-`npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
+**State:** `master` at `0.140.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.140.0: `npm test` **1889 pass**,
+`npm run test:integration` **37 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
 **`npm run test:live` at 0.136.0: 27 of 27 across 11 files, 0 failures** — re-run after the envelope parser gained the refund clamp, which `CLAUDE.md` requires tier 3 for. Re-run after `main`
@@ -26,7 +26,7 @@ line in the same commit.
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
 
-### Case J — `--give-them-the-box`: inconclusive, and the honest answer is that it ran out of money
+### Case J attempt 1 — inconclusive, ran out of money **(superseded: the concluding entry sits above at "Case J concluded" — attempt 5 verified every control and no builder ever nested)**
 
 **`BUDGET`, 12,508,787 of 12,000,000 tokens, \$11.96, three briefs written, two iterations
 completed.** The budget was too small — the same mistake this file has now recorded three times —
@@ -101,6 +101,41 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.140.0 — the move to `~/dev/meeseeks`, a lossy copy repaired, and the tracked-state wiring finished
+
+**The operator moved the project into a fresh `~/dev/meeseeks` repository, and the copy that
+seeded it was a chimera.** Its single initial commit carried version 0.139.0 on a tree missing
+**six runtime modules** (`assumptions`, `capabilities`, `context-budget`, `gate-policy`,
+`integrity`, `oracle`), the whole of `scripts/toolchains/` and `scripts/reporters/`, six
+templates, twelve test files including the entire integration and live tiers, and **all seven
+ledgers** (`PLAN`, `BRIEF`, `DOGFOOD`, `BORROWED`, `COMPLETION`, `AUDIT`, `AGENTS`). That driver
+could not have survived its own imports. The full tree was restored from the old repository's
+HEAD (`cc24197`), which sits untouched and fully synced at `dare-to-be-stupid/` inside this one —
+now gitignored as the history archive. The one file that existed only here, the operator's new
+`skills/mr-meeseeks/SKILL.md`, was preserved.
+
+**The interrupted session's stray fix is finished.** The old working tree held an uncommitted
+edit wiring `checkStateNotTracked` into the driver's direct-launch path — the full preflight runs
+only in `init`, and every dogfood run launches the driver directly, which is how a repository
+with tracked `.meeseeks` files sailed past the check that names it. Finishing it found two more
+things: **the check belonged before Phase 0, not beside the lock claim** — the first placement
+refused only after the PRD and design children had been paid for, and the new tier-2 test caught
+exactly that (`2 !== 0` children spawned) — and the tier-2 harness itself committed its fixture's
+`.meeseeks/`, the very sin the check refuses, so it now writes a `.gitignore` first and the
+deliberate-sin case has its own test asserting refusal with zero children.
+
+**The name sweep was six hits, one change.** 0.111.0 did the real rename; what remained were
+path references. The `~/dev/dare-to-be-stupid` launch path in `DOGFOOD.md` now says
+`~/dev/meeseeks`; the historical mentions — README's *"previously called"*, the rename entries
+here, the fixture-provenance comments — keep the old name, because renamed history is just a lie.
+
+**Not done, and the operator's to decide:** the git remote is still named `dare` and still points
+at `github.com/trevor-ryan-burkholder/dare-to-be-stupid`. **Nothing was pushed** — this
+repository's single-commit history shares no ancestry with that remote, and pushing would
+destroy it. The old repository inside `dare-to-be-stupid/` remains the one synced with GitHub.
+Creating a `meeseeks` GitHub repository (or renaming the old one, which preserves redirects) is
+an account decision, not an engineering one.
 
 ### 0.139.0 — the scoped restore fired live, fell back correctly, and taught the guess a convention
 
@@ -215,8 +250,7 @@ disabled ceiling being read as a zero one.
 
 **The general lesson is the one this night keeps teaching in different clothes:** a semantic
 change to a value's *meaning* has to visit every reader of that value, and grep is the tool —
-`>= config.tokenCeiling` had four hits and I fixed one. Case J2 was relaunched within minutes and
-is running uncapped with the 45-minute clock.
+`>= config.tokenCeiling` had four hits and I fixed one. Case J2 was relaunched within minutes (and later concluded — see the Case J entry above: every control verified, no builder ever nested).
 
 ### 0.132.0 — the secret scanner could not read JSON, which is the only thing it scans
 

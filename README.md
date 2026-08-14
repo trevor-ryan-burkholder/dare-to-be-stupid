@@ -22,10 +22,25 @@ definition of done, or the budget dies.
 /meeseeks ./PRD.md                              # build an existing spec
 /meeseeks "a link shortener with an admin page" # build from an idea
 /meeseeks                                       # improvise: it invents its own
+/meeseeks --improve "error handling"            # the repo already exists: find whats wrong, fix it
 
 /meeseeks ./PRD.md --deadline=90                # a 90-minute wall clock; off unless asked for
 /meeseeks ./PRD.md --give-them-the-box          # unsupported: permits nested runs, arms a clock
 ```
+
+**The two flags, precisely:**
+
+- `--deadline=<minutes>` — a wall clock on the whole run, checked between iterations. Off unless
+  given; the ordinary ceilings are completion or budget, so most runs never want one. The flag
+  outranks `deadlineMs` in config (a flag is this session's instruction; config is the target's
+  standing one), fractions work (`--deadline=0.5`), and anything unreadable refuses the run
+  rather than defaulting — a ceiling that cannot be read is not a ceiling.
+- `--give-them-the-box` — permits a run inside a run, to **depth two**, and arms a **30-minute**
+  wall clock unless `--deadline` set one. Depth bounds recursion, but nothing bounds how many
+  nested runs one iteration starts — which is why `--deadline=0` (explicitly *no* clock) is
+  **refused** in combination with the box: unbounded-and-nested is the one shape with no limit at
+  all. Everything else still holds — `.meeseeks/` stays guarded, review stays cold, nothing
+  defaults to pass, and same-tree nesting is still refused by the run lock regardless.
 
 > **Pre-production only.** Build children run with `--dangerously-skip-permissions`. Point this at
 > a throwaway repository and nothing else. The plugin's own guard hook is the floor under that,
@@ -64,8 +79,10 @@ nobody gets to see happen. It is unsupported, loud, capped at **depth two**, and
   │                  (cli? api? web-ui? — it decides which gates even apply)
   │
   ├─ 2. Build        one builder child, given a brief and nothing else
-  ├─ 3. Gates        build · lint · types · unit · e2e · security-audit · mutation
-  │                  deterministic, exit codes only, no model involved
+  ├─ 3. Gates        build · lint · types · unit · e2e · security-audit · mutation,
+  │                  plus provisioned quality gates (impeccable, knip, semgrep,
+  │                  schemathesis) and any operator:* gates the config declares.
+  │                  Deterministic, exit codes only, no model involved
   ├─ 4. Ratchet      every test id that has ever passed must still pass
   ├─ 5. Review       three cold auditors, separate processes, unanimous or no ship
   └─ 6. Ship         tag, or go round again
@@ -114,7 +131,7 @@ and you edit them however you like.
 ## Install
 
 ```bash
-/plugin marketplace add <this repo>
+/plugin marketplace add trevor-ryan-burkholder/meeseeks
 /plugin install meeseeks
 ```
 
@@ -139,11 +156,11 @@ declared here is one the builder **cannot delete**.
 
 ```jsonc
 {
-  "maxIterations": 20,          // the cap that usually binds. See the note below.
+  "maxIterations": 20,        // the cap that usually binds. See the note below.
   "tokenCeiling": 120000000,  // 0 means no ceiling, for development
   "costCeiling": 150,         // 0 means no ceiling
   "deadlineMs": 0,            // wall clock; 0 is off. --give-them-the-box arms one
-  "extraGates": [               // checks this project considers gating
+  "extraGates": [             // checks this project considers gating
     { "name": "release-check", "command": ["npm", "run", "release-check"] }
   ],
   "race": { "enabled": false, "n": 2, "after": 2 },
@@ -211,6 +228,10 @@ Pre-1.0 and honest about it. `DESIGN.md` is the specification and the source of 
 `HANDOFF.md` carries the execution record **including what was not verified**, which is the more
 useful half.
 
-Measured, not asserted: twelve-plus dogfood runs against real throwaway projects, two of which
-reached `SHIPPED`. Sequential cold review is **73% of a run's wall clock**. The full audit of what
-has never been exercised lives in `HANDOFF.md`, and it is long on purpose.
+Measured, not asserted: **twenty-plus dogfood runs** against real throwaway projects, two of
+which reached `SHIPPED`. Sequential cold review is **73% of a run's wall clock** (the one
+remaining planned feature — a parallel panel — exists to claw that back). Live-verified in real
+runs, not just unit tests: the ratchet's hard reset and scoped restore, the stall and wall-clock
+endings, the repeated-regression and stuck-gate notices, the security-pin escalation, the race
+executing end to end, and the tracked-state refusal. The full audit of what has **never** been
+exercised lives in `HANDOFF.md`, and it is long on purpose.
