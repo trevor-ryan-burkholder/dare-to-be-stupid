@@ -81,6 +81,13 @@ implicates, re-runs the suite to confirm the ids came back, and falls back to th
 they didn't. A whole-tree reset was measured discarding **15.2M tokens** of unrelated work in one
 run.
 
+> **It starts protecting at the first fully-green iteration, not at the first passing test.** The
+> ratchet is written only by an iteration that passes every gate *and* is reviewed. A run that
+> never gets there records nothing — case I held **71 passing tests across 8 iterations** and
+> `state.json` was never written, so breaking one of them would have gone unnoticed. This is
+> arguably correct (banking ids from a tree the loop considers broken has its own hazards) but it
+> is **not** what "every test id that has ever passed" implies, so it is said here.
+
 **2. The builder cannot judge its own work.** Review happens in *separate* `claude -p` processes
 with no build log, no iteration history, and no hint an agent wrote the code. Three auditors —
 security, correctness, design — each owning different requirement ids. It is never a subagent, and

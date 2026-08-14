@@ -86,6 +86,16 @@ the next build task, nothing else proceeds. Monotonic. A test that has passed is
 allowed to fail again. This is the single mechanism that turns an infinite loop into a
 terminating one. **Build it first.**
 
+**The ratchet begins at the first fully-green iteration, and until then it holds nothing.**
+`saveState` is called from exactly one place — Phase 6, after the panel — so an iteration that
+fails any gate records no ids at all. Measured in case I: **71 passing tests across 8 iterations**
+and no `state.json` ever written, which means a regression in any of those 71 would have gone
+unnoticed for the whole run. The argument for the current behaviour is real (ids banked from a
+tree that never compiled cleanly would then have to keep passing forever), and the argument
+against is that a thrashing run is precisely when regression protection is worth having.
+**This section previously implied protection was unconditional. It is not, and the wording above
+is the correction rather than the decision** — see `HANDOFF.md` for the three options.
+
 **The reset is scoped before it is total (0.112.0).** A hard reset is whole-tree, so it discards
 everything the iteration built rather than the change that broke something. Measured in `ship1`:
 two resets threw away that run's two **largest** builder spends — 7.5M and 7.7M tokens, ~10% of a
