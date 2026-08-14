@@ -836,6 +836,15 @@ already killed one session's terminal.
 its own caller. That is not hypothetical — it happened while following the previous version of
 this instruction.
 
+**Never commit `.meeseeks/` in a target repository.** Case J3 was launched with a freshly
+written uncapped config and ran with the *original* capped one, because the config had been
+committed during staging and the pre-launch `git reset --hard` quietly restored the old copy — a
+`.gitignore` entry cannot help a file that is already tracked. The announcement line
+(`TASK ONE OF THREE` against an intended six) was the only visible symptom. If a target already
+has it tracked: `git rm -r --cached .meeseeks && git commit`, once, and every later reset leaves
+the operator's settings alone. Same failure family as the stale `lastGoodCommit` below — a hard
+reset reverting operator work that happened to live in tracked files.
+
 **Before any intervention between runs, correct `lastGoodCommit`.** `.meeseeks/state.json` persists
 across runs, so the next run's first hard reset targets a commit from the *previous* one,
 **discarding everything the operator committed in between, silently.** Measured: case H's first
