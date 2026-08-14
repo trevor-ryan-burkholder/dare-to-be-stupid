@@ -1,7 +1,7 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.115.0`. Measured at 0.115.0: `npm test` **1789 pass**,
-`npm run test:integration` **34 pass**, `npm run lint` and `npm run typecheck` clean,
+**State:** `main` at `0.116.0`. Measured at 0.116.0: `npm test` **1789 pass**,
+`npm run test:integration` **35 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
 **`npm run test:live` at 0.110.0: 27 of 27 across 11 files, 0 failures.** The suite has now been
@@ -23,6 +23,27 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.116.0 — the growth note is asserted after all, by attacking the condition from the other side
+
+**The gap named at 0.113.0 and 0.114.0 is closed, and the fix was a framing error rather than a
+missing capability.** The first attempt pinned the context budget just above the observed brief
+size — 5075 then 5510 characters — which tied the test to numbers any template edit would move. I
+removed it rather than ship it fragile, and recorded why.
+
+**The condition is `projected-iteration <= maxIterations`, and it can be satisfied from either
+side.** Instead of shrinking the budget down to meet the projection, raise the cap until the
+projection fits under it. `maxIterations: 2000` makes the note fire for **any** brief that grows at
+all, whatever the sizes, and `stallLimit: 4` still ends the run in four iterations because every
+gate fails against a repository the canned children never actually build. **No number in the test
+depends on a prompt template.**
+
+**Worth keeping as a habit:** a threshold test that feels fragile is often a test written against
+the wrong end of an inequality. Nothing about the product needed to change.
+
+**All three of the evening's "wiring unasserted" gaps are now closed** — `operator:`/`quality:`
+gates reaching the roster *and* the brief (0.114.0), and this. The seam that made them assertable
+is `io.spawn`, and it cost one default parameter.
 
 ### 0.115.0 — `--give-them-the-box`: nesting, permitted, capped, and loud
 
