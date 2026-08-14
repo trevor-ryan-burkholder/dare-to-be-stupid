@@ -5035,8 +5035,17 @@ export function main(argv, io = {}) {
       // Selected by *detected* toolchain rather than by anything declared, so the guidance
       // matches the commands the gates will actually run.
       toolchainGuidance: () => {
-        const name = resolveToolchain(cwd).toolchain.name;
-        return { name, guidance: toolchainGuidance(name) };
+        const resolved = resolveToolchain(cwd);
+        // **The loudest of the three channels that told case C's builder to write Node.** The
+        // evidence string and the gate list are one line each; this is a whole page of "here is
+        // how you build with npm, vitest and playwright", and a builder handed that writes Node
+        // whatever the PRD says. When nothing was detected there is no stack to give guidance
+        // about, so it gets guidance about *that* instead.
+        const name = resolved.toolchain.name;
+        return {
+          name,
+          guidance: resolved.detected ? toolchainGuidance(name) : toolchainGuidance('undetected'),
+        };
       },
       history: (findings) => historyContext({ cwd, run: shell, findings, greenfield }),
       changedFiles,

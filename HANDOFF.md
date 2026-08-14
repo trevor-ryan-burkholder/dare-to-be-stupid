@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.123.0`. Measured at 0.123.0: `npm test` **1833 pass**,
+**State:** `main` at `0.124.0`. Measured at 0.124.0: `npm test` **1839 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -23,6 +23,35 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.124.0 — the loudest channel: a greenfield builder was handed the whole Node guidance page
+
+**Third and last of the channels that told case C's builder to write Node.** The evidence string
+was one line (0.123.0) and the gate list is a few more; **this is an entire document** — *"##
+Building this with Node"*, npm scripts, vitest, playwright, "you write the scripts the gates
+invoke". `toolchainGuidance` selected it purely from `resolveToolchain(cwd).toolchain.name`, which
+on an empty tree is the *provisional* default. A builder handed a page of Node instructions writes
+Node, and no amount of PRD wording competes with it.
+
+When nothing was detected there is no stack to give guidance about, so it now gets guidance about
+**that**: the gates are provisional, build what the specification names, create that stack's
+project files this iteration, detection re-runs and the gates will follow. And the deny path
+matters as much — *"if the specification genuinely names no language or runtime, the provisional
+choice stands"*, so it never pushes a builder away from a default that was fine.
+
+**A test asserts the page instructs in no stack at all**, and a first draft of that test was too
+blunt: it banned the string `package.json`, which the page uses *contrastively* (`.csproj` gets
+dotnet gates, `package.json` gets npm ones) — the sentence that makes detection concrete. The test
+now bans Node **instructions** rather than Node **words**.
+
+**Case C is parked here by operator decision, and the adapter stays.** Two attempts, neither
+defeated by anything .NET: the first by a `.dare/` state directory the rename retired, the second
+by Phase 0 dropping "in C#". Both were general defects any non-default stack would have hit, and
+case C found them. The toolchain abstraction is the only thing keeping `notApplicable`,
+capability-gated gates and the reporter registry honestly general — with one toolchain the code
+drifts back to assuming npm, which is the assumption that caused all of this. **Still unverified
+while parked:** TRX has never read a report a real `dotnet test` wrote, and no run has ever armed
+`schemathesis`.
 
 ### 0.123.0 — the toolchain fallback said "defaulted to node", which read as an instruction
 

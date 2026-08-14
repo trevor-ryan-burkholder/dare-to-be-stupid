@@ -801,3 +801,35 @@ describe("DoD-4's observability half is conditioned on project shape", () => {
     assert.equal(REVIEWER.includes('advisory-'), true);
   });
 });
+
+describe('the undetected-toolchain guidance', () => {
+  const UNDETECTED = readTemplate('toolchain-undetected.md');
+
+  it('tells the builder the provisional gates are not an instruction', () => {
+    // Case C's builder received the full Node guidance page on a greenfield tree and wrote
+    // TypeScript for a PRD that asked for C#. Of the three channels pushing it that way — the
+    // evidence string, the gate list and this page — this was the loudest.
+    assert.equal(UNDETECTED.includes('not a decision'), true);
+    assert.equal(UNDETECTED.includes('Do not infer the stack from the provisional gate commands'), true);
+  });
+
+  it('says detection re-runs, so the builder knows the gates will follow it', () => {
+    assert.equal(UNDETECTED.includes('re-detected at the start of every'), true);
+    assert.equal(UNDETECTED.includes('.csproj'), true, 'names a concrete non-node outcome');
+  });
+
+  it('keeps the provisional choice when the specification names no stack', () => {
+    // The deny path for the guidance itself: it must not push a builder away from the default
+    // when there is nothing to push it towards.
+    assert.equal(UNDETECTED.includes('the provisional choice stands'), true);
+  });
+
+  it('instructs in no stack at all, which is the entire point', () => {
+    // Naming `package.json` beside `.csproj` as *outcomes of detection* is the contrast that
+    // makes the page useful. What must not appear is anything telling the builder how to build
+    // with Node — that is the page this one replaces.
+    for (const tell of ['## Building this with Node', 'npm run build', 'npx vitest', 'npx playwright']) {
+      assert.equal(UNDETECTED.includes(tell), false, `leaked a node instruction: ${tell}`);
+    }
+  });
+});

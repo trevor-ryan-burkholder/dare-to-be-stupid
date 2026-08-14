@@ -64,7 +64,7 @@ end-to-end validation occurred unless it did."*
 | **F** — security regression | **run 5, passed.** First `security-escalation` child; returned `moved`, pin re-pointed, no reset |
 | **G** — the smallest thing that could ship | runs 6–8. **Run 8 `SHIPPED`, the first in this project's history** — then an independent audit found the shipped binary discards data at exit 0 |
 | **A, B** | **still unrun.** Breadth rather than risk, now that D–G have four outcomes behind them |
-| **C** — .NET | **running 14 Aug.** First live TRX extraction, first `api` capability arming `schemathesis` |
+| **C** — .NET | **PARKED 14 Aug, deliberately.** Two attempts, neither defeated by anything .NET — see below. The adapter stays; the *runs* are deferred until the rest is done |
 | **I** — the race | **run 14 Aug, `BUDGET` at 8 of 8.** The race machinery works end to end; no candidate has ever won |
 
 Full records for every one of them are in `HANDOFF.md`. Read the run-8 audit before treating
@@ -249,7 +249,28 @@ scenario task-spa
 Same evidence. The extra thing to check is that `.meeseeks/capabilities.json` resolved
 `persistent-storage`, and that the gate list in the Build Brief reflects it.
 
-## Case C — .NET
+## Case C — .NET — **PARKED, and the adapter is staying**
+
+> **Operator decision, 14 August: keep `scripts/toolchains/dotnet.mjs`, defer the runs.** Two
+> attempts were made and **neither was defeated by anything .NET**. The first died because the
+> target had been staged with a `.dare/` state directory the rename had retired; the second
+> because Phase 0 dropped the operator's "in C#" from the PRD entirely and the loop built
+> TypeScript. Both were general defects that any non-default stack would have hit, and case C is
+> what found them — which is most of the argument for keeping the adapter.
+>
+> **Why the adapter stays even though the case is parked.** The toolchain abstraction exists
+> *because* there are two toolchains. With one, `notApplicable` for a declined operation,
+> capability-gated gates, per-toolchain guidance and the reporter registry all lose their reason
+> to be general, and the code drifts back to assuming npm — which is precisely the assumption that
+> produced the wrong-language build. The .NET adapter is the only thing keeping "this operation
+> does not apply here" an honest, tested state.
+>
+> **What stays unverified while it is parked, stated plainly:** TRX extraction is fixture-tested
+> and has never read a report a real `dotnet test` wrote, and no run has ever armed
+> `schemathesis` through the `api` capability. Do not let the adapter's green unit tests be read
+> as live coverage.
+
+## Case C (recipe) — .NET
 
 **No longer blocked on tooling.** `dotnet 8.0.423` is installed and
 `scripts/toolchains/dotnet.mjs` exists as of 0.32.0, with the TRX reporter at 0.33.0. It is
