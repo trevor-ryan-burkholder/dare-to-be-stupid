@@ -2806,6 +2806,54 @@ export function startCommand(cwd) {
 /** Where the health probe lives, resolved against this file so it works from any cwd. */
 const HEALTH_PROBE = fileURLToPath(new URL('./health-probe.mjs', import.meta.url));
 
+/** Named logging libraries, across the ecosystems the toolchains cover. */
+const LOGGING_LIBRARIES = /\b(pino|winston|bunyan|roarr|log4js|structlog|Serilog|ILogger|logging\.getLogger)\b/;
+
+/** A logger-shaped call, whatever it was built with. */
+const LOGGER_CALL = /\b(structuredLog|logger\.(info|warn|error|debug))\b/;
+
+/** A hand-rolled record: a serialised object carrying a level, written to a standard stream. */
+const HAND_ROLLED = [
+  /JSON\.stringify\s*\(/,
+  /\blevel\b/,
+  /(console\.(log|error|warn)|process\.(stdout|stderr)\.write)/,
+];
+
+/**
+ * Does this source file do structured logging?
+ *
+ * **Case I is why this is not one regex of library names.** That run spent **40,000,137 tokens and
+ * \$20.45** failing `observability` — *"missing: structured logging"* — on all eight iterations,
+ * against a project whose `src/log.ts` read:
+ *
+ * ```ts
+ * export function log(level: LogLevel, event: string, fields = {}): void {
+ *   console.error(JSON.stringify({ level, event, timestamp: new Date().toISOString(), ...fields }));
+ * }
+ * ```
+ *
+ * JSON, a level, an event, a timestamp, and a test asserting all four. The old detector looked for
+ * `pino|winston|bunyan`, a `structuredLog` identifier, or `logger.info` — **three third-party
+ * libraries and two call shapes** — so it saw nothing. **A gate that is wrong in the failing
+ * direction is invisible as a defect: it reads as the builder failing**, and it cost an entire run.
+ *
+ * The irony is worth keeping: the old rule could only recognise *dependency-based* loggers, and
+ * this plugin's own hard constraint is **no runtime dependencies**. It would have failed its own
+ * gate.
+ *
+ * **The hand-rolled clause is deliberately conjunctive.** Serialising an object is not logging —
+ * a CLI that prints a JSON summary would satisfy a looser rule and make the gate free. Requiring
+ * a `level` alongside the serialisation and the stream write is what keeps this a check rather
+ * than a formality.
+ *
+ * @param {string} contents
+ * @returns {boolean}
+ */
+export function hasStructuredLogging(contents) {
+  if (LOGGING_LIBRARIES.test(contents) || LOGGER_CALL.test(contents)) return true;
+  return HAND_ROLLED.every((pattern) => pattern.test(contents));
+}
+
 /**
  * Judge DoD line 4's observability half.
  *
@@ -2828,9 +2876,7 @@ const HEALTH_PROBE = fileURLToPath(new URL('./health-probe.mjs', import.meta.url
  * @returns {GateResult}
  */
 export function observabilityGate(cwd, options = {}) {
-  const hasLogger = anySourceMatches(cwd, 0, (contents) =>
-    /\b(pino|winston|bunyan|structuredLog|logger\.(info|warn|error))\b/.test(contents),
-  );
+  const hasLogger = anySourceMatches(cwd, 0, hasStructuredLogging);
   const healthPath = findHealthPath(cwd);
 
   if (!hasLogger || healthPath === null) {

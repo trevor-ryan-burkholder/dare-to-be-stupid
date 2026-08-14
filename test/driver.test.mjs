@@ -63,6 +63,7 @@ import {
   overlayGates,
   repeatedRegressionNote,
   repeatedGateNote,
+  hasStructuredLogging,
   REPEATED_GATE_THRESHOLD,
   childBudget,
   isSecurityId,
@@ -4675,5 +4676,57 @@ describe('repeatedGateNote', () => {
 
   it('is empty for an empty streak map', () => {
     assert.equal(repeatedGateNote(new Map()), '');
+  });
+});
+
+describe('hasStructuredLogging', () => {
+  it('recognises the real case I logger, which the old rule could not see', () => {
+    // Verbatim from ~/dare-dogfood/caseI/src/log.ts. The old detector missed it and the run
+    // spent 40,000,137 tokens and $20.45 failing observability because of it.
+    const real = [
+      "export type LogLevel = 'info' | 'error';",
+      '',
+      'export function log(level: LogLevel, event: string, fields: Record<string, unknown> = {}): void {',
+      '  console.error(JSON.stringify({ level, event, timestamp: new Date().toISOString(), ...fields }));',
+      '}',
+    ].join('\n');
+    assert.equal(hasStructuredLogging(real), true);
+  });
+
+  /** @type {[string, string][]} */
+  const libraries = [
+    ['pino', "import pino from 'pino';"],
+    ['winston', "const winston = require('winston');"],
+    ['structlog', 'import structlog'],
+    ['python stdlib', 'log = logging.getLogger(__name__)'],
+    ['Serilog', 'using Serilog;'],
+    ['ILogger', 'private readonly ILogger _log;'],
+    ['a logger call', 'logger.info({ event: "started" });'],
+  ];
+  for (const [label, source] of libraries) {
+    it(`recognises ${label}`, () => {
+      assert.equal(hasStructuredLogging(source), true, source);
+    });
+  }
+
+  it('refuses a CLI that merely prints JSON, so the gate is not free', () => {
+    // The deny path, and the reason the hand-rolled clause is conjunctive. Serialising an object
+    // is not logging: a summary printer would satisfy a looser rule and the gate would become a
+    // formality that every project passes.
+    assert.equal(hasStructuredLogging('console.log(JSON.stringify({ columns, rows }));'), false);
+  });
+
+  it('refuses unstructured printing, however much of it there is', () => {
+    assert.equal(hasStructuredLogging('console.error("failed to open " + path);'), false);
+    assert.equal(hasStructuredLogging('console.log("level 3 reached");'), false);
+  });
+
+  it('refuses a level with no serialisation and no stream', () => {
+    assert.equal(hasStructuredLogging('const level = 3; if (level > 2) doThing();'), false);
+  });
+
+  it('accepts a hand-rolled logger writing to stdout rather than stderr', () => {
+    const source = 'process.stdout.write(JSON.stringify({ level: "info", msg }) + "\\n");';
+    assert.equal(hasStructuredLogging(source), true);
   });
 });

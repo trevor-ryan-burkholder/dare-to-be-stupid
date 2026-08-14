@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.117.0`. Measured at 0.117.0: `npm test` **1795 pass**,
+**State:** `main` at `0.118.0`. Measured at 0.118.0: `npm test` **1807 pass**,
 `npm run test:integration` **35 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -23,6 +23,46 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.118.0 — the observability gate was wrong, and being wrong cost an entire run
+
+**Case I did not fail. The gate did.** That run spent **40,000,137 tokens and \$20.45** failing
+`observability` — *"missing: structured logging"* — on all eight iterations, against a project
+whose `src/log.ts` was:
+
+```ts
+export function log(level: LogLevel, event: string, fields: Record<string, unknown> = {}): void {
+  console.error(JSON.stringify({ level, event, timestamp: new Date().toISOString(), ...fields }));
+}
+```
+
+JSON, a level, an event, a timestamp, and a test asserting all four. **The old detector looked for
+`pino|winston|bunyan`, a `structuredLog` identifier, or `logger.info`** — three third-party
+libraries and two call shapes — and saw nothing.
+
+**Run the fixed gate against that same tree and it passes.** That is the proof, not an argument.
+
+**A gate wrong in the failing direction is invisible as a defect.** It does not look like a broken
+check; it looks like a builder who will not do the work. Every log line was correct, every
+iteration reported honestly, and the conclusion a reader draws is *"the builder never added
+logging"* — which is exactly what I concluded four hours ago and wrote down. **The 0.117.0
+repeated-gate note would have surfaced it on iteration 3**, which is a decent argument that the
+note was worth building even though it was built for the wrong reason.
+
+**The irony is load-bearing, not decorative:** the old rule could only recognise *dependency-based*
+loggers, and this project's own first hard constraint is **no runtime dependencies**. A project
+built to this repository's own rules could not pass this repository's own gate.
+
+**The hand-rolled clause is deliberately conjunctive** — `JSON.stringify` **and** a `level` **and**
+a write to a standard stream, all in one file. Serialising an object is not logging: a CLI printing
+a JSON summary would satisfy a looser rule and turn the gate into a formality every project passes.
+A test asserts exactly that case fails.
+
+**Also broadened across the ecosystems the toolchains actually support:** `structlog` and
+`logging.getLogger` for Python, `Serilog` and `ILogger` for .NET, `roarr` and `log4js` for Node.
+The .NET adapter has existed since 0.32.0 and this gate could never have passed a .NET project.
+
+**Fourth jsdoc-adjacency break of the night**, same shape again. Caught by `typecheck` again.
 
 ### Case I's open question, answered: **the ratchet protects nothing until the first fully-green iteration**
 
