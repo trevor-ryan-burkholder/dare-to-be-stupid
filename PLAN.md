@@ -409,6 +409,46 @@ during cloud-init. Both look exactly like a broken deploy and neither is one.
 
 ---
 
+## Phase 5 — the box made real. Added 14 Aug by operator decision, after item 10 landed.
+
+### 24. Components — driver-delegated sub-runs in worktrees — OPEN, **SPECIFIED**
+
+**Origin:** `--give-them-the-box` (0.115.0), the nesting cost/benefit ledger, case J's five-run
+finding that **builders decline by omission**, and the operator's 14 Aug decision to queue this
+behind item 10. The one gain nesting buys that nothing flat reaches: **per-subtree toolchains** —
+`resolveToolchain` is one-per-run, so a polyglot repository is inexpressible today.
+
+**Spec:**
+- Config gains `components: [{ name, dir, spec }]` — validated strictly, guard-protected like all
+  of `.meeseeks/config.json`, so a builder cannot add or remove components. `spec` is a PRD path
+  relative to `dir`, or a quoted idea.
+- **Configured components without `--give-them-the-box` refuse at start.** The human types the
+  permission; config cannot smuggle it. The flag's existing machinery (depth cap 2, wall clock,
+  `MEESEEKS_GIVE_THEM_THE_BOX` + `MEESEEKS_RUN_DEPTH` via `childEnvironment`) is reused untouched.
+- **A new phase between design and the loop**, in declared order per component: sweep stale
+  component worktrees (race-style, self-healing at start); `git worktree add` on branch
+  `meeseeks/component-<name>` at HEAD; the parent writes the child's
+  `<worktree>/<dir>/.meeseeks/config.json` — ceilings derived from the parent's remaining budget,
+  `deadlineMs` from the parent's remaining clock, and **no `components` key ever** (belt beside
+  the depth cap's braces); spawn `node <driver> <spec> --yes --give-them-the-box` with cwd
+  `<worktree>/<dir>` and the ordinary child environment.
+- **The child is a real run in its own right**: own toolchain detection against its subtree, own
+  gates, own ratchet, own panel, own heartbeat. Its stdout streams to the parent log prefixed
+  `component:<name>:`.
+- **Outcome consumption is fail-closed.** Read the child's `outcome.json`; charge its
+  `spentTokens`/`costUsd` to the parent's progress; on `SHIPPED`, fast-forward-merge the branch
+  (the `applyWinner` machinery, already tier-2 tested); on anything else, the parent ends
+  `ABORTED` naming the component and its terminal state. Softening that to
+  continue-without-the-component is a recorded option, not the default.
+- **Doctrine unchanged:** a component's `SHIPPED` is a pre-filter exactly as the panel carry is —
+  the parent's own gates and FULL cold panel still judge the merged whole. Never a substitute.
+
+**Done when:** unit tests cover validation and both refusals (no flag; smuggled nested
+components); tier 2 drives one component end to end against real git with an injected
+child-driver effect — worktree created, config written and componentless, merge landed, outcome
+charged, and the failure path aborting by name; and one live boxed dogfood run ships a
+one-component repository.
+
 ## Phase 4 — breadth, then the mirror.
 
 ### 20. Dogfood cases A, B, C — OPEN, **PREPARED** (run C first — TRX and the dotnet adapter)
