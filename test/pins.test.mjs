@@ -43,10 +43,10 @@ import {
 const temporaryDirs = [];
 
 /** @returns {string} */
-function makeDareDir() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-pins-'));
+function makeMeeseeksDir() {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-pins-'));
   temporaryDirs.push(dir);
-  return path.join(dir, '.dare');
+  return path.join(dir, '.meeseeks');
 }
 
 after(() => {
@@ -256,30 +256,30 @@ describe('verifyRequirementPin', () => {
 
 describe('the pin store', () => {
   it('reads an absent file as no pins, since a first run has none', () => {
-    assert.deepEqual(readPins(makeDareDir()), emptyPins());
+    assert.deepEqual(readPins(makeMeeseeksDir()), emptyPins());
   });
 
   it('round-trips what was written', () => {
-    const dareDir = makeDareDir();
+    const meeseeksDir = makeMeeseeksDir();
     const pins = {
       ...emptyPins(),
       security: [guardPin()],
       requirements: [pinRequirement({ id: 'PRD-1.1', evidence: 'src/a.ts:2', contents: 'x', iteration: 1 })],
     };
-    writePins(dareDir, pins);
-    const read = readPins(dareDir);
+    writePins(meeseeksDir, pins);
+    const read = readPins(meeseeksDir);
     assert.equal(read.security[0].snippet, GUARD);
     assert.equal(read.requirements[0].id, 'PRD-1.1');
   });
 
   it('writes sorted, so two identical states produce identical bytes', () => {
-    const dareDir = makeDareDir();
+    const meeseeksDir = makeMeeseeksDir();
     const a = pinRequirement({ id: 'PRD-1.1', evidence: 'src/a.ts:1', contents: 'x', iteration: 1 });
     const b = pinRequirement({ id: 'PRD-2.2', evidence: 'src/b.ts:1', contents: 'y', iteration: 1 });
-    writePins(dareDir, { ...emptyPins(), requirements: [b, a] });
-    const forward = readFileSync(path.join(dareDir, PINS_FILE), 'utf8');
-    writePins(dareDir, { ...emptyPins(), requirements: [a, b] });
-    assert.equal(readFileSync(path.join(dareDir, PINS_FILE), 'utf8'), forward);
+    writePins(meeseeksDir, { ...emptyPins(), requirements: [b, a] });
+    const forward = readFileSync(path.join(meeseeksDir, PINS_FILE), 'utf8');
+    writePins(meeseeksDir, { ...emptyPins(), requirements: [a, b] });
+    assert.equal(readFileSync(path.join(meeseeksDir, PINS_FILE), 'utf8'), forward);
   });
 
   /** @type {[string, string][]} */
@@ -297,10 +297,10 @@ describe('the pin store', () => {
       // to no lessons because it cannot make a wrong build look right. An unreadable pin store
       // can: continuing without it discards every recorded guard and every carried pass, and
       // the run looks healthier for having lost them.
-      const dareDir = makeDareDir();
-      mkdirSync(dareDir, { recursive: true });
-      writeFileSync(path.join(dareDir, PINS_FILE), body, 'utf8');
-      assert.throws(() => readPins(dareDir), PinsError);
+      const meeseeksDir = makeMeeseeksDir();
+      mkdirSync(meeseeksDir, { recursive: true });
+      writeFileSync(path.join(meeseeksDir, PINS_FILE), body, 'utf8');
+      assert.throws(() => readPins(meeseeksDir), PinsError);
     });
   }
 });

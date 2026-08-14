@@ -36,7 +36,7 @@
  *   like a log nothing was written to.
  *
  * The driver appends; the builder never writes the file. The store is driver-owned and §6
- * denies every write under `.dare` positionally, which is what stops this becoming a channel a
+ * denies every write under `.meeseeks` positionally, which is what stops this becoming a channel a
  * builder can use to talk to its own auditor unsupervised.
  *
  * This module reads no clock. `iteration` is passed in.
@@ -45,7 +45,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-/** Driver-owned. Protected by the `.dare/**` invariant (§6) with no rule of its own. */
+/** Driver-owned. Protected by the `.meeseeks/**` invariant (§6) with no rule of its own. */
 export const ASSUMPTIONS_FILE = 'assumptions.json';
 
 /** Bumped when a field's meaning changes. */
@@ -206,12 +206,12 @@ export function parseAssumptions(raw) {
  * correctness. It throws only on damage it cannot interpret, because silently treating a
  * future schema as empty would discard a real log.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @returns {AssumptionsLog}
  * @throws {AssumptionsError}
  */
-export function readAssumptions(dareDir) {
-  const file = path.join(dareDir, ASSUMPTIONS_FILE);
+export function readAssumptions(meeseeksDir) {
+  const file = path.join(meeseeksDir, ASSUMPTIONS_FILE);
   if (!existsSync(file)) return { version: ASSUMPTIONS_VERSION, entries: [] };
   /** @type {unknown} */
   let parsed;
@@ -237,21 +237,21 @@ export function readAssumptions(dareDir) {
  * Append this iteration's assumptions. Append-only: nothing here rewrites or removes an
  * earlier entry, because the value of the log is that it shows what was believed *at the time*.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @param {number} iteration
  * @param {{ cites: string, ambiguity: string, assumed: string }[]} assumptions
  * @returns {AssumptionsLog} the log as it now stands
  * @throws {AssumptionsError}
  */
-export function appendAssumptions(dareDir, iteration, assumptions) {
-  const log = readAssumptions(dareDir);
+export function appendAssumptions(meeseeksDir, iteration, assumptions) {
+  const log = readAssumptions(meeseeksDir);
   const next = {
     version: ASSUMPTIONS_VERSION,
     entries: [...log.entries, ...assumptions.map((assumption) => ({ iteration, ...assumption }))],
   };
-  const file = path.join(dareDir, ASSUMPTIONS_FILE);
+  const file = path.join(meeseeksDir, ASSUMPTIONS_FILE);
   try {
-    mkdirSync(dareDir, { recursive: true });
+    mkdirSync(meeseeksDir, { recursive: true });
     const temporary = `${file}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
     renameSync(temporary, file);

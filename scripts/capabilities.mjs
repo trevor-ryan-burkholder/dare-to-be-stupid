@@ -449,25 +449,25 @@ export function parseCapabilityDeclaration(raw) {
   );
 }
 
-/** The driver's record of what this project is. Protected by the `.dare/**` invariant (§6). */
+/** The driver's record of what this project is. Protected by the `.meeseeks/**` invariant (§6). */
 export const CAPABILITY_MANIFEST = 'capabilities.json';
 
 /**
- * Write `.dare/capabilities.json`.
+ * Write `.meeseeks/capabilities.json`.
  *
- * Driver-owned, because a child running under `DARE_RUNNING` is denied writes anywhere under
- * `.dare` — which is what stops a builder from declaring away a gate it cannot pass.
+ * Driver-owned, because a child running under `MEESEEKS_RUNNING` is denied writes anywhere under
+ * `.meeseeks` — which is what stops a builder from declaring away a gate it cannot pass.
  *
  * Rewritten every iteration, because `detected` and `evidence` describe the tree as it is now
  * and the tree changes under them. `declared` is the only durable half.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @param {ResolvedCapabilities} resolved
  * @returns {string} the path written
  */
-export function writeCapabilityManifest(dareDir, resolved) {
-  mkdirSync(dareDir, { recursive: true });
-  const file = path.join(dareDir, CAPABILITY_MANIFEST);
+export function writeCapabilityManifest(meeseeksDir, resolved) {
+  mkdirSync(meeseeksDir, { recursive: true });
+  const file = path.join(meeseeksDir, CAPABILITY_MANIFEST);
   const temporary = `${file}.tmp`;
   const body = {
     declared: resolved.declared,
@@ -487,12 +487,12 @@ export function writeCapabilityManifest(dareDir, resolved) {
  * that is not a valid capability list. A run that has lost its declaration cannot decide
  * which gates apply, and guessing is the failure this whole module exists to prevent.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @returns {Capability[]}
  * @throws {CapabilityError}
  */
-export function readDeclaredCapabilities(dareDir) {
-  const file = path.join(dareDir, CAPABILITY_MANIFEST);
+export function readDeclaredCapabilities(meeseeksDir) {
+  const file = path.join(meeseeksDir, CAPABILITY_MANIFEST);
   /** @type {string} */
   let contents;
   try {

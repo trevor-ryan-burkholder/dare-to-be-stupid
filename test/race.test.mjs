@@ -35,7 +35,7 @@ const temporaryDirs = [];
 
 /** @returns {string} */
 function makeTempDir() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-race-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-race-'));
   temporaryDirs.push(dir);
   return dir;
 }
@@ -324,12 +324,12 @@ describe('worktree lifecycle', () => {
   });
 
   it('names worktrees predictably', () => {
-    assert.equal(worktreeName(1), 'dare-race-01');
-    assert.equal(worktreeName(12), 'dare-race-12');
+    assert.equal(worktreeName(1), 'meeseeks-race-01');
+    assert.equal(worktreeName(12), 'meeseeks-race-12');
   });
 });
 
-// Killing a driver mid-race with -9 left three worktrees at /tmp/dare-race-55237-4/, detached at
+// Killing a driver mid-race with -9 left three worktrees at /tmp/meeseeks-race-55237-4/, detached at
 // the base commit, and `git worktree list` showed four entries afterwards. `git worktree add`
 // refuses a directory it already knows about, so one abandoned race breaks every later race in
 // that repository, and the error names a directory rather than the race that left it behind.
@@ -339,7 +339,7 @@ describe('worktree lifecycle', () => {
 // cleanup-dependent, which is the only shape that survives a kill nothing can catch.
 //
 // The run lock (0.82.0) is what makes this provable rather than merely likely. One driver per
-// repository means that at the moment a race begins, every dare-race worktree already registered
+// repository means that at the moment a race begins, every meeseeks-race worktree already registered
 // is by definition not owned by a live race here.
 describe('sweepRaceWorktrees', () => {
   const PORCELAIN = [
@@ -347,11 +347,11 @@ describe('sweepRaceWorktrees', () => {
     'HEAD abc',
     'branch refs/heads/main',
     '',
-    'worktree /tmp/dare-race-55237-4/dare-race-01',
+    'worktree /tmp/meeseeks-race-55237-4/meeseeks-race-01',
     'HEAD abc',
     'detached',
     '',
-    'worktree /tmp/dare-race-55237-4/dare-race-02',
+    'worktree /tmp/meeseeks-race-55237-4/meeseeks-race-02',
     'HEAD abc',
     'detached',
     '',
@@ -381,7 +381,7 @@ describe('sweepRaceWorktrees', () => {
   it('removes every abandoned race worktree it finds', () => {
     const { run } = runnerFor();
     const swept = sweepRaceWorktrees({ cwd: '/repo', run });
-    assert.deepStrictEqual(swept.removed, ['/tmp/dare-race-55237-4/dare-race-01', '/tmp/dare-race-55237-4/dare-race-02']);
+    assert.deepStrictEqual(swept.removed, ['/tmp/meeseeks-race-55237-4/meeseeks-race-01', '/tmp/meeseeks-race-55237-4/meeseeks-race-02']);
     assert.deepStrictEqual(swept.problems, []);
   });
 
@@ -414,7 +414,7 @@ describe('sweepRaceWorktrees', () => {
     const swept = sweepRaceWorktrees({ cwd: '/repo', run });
     assert.deepStrictEqual(swept.removed, []);
     assert.equal(swept.problems.length, 2);
-    assert.equal(swept.problems[0].includes('dare-race-01'), true, swept.problems[0]);
+    assert.equal(swept.problems[0].includes('meeseeks-race-01'), true, swept.problems[0]);
   });
 
   it('reports a list it could not read, instead of concluding there is nothing to sweep', () => {
@@ -481,7 +481,7 @@ describe('applyWinner against a dirty main tree', () => {
 
   it('sets the tree aside before merging, untracked files included', () => {
     // `--include-untracked` and not `--all`: ignored paths are left alone, which is what keeps
-    // `.dare/` — the ratchet, the pins, the briefs — out of the stash entirely.
+    // `.meeseeks/` — the ratchet, the pins, the briefs — out of the stash entirely.
     const { calls, run } = runnerFor({ status: ' M docs/architecture.md\n?? .stryker-tmp/\n' });
     const applied = applyWinner({ cwd: '/repo', run, commit: 'abc123' });
     assert.equal(applied.ok, true, applied.detail);

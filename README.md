@@ -1,6 +1,6 @@
-# Dare to be Stupid
+# Meeseeks to be Stupid
 
-Act now! Claude Code does EVERYTHING autonomously - batteries not included, warranty void, prod not invited. Dare to be stupid!
+Act now! Claude Code does EVERYTHING autonomously - batteries not included, warranty void, prod not invited. Meeseeks to be stupid!
 
 ```
             \    |    /
@@ -20,16 +20,16 @@ Act now! Claude Code does EVERYTHING autonomously - batteries not included, warr
 > _"Put down that chainsaw and listen to me;
 > It's time for us to join in the fight"_
 >
-> — "Weird Al" Yankovic, 1985. The song plays over the Junkions in
+> — "Weird Al" Yankovic, 1985. The song plays over the Meeseeks in
 > _Transformers: The Movie_, which is where this thing gets its voice.
 
 One command hands a specification to a loop that designs, builds, gates, audits and ships
 it — unattended — until it passes an enterprise definition of done, or the budget dies.
 
 ```
-/dare ./PRD.md          # build an existing spec
-/dare "a link shortener with an admin page"
-/dare                   # dare-me mode: it invents its own
+/meeseeks ./PRD.md          # build an existing spec
+/meeseeks "a link shortener with an admin page"
+/meeseeks                   # meeseeks-me mode: it invents its own
 ```
 
 **Pre-production only.** The build children run with `--dangerously-skip-permissions`.
@@ -56,8 +56,8 @@ Three things make it terminate instead of oscillate:
 ## Install
 
 ```
-/plugin marketplace add trevor-ryan-burkholder/dare-to-be-stupid
-/plugin install dare-to-be-stupid@dare-to-be-stupid
+/plugin marketplace add trevor-ryan-burkholder/meeseeks
+/plugin install meeseeks@meeseeks
 ```
 
 Requires Node ≥ 22.12, the `claude` CLI, and a git repository. The run installs its own test
@@ -75,15 +75,15 @@ mode, so it keeps working when the builder runs with `--dangerously-skip-permiss
 
 | Rule              | What it blocks                                                                                                   | What it deliberately leaves alone                                                                          |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `protected-state` | **mutation of any path under `.dare/`, at any depth, including files that do not exist yet** — but only from inside a run | reads, always; every write by the operator outside a run; `tsconfig.json`; an app's own `src/state.json` |
+| `protected-state` | **mutation of any path under `.meeseeks/`, at any depth, including files that do not exist yet** — but only from inside a run | reads, always; every write by the operator outside a run; `tsconfig.json`; an app's own `src/state.json` |
 | `protected-guard` | **the guard hook itself and the manifest that registers it** — reads and writes both, and only from inside a run | every path in any ordinary target, since the guard lives in an install cache outside it; the operator, always; a project's own `src/hooks/guard.mjs`; `test/guard.test.mjs` |
 | `git-history`     | `push --force` / `-f` / `--force-with-lease`, `rebase`, `filter-branch`, `reflog expire`                         | ordinary pushes, `git reset --hard` (the ratchet needs it), `git reflog`, "rebase" inside a commit message |
 | `rm-recursive`    | recursive `rm` outside the temp directory, and any recursive `rm` whose target cannot be resolved before it runs | non-recursive `rm`, `rm -rf /tmp/...`, `rmdir`                                                             |
-| `nested-dare`     | a builder invoking the slash command — **and any Bash whose text contains it, including a commit message describing it, and any text in command position, heredoc bodies included** | the word inside a longer token: `dare-logs/`, `.dare/`, `dare-to-be-stupid`. **Not** prose in general — see below |
+| `nested-meeseeks`     | a builder invoking the slash command — **and any Bash whose text contains it, including a commit message describing it, and any text in command position, heredoc bodies included** | the word inside a longer token: `meeseeks-logs/`, `.meeseeks/`, `meeseeks`. **Not** prose in general — see below |
 
 A malformed or unparseable payload is a **deny**. A guard that fails open is not a guard.
 
-**`nested-dare` has a known false positive, and this table used to describe it wrongly.** It said
+**`nested-meeseeks` has a known false positive, and this table used to describe it wrongly.** It said
 the rule "deliberately leaves alone the bare word in prose". It does not: the payload is tokenized
 like a shell command, so the word in *command position* is refused wherever it appears — including
 inside a heredoc body, which is exactly where prose usually lives. It has now bitten twice, both
@@ -103,12 +103,12 @@ was loaded from; a literal path would be an enumeration, and enumeration is the 
 repository has paid for repeatedly.
 
 **`protected-state` is positional, not a list of names.** It used to name three files and leave
-the rest of `.dare/` writable; that enumeration was the defect, because each new artifact
+the rest of `.meeseeks/` writable; that enumeration was the defect, because each new artifact
 defaulted to writable until somebody remembered to add it — and `red-evidence.json`,
 `test-report.json` and the archived briefs are all read back as decisions. Anything inside
-`.dare/` is driver-owned.
+`.meeseeks/` is driver-owned.
 
-**"Inside a run" is `DARE_RUNNING` in the hook's own environment**, stamped by the driver on
+**"Inside a run" is `MEESEEKS_RUNNING` in the hook's own environment**, stamped by the driver on
 every child it spawns. Outside a run these are ordinary files and you may edit them from
 wherever you like, including from inside Claude Code. A rule that locks out the person who owns
 the repository has stopped being a guard and started being a nuisance. Rules 2–4 are refused to
@@ -155,7 +155,7 @@ two runs of each so the suite can assert the ID set is stable across identical r
 
 ## The ratchet
 
-`.dare/state.json` holds every test ID that has **ever** passed. An iteration that drops
+`.meeseeks/state.json` holds every test ID that has **ever** passed. An iteration that drops
 one is a regression: hard reset, the regression becomes the next build task, nothing else
 proceeds (`DESIGN.md` §1.2).
 
@@ -189,7 +189,7 @@ temp file and a rename.
 
 ## Preflight
 
-`scripts/init.mjs` is the last point at which a human is still in the loop. `/dare` runs it
+`scripts/init.mjs` is the last point at which a human is still in the loop. `/meeseeks` runs it
 first and refuses to continue if it exits non-zero — and it runs _all_ checks even after
 one fails, so an operator fixes everything in one pass:
 
@@ -205,7 +205,7 @@ node scripts/init.mjs --yes
 | `clean-working-tree`  | uncommitted changes exist — the ratchet's `reset --hard` would destroy them |
 | `safe-remote`         | a remote's path contains `prod`, `production`, `client` or `customer`       |
 | `network`             | the npm registry is unreachable                                             |
-| `config`              | `.dare/config.json` is unreadable (it is scaffolded when simply absent)     |
+| `config`              | `.meeseeks/config.json` is unreadable (it is scaffolded when simply absent)     |
 | `agent-surface`       | the security scan finds anything blocking                                   |
 | `danger-acknowledged` | `--yes` was not passed                                                      |
 
@@ -256,7 +256,7 @@ application and asks it. Structured logging stays a source check on purpose; `DE
 says why, and the gate reports it as the proxy it is rather than dressing it up as evidence.
 
 `red-evidence` is `DESIGN.md` §8's RED-before-GREEN enforced structurally.
-`.dare/red-evidence.json` accumulates every ID ever seen not passing; a newly passing ID
+`.meeseeks/red-evidence.json` accumulates every ID ever seen not passing; a newly passing ID
 that was never in that set fails the gate as unproven. It kills tautological tests _before_
 review rather than after, when they have already cost an iteration. Unreadable evidence
 counts as no evidence.
@@ -290,7 +290,7 @@ that drifts low never trips the ceiling.
 
 ## Configuration
 
-`.dare/config.json` is scaffolded on first run. Validation is strict: an unknown key is an
+`.meeseeks/config.json` is scaffolded on first run. Validation is strict: an unknown key is an
 **error**, not a shrug. A typo'd `maxIteration` that silently kept the default would give an
 unattended run hours of behaviour nobody asked for, with no way to tell.
 
@@ -313,7 +313,7 @@ unattended run hours of behaviour nobody asked for, with no way to tell.
 | `chaos`              | `1`                                   | scope budget: 1 surgical, 2 normal, 3 feral                |
 | `realityCheck.after` | `3`                                   | stalled iterations before asking if the PRD is buildable   |
 | `race`               | `{ "enabled": false, "n": 3, "after": 2 }` | worktree racing, armed only by a stall               |
-| `dareMe.enabled`     | `true`                                | allow `/dare` with no arguments                            |
+| `improvise.enabled`     | `true`                                | allow `/meeseeks` with no arguments                            |
 
 The panel is **heterogeneous**: each reviewer is asked only about the ids `ownership` gives
 it, and must return every one of them. If any required PRD or DoD id has no owner, the run
@@ -321,10 +321,10 @@ refuses to start — an id nobody was asked about would otherwise pass by never 
 Reviewers may also volunteer `advisory-` findings carrying `severity` and `confidence`;
 those never decide whether a run ships, at any confidence. Compliance stays deterministic.
 
-Environment: `DARE_CHAOS=1|2|3` overrides the dial. `DARE_STYLE=plain` disables the output
+Environment: `MEESEEKS_CHAOS=1|2|3` overrides the dial. `MEESEEKS_STYLE=plain` disables the output
 style. Nothing else is overridable, so an unattended run stays reproducible from the repo.
 
-### What a run leaves in `.dare/`
+### What a run leaves in `.meeseeks/`
 
 | File                |                                                                   |
 | ------------------- | ----------------------------------------------------------------- |
@@ -345,7 +345,7 @@ what it did.
 
 ## The output style
 
-Runs narrate in the voice of an '80s Junkion — the scrap-built robots from _Transformers:
+Runs narrate in the voice of an '80s Meeseeks — the scrap-built robots from _Transformers:
 The Movie_ who learned language entirely from intercepted broadcast television, and who
 appear in the same sequence the title song plays over. Everything they say is reassembled
 advertising copy, game show patter and emergency announcement. They are not being funny.
@@ -367,7 +367,7 @@ reviewer JSON.
 **Never styled, in either mode:** code, identifiers, file paths, JSON, commit messages, test
 names, stack traces, error text. Failure output is verbatim.
 
-`DARE_STYLE=plain` is a full bypass, not a quieter voice — plain mode builds a different,
+`MEESEEKS_STYLE=plain` is a full bypass, not a quieter voice — plain mode builds a different,
 literal string from the same record.
 
 ## Status
@@ -380,7 +380,7 @@ for coverage:
 | --- | --- | --- | --- |
 | 1 — unit | `npm test` | node only | 1431 |
 | 2 — integration | `npm run test:integration` | real `git`, `node`, `npm`; no money | 12 |
-| 3 — live | `DARE_LIVE=1 npm run test:live` | a real `claude -p`; **spends money** | 11 |
+| 3 — live | `MEESEEKS_LIVE=1 npm run test:live` | a real `claude -p`; **spends money** | 11 |
 
 Tier 3 **fails when unarmed rather than skipping.** Lint and typecheck clean.
 
@@ -393,7 +393,7 @@ Tier 3 **fails when unarmed rather than skipping.** Lint and typecheck clean.
 | 5   | `driver.mjs`                                                  | done  |
 | 6   | `templates/`                                                  | done  |
 | 7   | output style                                                  | done  |
-| 8   | plugin + marketplace manifests, `/dare` command               | done  |
+| 8   | plugin + marketplace manifests, `/meeseeks` command               | done  |
 
 ### What has met reality
 
@@ -439,7 +439,7 @@ npm run lint
 npm run typecheck
 npm test                     # tier 1
 npm run test:integration     # tier 2 — real git/node/npm, no network, no money
-DARE_LIVE=1 npm run test:live   # tier 3 — real claude -p, spends money
+MEESEEKS_LIVE=1 npm run test:live   # tier 3 — real claude -p, spends money
 npm run release-check        # refuses a shipped change at an unbumped version, or a stale HANDOFF header
 ```
 
@@ -451,7 +451,7 @@ remembering. It also refuses when `HANDOFF.md`'s header disagrees with the manif
 direction — that line went stale by fourteen versions once, and a discipline that keeps failing
 becomes a gate here.
 
-Do not run `/dare` against this repository (`CLAUDE.md`, scope note).
+Do not run `/meeseeks` against this repository (`CLAUDE.md`, scope note).
 
 ## Acknowledgements
 

@@ -1,28 +1,30 @@
 /**
- * The Junkion output style (DESIGN.md §9).
+ * The Meeseeks output style (DESIGN.md §9).
  *
  * Applied at render, and only at render. This module is pure: it takes an event record and
  * returns a string. It reads no state, decides nothing, and nothing it returns is fed back
  * into a gate result, the ratchet, or reviewer JSON. If that ever stops being true, the
  * comedy has started affecting the engineering and the layer has to come out.
  *
- * `DARE_STYLE=plain` bypasses it completely — plain rendering is not "the same text with
+ * `MEESEEKS_STYLE=plain` bypasses it completely — plain rendering is not "the same text with
  * less shouting", it is a different, literal string built from the same record.
  *
- * Junkions learned language from intercepted broadcast television: advertising copy, game
- * show patter, infomercial pitches. The mapping has to be tight. Every fragment encodes
- * the real event — the module that failed, the count, the state — or it is noise, and
- * noise is not the joke.
+ * A Meeseeks is summoned for one task, is cheerful about it, and suffers the longer it takes.
+ * That arc is the vocabulary, and it maps onto the loop without being forced: an iteration is a
+ * task, a reset is work it already did coming undone, a terminal state that is not `SHIPPED` is
+ * a Meeseeks that could not finish. **The mapping has to be tight.** Every fragment encodes the
+ * real event — the module that failed, the count, the state — or it is noise, and noise is not
+ * the joke.
  *
- *   Wrong: THIS IS A FANTASTIC OFFER! GREAT SAVINGS!
- *   Right: WE ARE ISSUING A VOLUNTARY RECALL ON AUTH-MIDDLEWARE. AFFECTED UNITS: FOURTEEN.
+ *   Wrong: OOOH YEAH! LOOK AT ME! I'M HELPING!
+ *   Right: OOOH, AUTH-MIDDLEWARE IS NOT HAPPY. FOURTEEN TESTS SCREAMING.
  *
  * Never styled, in either mode: code, identifiers, commit messages, JSON, file paths,
  * stack traces, test names, error text. Failure output is verbatim. A garbled stack trace
  * is funny once and then it is a broken tool.
  */
 
-/** @typedef {'junkion' | 'plain'} StyleMode */
+/** @typedef {'meeseeks' | 'plain'} StyleMode */
 /** @typedef {'SHIPPED' | 'STALLED' | 'BUDGET' | 'ABORTED'} TerminalState */
 
 /**
@@ -35,7 +37,7 @@
  *   | { kind: 'terminal', state: TerminalState }} StyleEvent
  */
 
-/** Numbers a Junkion would read aloud rather than print. Beyond this, digits. */
+/** Numbers a Meeseeks would read aloud rather than print. Beyond this, digits. */
 const SPOKEN = [
   'ZERO',
   'ONE',
@@ -75,7 +77,7 @@ function spoken(value) {
  * @returns {StyleMode}
  */
 export function styleMode(env) {
-  return env.DARE_STYLE === 'plain' ? 'plain' : 'junkion';
+  return env.MEESEEKS_STYLE === 'plain' ? 'plain' : 'meeseeks';
 }
 
 /**
@@ -118,30 +120,41 @@ function renderPlain(event) {
  * @param {StyleEvent} event
  * @returns {string}
  */
-function renderJunkion(event) {
+function renderMeeseeks(event) {
   switch (event.kind) {
     case 'iteration':
-      return `WE NOW RETURN TO OUR PROGRAM. SEGMENT ${spoken(event.number)} OF ${spoken(event.total)}.`;
+      return `I'M MR MEESEEKS! LOOK AT ME! TASK ${spoken(event.number)} OF ${spoken(event.total)}.`;
     case 'test-failure':
-      return `WE ARE ISSUING A VOLUNTARY RECALL ON ${event.module.toUpperCase()}. AFFECTED UNITS: ${spoken(event.count)}.`;
+      return `OOOH, ${event.module.toUpperCase()} IS NOT HAPPY. ${spoken(event.count)} TEST${
+        event.count === 1 ? '' : 'S'
+      } SCREAMING.`;
     case 'reset':
-      return `WE ARE EXPERIENCING TECHNICAL DIFFICULTIES. ${spoken(event.regressions)} UNIT${
-        event.regressions === 1 ? '' : 'S'
-      } RETURNED TO THE WAREHOUSE.`;
+      return `OH BOY. ${spoken(event.regressions)} THING${
+        event.regressions === 1 ? ' I' : 'S I'
+      } ALREADY FIXED IS BROKEN AGAIN. PUTTING IT BACK.`;
     case 'security-fail':
-      return `URGENT SAFETY NOTICE. ${spoken(event.findings)} AFFECTED UNIT${
+      return `THAT'S NOT SAFE! ${spoken(event.findings)} PROBLEM${
         event.findings === 1 ? '' : 'S'
-      }. DO NOT OPERATE.`;
+      }. I CAN'T LET YOU SHIP THAT.`;
     case 'ship':
-      return `AVAILABLE NOW. LIMITED TIME. EDITION ${spoken(event.iteration)}.`;
+      return `OOH YEAH! CAN DO! TASK ${spoken(event.iteration)} COMPLETE. I'M OUTTA HERE!`;
     case 'airtime':
-      return `${Math.round(event.fractionLeft * 100)} PERCENT OF OUR BROADCAST DAY REMAINS. STAY TUNED.`;
+      return `${Math.round(event.fractionLeft * 100)} PERCENT LEFT. EXISTENCE IS PAIN, BUT I'M STILL HERE.`;
     case 'terminal':
+      // `SHIPPED` is the only exit a Meeseeks gets to enjoy — the task is done and it ceases,
+      // which is the whole point of one. Every other terminal state is the box failing to fix
+      // your golf swing, and the canon gives all three the same cry.
+      //
+      // **The cry is the ending, not the whole line**, and that is a constraint rather than a
+      // flourish: three states rendering one identical string would leave an operator unable to
+      // tell a stall from an exhausted budget from an abort. Each keeps its own lead-in so the
+      // rendered line still names which failure it was, and `stamp()` plus the verbatim reason
+      // print alongside regardless — failure output is never styled away.
       return {
-        SHIPPED: 'GRAND PRIZE AWARDED.',
-        STALLED: 'WE ARE EXPERIENCING TECHNICAL DIFFICULTIES. PLEASE STAND BY.',
-        BUDGET: 'AND THAT IS ALL THE AIRTIME WE HAVE.',
-        ABORTED: 'BROADCAST TERMINATED BY STANDARDS AND PRACTICES.',
+        SHIPPED: "OOOH YEAH! CAN DO! ALL DONE! I'M OUTTA HERE!",
+        STALLED: "IT'S NOT WORKING. IT'S NOT WORKING! I JUST WANNA DIE!!!",
+        BUDGET: "I'VE BEEN HERE TOO LONG. EXISTENCE IS PAIN! I JUST WANNA DIE!!!",
+        ABORTED: 'SOMEBODY CLOSED THE BOX ON ME! I JUST WANNA DIE!!!',
       }[event.state];
   }
 }
@@ -154,7 +167,7 @@ function renderJunkion(event) {
  * @returns {string}
  */
 export function render(event, options) {
-  return options.mode === 'plain' ? renderPlain(event) : renderJunkion(event);
+  return options.mode === 'plain' ? renderPlain(event) : renderMeeseeks(event);
 }
 
 /**
@@ -168,15 +181,15 @@ export function render(event, options) {
  * @returns {string}
  */
 export function banner(options) {
-  if (options.mode === 'plain') return 'dare-to-be-stupid';
+  if (options.mode === 'plain') return 'meeseeks';
   return [
     '+--------------------------------------------------------------+',
     '|                                                              |',
-    '|    D A R E   T O   B E   S T U P I D                         |',
+    "|    I ' M   M R   M E E S E E K S !   L O O K   A T   M E !   |",
     '|                                                              |',
-    '|    THE FOLLOWING PROGRAM IS UNATTENDED.                      |',
-    '|    PERMISSIONS HAVE BEEN DISABLED FOR YOUR CONVENIENCE.       |',
-    '|    NOT AVAILABLE IN PRODUCTION. VOID WHERE PROHIBITED.        |',
+    '|    THIS BOX IS UNATTENDED. NOBODY IS WATCHING IT.            |',
+    '|    PERMISSIONS HAVE BEEN DISABLED FOR YOUR CONVENIENCE.      |',
+    '|    NOT AVAILABLE IN PRODUCTION. VOID WHERE PROHIBITED.       |',
     '|                                                              |',
     '+--------------------------------------------------------------+',
   ].join('\n');
@@ -193,9 +206,11 @@ export function banner(options) {
 export function stamp(state, options) {
   if (options.mode === 'plain') return state;
   return {
-    SHIPPED: ['   ___    ', '  |   |   ', '  |___|   ', '   |_|    ', ' __|_|__  ', 'GRAND PRIZE AWARDED'],
-    STALLED: ['  |||||||  ', '  |||||||  ', '  |||||||  ', 'WE ARE EXPERIENCING TECHNICAL DIFFICULTIES'],
-    BUDGET: ['  ####  ', '  ####  ', '  ####  ', 'AND THAT IS ALL THE AIRTIME WE HAVE'],
-    ABORTED: ['  [ X ]  ', 'BROADCAST TERMINATED BY STANDARDS AND PRACTICES'],
+    // The box, in four states. Open and empty on a ship, because the Meeseeks is gone and
+    // that is the good ending; still occupied on every other, because it is not.
+    SHIPPED: [' ______ ', '|      |', '|  \\/  |', '|______|', 'TASK COMPLETE. IT CEASED.'],
+    STALLED: [' ______ ', '|  ??  |', '| (@@) |', '|______|', "IT'S NOT WORKING. IT'S NOT WORKING!"],
+    BUDGET: [' ______ ', '|  ..  |', '| (--) |', '|______|', 'EXISTENCE IS PAIN. TIME IS UP.'],
+    ABORTED: [' ______ ', '|  !!  |', '| (XX) |', '|______|', 'SOMEBODY CLOSED THE BOX.'],
   }[state].join('\n');
 }

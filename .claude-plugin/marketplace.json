@@ -1,17 +1,17 @@
 {
-  "name": "dare-to-be-stupid",
+  "name": "meeseeks",
   "owner": {
     "name": "Trevor Ryan Burkholder"
   },
   "plugins": [
     {
-      "name": "dare-to-be-stupid",
+      "name": "meeseeks",
       "source": "./",
       "description": "An autonomous build loop with an external auditor and a monotonic test ratchet. Pre-production only; never point it at anything with users."
     },
     {
       "name": "impeccable",
-      "description": "Deterministic frontend design-slop detector. The design gate a dare run arms on any target that renders a user interface; carried here so the two arrive together rather than the gate discovering its tool is missing mid-run.",
+      "description": "Deterministic frontend design-slop detector. The design gate a meeseeks run arms on any target that renders a user interface; carried here so the two arrive together rather than the gate discovering its tool is missing mid-run.",
       "author": {
         "name": "Paul Bakaus"
       },

@@ -104,12 +104,12 @@ green contract tests be read as evidence — they pass on argv nobody has execut
 > and A3 is the only item on the roadmap that addresses it.
 
 **Architecture:** the driver holds out a set of test cases the builder never sees, written at
-Phase 0 from the PRD by a *separate* child, stored driver-owned under `.dare/`, and executed as a
+Phase 0 from the PRD by a *separate* child, stored driver-owned under `.meeseeks/`, and executed as a
 gate. §6's positional rule already protects them; §6.1's *not supplied* discipline keeps them out
 of every brief.
 
 **The deferral reason no longer holds.** A3 was deferred because "the builder would own whether
-the gate can fail". §4.4 solved exactly that for Stryker by writing the config into `.dare/` and
+the gate can fail". §4.4 solved exactly that for Stryker by writing the config into `.meeseeks/` and
 passing it positionally. The same move applies.
 
 **Files:**
@@ -121,7 +121,7 @@ passing it positionally. The same move applies.
 
 **Interfaces:**
 - Produces: `authorOracle(prd) → {cases: {input, argv, expectStdout, expectExit}[]}`,
-  `writeOracle(dareDir, cases) → string`, `runOracle(dareDir, root, run) → GateResult`
+  `writeOracle(meeseeksDir, cases) → string`, `runOracle(meeseeksDir, root, run) → GateResult`
 
 ### Task 1.1 — the store, driver-owned and unreadable-by-discipline
 
@@ -129,9 +129,9 @@ passing it positionally. The same move applies.
 
 ```js
 it('refuses to run when the store is missing, rather than passing over nothing', () => {
-  const dareDir = path.join(makeTempDir(), '.dare');
-  mkdirSync(dareDir, { recursive: true });
-  const result = runOracle(dareDir, '/repo', () => ({ ok: true, status: 0, stdout: '', stderr: '' }));
+  const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+  mkdirSync(meeseeksDir, { recursive: true });
+  const result = runOracle(meeseeksDir, '/repo', () => ({ ok: true, status: 0, stdout: '', stderr: '' }));
   assert.equal(result.ok, false);
   assert.match(result.detail, /no held-out cases/);
 });
@@ -200,7 +200,7 @@ calling A3 finished.
       anyway, but the omission is the §4.2 defect class and a test asserts the table is complete.
 - [ ] **Step 2:** tier-3 check — a real authoring child returns a parseable block. **This is a new
       output contract owned by another binary**, which is §11.1's rule, not a formality.
-- [ ] **Step 3:** `npm test && npm run test:integration && DARE_LIVE=1 npm run test:live`.
+- [ ] **Step 3:** `npm test && npm run test:integration && MEESEEKS_LIVE=1 npm run test:live`.
 - [ ] **Step 4:** bump, `npm run release-check`, commit.
 
 ### Task 1.5 — the acceptance test that matters

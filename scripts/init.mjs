@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * `dare init` — scaffold `.dare/config.json` and report preflight (DESIGN.md §3.5).
+ * `meeseeks init` — scaffold `.meeseeks/config.json` and report preflight (DESIGN.md §3.5).
  *
  * Named `init.mjs` rather than DESIGN.md §7's `init.js`: CLAUDE.md hard constraint 3
  * requires ESM, and the `.mjs` extension guarantees it even when the plugin is loaded
  * from a cache directory that does not carry this package manifest.
  *
  * Exit code is the contract. 0 means a run may start; 1 means it may not.
- * `commands/dare.md` shells here before it shells to the driver, so a half-configured
+ * `commands/meeseeks.md` shells here before it shells to the driver, so a half-configured
  * unattended run never begins.
  */
 
@@ -38,10 +38,10 @@ export function parseArgs(argv, cwd) {
 export function main(argv, io = {}) {
   const log = io.log ?? ((/** @type {string} */ line) => process.stdout.write(`${line}\n`));
   const { yes, cwd, scaffoldOnly } = parseArgs(argv, io.cwd ?? process.cwd());
-  const dareDir = path.join(cwd, '.dare');
+  const meeseeksDir = path.join(cwd, '.meeseeks');
 
   if (scaffoldOnly) {
-    const { created, path: file } = initConfig(dareDir);
+    const { created, path: file } = initConfig(meeseeksDir);
     log(created ? `created ${file}` : `${file} already exists, left alone`);
     return 0;
   }
@@ -51,7 +51,7 @@ export function main(argv, io = {}) {
   // rather than an unrelated one about sandboxing.
   let wantsSandbox = false;
   try {
-    wantsSandbox = loadConfig(dareDir).sandbox.enabled;
+    wantsSandbox = loadConfig(meeseeksDir).sandbox.enabled;
   } catch {
     // `checkConfig` reports an unreadable config as itself. A run that cannot read its settings
     // has a larger problem than whether it asked to be sandboxed.
@@ -61,7 +61,7 @@ export function main(argv, io = {}) {
     cwd,
     yes,
     interactive: io.interactive ?? process.stdout.isTTY === true,
-    dareDir,
+    meeseeksDir,
     sandbox: wantsSandbox,
   });
   log(formatPreflight(result));

@@ -92,7 +92,7 @@ import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
 import { MUTATION_CONFIG, MUTATION_CONFIG_CONTENTS } from './toolchains/node.mjs';
 import { CONDITIONAL_GATE_OPERATIONS, gatesFor, resolveToolchain } from './toolchains/index.mjs';
 
-/** @typedef {import('./config.mjs').DareConfig} DareConfig */
+/** @typedef {import('./config.mjs').MeeseeksConfig} MeeseeksConfig */
 /** @typedef {'SHIPPED' | 'STALLED' | 'BUDGET' | 'ABORTED'} TerminalState */
 /** @typedef {{ name: string, command: string[], required: boolean }} Gate */
 /** @typedef {{ name: string, ok: boolean, status: number, detail: string }} GateResult */
@@ -113,7 +113,7 @@ import { CONDITIONAL_GATE_OPERATIONS, gatesFor, resolveToolchain } from './toolc
  */
 
 /** Environment marker used to refuse nested runs (DESIGN.md §13.6). */
-export const REENTRANCY_ENV = 'DARE_RUNNING';
+export const REENTRANCY_ENV = 'MEESEEKS_RUNNING';
 
 /** Thrown when a run must not start or must not continue. */
 export class DriverError extends Error {
@@ -129,7 +129,7 @@ export class DriverError extends Error {
 // ---------------------------------------------------------------------------
 
 /**
- * dare never spawns dare. Enforced here *and* in the guard hook, because either one alone
+ * meeseeks never spawns meeseeks. Enforced here *and* in the guard hook, because either one alone
  * has a hole: the hook only sees tool calls, and the driver only sees its own children.
  *
  * @param {Record<string, string | undefined>} env
@@ -139,7 +139,7 @@ export class DriverError extends Error {
 export function assertNotNested(env) {
   if (env[REENTRANCY_ENV] !== undefined && env[REENTRANCY_ENV] !== '') {
     throw new DriverError(
-      'a dare run is already in progress in this process tree. Nested runs are refused at the driver and at the ' +
+      'a meeseeks run is already in progress in this process tree. Nested runs are refused at the driver and at the ' +
         'guard hook (DESIGN.md §13.6): they re-enter and exhaust memory long before they finish anything.',
     );
   }
@@ -245,7 +245,7 @@ export function assertOwnershipCovers(requiredIds, options) {
     throw new DriverError(
       `no reviewer owns ${plan.uncovered.join(', ')}. Every PRD requirement and DoD line must be owned by an active ` +
         'reviewer before the panel runs (DESIGN.md §1.1); an unowned id would ship having never been judged. Add a ' +
-        'pattern to `ownership` in .dare/config.json, or add the reviewer that owns it to `reviewers`.',
+        'pattern to `ownership` in .meeseeks/config.json, or add the reviewer that owns it to `reviewers`.',
     );
   }
   const empty = plan.assignments.filter((assignment) => assignment.ids.length === 0).map((a) => a.reviewer);
@@ -469,7 +469,7 @@ export const REVIEW_RECORD = 'review.json';
  * `run.json` (§7.1) records what a run was at its start and is written once after the design
  * phase. Nothing recorded the ending, so the terminal state existed only in stdout — and run 4
  * proved that stdout is not durable: its log lived in the tree, `git add -A` tracked it, and the
- * ratchet's own reset reverted it. The result had to be reconstructed from `.dare/`, `git log`
+ * ratchet's own reset reverted it. The result had to be reconstructed from `.meeseeks/`, `git log`
  * and the reflog.
  */
 export const OUTCOME_FILE = 'outcome.json';
@@ -479,7 +479,7 @@ export const OUTCOME_FILE = 'outcome.json';
  *
  * **The loop shipped a project and left no record of why.** An independent audit of the first
  * `SHIPPED` this project ever produced reported: *"I could not verify the unanimous-panel claim
- * at all — the evidence for it is not in the repo."* All that existed was `dare/GRAND-PRIZE`, an
+ * at all — the evidence for it is not in the repo."* All that existed was `meeseeks/GRAND-PRIZE`, an
  * unannotated lightweight tag on a commit named "iteration 2". No per-requirement verdicts, no
  * unanimity record, nothing an auditor could disagree with.
  *
@@ -492,13 +492,13 @@ export const OUTCOME_FILE = 'outcome.json';
  * move across iterations, and run 5's 5 → 4 → 3 convergence was visible only in a log that a
  * later reset could have destroyed.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @param {{ iteration: number, verdict: string, requireUnanimous: boolean, requiredIds: string[],
  *           failing: string[], reviewers: unknown[], advisories: unknown[] }} entry
  * @returns {string} the path written
  */
-export function recordPanelVerdict(dareDir, entry) {
-  const file = path.join(dareDir, REVIEW_RECORD);
+export function recordPanelVerdict(meeseeksDir, entry) {
+  const file = path.join(meeseeksDir, REVIEW_RECORD);
   /** @type {{ version: number, panels: unknown[] }} */
   let store = { version: 1, panels: [] };
   if (existsSync(file)) {
@@ -513,7 +513,7 @@ export function recordPanelVerdict(dareDir, entry) {
     }
   }
   store.panels.push(entry);
-  mkdirSync(dareDir, { recursive: true });
+  mkdirSync(meeseeksDir, { recursive: true });
   writeFileSync(file, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
   return file;
 }
@@ -700,7 +700,7 @@ export function gateScore(results) {
  * Decide whether the loop may run another iteration.
  *
  * @param {RunProgress} progress
- * @param {DareConfig} config
+ * @param {MeeseeksConfig} config
  * @returns {{ continue: true } | { continue: false, state: TerminalState, reason: string }}
  */
 export function shouldContinue(progress, config) {
@@ -765,7 +765,7 @@ export function recordProgress(progress, iteration) {
  * Broadcast minutes remaining (DESIGN.md §13.5). Cosmetic, but reads the real budget.
  *
  * @param {RunProgress} progress
- * @param {DareConfig} config
+ * @param {MeeseeksConfig} config
  * @returns {{ iterationsLeft: number, tokensLeft: number, usdLeft: number, fractionLeft: number }}
  */
 export function airtimeRemaining(progress, config) {
@@ -888,7 +888,7 @@ export function parseClaudeEnvelope(stdout) {
  * inform reviewer JSON. For the builder it is worse in a quieter way: a persona in the
  * system prompt changes what gets written.
  *
- * The driver applies the Junkion voice itself, at render, from `style.mjs`. Children speak
+ * The driver applies the Meeseeks voice itself, at render, from `style.mjs`. Children speak
  * plainly.
  */
 const CHILD_OUTPUT_STYLE = 'default';
@@ -905,7 +905,7 @@ const PLUGIN_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
  * The guard has to be handed over explicitly, and finding out why cost this project every
  * dogfood run it has ever performed. `hooks/hooks.json` registers the guard for the
  * *operator's* Claude Code sessions. A `claude -p` child does not load it — measured on
- * 12 August 2026, a child stamped `DARE_RUNNING=1` overwrote `.dare/state.json` through
+ * 12 August 2026, a child stamped `MEESEEKS_RUNNING=1` overwrote `.meeseeks/state.json` through
  * both Write and Bash, in dangerous and non-dangerous mode, reporting
  * `permission_denials: []`. The SessionStart half of the same plugin surface *did* reach
  * that child, which is what made the gap invisible: the plugin was demonstrably loaded.
@@ -1049,7 +1049,7 @@ const MUTATING_TOOLS = new Set(['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookE
  *
  * **Why it cannot simply be applied everywhere.** `--safe-mode` disables hooks — **including a
  * hook handed to it explicitly in `--settings`.** Measured: a child given safe mode *and* the
- * 0.59.0 guard still overwrote `.dare/state.json` with `permission_denials: []`. Safe mode and
+ * 0.59.0 guard still overwrote `.meeseeks/state.json` with `permission_denials: []`. Safe mode and
  * the guard are mutually exclusive, so any phase that can write must keep the guard instead.
  * (`--bare` is not an alternative: it refuses OAuth and demands `ANTHROPIC_API_KEY`.)
  *
@@ -1144,13 +1144,13 @@ export function claudeArgs(options) {
 /**
  * Append one hard-reset record. Written by the driver, never by a builder.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @param {{ iteration: number, regressions: string[], diffStat: string, at: string }} event
  * @returns {string} the path written
  */
-export function appendBlooper(dareDir, event) {
-  mkdirSync(dareDir, { recursive: true });
-  const file = path.join(dareDir, 'bloopers.log');
+export function appendBlooper(meeseeksDir, event) {
+  mkdirSync(meeseeksDir, { recursive: true });
+  const file = path.join(meeseeksDir, 'bloopers.log');
   appendFileSync(file, `${JSON.stringify(formatBlooperRecord(event))}\n`, 'utf8');
   return file;
 }
@@ -1264,8 +1264,8 @@ export function repeatedRegressionNote(counts, regressions) {
  * it is sent. The run's memory lives in the driver's artifacts, not in a child's context.
  *
  * @param {{
- *   config: DareConfig,
- *   dareDir: string,
+ *   config: MeeseeksConfig,
+ *   meeseeksDir: string,
  *   rootDir: string,
  *   requiredIds: string[],
  *   task: string,
@@ -1283,7 +1283,7 @@ export function repeatedRegressionNote(counts, regressions) {
  * @returns {RunOutcome}
  */
 export function driveRun(options) {
-  const { config, dareDir, rootDir, requiredIds, effects } = options;
+  const { config, meeseeksDir, rootDir, requiredIds, effects } = options;
 
   // Settled before anything is spawned. An id no reviewer owns cannot be judged, and a
   // panel that cannot judge every id cannot produce a pass — finding that out after paying
@@ -1309,7 +1309,7 @@ export function driveRun(options) {
   // Read once and carried, like the ratchet state. An unreadable pin store throws out of
   // `driveRun` rather than degrading to no pins: continuing would silently discard every
   // recorded guard and every carried pass, and the run would look healthier for the loss.
-  const pins = readPins(dareDir);
+  const pins = readPins(meeseeksDir);
   let builderTokens = 0;
   let builderRuns = 0;
 
@@ -1347,7 +1347,7 @@ export function driveRun(options) {
       iterations: progress.iteration,
       spentTokens: progress.spentTokens,
       costUsd: progress.spentUsd,
-      passing: loadState(dareDir).passing,
+      passing: loadState(meeseeksDir).passing,
     };
     // Every terminal path funnels through here, so this is the one door that a state added
     // later cannot forget — the same argument the context budget uses for living inside
@@ -1358,7 +1358,7 @@ export function driveRun(options) {
     // hypothetical: its log was inside the tree, `git add -A` tracked it, and the ratchet's own
     // `git reset --hard` reverted it — worse, git *replaces* the file, so the shell's open
     // descriptor pointed at an unlinked inode and every line after the reset went nowhere. That
-    // run's terminal state had to be reconstructed from `.dare/`, `git log` and the reflog.
+    // run's terminal state had to be reconstructed from `.meeseeks/`, `git log` and the reflog.
     //
     // Writing it here puts the answer inside the one directory a run may not edit and the
     // ratchet never rewrites. Failing to write it does **not** fail the run: this is forensics,
@@ -1366,7 +1366,7 @@ export function driveRun(options) {
     // the wrong way round. The failure is reported instead.
     try {
       writeFileSync(
-        path.join(dareDir, OUTCOME_FILE),
+        path.join(meeseeksDir, OUTCOME_FILE),
         `${JSON.stringify({ version: 1, endedAt: effects.now(), ...outcome }, null, 2)}\n`,
         'utf8',
       );
@@ -1391,7 +1391,7 @@ export function driveRun(options) {
    * @returns {RunOutcome}
    */
   const landCleanly = (result, iteration, what) => {
-    effects.commit(`dare: stopped during ${what} at iteration ${iteration} (work in progress)`);
+    effects.commit(`meeseeks: stopped during ${what} at iteration ${iteration} (work in progress)`);
     return result.exhausted
       ? finish('BUDGET', `the ${what} ran out of allowance mid-iteration; the tree is committed and the run can resume`)
       : finish('ABORTED', `the ${what} failed and returned no usable output: ${result.raw.slice(0, 400)}`);
@@ -1449,7 +1449,7 @@ export function driveRun(options) {
       const candidate = parseLessonExtraction(result.text);
       if (candidate === null) return;
 
-      const { store, problem } = readLessons(dareDir);
+      const { store, problem } = readLessons(meeseeksDir);
       if (problem !== null) effects.log(problem);
       // The evidence is the driver's, not the extractor's. It saw those iteration numbers
       // because they were handed to it, and it has no way to know them independently.
@@ -1465,7 +1465,7 @@ export function driveRun(options) {
       );
       if (outcome.added === null && outcome.reason.includes('calls')) effects.log(`lesson discarded: ${outcome.reason}`);
       if (outcome.added === null) return;
-      saveLessons(dareDir, outcome.store);
+      saveLessons(meeseeksDir, outcome.store);
       effects.log(`lesson ${outcome.added.id} recorded: ${outcome.added.lesson}`);
     } catch (error) {
       effects.log(`lesson extraction was skipped: ${/** @type {Error} */ (error).message}`);
@@ -1531,7 +1531,7 @@ export function driveRun(options) {
     effects.event?.({ kind: 'airtime', fractionLeft: airtimeRemaining(progress, config).fractionLeft });
 
     // ---- The brief: compile it, archive it, then hand it over ------------
-    const stored = readLessons(dareDir);
+    const stored = readLessons(meeseeksDir);
     if (stored.problem !== null) effects.log(stored.problem);
     const relevant = config.lessons.enabled
       ? selectLessons(
@@ -1542,7 +1542,7 @@ export function driveRun(options) {
       : [];
     if (relevant.length > 0) {
       saveLessons(
-        dareDir,
+        meeseeksDir,
         markLessonsUsed(
           stored.store,
           relevant.map((lesson) => lesson.id),
@@ -1554,7 +1554,7 @@ export function driveRun(options) {
       iteration: iterationNumber,
       chaos: config.chaos,
       objective,
-      protectedTests: loadState(dareDir).passing,
+      protectedTests: loadState(meeseeksDir).passing,
       lessons: relevant,
       history: effects.history?.(objective.findings ?? []) ?? [],
       gates: options.gateNames ?? [],
@@ -1564,7 +1564,7 @@ export function driveRun(options) {
       capabilities: effects.capabilities?.() ?? [],
       toolchain: effects.toolchainGuidance?.(),
     });
-    writeBrief(dareDir, iterationNumber, brief);
+    writeBrief(meeseeksDir, iterationNumber, brief);
 
     // ---- Phase 2: build, or race out of a stall (DESIGN.md §13.6) --------
     const raceDecision = shouldRace({
@@ -1609,7 +1609,7 @@ export function driveRun(options) {
         };
         // The ratchet count is the previous one, because this fails before any test report is
         // read. Reporting zero here would look like a run that lost every passing test.
-        closeIteration(iterationNumber, ['assumptions:malformed'], 0, loadState(dareDir).passing.length);
+        closeIteration(iterationNumber, ['assumptions:malformed'], 0, loadState(meeseeksDir).passing.length);
         continue;
       }
       if (declared.recovered) {
@@ -1624,7 +1624,7 @@ export function driveRun(options) {
         effects.log(`discarded ${declared.discarded} assumption(s) that cited nothing or assumed nothing`);
       }
       if (declared.assumptions.length > 0) {
-        appendAssumptions(dareDir, iterationNumber, declared.assumptions);
+        appendAssumptions(meeseeksDir, iterationNumber, declared.assumptions);
         effects.log(`recorded ${declared.assumptions.length} assumption(s) for the audit`);
       }
     }
@@ -1663,7 +1663,7 @@ export function driveRun(options) {
           for (const id of extractTestIds(report, { rootDir })) passing.add(id);
         }
       } else {
-        passing = new Set(loadState(dareDir).passing);
+        passing = new Set(loadState(meeseeksDir).passing);
         // Not report-derived, so it is not a collection failure and must not read as one.
         collected = passing.size;
       }
@@ -1672,11 +1672,11 @@ export function driveRun(options) {
       return finish('ABORTED', `test report could not be read: ${/** @type {Error} */ (error).message}`);
     }
 
-    const state = loadState(dareDir);
+    const state = loadState(meeseeksDir);
     const decision = evaluateIteration(state, passing, { commit: null, collected });
 
     if (decision.action === 'reset') {
-      appendBlooper(dareDir, {
+      appendBlooper(meeseeksDir, {
         iteration: iterationNumber,
         regressions: decision.regressions,
         diffStat: effects.diffStat(),
@@ -1791,16 +1791,16 @@ export function driveRun(options) {
           effects.log(`pinned security element ${pin.id} quarantined: ${verdict.detail}`);
         }
         if (exhausted) {
-          if (pinsChanged) writePins(dareDir, pins);
+          if (pinsChanged) writePins(meeseeksDir, pins);
           return finish('BUDGET', ceilingReason());
         }
       }
-      if (pinsChanged) writePins(dareDir, pins);
+      if (pinsChanged) writePins(meeseeksDir, pins);
 
       if (removedElements.length > 0) {
         // The same path as a dropped test id, and deliberately so: this is a regression in a
         // property the run had already established.
-        const target = loadState(dareDir).lastGoodCommit;
+        const target = loadState(meeseeksDir).lastGoodCommit;
         if (target !== null) hardReset({ cwd: rootDir, commit: target });
         effects.log(`security regression: ${removedElements.join(', ')}`);
         objective = {
@@ -1882,7 +1882,7 @@ export function driveRun(options) {
     }
 
     // Written before anything acts on it, so a record exists whichever way the run then goes.
-    recordPanelVerdict(dareDir, {
+    recordPanelVerdict(meeseeksDir, {
       iteration: iterationNumber,
       verdict: panel.verdict,
       requireUnanimous: config.requireUnanimous,
@@ -1949,7 +1949,7 @@ export function driveRun(options) {
           pinsChanged = true;
         }
       }
-      if (pinsChanged) writePins(dareDir, pins);
+      if (pinsChanged) writePins(meeseeksDir, pins);
 
       if (lostEvidence.length > 0) {
         // Not a reset and not a pass. The panel's own verdict is overridden downward, which is
@@ -1968,11 +1968,11 @@ export function driveRun(options) {
     // ---- Phase 6: ship, or bank the progress and hand the findings back ---
     const commit = effects.commit(
       panel.verdict === 'pass'
-        ? `dare: iteration ${iterationNumber}`
-        : `dare: iteration ${iterationNumber} (review outstanding)`,
+        ? `meeseeks: iteration ${iterationNumber}`
+        : `meeseeks: iteration ${iterationNumber} (review outstanding)`,
     );
     const advanced = evaluateIteration(state, passing, { commit, collected });
-    if (advanced.action === 'advance') saveState(dareDir, advanced.state);
+    if (advanced.action === 'advance') saveState(meeseeksDir, advanced.state);
 
     // Quarantine is not free, and this is the whole of what makes that true rather than a
     // slogan. A quarantined element is protection the run knows it has lost track of, and
@@ -1995,7 +1995,7 @@ export function driveRun(options) {
 
     // A panel that passed is a judgement about the code. It is not evidence that the suite the
     // judgement leaned on can fail at all, and the first SHIPPED this project produced had none.
-    let sensitivity = suiteSensitivityEvidence(gateOutcome, loadRedEvidence(dareDir));
+    let sensitivity = suiteSensitivityEvidence(gateOutcome, loadRedEvidence(meeseeksDir));
 
     // The driver runs the mutation gate itself rather than asking for something impossible.
     //
@@ -2035,7 +2035,7 @@ export function driveRun(options) {
 
     if (panel.verdict === 'pass') {
       // The deploy runs **here**, in front of the ship, and that position is the whole fix.
-      // Until 0.63.0 it lived inside `ship()` — after the dare/GRAND-PRIZE tag was already
+      // Until 0.63.0 it lived inside `ship()` — after the meeseeks/GRAND-PRIZE tag was already
       // written — and its failure was printed and ignored, so a run could announce a grand
       // prize having deployed nothing. A deploy that cannot withhold the tag is not evidence
       // about the tag (DESIGN.md §10.1).
@@ -2094,8 +2094,8 @@ export function driveRun(options) {
       const verdict = effects.realityCheck();
       const exhausted = charge(verdict);
       if (verdict.ok && /unbuildable/i.test(verdict.text)) {
-        mkdirSync(dareDir, { recursive: true });
-        writeFileSync(path.join(dareDir, 'reality-check.md'), verdict.text, 'utf8');
+        mkdirSync(meeseeksDir, { recursive: true });
+        writeFileSync(path.join(meeseeksDir, 'reality-check.md'), verdict.text, 'utf8');
         return finish('ABORTED', 'the reality check found this PRD is not buildable with the code present');
       }
       if (exhausted) return finish('BUDGET', ceilingReason());
@@ -2108,7 +2108,7 @@ export function driveRun(options) {
 // ===========================================================================
 
 /**
- * Every `.dare/` path that must never be tracked.
+ * Every `.meeseeks/` path that must never be tracked.
  *
  * `pins.json` and `assumptions.json` were missing from this list, and `pins.json` is the
  * serious one. `CLAUDE.md` names three monotonic properties, and that file holds **two** of
@@ -2118,22 +2118,22 @@ export function driveRun(options) {
  * the comment below has always described for `state.json`, in the file where the invariant
  * says a false negative is unrecoverable.
  *
- * Found by reading a real repository's `git ls-files .dare` before deliberately triggering a
+ * Found by reading a real repository's `git ls-files .meeseeks` before deliberately triggering a
  * hard reset. Both files were tracked there.
  */
-export const DARE_IGNORED_PATHS = [
-  '.dare/state.json',
-  '.dare/lessons.json',
-  '.dare/briefs/',
-  '.dare/red-evidence.json',
-  '.dare/bloopers.log',
-  '.dare/test-report.json',
-  '.dare/e2e-report.json',
-  '.dare/playwright-installed',
-  '.dare/reality-check.md',
-  '.dare/pins.json',
-  '.dare/assumptions.json',
-  '.dare/review.json',
+export const MEESEEKS_IGNORED_PATHS = [
+  '.meeseeks/state.json',
+  '.meeseeks/lessons.json',
+  '.meeseeks/briefs/',
+  '.meeseeks/red-evidence.json',
+  '.meeseeks/bloopers.log',
+  '.meeseeks/test-report.json',
+  '.meeseeks/e2e-report.json',
+  '.meeseeks/playwright-installed',
+  '.meeseeks/reality-check.md',
+  '.meeseeks/pins.json',
+  '.meeseeks/assumptions.json',
+  '.meeseeks/review.json',
   // The per-run archive, and the **fifth** instance of this defect — measured, not reasoned.
   // `archivePreviousRun` moves the previous run's outcome, review, manifest, assumptions and
   // briefs here so a second run cannot overwrite them. Untracked and un-ignored, `git add -A`
@@ -2146,21 +2146,21 @@ export const DARE_IGNORED_PATHS = [
   // run's evidence, and archiving exists precisely to make run history forensic. The first time
   // it ran in anger, the thing it was protecting was destroyed by the mechanism it was
   // protecting against.
-  `.dare/${RUN_ARCHIVE_DIR}/`,
+  `.meeseeks/${RUN_ARCHIVE_DIR}/`,
   // Added at 0.68.0 and its ignore entry forgotten until 0.77.0, which is §4.3's defect
   // reproduced by the person who documented it: an artifact tracked by git is restored by
   // `git reset --hard`, so the record of how a run ended would be replaced by an older run's.
-  '.dare/outcome.json',
+  '.meeseeks/outcome.json',
   // The run lock. Tracking it would be worse than pointless: a `git reset --hard` would restore
   // some other run's pid into the file this run is holding, and the next run would then refuse
   // to start on the word of a process that has not existed for days.
-  `.dare/${RUN_LOCK_FILE}`,
+  `.meeseeks/${RUN_LOCK_FILE}`,
   // The run manifest, missing until 0.86.0 — the third instance of this exact defect after
   // `state.json` and `outcome.json`, and the first found by watching a live run rather than by
-  // reading. `?? .dare/run.json` sat in the target's `git status` one `git add -A` from being
+  // reading. `?? .meeseeks/run.json` sat in the target's `git status` one `git add -A` from being
   // committed into the repository the run is supposed to be shipping.
-  `.dare/${RUN_MANIFEST}`,
-  // Not `.dare/` state, and here for a reason measured in dogfood run 4. The operator redirects
+  `.meeseeks/${RUN_MANIFEST}`,
+  // Not `.meeseeks/` state, and here for a reason measured in dogfood run 4. The operator redirects
   // the run's output into the repository — `DOGFOOD.md` said to — so `git add -A` tracked it, and
   // the hard reset in iteration 2 **reverted the log to its state at `lastGoodCommit`**. That
   // destroys the record of the reset itself. Worse, git replaces the file rather than truncating
@@ -2171,24 +2171,24 @@ export const DARE_IGNORED_PATHS = [
 ];
 
 /** The explanation that goes above them. */
-const DARE_IGNORE_HEADER = [
+const MEESEEKS_IGNORE_HEADER = [
   '',
-  '# dare machine state. Never commit these: a hard reset would revert them to an older copy',
+  '# meeseeks machine state. Never commit these: a hard reset would revert them to an older copy',
   '# and silently drop protection already earned - test ids from state.json, and the pinned',
   '# security elements and cold-passed requirements from pins.json.',
 ];
 
 /** Written only when the file does not already mention the settings carve-out. */
-const DARE_IGNORE_CONFIG_NOTE = [
+const MEESEEKS_IGNORE_CONFIG_NOTE = [
   '',
-  '# .dare/config.json is deliberately NOT ignored. It is the run settings, not machine',
+  '# .meeseeks/config.json is deliberately NOT ignored. It is the run settings, not machine',
   '# state, and keeping it in version control makes a run reproducible from the repo.',
 ];
 
 /**
  * Directories a gate's tooling creates in the tree, which the driver must never commit.
  *
- * Not the same list as `DARE_IGNORED_PATHS`: those are the driver's own artifacts, and these
+ * Not the same list as `MEESEEKS_IGNORED_PATHS`: those are the driver's own artifacts, and these
  * belong to tools the driver invokes. Both end the same way if they are tracked — `git add -A`
  * every iteration, then a hard reset restoring an older copy — which is why they share a
  * mechanism even though they have different owners.
@@ -2200,31 +2200,31 @@ const DARE_IGNORE_CONFIG_NOTE = [
 export const TOOL_CACHE_PATHS = ['node_modules/', '.hypothesis/'];
 
 /**
- * What `.gitignore` should become, or null when it already covers `.dare/`.
+ * What `.gitignore` should become, or null when it already covers `.meeseeks/`.
  *
  * This is the fix for a genuine hole rather than tidiness. The driver commits with
- * `git add -A`. If `.dare/state.json` were tracked, a hard reset to `lastGoodCommit` would
+ * `git add -A`. If `.meeseeks/state.json` were tracked, a hard reset to `lastGoodCommit` would
  * restore an *older* ratchet file, and the run would carry on having quietly forgotten
  * test ids it had already earned — a monotonicity violation with no visible symptom.
  *
  * @param {string} existing current contents, or '' when there is no .gitignore
  * @returns {string | null}
  */
-export function dareIgnoreUpdate(existing) {
+export function meeseeksIgnoreUpdate(existing) {
   const lines = existing.split('\n').map((line) => line.trim());
 
-  // A blanket `.dare/` covers everything — someone who ignored the whole directory has already
+  // A blanket `.meeseeks/` covers everything — someone who ignored the whole directory has already
   // handled the case, even though this stanza no longer writes it that way.
-  if (['.dare/', '.dare', '/.dare', '/.dare/'].some((form) => lines.includes(form))) return null;
+  if (['.meeseeks/', '.meeseeks', '/.meeseeks', '/.meeseeks/'].some((form) => lines.includes(form))) return null;
 
   // Every path is checked, not just the ratchet. Testing only for `state.json` meant a
   // repository written by an older build kept its incomplete stanza **forever**: the check
   // passed, nothing was appended, and `pins.json` stayed trackable. An all-or-nothing check on
   // a list that later grows is a check that stops covering its own list.
-  const missing = DARE_IGNORED_PATHS.filter((entry) => !lines.includes(entry) && !lines.includes(`/${entry}`));
+  const missing = MEESEEKS_IGNORED_PATHS.filter((entry) => !lines.includes(entry) && !lines.includes(`/${entry}`));
   // Caches a *gate* leaves in the tree, which the driver would then commit with `git add -A`.
   // `node_modules/` was the first; `.hypothesis/` is the second, and it was found the way the
-  // first three `.dare/` artifacts were — by execution, when the schemathesis gate was run for
+  // first three `.meeseeks/` artifacts were — by execution, when the schemathesis gate was run for
   // the first time and left a `.hypothesis/` directory behind in this very repository. Same
   // defect class as `state.json`, `outcome.json` and `run.json`, arriving from a tool rather
   // than from us: the driver does not commit machine state into the repository under test.
@@ -2235,9 +2235,9 @@ export function dareIgnoreUpdate(existing) {
 
   /** @type {string[]} */
   const stanza = [];
-  if (missing.length > 0) stanza.push(...DARE_IGNORE_HEADER, ...missing);
-  if (missing.length > 0 && !existing.includes('.dare/config.json is deliberately NOT ignored')) {
-    stanza.push(...DARE_IGNORE_CONFIG_NOTE);
+  if (missing.length > 0) stanza.push(...MEESEEKS_IGNORE_HEADER, ...missing);
+  if (missing.length > 0 && !existing.includes('.meeseeks/config.json is deliberately NOT ignored')) {
+    stanza.push(...MEESEEKS_IGNORE_CONFIG_NOTE);
   }
   if (missingCaches.length > 0) {
     stanza.push('', '# The driver commits with `git add -A` every iteration.', ...missingCaches);
@@ -2252,10 +2252,10 @@ export function dareIgnoreUpdate(existing) {
  * @param {string} cwd
  * @returns {boolean} true when the file was changed
  */
-export function ensureDareIgnored(cwd) {
+export function ensureMeeseeksIgnored(cwd) {
   const file = path.join(cwd, '.gitignore');
   const existing = existsSync(file) ? readFileSync(file, 'utf8') : '';
-  const updated = dareIgnoreUpdate(existing);
+  const updated = meeseeksIgnoreUpdate(existing);
   if (updated === null) return false;
   writeFileSync(file, updated, 'utf8');
   return true;
@@ -2282,11 +2282,11 @@ export const RED_EVIDENCE = 'red-evidence.json';
  * surfaced by {@link gateSummary} rather than being swallowed.
  *
  * @param {string} root the tree being gated
- * @param {string} dareDir where that tree's reports are written
+ * @param {string} meeseeksDir where that tree's reports are written
  * @returns {Gate[]}
  */
-export function commandGates(root, dareDir) {
-  return gatesFor(resolveToolchain(root).toolchain, { root, dareDir }).gates;
+export function commandGates(root, meeseeksDir) {
+  return gatesFor(resolveToolchain(root).toolchain, { root, meeseeksDir }).gates;
 }
 
 /**
@@ -2298,16 +2298,16 @@ export function commandGates(root, dareDir) {
  * which files changed — so it does not belong in the flat list where every entry is comparable.
  *
  * @param {string} root
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @param {string[] | undefined} changedFiles measured from the last ratchet-advancing commit,
  *   or `undefined` when no such commit exists yet — a distinction the consuming gate reports as
  *   a different sentence, because "no baseline" and "nothing changed" are different facts
  * @returns {{ gates: Gate[], skipped: { name: string, reason: string }[] }}
  */
-export function conditionalCommandGates(root, dareDir, changedFiles) {
+export function conditionalCommandGates(root, meeseeksDir, changedFiles) {
   return gatesFor(
     resolveToolchain(root).toolchain,
-    { root, dareDir, changedFiles },
+    { root, meeseeksDir, changedFiles },
     CONDITIONAL_GATE_OPERATIONS,
   );
 }
@@ -2359,16 +2359,16 @@ export function changedSince(options) {
 /**
  * Write the driver-owned mutation configuration.
  *
- * It lives under `.dare/` because the builder must not be able to weaken it, and it exists at
+ * It lives under `.meeseeks/` because the builder must not be able to weaken it, and it exists at
  * all because Stryker has no `--thresholds.*` flag: `thresholds.break` defaults to null, and a
  * run with surviving mutants then exits 0. Measured, not assumed — see `node.mjs`.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @returns {string} the path written
  */
-export function writeMutationConfig(dareDir) {
-  mkdirSync(dareDir, { recursive: true });
-  const file = path.join(dareDir, MUTATION_CONFIG);
+export function writeMutationConfig(meeseeksDir) {
+  mkdirSync(meeseeksDir, { recursive: true });
+  const file = path.join(meeseeksDir, MUTATION_CONFIG);
   writeFileSync(file, `${JSON.stringify(MUTATION_CONFIG_CONTENTS, null, 2)}\n`, 'utf8');
   return file;
 }
@@ -2451,11 +2451,11 @@ export function firstIterationTask(unitCommand) {
 
 /**
  * @param {string} root
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @returns {string | null} the unit gate's command line, or null when the toolchain declines it
  */
-export function unitGateCommand(root, dareDir) {
-  const found = gateSummary(root, dareDir).gates.find((gate) => gate.name === 'unit');
+export function unitGateCommand(root, meeseeksDir) {
+  const found = gateSummary(root, meeseeksDir).gates.find((gate) => gate.name === 'unit');
   return found === undefined ? null : found.command.join(' ');
 }
 
@@ -2467,12 +2467,12 @@ export function unitGateCommand(root, dareDir) {
  * skip that never reaches either audience is a silent one.
  *
  * @param {string} root
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @returns {{ toolchain: string, detected: boolean, evidence: string, gates: Gate[], skipped: { name: string, reason: string }[] }}
  */
-export function gateSummary(root, dareDir) {
+export function gateSummary(root, meeseeksDir) {
   const resolved = resolveToolchain(root);
-  const { gates, skipped } = gatesFor(resolved.toolchain, { root, dareDir });
+  const { gates, skipped } = gatesFor(resolved.toolchain, { root, meeseeksDir });
   return {
     toolchain: resolved.toolchain.name,
     detected: resolved.detected,
@@ -2547,7 +2547,7 @@ function anySourceMatches(dir, depth, predicate) {
  * step unconditionally, so on an api/persistent-storage project — one whose `e2e` *gate* had
  * just been declined as inapplicable, with a written reason printed to the operator — the `ci`
  * gate went on demanding a browser runner the project has no use for. It cannot be satisfied
- * honestly, so a builder satisfies it dishonestly: dogfood run 2's `.dare/assumptions.json`
+ * honestly, so a builder satisfies it dishonestly: dogfood run 2's `.meeseeks/assumptions.json`
  * records the builder reasoning about exactly this contradiction and resolving it with
  * `npx playwright test` under `continue-on-error: true`, which run 3's cold panel then reported
  * as "a step that always reports success by construction". The loop manufactured the defect it
@@ -2720,11 +2720,11 @@ export function observabilityGate(cwd, options = {}) {
  * condition to shrug at.
  *
  * @param {string} cwd
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @param {{ run?: import('./plugins.mjs').Runner }} [options]
  * @returns {GateResult}
  */
-export function oracleGate(cwd, dareDir, options = {}) {
+export function oracleGate(cwd, meeseeksDir, options = {}) {
   const command = resolveArtifactCommand(cwd);
   if (command === null) {
     return {
@@ -2737,7 +2737,7 @@ export function oracleGate(cwd, dareDir, options = {}) {
         'or inert passes every other gate here (run 10).',
     };
   }
-  return runOracle({ dareDir, root: cwd, command, run: options.run ?? shell });
+  return runOracle({ meeseeksDir, root: cwd, command, run: options.run ?? shell });
 }
 
 /**
@@ -2768,7 +2768,7 @@ export function openApiDocument(cwd) {
 
 /**
  * @param {string} cwd
- * @param {{ run?: import('./plugins.mjs').Runner, capabilities?: string[] | null, probeTimeoutMs?: number, dareDir?: string, oracle?: boolean }} [options]
+ * @param {{ run?: import('./plugins.mjs').Runner, capabilities?: string[] | null, probeTimeoutMs?: number, meeseeksDir?: string, oracle?: boolean }} [options]
  * @returns {GateResult[]}
  */
 export function staticGates(cwd, options = {}) {
@@ -2826,12 +2826,12 @@ export function staticGates(cwd, options = {}) {
     // The gates judge the builder; this one judges the gates. `npm run lint` is only worth
     // running while `lint` still means something, and the builder writes what it means.
     integrityGate(cwd),
-    // A3. Present only when armed *and* the driver supplied a `.dare` to read from. Both are
+    // A3. Present only when armed *and* the driver supplied a `.meeseeks` to read from. Both are
     // required rather than one, because an oracle with nowhere to read from would report a clean
     // pass over nothing, and this is the one gate whose entire value is being independent of
     // everything the builder wrote.
-    ...(options.oracle === true && options.dareDir !== undefined
-      ? [oracleGate(cwd, options.dareDir, options)]
+    ...(options.oracle === true && options.meeseeksDir !== undefined
+      ? [oracleGate(cwd, options.meeseeksDir, options)]
       : []),
   ];
 }
@@ -2873,25 +2873,25 @@ export function playwrightConfigPresent(cwd) {
  * here for the opposite reason to the CI filter: a missing browser makes a gate that *does* apply
  * fail on its absence, so over-provisioning wastes time while under-provisioning fails a run.
  *
- * @param {{ cwd: string, dareDir: string, run: import('./plugins.mjs').Runner,
+ * @param {{ cwd: string, meeseeksDir: string, run: import('./plugins.mjs').Runner,
  *          capabilities?: readonly string[] | null }} options
  * @returns {{ installed: boolean, detail: string }}
  */
 export function ensurePlaywrightBrowsers(options) {
-  const { cwd, dareDir, run } = options;
+  const { cwd, meeseeksDir, run } = options;
   const capabilities = options.capabilities ?? null;
   if (capabilities !== null) {
     const verdict = gateApplies('e2e', capabilities);
     if (!verdict.applies) return { installed: false, detail: `no browser needed: ${verdict.why}` };
   }
   if (!playwrightConfigPresent(cwd)) return { installed: false, detail: 'no playwright config yet' };
-  const marker = path.join(dareDir, 'playwright-installed');
+  const marker = path.join(meeseeksDir, 'playwright-installed');
   if (existsSync(marker)) return { installed: false, detail: 'browsers already provisioned' };
   const result = run('npx', ['playwright', 'install', 'chromium'], { cwd });
   if (!result.ok) {
     return { installed: false, detail: `playwright install failed: ${(result.stderr || result.stdout).trim()}` };
   }
-  mkdirSync(dareDir, { recursive: true });
+  mkdirSync(meeseeksDir, { recursive: true });
   writeFileSync(marker, 'chromium\n', 'utf8');
   return { installed: true, detail: 'installed chromium for the e2e gate' };
 }
@@ -3136,11 +3136,11 @@ export function suiteSensitivityEvidence(gateOutcome, redEvidence) {
 /**
  * Test ids that have been observed *not* passing at some point in this run.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @returns {{ seenFailing: Set<string>, baseline: Set<string>, established: boolean }}
  */
-export function loadRedEvidence(dareDir) {
-  const file = path.join(dareDir, RED_EVIDENCE);
+export function loadRedEvidence(meeseeksDir) {
+  const file = path.join(meeseeksDir, RED_EVIDENCE);
   const empty = { seenFailing: new Set(), baseline: new Set(), established: false };
   if (!existsSync(file)) return empty;
   try {
@@ -3163,13 +3163,13 @@ export function loadRedEvidence(dareDir) {
 }
 
 /**
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @param {Iterable<string>} nonPassing
  * @param {Iterable<string>} [passing] recorded as the baseline on the first gating only
  * @returns {{ seenFailing: Set<string>, baseline: Set<string>, established: boolean }}
  */
-export function recordRedEvidence(dareDir, nonPassing, passing = []) {
-  const evidence = loadRedEvidence(dareDir);
+export function recordRedEvidence(meeseeksDir, nonPassing, passing = []) {
+  const evidence = loadRedEvidence(meeseeksDir);
   for (const id of nonPassing) evidence.seenFailing.add(id);
 
   // The baseline is written exactly once, the first time this project is gated at all, and it
@@ -3177,9 +3177,9 @@ export function recordRedEvidence(dareDir, nonPassing, passing = []) {
   // `redEvidenceGate` for why it has to exist and what still guards the ids it admits.
   const baseline = evidence.established ? evidence.baseline : new Set(passing);
 
-  mkdirSync(dareDir, { recursive: true });
+  mkdirSync(meeseeksDir, { recursive: true });
   writeFileSync(
-    path.join(dareDir, RED_EVIDENCE),
+    path.join(meeseeksDir, RED_EVIDENCE),
     `${JSON.stringify({ seenFailing: [...evidence.seenFailing].sort(), baseline: [...baseline].sort() }, null, 2)}\n`,
     'utf8',
   );
@@ -3203,7 +3203,7 @@ export function recordRedEvidence(dareDir, nonPassing, passing = []) {
  * that could not exist.
  *
  * So the ids present at the very first gating are recorded as a **baseline** in
- * `.dare/red-evidence.json`, written exactly once, and admitted. Every id added afterwards
+ * `.meeseeks/red-evidence.json`, written exactly once, and admitted. Every id added afterwards
  * needs real red history, which is where satisficing actually happens — a builder under
  * pressure adds a green test to lift a score, and that is still caught.
  *
@@ -3376,7 +3376,7 @@ export function builderSystemPrompt(cwd) {
 function runnerLines(cwd) {
   /** @param {string} name @param {string} what */
   const line = (name, what) => {
-    const gate = gateSummary(cwd, path.join(cwd, '.dare')).gates.find((g) => g.name === name);
+    const gate = gateSummary(cwd, path.join(cwd, '.meeseeks')).gates.find((g) => g.name === name);
     const command = gate === undefined ? null : gate.command.join(' ');
     return command === null
       ? `- ${what} are not collected on this toolchain, so none can enter the ratchet`
@@ -3796,12 +3796,12 @@ export function overlayGates(qualityGates, extraGates) {
  * run" into "the suite is proven", which is the shape §4 refuses everywhere else.
  *
  * @param {string} cwd
- * @param {string} dareDir the driver's own directory in that tree
+ * @param {string} meeseeksDir the driver's own directory in that tree
  * @param {string} startCommit the commit this run began at
  * @param {number} timeoutMs the gate ceiling, so a slow mutation run is a named failure
  * @returns {{ ok: boolean, detail: string }}
  */
-export function shipTimeMutation(cwd, dareDir, startCommit, timeoutMs) {
+export function shipTimeMutation(cwd, meeseeksDir, startCommit, timeoutMs) {
   if (startCommit === '') {
     return { ok: false, detail: 'no start commit was recorded for this run, so its own changes cannot be identified' };
   }
@@ -3809,8 +3809,8 @@ export function shipTimeMutation(cwd, dareDir, startCommit, timeoutMs) {
   const scope = shipTimeMutationScope({ changedFiles });
   if (!scope.can) return { ok: false, detail: scope.reason };
 
-  writeMutationConfig(dareDir);
-  const built = conditionalCommandGates(cwd, dareDir, changedFiles);
+  writeMutationConfig(meeseeksDir);
+  const built = conditionalCommandGates(cwd, meeseeksDir, changedFiles);
   const gate = built.gates.find((candidate) => candidate.name === 'mutation');
   if (gate === undefined) {
     // The toolchain declined — `dotnet` declines mutation rather than guessing Stryker.NET's
@@ -4017,11 +4017,11 @@ export function main(argv, io = {}) {
     return 1;
   }
 
-  const dareDir = path.join(cwd, '.dare');
-  /** @type {DareConfig} */
+  const meeseeksDir = path.join(cwd, '.meeseeks');
+  /** @type {MeeseeksConfig} */
   let config;
   try {
-    config = loadConfig(dareDir, { env });
+    config = loadConfig(meeseeksDir, { env });
   } catch (error) {
     // Failure output is verbatim and unstyled (DESIGN.md §9), and a missing or broken
     // config must read as an instruction, not a stack trace.
@@ -4059,20 +4059,20 @@ export function main(argv, io = {}) {
   };
 
   // Measured before the run commits anything of its own. A repository that was empty when
-  // dare arrived never has history worth quoting back at a builder, however many commits
-  // dare goes on to add — those are the builder's own work, restated (DESIGN.md §8.2).
+  // meeseeks arrived never has history worth quoting back at a builder, however many commits
+  // meeseeks goes on to add — those are the builder's own work, restated (DESIGN.md §8.2).
   const greenfield = !hasMeaningfulHistory({ cwd, run: shell });
 
   write(banner({ mode }));
 
   // Before anything is written, so the very first commit cannot stage machine state.
-  if (ensureDareIgnored(cwd)) write(verbatim('added dare machine state to .gitignore'));
+  if (ensureMeeseeksIgnored(cwd)) write(verbatim('added meeseeks machine state to .gitignore'));
 
   // Before this run writes any artifact of its own, because the collision it prevents is
   // silent: iteration numbering restarts at 1 every run, so `briefs/iter-001.md` would be
   // overwritten by a replacement that looks exactly like the original (DESIGN.md §7.2).
   try {
-    const archived = archivePreviousRun(dareDir);
+    const archived = archivePreviousRun(meeseeksDir);
     if (archived !== null) write(verbatim(`archived the previous run to ${path.relative(cwd, archived)}`));
   } catch (error) {
     // Continuing here would destroy the evidence archiving exists to keep, which is a worse
@@ -4146,11 +4146,11 @@ export function main(argv, io = {}) {
     const idea =
       input !== ''
         ? input
-        : config.dareMe.enabled
+        : config.improvise.enabled
           ? 'Invent a small, genuinely useful project that can be built and tested unattended, then specify it.'
           : '';
     if (idea === '') {
-      write(verbatim('no PRD, no idea, and dareMe is disabled. Nothing to build.'));
+      write(verbatim('no PRD, no idea, and improvise is disabled. Nothing to build.'));
       return 1;
     }
     write(verbatim('authoring PRD.md'));
@@ -4174,7 +4174,7 @@ export function main(argv, io = {}) {
     if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
   }
 
-  commitPhase(improve ? 'dare: author PRD.md from the existing repository' : 'dare: author PRD.md');
+  commitPhase(improve ? 'meeseeks: author PRD.md from the existing repository' : 'meeseeks: author PRD.md');
   if (confirmPrd) {
     write(verbatim('PRD.md is written and committed. Review it, then re-run without --confirm-prd.'));
     return 0;
@@ -4195,7 +4195,7 @@ export function main(argv, io = {}) {
   //
   // Failure to author **ends the run**. A gate armed with nothing would report a clean pass over
   // nothing, and this is the one gate whose entire value is independence.
-  if (config.oracle.enabled && !existsSync(path.join(dareDir, 'oracle.json'))) {
+  if (config.oracle.enabled && !existsSync(path.join(meeseeksDir, 'oracle.json'))) {
     write(verbatim('authoring held-out acceptance cases from the PRD'));
     const authored = runChild({
       prompt: `${template('oracle-author.md')}\n\n---\n\nPRD.md:\n\n${prd}`,
@@ -4212,7 +4212,7 @@ export function main(argv, io = {}) {
     }
     try {
       const cases = parseOracleCases(authored.text);
-      writeOracle(dareDir, cases);
+      writeOracle(meeseeksDir, cases);
       write(verbatim(`held out ${cases.length} acceptance case(s); the builder is never shown them`));
     } catch (error) {
       const why = error instanceof OracleError ? error.message : String(error);
@@ -4225,7 +4225,7 @@ export function main(argv, io = {}) {
   // ---- Phase 1: design + quality plugins --------------------------------
   write(verbatim('designing'));
   const designed = runChild({
-    prompt: `${template('architect.md')}\n\n---\n\n${architectGateFragment(gateSummary(cwd, dareDir).gates)}\n\n---\n\nPRD.md:\n\n${prd}`,
+    prompt: `${template('architect.md')}\n\n---\n\n${architectGateFragment(gateSummary(cwd, meeseeksDir).gates)}\n\n---\n\nPRD.md:\n\n${prd}`,
     model: config.designModel,
     phase: 'design',
       effort: config.effort['design'],
@@ -4260,13 +4260,13 @@ export function main(argv, io = {}) {
    *
    * Not cached: `declared` is fixed for the run, but `detected` describes the tree as it is
    * right now and the builder changes the tree every iteration. The manifest is rewritten
-   * each time so `.dare/capabilities.json` is a current answer rather than a first one.
+   * each time so `.meeseeks/capabilities.json` is a current answer rather than a first one.
    *
    * @returns {string[]}
    */
   const runCapabilities = () => {
     const resolved = resolveCapabilities({ root: cwd, declared: declaredCapabilities });
-    writeCapabilityManifest(dareDir, resolved);
+    writeCapabilityManifest(meeseeksDir, resolved);
     return resolved.capabilities;
   };
   write(verbatim(`this project is: ${runCapabilities().join(', ')}`));
@@ -4274,16 +4274,16 @@ export function main(argv, io = {}) {
   const provisioning = installQualityPlugins({ cwd, plugins: config.qualityPlugins, runner: shell });
   for (const warning of provisioning.warnings) write(verbatim(warning));
 
-  commitPhase('dare: design documents');
+  commitPhase('meeseeks: design documents');
 
   // ---- Phases 2-6: the loop ---------------------------------------------
   // Whatever the resolved toolchain says it writes, not node's two filenames. Hardcoding
   // those meant a toolchain writing anything else produced a report nobody read, and an
   // unread report is indistinguishable from a run in which nothing passed.
   const reportFiles = (/** @type {string} */ dir) =>
-    resolveToolchain(dir).toolchain.reports.map((name) => path.join(dir, '.dare', name));
+    resolveToolchain(dir).toolchain.reports.map((name) => path.join(dir, '.meeseeks', name));
 
-  const toolchainGates = gateSummary(cwd, dareDir);
+  const toolchainGates = gateSummary(cwd, meeseeksDir);
   write(verbatim(`toolchain: ${toolchainGates.toolchain} (${toolchainGates.evidence})`));
   // A declined operation is announced rather than merely omitted. A gate list that quietly
   // shrinks reads exactly like one that was always that short (DESIGN.md §3.8).
@@ -4302,11 +4302,11 @@ export function main(argv, io = {}) {
   // first commit of the run, which is exactly when the scope stops being empty.
   const runStartCommit = shell('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim();
   writeRunManifest(
-    dareDir,
+    meeseeksDir,
     buildRunManifest({
       startedAt: new Date().toISOString(),
       startCommit: runStartCommit,
-      pluginName: 'dare-to-be-stupid',
+      pluginName: 'meeseeks',
       pluginVersion: pluginVersion(),
       config,
       models: {
@@ -4376,14 +4376,14 @@ export function main(argv, io = {}) {
    * Parameterised by directory rather than closed over `cwd`, because a raced candidate is
    * gated exactly like the main tree — in its own worktree, writing its own reports. The
    * one thing that stays the main tree's is the ratchet: `previousPassing` is read from the
-   * driver's `.dare`, never from a candidate's, so no candidate can influence what counts
+   * driver's `.meeseeks`, never from a candidate's, so no candidate can influence what counts
    * as a regression (DESIGN.md §13.6).
    *
    * @param {string} dir
    * @returns {{ ok: boolean, results: GateResult[], passing: Set<string> }}
    */
   const gateTree = (dir) => {
-    const treeDare = path.join(dir, '.dare');
+    const treeStateDir = path.join(dir, '.meeseeks');
     // Arming is a question about the code, so it is asked where the code is, every
     // iteration. Resolving it once at provisioning time asked it of a repository holding a
     // PRD and nothing else, so the answer was always "no frontend" and the design gate never
@@ -4395,7 +4395,7 @@ export function main(argv, io = {}) {
     const capabilities = runCapabilities();
     const applicable = applicableGates(
       [
-        ...commandGates(dir, treeDare),
+        ...commandGates(dir, treeStateDir),
         // The same overlay the brief describes, filtered here to what is actually armed. The
         // prefixes travel with it, so a brief, a gate line and a reviewer all read a failure in
         // `operator:release-check` as a project invariant rather than a toolchain result — two
@@ -4414,7 +4414,7 @@ export function main(argv, io = {}) {
       capabilities,
     );
     for (const skip of applicable.skipped) write(verbatim(`gate ${skip.name} does not apply: ${skip.reason}`));
-    const browsers = ensurePlaywrightBrowsers({ cwd: dir, dareDir: treeDare, run: shell, capabilities });
+    const browsers = ensurePlaywrightBrowsers({ cwd: dir, meeseeksDir: treeStateDir, run: shell, capabilities });
     if (browsers.installed) write(verbatim(browsers.detail));
     const commandResults = runGates(applicable.gates, { cwd: dir, run: shell, timeoutMs: config.gateTimeoutMs });
 
@@ -4427,10 +4427,10 @@ export function main(argv, io = {}) {
       // `changedSince` would return. The consuming gate declines either way and the two reasons
       // it gives are different sentences, because "I have no baseline" and "nothing changed" are
       // different facts — see the mutation entry in `toolchains/node.mjs`.
-      const lastGood = loadState(dareDir).lastGoodCommit;
+      const lastGood = loadState(meeseeksDir).lastGoodCommit;
       const changedFiles = lastGood === null ? undefined : changedSince({ cwd: dir, since: lastGood, run: shell });
-      writeMutationConfig(treeDare);
-      const second = conditionalCommandGates(dir, treeDare, changedFiles);
+      writeMutationConfig(treeStateDir);
+      const second = conditionalCommandGates(dir, treeStateDir, changedFiles);
       for (const skip of second.skipped) write(verbatim(`gate ${skip.name} declined: ${skip.reason}`));
       const secondApplicable = applicableGates(second.gates, capabilities);
       for (const skip of secondApplicable.skipped) {
@@ -4441,7 +4441,7 @@ export function main(argv, io = {}) {
       commandResults.ok = secondResults.ok;
     }
 
-    const previousPassing = loadState(dareDir).passing;
+    const previousPassing = loadState(meeseeksDir).passing;
 
     /** @type {Set<string>} */
     const passing = new Set();
@@ -4459,7 +4459,7 @@ export function main(argv, io = {}) {
     }
     // Passing ids are handed over too, because the first gating of a project has to record
     // what it found as a baseline: those tests have no "before" to have been red in.
-    const red = recordRedEvidence(treeDare, nonPassing, [...passing]);
+    const red = recordRedEvidence(treeStateDir, nonPassing, [...passing]);
     const evidence = { previousPassing, passing, redSeen: red.seenFailing, baseline: red.baseline };
     const results = [
       ...commandResults.results,
@@ -4471,7 +4471,7 @@ export function main(argv, io = {}) {
       // demands is filtered by the same capabilities, which is why they are passed in as well
       // as applied outside. Without that, a browserless project could not satisfy `ci` at all.
       ...applicableGates(
-        staticGates(dir, { run: shell, capabilities, dareDir: treeDare, oracle: config.oracle.enabled }),
+        staticGates(dir, { run: shell, capabilities, meeseeksDir: treeStateDir, oracle: config.oracle.enabled }),
         capabilities,
       ).gates,
       redEvidenceGate(evidence),
@@ -4517,7 +4517,7 @@ export function main(argv, io = {}) {
    */
   const runRace = (objective, iteration) => {
     const base = shell('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim();
-    const parentDir = path.join(os.tmpdir(), `dare-race-${process.pid}-${iteration}`);
+    const parentDir = path.join(os.tmpdir(), `meeseeks-race-${process.pid}-${iteration}`);
     mkdirSync(parentDir, { recursive: true });
     // Before creating anything, clear whatever a killed race left registered. Cleanup on the
     // way out cannot cover `-9`, and `git worktree add` refuses a path git already knows about,
@@ -4535,7 +4535,7 @@ export function main(argv, io = {}) {
         return { applied: false, detail: 'no worktree could be created; the ordinary path continues', tokens, costUsd };
       }
 
-      const ratchetPassing = loadState(dareDir).passing;
+      const ratchetPassing = loadState(meeseeksDir).passing;
       /** @type {import('./race.mjs').Candidate[]} */
       const candidates = [];
 
@@ -4553,7 +4553,7 @@ export function main(argv, io = {}) {
             hypothesis: stallHypothesis(worktree.index),
           },
         });
-        writeBrief(dareDir, iteration, candidateBrief, worktree.index);
+        writeBrief(meeseeksDir, iteration, candidateBrief, worktree.index);
 
         const built = runChild({
           prompt: candidateBrief,
@@ -4579,7 +4579,7 @@ export function main(argv, io = {}) {
         }
 
         shell('git', ['add', '-A'], { cwd: worktree.dir });
-        shell('git', ['commit', '--no-verify', '-m', `dare: race candidate ${worktree.index} (iteration ${iteration})`], {
+        shell('git', ['commit', '--no-verify', '-m', `meeseeks: race candidate ${worktree.index} (iteration ${iteration})`], {
           cwd: worktree.dir,
         });
         const commit = shell('git', ['rev-parse', 'HEAD'], { cwd: worktree.dir }).stdout.trim();
@@ -4611,27 +4611,27 @@ export function main(argv, io = {}) {
   // launches this file directly, which is exactly what the two-driver incident on 13 August
   // 2026 looked like in `ps`. The window between that check and this claim is milliseconds;
   // the window it closes was hours.
-  const concurrent = checkNoConcurrentRun(dareDir);
+  const concurrent = checkNoConcurrentRun(meeseeksDir);
   if (!concurrent.ok) {
     write(verbatim(`${concurrent.detail}\n${concurrent.fix}`));
     return 1;
   }
-  claimRunLock(dareDir, { pid: process.pid, startedAt: new Date().toISOString() });
+  claimRunLock(meeseeksDir, { pid: process.pid, startedAt: new Date().toISOString() });
 
   /** @type {RunOutcome} */
   let outcome;
   try {
     outcome = driveRun({
     config,
-    dareDir,
+    meeseeksDir,
     rootDir: cwd,
     requiredIds,
     gateNames,
     alreadySpent: preLoop,
-    task: firstIterationTask(unitGateCommand(cwd, dareDir)),
+    task: firstIterationTask(unitGateCommand(cwd, meeseeksDir)),
     // The same command, threaded so the `no-tests` objective names what the gate actually runs
     // rather than a Node-shaped guess. Three places state this contract; all three now derive it.
-    unitCommand: unitGateCommand(cwd, dareDir),
+    unitCommand: unitGateCommand(cwd, meeseeksDir),
     effects: {
       build: (brief) =>
         runChild({
@@ -4687,7 +4687,7 @@ export function main(argv, io = {}) {
               /** @type {string} */
               let rendered;
               try {
-                rendered = renderAssumptions(readAssumptions(dareDir).entries);
+                rendered = renderAssumptions(readAssumptions(meeseeksDir).entries);
               } catch (error) {
                 // Degrades like the lesson store, not like the ratchet. This is context for a
                 // reviewer whose verdict already defaults to fail, so losing it costs
@@ -4741,7 +4741,7 @@ export function main(argv, io = {}) {
         const gated = gateTree(cwd);
         return { ok: gated.ok, results: gated.results };
       },
-      shipTimeMutation: () => shipTimeMutation(cwd, dareDir, runStartCommit, config.gateTimeoutMs),
+      shipTimeMutation: () => shipTimeMutation(cwd, meeseeksDir, runStartCommit, config.gateTimeoutMs),
       readTestReports: () =>
         reportFiles(cwd)
           .filter((file) => existsSync(file))
@@ -4750,14 +4750,14 @@ export function main(argv, io = {}) {
         // Re-asserted here rather than once before the loop: a hard reset can land on a
         // commit that predates the stanza, which would quietly un-ignore the ratchet and
         // start committing it again.
-        ensureDareIgnored(cwd);
+        ensureMeeseeksIgnored(cwd);
         shell('git', ['add', '-A'], { cwd });
         shell('git', ['commit', '--no-verify', '-m', message], { cwd });
         return shell('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim();
       },
       diffStat: () => shell('git', ['diff', '--stat', 'HEAD~1'], { cwd }).stdout.trim(),
       ship: (iteration) => {
-        const tag = `dare/iter-${String(iteration).padStart(3, '0')}`;
+        const tag = `meeseeks/iter-${String(iteration).padStart(3, '0')}`;
         shell('git', ['tag', '-f', tag], { cwd });
         // Annotated, not bare. An audit of the first SHIPPED found only an unannotated tag and
         // could not verify the claim behind it; a tag that carries no reason is not evidence.
@@ -4767,10 +4767,10 @@ export function main(argv, io = {}) {
             'tag',
             '-f',
             '-a',
-            'dare/GRAND-PRIZE',
+            'meeseeks/GRAND-PRIZE',
             '-m',
             `SHIPPED: panel ${config.requireUnanimous ? 'unanimous' : 'majority'} on ` +
-              `${requiredIds.length} requirement(s). Verdicts in .dare/${REVIEW_RECORD}.`,
+              `${requiredIds.length} requirement(s). Verdicts in .meeseeks/${REVIEW_RECORD}.`,
           ],
           { cwd },
         );
@@ -4796,7 +4796,7 @@ export function main(argv, io = {}) {
     // that ended normally would refuse the next run for no reason — and unlike a lock left by a
     // killed driver, that one would not clear itself, because this pid really is alive right up
     // until the process exits.
-    clearRunLock(dareDir);
+    clearRunLock(meeseeksDir);
   }
 
   write(render({ kind: 'terminal', state: outcome.state }, { mode }));

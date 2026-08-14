@@ -39,7 +39,7 @@ const temporaryDirs = [];
  * @returns {string}
  */
 function makeProject(files = {}) {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-capabilities-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-capabilities-'));
   temporaryDirs.push(dir);
   for (const [relative, contents] of Object.entries(files)) {
     const full = path.join(dir, ...relative.split('/'));
@@ -499,29 +499,29 @@ describe('parseCapabilityDeclaration', () => {
 });
 
 describe('the capability manifest on disk', () => {
-  it('round-trips the declaration through .dare/capabilities.json', () => {
-    const dareDir = path.join(makeProject(), '.dare');
+  it('round-trips the declaration through .meeseeks/capabilities.json', () => {
+    const meeseeksDir = path.join(makeProject(), '.meeseeks');
     const resolved = resolveCapabilities({
       root: makeProject({ 'package.json': '{"dependencies":{"express":"^4"}}\n' }),
       declared: ['api', 'library'],
     });
-    const file = writeCapabilityManifest(dareDir, resolved);
-    assert.equal(file, path.join(dareDir, CAPABILITY_MANIFEST));
-    assert.deepEqual(readDeclaredCapabilities(dareDir), ['api', 'library']);
+    const file = writeCapabilityManifest(meeseeksDir, resolved);
+    assert.equal(file, path.join(meeseeksDir, CAPABILITY_MANIFEST));
+    assert.deepEqual(readDeclaredCapabilities(meeseeksDir), ['api', 'library']);
   });
 
   it('records the detected half and its evidence, not only the union', () => {
     // The evidence is the audit trail. A manifest that says `web-ui` without saying why turns
     // a wrong detection into an unfalsifiable claim.
-    const dareDir = path.join(makeProject(), '.dare');
+    const meeseeksDir = path.join(makeProject(), '.meeseeks');
     writeCapabilityManifest(
-      dareDir,
+      meeseeksDir,
       resolveCapabilities({
         root: makeProject({ 'package.json': '{"dependencies":{"react":"^19"}}\n' }),
         declared: ['cli'],
       }),
     );
-    const written = JSON.parse(readFileSync(path.join(dareDir, CAPABILITY_MANIFEST), 'utf8'));
+    const written = JSON.parse(readFileSync(path.join(meeseeksDir, CAPABILITY_MANIFEST), 'utf8'));
     assert.deepEqual(written, {
       declared: ['cli'],
       detected: ['web-ui'],
@@ -531,16 +531,16 @@ describe('the capability manifest on disk', () => {
   });
 
   it('overwrites a previous manifest rather than accumulating one', () => {
-    const dareDir = path.join(makeProject(), '.dare');
-    writeCapabilityManifest(dareDir, resolveCapabilities({ root: makeProject(), declared: ['cli'] }));
-    writeCapabilityManifest(dareDir, resolveCapabilities({ root: makeProject(), declared: ['library'] }));
-    assert.deepEqual(readDeclaredCapabilities(dareDir), ['library']);
+    const meeseeksDir = path.join(makeProject(), '.meeseeks');
+    writeCapabilityManifest(meeseeksDir, resolveCapabilities({ root: makeProject(), declared: ['cli'] }));
+    writeCapabilityManifest(meeseeksDir, resolveCapabilities({ root: makeProject(), declared: ['library'] }));
+    assert.deepEqual(readDeclaredCapabilities(meeseeksDir), ['library']);
   });
 
   it('leaves no temporary file behind, because the write is atomic', () => {
-    const dareDir = path.join(makeProject(), '.dare');
-    writeCapabilityManifest(dareDir, resolveCapabilities({ root: makeProject(), declared: ['cli'] }));
-    assert.deepEqual(readdirSync(dareDir), [CAPABILITY_MANIFEST]);
+    const meeseeksDir = path.join(makeProject(), '.meeseeks');
+    writeCapabilityManifest(meeseeksDir, resolveCapabilities({ root: makeProject(), declared: ['cli'] }));
+    assert.deepEqual(readdirSync(meeseeksDir), [CAPABILITY_MANIFEST]);
   });
 
   /** @type {[string | null, string][]} */
@@ -557,18 +557,18 @@ describe('the capability manifest on disk', () => {
     it(`fails closed on ${label}`, () => {
       // A run that has lost its declaration cannot decide which gates apply. Guessing here is
       // exactly the silent skip DESIGN.md §4 forbids.
-      const dareDir = path.join(makeProject(), '.dare');
+      const meeseeksDir = path.join(makeProject(), '.meeseeks');
       if (contents !== null) {
-        mkdirSync(dareDir, { recursive: true });
-        writeFileSync(path.join(dareDir, CAPABILITY_MANIFEST), contents, 'utf8');
+        mkdirSync(meeseeksDir, { recursive: true });
+        writeFileSync(path.join(meeseeksDir, CAPABILITY_MANIFEST), contents, 'utf8');
       }
-      assert.throws(() => readDeclaredCapabilities(dareDir), CapabilityError);
+      assert.throws(() => readDeclaredCapabilities(meeseeksDir), CapabilityError);
     });
   }
 });
 
 describe('PRODUCT.md and the capability manifest do not overlap', () => {
-  // The split is by question, not by file. `.dare/capabilities.json` owns what the software
+  // The split is by question, not by file. `.meeseeks/capabilities.json` owns what the software
   // *does* — a closed vocabulary, driver-owned, machine-read, and it arms gates. `PRODUCT.md`
   // owns who it is *for* and how it should feel: prose, impeccable's, living in the target
   // repository. No fact appears in both, and the rule that keeps it that way is that nothing

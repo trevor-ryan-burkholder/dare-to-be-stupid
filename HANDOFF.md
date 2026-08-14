@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.110.0`. Measured at 0.110.0: `npm test` **1751 pass**,
+**State:** `main` at `0.111.0`. Measured at 0.111.0: `npm test` **1751 pass**,
 `npm run test:integration` **30 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -23,6 +23,56 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.111.0 — renamed to Meeseeks, everywhere. **Read the install note before debugging anything.**
+
+**`dare` is gone as a name.** The plugin, the package, the command, the state directory, the
+environment variables and every identifier now say `meeseeks`. ~1040 occurrences across 82 files,
+mechanically, longest tokens first so nothing was half-renamed. Tier 1 **1751 pass**, tier 2 and
+lint and typecheck clean, and no test was weakened to get there.
+
+**The install is a fresh install, not an upgrade.** Claude Code keys the plugin cache by
+`<marketplace>/<plugin>/<version>/`, so a *name* change resolves to a different directory
+entirely. The old `dare-to-be-stupid` folder stays on disk and stays loadable. **If both are
+installed, `/dare` and `/meeseeks` are two different programs**, and the symptom of confusing them
+is a fix that appears not to work — the exact trap `CLAUDE.md`'s release section documents, in a
+new shape. Remove the old one.
+
+**Existing run directories are orphaned by design.** State moved from `.dare/` to `.meeseeks/`.
+Old targets under `~/dare-dogfood/*` keep their `.dare/` and are readable; nothing migrates them,
+and nothing should — a half-migrated ratchet is worse than an obviously separate one.
+
+**Four things were renamed to something *literal* rather than something themed**, because
+`CLAUDE.md` requires it: *"Comedy is in the output, never in the code. Identifiers are plain and
+literal."* So `dareMe` became `improvise` (it describes the behaviour: build something when handed
+no PRD), `checkNestedDare` became `checkNestedRun`, `treeDare` became `treeStateDir`, and
+`isDareOwned` became `isMeeseeksOwned`. A product name inside an identifier was never good; the
+rename was the moment to stop.
+
+**Three guard tests were rewritten rather than left passing.** `.darerc`, `mydare/state.json` and
+`.daredevil/notes.md` exist to prove the guard does **not** over-match near neighbours of the
+protected directory. After the rename they were no longer neighbours of anything — they would
+have kept passing while testing nothing. They are now `.meeseeksrc`, `mymeeseeks/state.json` and
+`.meeseeksdevil/notes.md`.
+
+**Fixtures were deliberately excluded.** `test/fixtures/reporters/*` is real captured vitest and
+Playwright output and still contains `dare-to-be-stupid` paths. That is correct: the doctrine is
+*"real, committed output — not hand-written approximations"*, and editing a fixture to look tidier
+is how a parser test stops testing a parser.
+
+**The voice.** `SHIPPED` is the only happy exit — a Meeseeks that finishes ceases, which is the
+point of one. `STALLED`, `BUDGET` and `ABORTED` all end in **`I JUST WANNA DIE!!!`**, but the cry
+is the *ending* and never the whole line: three identical strings would leave an operator unable
+to tell a stall from an exhausted budget from an abort, and that is information lost to a
+punchline. Each keeps a distinct lead-in, and `DESIGN.md` §9 now states that as a rule.
+
+**The banner keeps its safety text.** A test asserts the banner says `UNATTENDED` and `NOT
+AVAILABLE IN PRODUCTION`; my first draft replaced the second with a shorter joke and the test
+caught it. The assertion guards a real property and was not loosened to fit. Its misalignment —
+two lines overhanging the border, present since the banner was written — is fixed in passing.
+
+**Not done yet, and next:** the partitioned ratchet, which is the change all of this was actually
+in service of.
 
 ### `ship1` — `BUDGET` at 12 of 12, and it ran out of **iterations**, not money
 
@@ -138,7 +188,7 @@ on to iteration 6 with **77 ids** in the passing set and `lastGoodCommit` intact
 the product, and this is the first time in this file it has been recorded catching something on a
 real build rather than in a test.
 
-**A near-alarm worth writing down so nobody else raises it.** `.dare/runs/` does not exist in this
+**A near-alarm worth writing down so nobody else raises it.** `.meeseeks/runs/` does not exist in this
 run's tree, and after 0.105.0 the reflex is to assume a reset ate it. It did not:
 `archivePreviousRun` archives the **previous** run when a new one starts, and `ship1` is the first
 run in that directory. **Absence here is correct.** Check the mechanism before reporting the
@@ -233,7 +283,7 @@ change narrows the blast radius of that gap without closing it.
 
 ### 0.107.0 — a project's own gates, which is item 21's last engineering prerequisite
 
-**`extraGates` in `.dare/config.json`: `{ name, command }`, run every iteration, required, and
+**`extraGates` in `.meeseeks/config.json`: `{ name, command }`, run every iteration, required, and
 listed in the brief as `operator:<name>`.** The gate roster is derived from the detected toolchain
 and the provisioned quality plugins, so a verification a project declares for *itself* has never
 been visible to the loop. This repository is the example that matters: `npm run release-check`
@@ -242,7 +292,7 @@ resolves to the previous build — and a builder could break it every iteration 
 noticing.
 
 **Declared, not detected.** Guessing which of a project's scripts are gating is inference that is
-wrong quietly. **And declared in `.dare/`, which is the load-bearing half:** the guard protects
+wrong quietly. **And declared in `.meeseeks/`, which is the load-bearing half:** the guard protects
 that directory positionally, so a gate declared there is one the builder cannot delete. A
 builder-editable gate list would be `BRIEF.md` §E's rejected self-adjusting threshold with extra
 steps — gates negotiable by the thing they constrain.
@@ -439,7 +489,7 @@ The run then hard-reset on two regressions and **my commit vanished from history
 `src/paths.ts` was back to the original, pinned snippet and all, and the pin re-verified as
 `active`.
 
-**The mechanism.** `lastGoodCommit` lives in `.dare/state.json`, which **persists across runs**.
+**The mechanism.** `lastGoodCommit` lives in `.meeseeks/state.json`, which **persists across runs**.
 Attempt 2's reset targeted `047b680`, a commit from the *previous* run, predating the intervention
 entirely. Two operator commits were discarded without a word.
 
@@ -465,10 +515,10 @@ told the operator to run.
 ### 0.105.0 — C2 archiving destroyed the evidence it exists to preserve. Fifth instance, first that is not merely pollution
 
 **Found by checking a success message instead of believing it.** `caseH`'s second run printed
-`archived the previous run to .dare/runs/001`. The directory was not there.
+`archived the previous run to .meeseeks/runs/001`. The directory was not there.
 
 `archivePreviousRun` had worked perfectly — it moved eight files: the previous run's
-`outcome.json`, `review.json`, `run.json`, `assumptions.json` and four briefs. `.dare/runs/` was
+`outcome.json`, `review.json`, `run.json`, `assumptions.json` and four briefs. `.meeseeks/runs/` was
 **untracked and un-ignored**, so `git add -A` committed all eight, and the next hard reset — to a
 commit predating the archive — deleted every one. Reconstructed from the reflog rather than
 guessed: `47ff38a` and `8ac3ba5` each carry eight files under that path, and the reset to
@@ -480,7 +530,7 @@ that the driver rewrites next iteration. This directory is the *only* copy of a 
 evidence, and archiving exists precisely to make run history forensic (§7.2). The first time it
 ran in anger, the thing it protects was destroyed by the mechanism it protects against.
 
-**Why it slipped a list that was called self-correcting.** `DARE_IGNORED_PATHS` is checked by a
+**Why it slipped a list that was called self-correcting.** `MEESEEKS_IGNORED_PATHS` is checked by a
 test against the constants the writers use — and that test iterated over *filenames*. The archive
 is a **directory**, named per run, so no filename constant ever matched it. The test now includes
 `${RUN_ARCHIVE_DIR}/`, and a third case asserts that a `.gitignore` written by an older build
@@ -859,10 +909,10 @@ and it catches the wrong-answer class without guessing an output shape. Item 14 
 behind item 7 so relation cases would inherit a validated harness; item 7 has instead shown why
 item 14 is the point.
 
-### 0.98.0 — the nested-dare denial now says it is a text match, and the rule is NOT weakened
+### 0.98.0 — the nested-meeseeks denial now says it is a text match, and the rule is NOT weakened
 
 **Third bite in one session**, and the second of the three was a commit message describing the
-rule itself. `nested-dare` scans command position including heredoc bodies, so a `git commit -F -`
+rule itself. `nested-meeseeks` scans command position including heredoc bodies, so a `git commit -F -`
 whose body merely *mentions* the command is refused. `README.md` already recorded it biting twice.
 
 **The rule stays exactly as it is, and that is the decision.** Three reasons, in order of weight:
@@ -924,7 +974,7 @@ solution, spelled exactly as the adapter spells them rather than retyped:
 | `restore` | `dotnet restore` | exit 0 |
 | `build` | `dotnet build` | exit 0 |
 | `security-audit` | `dotnet restore --force -warnaserror:NU1901,NU1902,NU1903,NU1904` | exit 0 — the `-warnaserror:` form MSBuild accepts, not `-p:` |
-| `unit` | `dotnet test --logger "trx;LogFileName=…" --results-directory <dareDir>` | exit 0, **TRX written where the ratchet looks** |
+| `unit` | `dotnet test --logger "trx;LogFileName=…" --results-directory <meeseeksDir>` | exit 0, **TRX written where the ratchet looks** |
 | `lint` | `dotnet format --verify-no-changes` | exit 0 |
 
 Round-tripped as well: a deliberately failing second test, through the real `parseReport`, giving
@@ -945,7 +995,7 @@ session had already used it. Fixed in `DOGFOOD.md` and in the "do this next" str
 `protected-guard` — an entire deny category, added 0.88.0 — was in **no** document. README said
 the guard *"denies four categories"* and listed four. `DESIGN.md` §6 never mentioned it.
 `CLAUDE.md`'s invariant carried the title *"the guard hook is not editable by what it guards"*
-over a body that described only `.dare/` — the title had been aspirational for months and became
+over a body that described only `.meeseeks/` — the title had been aspirational for months and became
 true without the text noticing. All three now say it, including *why it almost never fires*.
 README's `qualityPlugins` default was stale by one plugin.
 
@@ -1037,9 +1087,9 @@ It is the **fourth** instance of one defect class, after `state.json`, `outcome.
 `run.json`: something writes machine state into the tree the driver commits with `git add -A`
 every iteration, and a later hard reset then restores an older copy of it. The difference is the
 owner. Those three were the driver's own artifacts; this one belongs to a **tool the driver
-invokes**, and no amount of care about `.dare/` would have caught it.
+invokes**, and no amount of care about `.meeseeks/` would have caught it.
 
-So `TOOL_CACHE_PATHS` now sits beside `DARE_IGNORED_PATHS` in the same `.gitignore` mechanism —
+So `TOOL_CACHE_PATHS` now sits beside `MEESEEKS_IGNORED_PATHS` in the same `.gitignore` mechanism —
 `node_modules/`, which was always there under an ad-hoc boolean, and `.hypothesis/`, which earned
 its place by being found. Both spellings, slashed and not, count as already covered.
 
@@ -1327,7 +1377,7 @@ an infinite one looks identical to it.
 **Closed at 0.80.0-0.82.0.** Everything the driver waits on now has a ceiling: children
 (`childTimeoutMs`, 30 min), gate commands (`gateTimeoutMs`, 45 min), the deploy command
 (`deploy.timeoutMs`, 10 min), the smoke probe and the health probe (their own deadlines). And
-`.dare/lock.json` stops the second half of it - two drivers on one tree, which is how run 15 was
+`.meeseeks/lock.json` stops the second half of it - two drivers on one tree, which is how run 15 was
 lost.
 
 `tokenCeiling` and `costCeiling` are **not** part of that list and never were. Both are read from
@@ -1343,8 +1393,8 @@ has judged.
 
 ## Improve mode driven end to end by a live run. 13 August 2026
 
-**First brownfield run this project has ever done.** `~/dare-dogfood/improve3`, a six-commit
-four-file CLI with planted defects, log at `~/dare-logs/improve3.log`, `maxIterations: 3`,
+**First brownfield run this project has ever done.** `~/meeseeks-dogfood/improve3`, a six-commit
+four-file CLI with planted defects, log at `~/meeseeks-logs/improve3.log`, `maxIterations: 3`,
 `tokenCeiling: 12M`.
 
 ```
@@ -1373,7 +1423,7 @@ style notes: every prohibition in the template survived contact with a real mode
 
 **What the run confirmed live, none of it previously observed in a run:**
 
-- **the run lock** — `.dare/lock.json` held `pid: 59477`, the only driver, throughout;
+- **the run lock** — `.meeseeks/lock.json` held `pid: 59477`, the only driver, throughout;
 - **every child printed its ceiling** — `killed after 30m`, eleven times;
 - **the manifest ignore fix** — the target's `git status` stayed clean;
 - **`gate-integrity` caught the builder** writing `toBeDefined()` and made it fix it;
@@ -1503,7 +1553,7 @@ deliberate act, not a side effect.
 
 `removeWorktrees` runs on the driver's paths out. **No `finally` and no signal handler survives
 `SIGKILL`**, so cleanup at the end could never have covered the case that produced the leak.
-`sweepRaceWorktrees` runs at race *start* instead, removing every `dare-race-NN` worktree already
+`sweepRaceWorktrees` runs at race *start* instead, removing every `meeseeks-race-NN` worktree already
 registered and then pruning — an entry whose directory is already gone is invisible to a removal
 loop and still refuses the next `worktree add` on that path.
 
@@ -1516,7 +1566,7 @@ the next `createWorktrees` return **zero** worktrees with two problems, and the 
 restore it. There is also a test that a worktree of the operator's own survives untouched, because
 a sweep that runs against a real repository and removes the wrong thing is worse than a leak.
 
-**`README.md`'s guard table was corrected in the same pass.** It claimed `nested-dare`
+**`README.md`'s guard table was corrected in the same pass.** It claimed `nested-meeseeks`
 "deliberately leaves alone the bare word in prose". It does not, it never did, and it has now bitten
 twice in one session.
 
@@ -1539,7 +1589,7 @@ That is a stronger argument than "the ratchet has not judged this", and it only 
 call site was read instead of reasoned about.
 
 The tree is therefore set aside, and nothing is destroyed: `git stash push --include-untracked`
-preserves everything except ignored paths, which is exactly what keeps `.dare/` out of it. Not
+preserves everything except ignored paths, which is exactly what keeps `.meeseeks/` out of it. Not
 popped after a successful merge — re-applying ungated changes on top of the winner rebuilds the
 tree this avoids. Popped when the merge fails anyway, because a failed race must leave the tree as
 it found it. A stash that cannot be taken refuses the merge rather than proceeding.
@@ -1570,27 +1620,27 @@ run that logs each gate's wall-clock**, and that is worth doing. A killed gate i
 killed rather than as `exit 1`, because the detail is copied into the builder's brief and a builder
 told `exit 1` for a suite that hung goes hunting an assertion that does not exist.
 
-**0.82.0, the run lock.** `.dare/lock.json`, checked in preflight and again in the driver, released
+**0.82.0, the run lock.** `.meeseeks/lock.json`, checked in preflight and again in the driver, released
 in a `finally` on every path out. A live pid refuses, a dead pid is stale and does not. Closes the
 two-driver defect recorded below.
 
 ### The collision, caught by an existing test rather than by me
 
-The lock was first written as **`.dare/run.json` — which is already `RUN_MANIFEST`.** It would have
+The lock was first written as **`.meeseeks/run.json` — which is already `RUN_MANIFEST`.** It would have
 overwritten the run manifest on every run. What found it was the manifest's own *"is never read
 back by any shipped script"* test, failing on the filename in a new module. That test exists to
 prove the manifest decides nothing; it caught a collision it was not written to catch, because it
 asserts over **the whole `scripts/` tree** rather than over one module. Worth remembering the next
 time a property looks too broad to be worth asserting.
 
-### The guard's `nested-dare` false positive cost time again
+### The guard's `nested-meeseeks` false positive cost time again
 
 Recorded below as found on 12 August and still unfixed. It fired on a `python` heredoc whose
-**comment text** contained the two words `dare init` at the start of a line — `checkNestedDare`
+**comment text** contained the two words `meeseeks init` at the start of a line — `checkNestedRun`
 tokenizes heredoc bodies and `commandName` read it as an invocation. The whole Bash call was
 refused, so the edit inside it never happened, which is the documented expensive half. Recovered by
 using the `Edit` tool, which is what this file already advises. **Second recorded instance. The
-`README.md` claim that the rule "leaves alone the word dare in prose" remains false.**
+`README.md` claim that the rule "leaves alone the word meeseeks in prose" remains false.**
 
 ## 0.79.0 — the deploy command was the one call in the driver bounded by nothing
 
@@ -1635,7 +1685,7 @@ because `spawnClaude` defaults to this `shell`.
 Never recorded before, and checked against produced artifacts rather than assumed. §4.1's whole
 path is live: the reviewer emits `advisory-` entries with `severity`, `confidence` and
 `file:line`; the parser accepts them; the confidence filter admits them; and
-`.dare/briefs/iter-002.md` and `iter-005.md` render an **`### Advisory findings`** section headed
+`.meeseeks/briefs/iter-002.md` and `iter-005.md` render an **`### Advisory findings`** section headed
 
 > *"Suggestions, not requirements. They do not decide whether this run ships. Address them only
 > where doing so does not widen the diff the objective above calls for."*
@@ -1744,7 +1794,7 @@ logic** — one variable at a time is the only reason runs 6 and 7 were readable
 ## Deploy, built 0.61.0–0.63.0 — and the ssh half is argv nobody has run
 
 The old `deploy` was a stub: one `execFileSync` inside `ship()`, fired **after** the
-`dare/GRAND-PRIZE` tag was written, whose failure was printed and ignored. A run could announce a
+`meeseeks/GRAND-PRIZE` tag was written, whose failure was printed and ignored. A run could announce a
 grand prize having deployed nothing. `DESIGN.md` §10.1 now describes what was built instead.
 
 **Only synchronous fixed-host deploys are supported, and that is a decision, not a gap.** A
@@ -1772,8 +1822,8 @@ should be a throwaway box, watched.
 
 ## Queue item 1 — racing EXECUTED live, and the winner cannot land. 13 August 2026
 
-**The first live race this project has ever run.** `~/dare-logs/race2.log`, segment 3, on
-`~/dare-dogfood/race1` with `race.enabled: true, n: 3, after: 1, maxIterations: 10`.
+**The first live race this project has ever run.** `~/meeseeks-logs/race2.log`, segment 3, on
+`~/meeseeks-dogfood/race1` with `race.enabled: true, n: 3, after: 1, maxIterations: 10`.
 
 **What actually happened, from the log:**
 
@@ -1822,7 +1872,7 @@ no winner** unless you read the line.
 
 **Two further facts from the same run.** Racing **armed a second time** later in the run, so with
 `after: 1` and adequate headroom it arms reliably rather than by luck. And killing the driver
-`-9` mid-race **leaks the worktrees**: three were left at `/tmp/dare-race-55237-4/`, detached at
+`-9` mid-race **leaks the worktrees**: three were left at `/tmp/meeseeks-race-55237-4/`, detached at
 the base commit, and `git worktree list` showed four entries afterwards. Cleanup runs on the
 driver's own paths out, not on a signal, which is §13.6's named hazard arriving by a route it did
 not anticipate. Recovered with `git worktree remove --force`; an operator who kills a race must do
@@ -1839,7 +1889,7 @@ file keeps writing down and this entry did not follow.
 
 ### Attempt 1 never armed, and the arithmetic is the constraint worth keeping
 
-`~/dare-logs/race1.log`, `~/dare-dogfood/race1`, `race.enabled: true, n: 3, after: 2,
+`~/meeseeks-logs/race1.log`, `~/meeseeks-dogfood/race1`, `race.enabled: true, n: 3, after: 2,
 maxIterations: 6`:
 
 ```
@@ -1873,10 +1923,10 @@ same tree with `after: 1` and `maxIterations: 10`.
 
 Found at the start of the unsupervised session, and it destroyed a run before it was noticed.
 
-`ps` showed **three** driver processes, two of them with `cwd` = `~/dare-dogfood/csvstat-h`:
+`ps` showed **three** driver processes, two of them with `cwd` = `~/meeseeks-dogfood/csvstat-h`:
 run 14 at 29 minutes and run 15 at 10. **Run 14 had been sent `SIGTERM` and had not died**, so
 when run 15 launched, two independent drivers were mutating one tree — each able to
-`git reset --hard` it, rewrite `.dare/`, and commit over the other. Run 15's result is void and
+`git reset --hard` it, rewrite `.meeseeks/`, and commit over the other. Run 15's result is void and
 nothing may be concluded from its log.
 
 **§13.6's re-entrancy guard does not cover this.** It refuses a *nested* run — a builder invoking
@@ -1884,12 +1934,12 @@ the slash command — and the driver refuses to spawn one. Two operators, or one
 starting independent drivers on the same directory is a different thing entirely and nothing
 looks for it.
 
-The cheap fix is the conventional one: a pidfile under `.dare/`, written at start and checked at
-preflight, refusing when the recorded pid is alive. It fits the existing design — `.dare/` is
+The cheap fix is the conventional one: a pidfile under `.meeseeks/`, written at start and checked at
+preflight, refusing when the recorded pid is alive. It fits the existing design — `.meeseeks/` is
 already driver-owned and §6 already denies a run every write there, so a builder cannot forge it.
 
 **The paragraph that once stood here said "deliberately not built". It was built at 0.82.0** —
-`scripts/run-lock.mjs`, `.dare/lock.json`, checked at start, and verified live in the improve3
+`scripts/run-lock.mjs`, `.meeseeks/lock.json`, checked at start, and verified live in the improve3
 run, which held `pid: 59477` throughout; see the top of this file. The design questions recorded
 here — a stale pidfile must not lock the repository forever, and "alive" is not "mine" after pid
 reuse — were the input to that implementation, not reasons it stayed unbuilt.
@@ -1946,7 +1996,7 @@ item needs a purpose-built run and this section should be treated as evidence, n
 ## Queue item 2 — .NET test-ID extraction, proven against real `dotnet test` output. 13 August 2026
 
 **The queue named this as the expected failure point. It is not one.** Verified against a real
-SDK-scaffolded solution rather than a fixture, at `~/dare-dogfood/dotnet-probe`.
+SDK-scaffolded solution rather than a fixture, at `~/meeseeks-dogfood/dotnet-probe`.
 
 **Environment, checked rather than assumed:** `dotnet 8.0.423` at `/usr/share/dotnet/sdk`, with
 `console` and `xunit` templates available. That is the same version `DESIGN.md` §3.8.1 says the
@@ -1958,7 +2008,7 @@ including a two-case `[Theory]`, then **the driver's exact unit command** read o
 rather than retyped:
 
 ```
-dotnet test --logger trx;LogFileName=unit.trx --results-directory <root>/.dare
+dotnet test --logger trx;LogFileName=unit.trx --results-directory <root>/.meeseeks
 ```
 
 It produced a real 9,831-byte `unit.trx`. Feeding it to `extractTestIds` the way `driver.mjs:1475`
@@ -2166,8 +2216,8 @@ it never asks the implementation what the answer is, which is the whole argument
 
 ## Run 12 SHIPPED — and shipped a wrong answer past a 110,877-case audit
 
-Case G, `~/dare-dogfood/csvstat6`, same PRD, twelve iterations, 0.65.0. Log at
-`~/dare-logs/run12.log`.
+Case G, `~/meeseeks-dogfood/csvstat6`, same PRD, twelve iterations, 0.65.0. Log at
+`~/meeseeks-logs/run12.log`.
 
 ```
 SHIPPED: panel unanimous on 16 requirement(s)
@@ -2222,11 +2272,11 @@ touched first-party source as the brief instructs — and **iteration 6 came bac
 findings.** Two extra iterations and roughly $16 to satisfy a check about the *suite* rather than
 the *code*. Second run in a row it has cost real iterations; the fix is `COMPLETION.md` §2.1.
 
-## The guard's `nested-dare` rule has a false positive, and it fails loudly in the wrong place
+## The guard's `nested-meeseeks` rule has a false positive, and it fails loudly in the wrong place
 
 Found by being bitten, 12 August. A `git commit` whose **message** described the slash command was
-refused with `[dare:nested-dare]`. `README.md` claims that rule *"deliberately leaves alone the
-word 'dare' in prose"*; it does not, once a slash is attached.
+refused with `[meeseeks:nested-meeseeks]`. `README.md` claims that rule *"deliberately leaves alone the
+word 'meeseeks' in prose"*; it does not, once a slash is attached.
 
 **The expensive part is not the refusal.** The deny killed the **entire Bash call**, and that call
 also contained the `python` heredoc performing a documentation edit. The edit never happened, the
@@ -2243,7 +2293,7 @@ lose the edit — so prefer the `Edit` tool over `python` heredocs when the text
 
 ## Run 10: DoD-6 blocked the ship, the loop repaired what it named, and `removed` fired
 
-Case G again (`~/dare-dogfood/csvstat4`), same PRD, fresh tree, log at `~/dare-logs/run10.log`.
+Case G again (`~/meeseeks-dogfood/csvstat4`), same PRD, fresh tree, log at `~/meeseeks-logs/run10.log`.
 **The only variable against run 9 was `DoD-6-adversarial-input`.**
 
 ```
@@ -2315,8 +2365,8 @@ Two candidates, in order:
 
 ## Run 9 shipped, and the panel had already proved it should not have
 
-Case G, fresh repo (`~/dare-dogfood/csvstat3`), the same PRD run 8 shipped, log at
-`~/dare-logs/run9.log`. **The first run in this project's history with a working guard hook.**
+Case G, fresh repo (`~/meeseeks-dogfood/csvstat3`), the same PRD run 8 shipped, log at
+`~/meeseeks-logs/run9.log`. **The first run in this project's history with a working guard hook.**
 
 ```
 SHIPPED: panel unanimous on 15 requirement(s)
@@ -2384,7 +2434,7 @@ the run does not ship until the quote handling is fixed.
 **Found and fixed on 12 August 2026 at 0.59.0, and it is the most serious defect this project has
 had.** `hooks/hooks.json` registers the guard with Claude Code, which applies it to the
 *operator's* sessions. **A `claude -p` child does not load the operator's plugin PreToolUse
-hooks.** Measured, not inferred: a child stamped `DARE_RUNNING=1` overwrote `.dare/state.json`
+hooks.** Measured, not inferred: a child stamped `MEESEEKS_RUNNING=1` overwrote `.meeseeks/state.json`
 through the Write tool **and** through a Bash redirect, in dangerous **and** non-dangerous mode,
 each time returning `permission_denials: []`.
 
@@ -2435,7 +2485,7 @@ CLAUDE.md, and unlike `--bare` it leaves auth working on a subscription (`--bare
 
 **But it is mutually exclusive with the guard, and that was measured rather than assumed.** A
 child given `--safe-mode` **and** the settings-supplied guard from 0.59.0 still overwrote
-`.dare/state.json` with `permission_denials: []`. Safe mode disables hooks *including the ones
+`.meeseeks/state.json` with `permission_denials: []`. Safe mode disables hooks *including the ones
 handed to it explicitly*. There is no combination that gets both.
 
 So the only defensible split is by write capability, and it happens to be the split that already
@@ -2482,8 +2532,8 @@ makes the mutation gate apply again) but **design is not evidence.** The next ru
 
 1. **A fresh case G run** (`DOGFOOD.md`), on a new scenario repo, not a resume. It is the first run
    with 0.56–0.58 live, and it answers whether a ship still happens when a ship must now be earned.
-   The previous scenarios are at `~/dare-dogfood/csvstat` and `csvstat2`; logs go **outside the
-   tree**, at `~/dare-logs/`.
+   The previous scenarios are at `~/meeseeks-dogfood/csvstat` and `csvstat2`; logs go **outside the
+   tree**, at `~/meeseeks-logs/`.
 
    **It is also the first run in this project's history that will have a guard hook** (0.59.0,
    above). Prefer the *same* PRD run 8 shipped, on a *fresh* repo: it holds the specification
@@ -2579,8 +2629,8 @@ confident wrong number. The panel passed it.
 ### Three findings against the loop itself
 
 1. **The panel's verdict was persisted nowhere.** *"I could not verify the unanimous-panel claim at
-   all — the evidence for it is not in the repo."* Only an unannotated `dare/GRAND-PRIZE` tag on a
-   commit named "iteration 2". **Fixed at 0.55.0** (`.dare/review.json`, annotated tag).
+   all — the evidence for it is not in the repo."* Only an unannotated `meeseeks/GRAND-PRIZE` tag on a
+   commit named "iteration 2". **Fixed at 0.55.0** (`.meeseeks/review.json`, annotated tag).
 2. **`seenFailing: []`, and the mutation gate declined.** All 79 ids took ratchet credit without the
    loop watching one go red, and the compensating control did not run that iteration. **Both
    mechanisms that exist to prove a suite can fail were absent from the iteration that shipped.**
@@ -2598,8 +2648,8 @@ iteration counter carried over from the archived run; and two documented claims 
 
 Same PRD as run 6, same ceilings, one variable changed — the architect now receives the resolved
 gate commands (0.52.0). **Stopped by the operator mid-run to conserve usage**, so there is no
-terminal state. It is resumable: `~/dare-dogfood/csvstat2` keeps its `.dare/`, its git history and
-`~/dare-logs/run7.log`, and `state.json` still holds the ratchet.
+terminal state. It is resumable: `~/meeseeks-dogfood/csvstat2` keeps its `.meeseeks/`, its git history and
+`~/meeseeks-logs/run7.log`, and `state.json` still holds the ratchet.
 
 What it established before it was stopped is a controlled A/B, not an inference:
 
@@ -2722,7 +2772,7 @@ Also established here:
 - **The builder documented unmet requirements honestly** rather than faking them: *"these stay as
   honestly-documented unmet requirements, the same treatment PRD-4.1's latency clause already
   receives"*. That is the anti-satisficing behaviour the design is for, in the builder's own words.
-- **0.49.0 proved itself immediately.** The log lived at `~/dare-logs/run5.log`, outside the tree, and
+- **0.49.0 proved itself immediately.** The log lived at `~/meeseeks-logs/run5.log`, outside the tree, and
   survived complete with its terminal state — the thing run 4 lost.
 - It did **not** ship, which is correct.
 
@@ -2747,9 +2797,9 @@ credentials before rating the finding `[trivial]`, which is the difference betwe
 guess. Fixed for real in `eac0185`.
 
 **And it bears on §1.1.** The findings reference `git ls-files` and a commit message, never
-`.dare/briefs/` or the build log. So on this evidence the cold reviewer is working from the
+`.meeseeks/briefs/` or the build log. So on this evidence the cold reviewer is working from the
 repository, which is the intended surface — but note what the repository contains: commits titled
-`dare: iteration 1`. The reviewer can therefore infer an agent wrote the code. That is exactly the
+`meeseeks: iteration 1`. The reviewer can therefore infer an agent wrote the code. That is exactly the
 *not supplied* rather than *sealed* distinction §6.1 draws, now with an observation behind it.
 
 ## Run 4: case E passed on every criterion. The ratchet reset a real run.
@@ -2780,7 +2830,7 @@ the ratchet caught. An organic regression is stronger evidence than an injected 
 
 Also observed, each for the first time:
 
-- **The reality-check breaker ran and was right.** `.dare/reality-check.md`: *"**unbuildable** — but
+- **The reality-check breaker ran and was right.** `.meeseeks/reality-check.md`: *"**unbuildable** — but
   precisely one clause of one requirement is, and everything else is already built and green"*, with
   98/98 tests passing, having driven the real server over HTTP. It isolated `PRD-4.1` by measurement.
 - **0.40.0 changed builder behaviour.** The blooper's diffstat shows `playwright.config.js | 10 -`
@@ -2800,7 +2850,7 @@ records the wound: `run4.log | 16 -` and `run.log | 50 -`.
 Worse than losing 16 lines: git **replaces** the file rather than truncating it, so the shell's open
 descriptor was left pointing at an unlinked inode and **every line written after the reset went
 nowhere.** Iterations 2 and 3 produced no visible output at all, and run 4's terminal state is
-unrecoverable — it had to be reconstructed from `.dare/`, `git log` and the reflog.
+unrecoverable — it had to be reconstructed from `.meeseeks/`, `git log` and the reflog.
 
 Fixed at 0.49.0 by ignoring `*.log`, so the log is never tracked and the descriptor survives, and
 `DOGFOOD.md` now says to keep the log outside the tree. The general rule is the one to remember:
@@ -2840,7 +2890,7 @@ e2e step was green by construction. Run 3's builder obeyed it and removed `conti
 green by construction. **The builder was oscillating between two of our own gates**, and neither
 position could satisfy both. Verified in that repo's git history, not inferred.
 
-Two more things it established: `.dare/assumptions.json` reached `[2, 2, 4, 2, 2]` — four entries
+Two more things it established: `.meeseeks/assumptions.json` reached `[2, 2, 4, 2, 2]` — four entries
 labelled iteration 2 from two different runs (fixed 0.41.0) — and `installed chromium for the e2e
 gate` appears in the log **on a project whose e2e gate does not apply**, which is the Playwright
 provisioning seam §4.2 already flags as ungated, now observed rather than predicted.
@@ -2858,24 +2908,24 @@ suite asserting only `typeof x === 'number'` scores **16.67 and fails**, naming 
 Both from `run4.log` and the tree beside it, on a real repository rather than a fixture:
 
 ```
-added dare machine state to .gitignore
-archived the previous run to .dare/runs/003
+added meeseeks machine state to .gitignore
+archived the previous run to .meeseeks/runs/003
 ```
 
 - **0.48.0's ignore repair fired.** That repository's stanza already contained
-  `.dare/state.json`, which is exactly the case the old all-or-nothing check reported as
+  `.meeseeks/state.json`, which is exactly the case the old all-or-nothing check reported as
   "covered" — so under the previous build nothing would have been appended and `pins.json` would
-  have stayed trackable forever. `.gitignore` now carries `.dare/pins.json` and
-  `.dare/assumptions.json`.
-- **0.41.0's archiving fired.** `.dare/runs/003/` holds `assumptions.json` beside `briefs/` and
-  `run.json`, and the live `.dare/assumptions.json` is **gone**, so this run's reviewers cannot be
+  have stayed trackable forever. `.gitignore` now carries `.meeseeks/pins.json` and
+  `.meeseeks/assumptions.json`.
+- **0.41.0's archiving fired.** `.meeseeks/runs/003/` holds `assumptions.json` beside `briefs/` and
+  `run.json`, and the live `.meeseeks/assumptions.json` is **gone**, so this run's reviewers cannot be
   handed run 2's and run 3's assumptions. That was the defect: five entries, four of them labelled
   iteration 2, from two different runs.
 
 ## The ratchet caught a real regression, against a real 93-id state, for free
 
 **The mechanism the whole design exists for has now fired on real data.** Not a temp repository
-built by the test suite — run 3's actual `.dare/state.json`, run 3's actual application, and a real
+built by the test suite — run 3's actual `.meeseeks/state.json`, run 3's actual application, and a real
 `vitest` run.
 
 Method, and it cost nothing: back up one source file, change a **return value** (`body: row.body`
@@ -2912,7 +2962,7 @@ the repository is ready for it: the tree was restored **byte-identical** afterwa
 
 ## Tier 3 ran for the first time, and found a template defect in eight tests
 
-`DARE_LIVE=1 npm run test:live` had been written and never executed. First run: **7 of 8**, and the
+`MEESEEKS_LIVE=1 npm run test:live` had been written and never executed. First run: **7 of 8**, and the
 failure was not the harness. Given a requirement stating its status code, its exact body, and the
 words *"Nothing about this requirement is ambiguous"*, a live builder still emitted:
 
@@ -2944,7 +2994,7 @@ details buries the one entry that mattered, and §8.3's whole value is that a re
    Check the pinned `gitCommitSha` before debugging anything.
 2. **A green suite proves less than it looks.** Every defect this session found was invisible to
    1,378 passing tests, and each one was found by reading a real artifact: the failing brief named
-   three gates, `.dare/assumptions.json` explained *why* the builder faked a CI step, and the
+   three gates, `.meeseeks/assumptions.json` explained *why* the builder faked a CI step, and the
    dogfood repo's git history showed it oscillating. Prefer looking at a produced artifact over
    adding an assertion.
 3. **The dominant defect class in this codebase is a gate the builder cannot satisfy**, and it has
@@ -2980,7 +3030,7 @@ details buries the one entry that mattered, and §8.3's whole value is that a re
 | ~~mutation provisioning~~ | **closed at 0.43.0, and it was worse than A5 recorded.** Installing the runner locally would not have helped — Stryker looks beside its own install, not the project's. Both packages now go into one npx sandbox |
 | ~~`break: 100` mutation threshold~~ | **decided and closed at 0.47.0: `break: 60`.** Both directions measured — an honest suite scores 83.33 and passes, a suite asserting only `typeof x === 'number'` scores 16.67 and fails. `DESIGN.md` §4.4 |
 | ~~Playwright provisioning not capability-gated~~ | **closed at 0.44.0.** `installed chromium for the e2e gate` had been logged one line after `gate e2e does not apply`. `ensurePlaywrightBrowsers` now declines when the gate does not apply; omitting capabilities still provisions, since under-provisioning fails a gate that *does* apply |
-| ~~`assumptions.json` run attribution~~ | **closed by 0.41.0's archiving, and this row was stale.** The file is in `PER_RUN_ARTIFACTS`, so a new run moves the previous one's to `.dare/runs/NNN/` before writing its own — the cross-run collision cannot occur. Verified against run 10's log, whose entries are `1, 1, 4, 5, 6`, all from one run. The *within-run* duplicate (two entries at iteration 1) is a builder emitting two cited assumptions in one child, which is correct behaviour |
+| ~~`assumptions.json` run attribution~~ | **closed by 0.41.0's archiving, and this row was stale.** The file is in `PER_RUN_ARTIFACTS`, so a new run moves the previous one's to `.meeseeks/runs/NNN/` before writing its own — the cross-run collision cannot occur. Verified against run 10's log, whose entries are `1, 1, 4, 5, 6`, all from one run. The *within-run* duplicate (two entries at iteration 1) is a builder emitting two cited assumptions in one child, which is correct behaviour |
 | `gate-integrity` vs a vacuous branch | **confirmed by probe, and deliberately not fixed.** It passes both the `continue`-past-the-assertion shape and `test('asserts nothing', …)`. The first is the coverage question and belongs to the mutation gate; the second is detectable but would fail legitimate `does not throw` and helper-based suites. `DESIGN.md` §4 |
 | lesson extractor is unverified | **partly closed at 0.54.0.** A lesson can no longer invent a gate — run 6's falsehood is now discarded by name. Claims about the *watched project* are still unverified, which is the half that remains |
 | **nothing verified the suite that shipped** | **top of the list.** `seenFailing: []` and the mutation gate declined on the shipping iteration, so neither mechanism that proves a suite can fail was present. Should `SHIPPED` require at least one of them? |
@@ -2993,7 +3043,7 @@ details buries the one entry that mattered, and §8.3's whole value is that a re
 Run 3's panel found a real bug in the dogfood application: `toRenderableText` substitutes `?` for
 any character outside cp1252, so non-Latin note titles vanish from the PDF export — and the
 builder's own fixture says `'漢字' is deliberately excluded`. That belongs to
-`~/dare-dogfood/rejection`, not here. It is recorded because it is the best evidence this project
+`~/meeseeks-dogfood/rejection`, not here. It is recorded because it is the best evidence this project
 has that the cold reviewer catches satisficing.
 
 ---
@@ -3047,7 +3097,7 @@ Nothing about the reviewer prompt was changed for this. §1.1's bet — that a c
 separate-process auditor with no build log outperforms the builder's own judgement — is now
 **measured**.
 
-## Five more findings, read out of run 3's `.dare/` while it was still running
+## Five more findings, read out of run 3's `.meeseeks/` while it was still running
 
 Free. No spend, nothing in that repository touched — `cat` on the machine state while iteration 2's
 builder was mid-flight. Three of the five close questions this file has carried for days.
@@ -3060,7 +3110,7 @@ reason, printed it to the operator, and then failed the `ci` gate for not runnin
 Run 2's log shows it: `gates failed: quality:semgrep, ci, observability`. **No honest workflow
 could satisfy it.**
 
-The builder did not stall. It complied, and wrote down why — `.dare/assumptions.json`:
+The builder did not stall. It complied, and wrote down why — `.meeseeks/assumptions.json`:
 
 > *"the brief's own `e2e` gate says a CLI/library/API project has no applicable e2e … yet the `ci`
 > gate wants the workflow to run an e2e step regardless"* → *"added an `e2e` step to ci.yml running
@@ -3088,7 +3138,7 @@ requirement named in the gate detail. `DESIGN.md` §4.2. Nine tests. Two notes:
 ### A4's foundation holds — a live reviewer produced a real pin
 
 This file said no pin had ever been created by a real reviewer, and that A4 silently protects
-nothing if evidence lands on blank lines. `.dare/pins.json`:
+nothing if evidence lands on blank lines. `.meeseeks/pins.json`:
 
 ```
 "id": "DoD-2-security", "evidence": "src/http/router.js:266",
@@ -3127,7 +3177,7 @@ Second reason to doubt the saving: three of five requirement pins cite `src/http
 busiest file in the tree, and all three therefore share one fingerprint. On this project the carry
 would invalidate almost every iteration and save nearly nothing.
 
-### `.dare/assumptions.json` cannot say which run an entry came from (unfixed)
+### `.meeseeks/assumptions.json` cannot say which run an entry came from (unfixed)
 
 It is carried across runs but keyed by `iteration`, and iteration numbering restarts every run. It
 currently holds run 2's `iteration: 2` and `iteration: 4` entries, and run 3's `iteration: 2` will
@@ -3142,7 +3192,7 @@ weak matchers; whether it can catch an assertion-free branch is **unverified**.
 ## Verified live
 
 **Guard hook fires under a real PreToolUse event.** With the plugin installed, a command
-writing to the ratchet state file was denied and tagged `[dare:protected-state]`, while a
+writing to the ratchet state file was denied and tagged `[meeseeks:protected-state]`, while a
 command merely mentioning the slash command in prose ran normally. Both halves matter: a
 guard that blocks everything is not a guard.
 
@@ -3169,12 +3219,12 @@ exactly that flag set created a file with the Write tool. The permission model w
 doubt; see below for what actually was.
 
 **PreToolUse hooks inherit the environment of the `claude` process.** A child spawned with
-`DARE_RUNNING=1` fired a hook that read `DARE_RUNNING: "1"` from `process.env`. This is what
+`MEESEEKS_RUNNING=1` fired a hook that read `MEESEEKS_RUNNING: "1"` from `process.env`. This is what
 lets the guard tell a run from an operator, so it was measured rather than assumed.
 
 **The guard denies live, unscripted commands.** Not fixtures: during this session it refused
 a recursive `rm` whose target was an unresolved shell variable, and refused a command
-touching `.dare/config.json` from inside a run.
+touching `.meeseeks/config.json` from inside a run.
 
 **A cold reviewer's output parses, and an incomplete build draws a `fail`.** One live
 `claude -p` child on `claude-opus-5`, given `templates/reviewer-system.md` and the driver's
@@ -3286,7 +3336,7 @@ actually generated, rather than one written to be probed.
 
 # Planned work — making the harness stack-agnostic
 
-Specified on 11 August 2026. The `.dare/**` integrity item from the same plan was implemented
+Specified on 11 August 2026. The `.meeseeks/**` integrity item from the same plan was implemented
 in 0.10.0. On 11 August 2026 **items 1, 2, 3, 5, 6, 7 and 8 were implemented** — item 1 in
 0.11.0 and 0.12.0, item 6 in 0.13.0, item 3 in 0.14.0, item 2 in 0.15.0, item 5 in 0.16.0, item
 7 in 0.17.0, item 8 in 0.18.0; see below. **Items 4 and 9 remain, and both are blocked on
@@ -3302,7 +3352,7 @@ something other than effort.**
   neither has ever been exercised end to end. **`DOGFOOD.md` now carries every scenario as an
   executable script with exact commands, expected terminal states and the evidence to collect.**
   It was written on 11 August 2026 and **not run**; the session that wrote it was not permitted
-  to spend. Run `DARE_LIVE=1 npm run test:live` first — a few cents against a four-hour run, and
+  to spend. Run `MEESEEKS_LIVE=1 npm run test:live` first — a few cents against a four-hour run, and
   a broken output contract found there is found sixty seconds in rather than four hours in.
 
 Everything else below is recorded for the same reason it always was: so the next session does
@@ -3339,7 +3389,7 @@ Read these before designing anything; several are smaller than they look.
   toolchain's (item 2), and the observability gate no longer fires at a CLI or a library
   (item 5). What survives is the **Playwright provisioning path**:
   `playwrightConfigPresent` and `ensurePlaywrightBrowsers` still key off `playwright.config.*`
-  and the `.dare/playwright-installed` marker, both of which are Node-specific and neither of
+  and the `.meeseeks/playwright-installed` marker, both of which are Node-specific and neither of
   which passes through the toolchain. A second toolchain with a different e2e runner will find
   it, and it belongs behind an operation on the adapter.
 
@@ -3376,8 +3426,8 @@ Read these before designing anything; several are smaller than they look.
    - **Detection falls back to Node rather than refusing.** Iteration 1 has no `package.json`.
      When a second toolchain lands, that default stops being obvious and should become an
      architect declaration confirmed by detection, exactly as capabilities did.
-   - **`commandGates` now takes `(root, dareDir)`.** It needed the root to resolve a toolchain,
-     and deriving it as `dirname(dareDir)` would have been true today and quietly wrong later.
+   - **`commandGates` now takes `(root, meeseeksDir)`.** It needed the root to resolve a toolchain,
+     and deriving it as `dirname(meeseeksDir)` would have been true today and quietly wrong later.
 3. ~~**Reporter registry.**~~ **Done — 0.14.0.** `scripts/reporters/` now holds `shared.mjs`
    (id shape, status normalisation, `ReportFormatError`), one module per format, and
    `index.mjs` as the registry. Behaviour-neutral: every existing extraction test passed
@@ -3417,7 +3467,7 @@ Read these before designing anything; several are smaller than they look.
    - **A failed version probe contributes no key.** Recording `"unknown"` would put a string in
      the manifest that reads like a version and is not one.
    - **It needed no new guard rule**, which is the 0.10.0 positional protection paying off
-     exactly as predicted — `guard.test.mjs` had already listed `.dare/run.json` as a
+     exactly as predicted — `guard.test.mjs` had already listed `.meeseeks/run.json` as a
      hypothetical, and the hypothetical came true without a code change.
 8. ~~**Integration-test layer.**~~ **Done — 0.18.0.** `npm test` (tier 1), `npm run
    test:integration` (tier 2, real `git`/`node`/`npm`, no money), `npm run test:live` (tier 3,
@@ -3435,7 +3485,7 @@ Read these before designing anything; several are smaller than they look.
 
    Two things changed underneath this item on 11 August 2026 and should shape how it is run.
    A CLI or library target can now actually finish (item 5) — before, the e2e gate failed it
-   forever — so the scenario set need not all be web. And `.dare/run.json` (item 7) means each
+   forever — so the scenario set need not all be web. And `.meeseeks/run.json` (item 7) means each
    dogfood run leaves a record of exactly what it was, which is the difference between five
    runs and five comparable runs. Give the regression scenario enough budget to reach a second
    iteration; both earlier attempts died in the first one with `passing: 0`, so the ratchet was
@@ -3565,7 +3615,7 @@ so in those terms instead of "budget for the ceiling plus one expensive child".
 | thing | evidence |
 |---|---|
 | preflight | 9 checks passed; failed correctly on `danger-acknowledged` until `--yes` |
-| `.dare/run.json` (§7.1) | written complete — plugin `0.34.0`, real tool versions, **no `"unknown"` anywhere** |
+| `.meeseeks/run.json` (§7.1) | written complete — plugin `0.34.0`, real tool versions, **no `"unknown"` anywhere** |
 | capability declaration (§3.7) | architect declared `api, persistent-storage`; run aborted-free |
 | capability-driven gates (§4.2) | `e2e` skipped with its full written reason, on a project with no browser |
 | toolchain resolution (§3.8) | `node (file package.json)` |
@@ -3623,7 +3673,7 @@ for free, and **it means no greenfield project whose tests pass first time can e
 3** — the primary use case, and the same shape as the `e2e`-fails-a-CLI-forever bug item 5 fixed.
 
 **Fixed at 0.38.0** with a first-gating baseline: the ids present the first time a project is
-gated are recorded once in `.dare/red-evidence.json` and admitted, the gate *reports how many*
+gated are recorded once in `.meeseeks/red-evidence.json` and admitted, the gate *reports how many*
 rather than claiming a clean pass, and everything added later still needs red history. Verified
 against the real 83 ids — gate passes, and adding one further test fails naming only that one.
 
@@ -3647,7 +3697,7 @@ iterations: 4  tokens: 16521006  cost: $10.9031  passing: 0
 
 | thing | evidence |
 |---|---|
-| **C2 archiving** | `archived the previous run to .dare/runs/001`, containing `briefs` and `run.json` |
+| **C2 archiving** | `archived the previous run to .meeseeks/runs/001`, containing `briefs` and `run.json` |
 | **the 0.36.0 budget fix** | `95 PERCENT OF OUR BROADCAST DAY REMAINS` after the design phase. It said **100%** last run |
 | **Phase 3 gates executing** | `gates failed: quality:semgrep, ci, observability` — never observed before |
 | **the 0.38.0 red-evidence baseline** | iteration 1's red-evidence **passed**; without it, it would have failed on all 83 |
@@ -3716,7 +3766,7 @@ called**. Whether review is genuinely fail-closed against a stubbed `PRD-2.1` re
 unproven as it was on 10 August — for a new reason, but unproven.
 
 Still never observed: any gate executing, any test id entering the ratchet, a hard reset, a
-reviewer verdict, a pin, an assumptions block, the mutation gate, `.dare/runs/NNN/` archiving.
+reviewer verdict, a pin, an assumptions block, the mutation gate, `.meeseeks/runs/NNN/` archiving.
 
 **To answer case D, the budget defect has to be fixed first.** With Phase 0 and Phase 1
 uncounted and a single builder capable of 20M tokens, no ceiling an operator sets is
@@ -3737,10 +3787,10 @@ unverified, that is not a hedge — it is the thing to test next.
 
 **Verified.** `templates/builder-system.md` and `scripts/brief.mjs` both state the rule as the
 directory rather than as a list of names. Three unit tests hold it: the compiled brief and the
-builder template each assert that no `` `.dare/<name>.json` `` literal appears at all, so
+builder template each assert that no `` `.meeseeks/<name>.json` `` literal appears at all, so
 re-introducing an enumeration fails the suite rather than merely reading oddly; and one test
 pairs the rendered brief against `isProtectedStatePath` from the hook itself, showing that
-`.dare/red-evidence.json` is named nowhere in the wording and denied anyway. That is the tie
+`.meeseeks/red-evidence.json` is named nowhere in the wording and denied anyway. That is the tie
 worth having — the documented rule and the enforced rule are now the same rule, and a test
 fails if they drift apart.
 
@@ -3756,7 +3806,7 @@ understanding the rule, not evidence of it. A dogfood run is what would settle i
 already tested before the item was read. `test/guard.test.mjs` proves a driver-owned path is
 denied to a run, allowed to an operator, and that names merely resembling one are untouched.
 `test/plugin-manifest.test.mjs` proves the hook matcher excludes the read-only tools, which is
-the whole of what keeps `.dare` readable — the reading half is enforced by the hook never firing,
+the whole of what keeps `.meeseeks` readable — the reading half is enforced by the hook never firing,
 not by any branch in `guard.mjs`. `Task` was added to that exclusion list, since a subagent reads
 files and stopping at `Read`/`Glob`/`Grep` is the enumeration the item argues against.
 
@@ -3769,10 +3819,10 @@ satisficing an artifact the builder was never handed is sufficient.
 **One finding that was not on the item's list.** §1.1 said the reviewer "does not receive the
 build log, iteration history, or any hint that an agent wrote the code" in a voice that reads as
 enforced. It is not enforced. A read-only reviewer child working in a repository that contains
-`.dare/briefs/iter-003.md` can open it; nothing stops it. That is now labelled *not supplied*,
+`.meeseeks/briefs/iter-003.md` can open it; nothing stops it. That is now labelled *not supplied*,
 with the note that the framing is what does the work.
 
-**Not verified.** Nobody has checked whether a cold reviewer ever *does* read `.dare/briefs/`.
+**Not verified.** Nobody has checked whether a cold reviewer ever *does* read `.meeseeks/briefs/`.
 It would be visible in a transcript and no transcript has been examined for it, because no run
 has reached the panel more than once. If a dogfood run shows a reviewer reading the briefs, the
 cold-review invariant is weaker than §1.1 has ever claimed and this is where to look first.
@@ -3806,7 +3856,7 @@ in the Build Brief is capped, so the plausible growth vector is raw gate output 
 `detail`, and nobody has watched that happen. The `childStartLine` figure across iterations is
 the evidence to collect.
 
-## A6 — truthiness-only assertions fail a gate dare runs (0.21.0)
+## A6 — truthiness-only assertions fail a gate meeseeks runs (0.21.0)
 
 **Verified.** 31 new tests in `test/integrity.test.mjs`, following this repository's rule that
 every deny is paired with a benign neighbour. Denied: all five matchers, the negated
@@ -3867,7 +3917,7 @@ touched, as the item predicted — its validation already fails closed on the ha
 the thing `HANDOFF.md` has recorded as unprovable by the test suite: whether the store fills
 with conditions or with generalities. The instruction to test each trigger against the supplied
 evidence is now in the prompt; nothing has checked whether a model *does* it. The procedure is
-unchanged and still the right one — **read `.dare/lessons.json` after the first real run, and
+unchanged and still the right one — **read `.meeseeks/lessons.json` after the first real run, and
 delete it if it has filled with generalities.** What is new is that there is now a specific
 thing to look at: whether the trigger words appear verbatim in the failure the lesson came from.
 
@@ -3922,7 +3972,7 @@ generated `PRODUCT.md` on the first dogfood run.
 
 **A real defect was found, not just a feature added.** Iteration numbering lives in the
 driver's in-memory `progress`, initialised to zero at the top of every run, and never read from
-`state.json`. So every run wrote `.dare/briefs/iter-001.md` over the last run's, then
+`state.json`. So every run wrote `.meeseeks/briefs/iter-001.md` over the last run's, then
 `iter-002.md`, and so on. Briefs were being destroyed one file at a time, silently, because the
 replacement looked exactly like the original. Both written accounts of this — "state is
 replaced per run" and "briefs accumulate" — were wrong in opposite directions.
@@ -3938,7 +3988,7 @@ operator renamed is ignored rather than fatal.
 
 **Not verified.** No real run has archived anything — every fixture is a temp directory this
 session built. In particular the driver-side wiring (`archivePreviousRun` called once in `main`
-before `ensureDareIgnored`'s successor lines) is covered only by the unit tests of the function
+before `ensureMeeseeksIgnored`'s successor lines) is covered only by the unit tests of the function
 itself, not by an end-to-end run, so *when* it fires has not been observed. Two runs in
 succession against a throwaway repository would settle it and cost nothing but time.
 
@@ -3994,7 +4044,7 @@ requirement is not re-litigated until its evidence changes" is therefore not met
 
 **Verified at tier 1.** 41 tests. The parser's three outcomes are each asserted: an absent block
 is not a failure, a malformed block is, and an uncited entry is discarded and *counted*. Five
-driver-level tests carry it end to end — a cited assumption reaches `.dare/assumptions.json`, an
+driver-level tests carry it end to end — a cited assumption reaches `.meeseeks/assumptions.json`, an
 uncited one does not, a builder that says nothing about assumptions still ships, a malformed
 block stops the iteration, and **the reviewer is called zero times on that iteration**. The
 template's own example is fed through the real parser, so an obedient builder cannot fail its
@@ -4016,7 +4066,7 @@ The second is the more dangerous, and it is `lessons.mjs`'s named failure arrivi
 door — except this store reaches the reviewer. Run:
 
 ```
-DARE_LIVE=1 npm run test:live
+MEESEEKS_LIVE=1 npm run test:live
 ```
 
 Expect a few cents and under a minute. If a block appears where nothing was ambiguous, the fix
@@ -4042,7 +4092,7 @@ down. What that produced was not a confirmation but a **correction**:
 
 So the item as written — "surviving mutants on changed code fail the gate" — would have shipped
 a gate that could not fail, and the config that decides it would have been the builder's. The
-driver now writes `.dare/stryker.config.json` and passes it positionally; §6 keeps it out of
+driver now writes `.meeseeks/stryker.config.json` and passes it positionally; §6 keeps it out of
 reach. **That correction is the most valuable thing this item produced, and it came from
 running the binary rather than reading about it.**
 
@@ -4209,7 +4259,7 @@ them too, but their prompts and their parsers are unexercised.
 
 The lesson store's *usefulness* is unproven in a way the tests cannot reach. Storage,
 retrieval, protection and the fail-safe paths are covered; whether the extractor produces
-lessons worth reading is a judgement only a long run can settle. Read `.dare/lessons.json`
+lessons worth reading is a judgement only a long run can settle. Read `.meeseeks/lessons.json`
 after the first real run and delete it if it has filled with generalities — retrieval is
 designed so that an empty store costs nothing.
 

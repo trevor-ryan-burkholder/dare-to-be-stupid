@@ -58,7 +58,7 @@ export function extractTestIds(input, options) {
 // ===========================================================================
 // The ratchet
 //
-// DESIGN.md §1.2: `.dare/state.json` holds every test ID that has *ever* passed. If an
+// DESIGN.md §1.2: `.meeseeks/state.json` holds every test ID that has *ever* passed. If an
 // iteration drops one, the driver hard-resets, the regression becomes the next build
 // task, and nothing else proceeds. This is the single mechanism that turns an infinite
 // loop into a terminating one.
@@ -140,18 +140,18 @@ function validateState(value, file) {
 }
 
 /**
- * Read `.dare/state.json`.
+ * Read `.meeseeks/state.json`.
  *
  * A missing file is a first run and yields {@link emptyState}. Anything else that goes
  * wrong throws: an unreadable or malformed ratchet must stop the run, because continuing
  * from an empty passing set would silently discard every ID ever earned.
  *
- * @param {string} dareDir the `.dare` directory
+ * @param {string} meeseeksDir the `.meeseeks` directory
  * @returns {RatchetState}
  * @throws {RatchetStateError}
  */
-export function loadState(dareDir) {
-  const file = path.join(dareDir, STATE_FILE);
+export function loadState(meeseeksDir) {
+  const file = path.join(meeseeksDir, STATE_FILE);
   /** @type {string} */
   let raw;
   try {
@@ -171,16 +171,16 @@ export function loadState(dareDir) {
 }
 
 /**
- * Write `.dare/state.json` atomically, so a crash mid-write cannot corrupt the ratchet.
+ * Write `.meeseeks/state.json` atomically, so a crash mid-write cannot corrupt the ratchet.
  * The passing set is sorted, which keeps diffs of the file readable.
  *
- * @param {string} dareDir the `.dare` directory
+ * @param {string} meeseeksDir the `.meeseeks` directory
  * @param {RatchetState} state
  * @returns {string} the path written
  */
-export function saveState(dareDir, state) {
-  mkdirSync(dareDir, { recursive: true });
-  const file = path.join(dareDir, STATE_FILE);
+export function saveState(meeseeksDir, state) {
+  mkdirSync(meeseeksDir, { recursive: true });
+  const file = path.join(meeseeksDir, STATE_FILE);
   const temporary = `${file}.tmp`;
   const payload = {
     version: STATE_VERSION,

@@ -39,7 +39,7 @@ const temporaryDirs = [];
  * @returns {string}
  */
 function makeProject(files = {}) {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-toolchains-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-toolchains-'));
   temporaryDirs.push(dir);
   for (const [relative, contents] of Object.entries(files)) {
     const full = path.join(dir, ...relative.split('/'));
@@ -53,7 +53,7 @@ after(() => {
   for (const dir of temporaryDirs) rmSync(dir, { recursive: true, force: true });
 });
 
-const CONTEXT = { root: '/repo', dareDir: path.join('/repo', '.dare') };
+const CONTEXT = { root: '/repo', meeseeksDir: path.join('/repo', '.meeseeks') };
 
 describe('the operation vocabulary', () => {
   it('gates exactly the operations Phase 3 runs, in order', () => {
@@ -133,7 +133,7 @@ describe('the node toolchain', () => {
             'vitest',
             'run',
             '--reporter=json',
-            `--outputFile=${path.join('/repo', '.dare', 'test-report.json')}`,
+            `--outputFile=${path.join('/repo', '.meeseeks', 'test-report.json')}`,
           ],
         },
         { kind: 'command', command: ['npx', 'playwright', 'test'] },
@@ -317,7 +317,7 @@ describe('the conditional second pass', () => {
   it('builds a mutation command scoped to the changed source', () => {
     const { gates } = gatesFor(
       nodeToolchain,
-      { root: '/repo', dareDir: '/repo/.dare', changedFiles: ['src/a.ts', 'src/b.js'] },
+      { root: '/repo', meeseeksDir: '/repo/.meeseeks', changedFiles: ['src/a.ts', 'src/b.js'] },
       CONDITIONAL_GATE_OPERATIONS,
     );
     assert.equal(gates.length, 1);
@@ -334,7 +334,7 @@ describe('the conditional second pass', () => {
       '@stryker-mutator/vitest-runner',
       'stryker',
       'run',
-      path.join('/repo/.dare', MUTATION_CONFIG),
+      path.join('/repo/.meeseeks', MUTATION_CONFIG),
       '--testRunner',
       'vitest',
       '--mutate',
@@ -355,7 +355,7 @@ describe('the conditional second pass', () => {
     // and someone rewriting that array should have to delete a test that says why.
     const { gates } = gatesFor(
       nodeToolchain,
-      { root: '/repo', dareDir: '/repo/.dare', changedFiles: ['src/a.js'] },
+      { root: '/repo', meeseeksDir: '/repo/.meeseeks', changedFiles: ['src/a.js'] },
       CONDITIONAL_GATE_OPERATIONS,
     );
     const argv = /** @type {string[]} */ (gates[0].command);
@@ -372,7 +372,7 @@ describe('the conditional second pass', () => {
       nodeToolchain,
       {
         root: '/repo',
-        dareDir: '/repo/.dare',
+        meeseeksDir: '/repo/.meeseeks',
         changedFiles: ['src/a.test.ts', 'test/helpers.js', 'e2e/login.spec.ts', '__tests__/x.js'],
       },
       CONDITIONAL_GATE_OPERATIONS,
@@ -385,7 +385,7 @@ describe('the conditional second pass', () => {
   it('ignores files no mutator understands', () => {
     const { gates } = gatesFor(
       nodeToolchain,
-      { root: '/repo', dareDir: '/repo/.dare', changedFiles: ['README.md', 'src/a.ts', 'assets/logo.png'] },
+      { root: '/repo', meeseeksDir: '/repo/.meeseeks', changedFiles: ['README.md', 'src/a.ts', 'assets/logo.png'] },
       CONDITIONAL_GATE_OPERATIONS,
     );
     assert.equal(gates[0].command.includes('src/a.ts'), true);
@@ -397,7 +397,7 @@ describe('the conditional second pass', () => {
     // mutant died, which is the silent pass this codebase refuses everywhere else.
     const { gates, skipped } = gatesFor(
       nodeToolchain,
-      { root: '/repo', dareDir: '/repo/.dare', changedFiles: [] },
+      { root: '/repo', meeseeksDir: '/repo/.meeseeks', changedFiles: [] },
       CONDITIONAL_GATE_OPERATIONS,
     );
     assert.deepEqual(gates, []);
@@ -414,7 +414,7 @@ describe('the conditional second pass', () => {
   // three separate times. "I have no baseline" and "nothing changed" are different facts and the
   // gate must not report the second when it means the first.
   it('declines when no changed-file list was supplied at all, and says that rather than claiming nothing changed', () => {
-    const { skipped } = gatesFor(nodeToolchain, { root: '/repo', dareDir: '/repo/.dare' }, CONDITIONAL_GATE_OPERATIONS);
+    const { skipped } = gatesFor(nodeToolchain, { root: '/repo', meeseeksDir: '/repo/.meeseeks' }, CONDITIONAL_GATE_OPERATIONS);
     assert.equal(skipped.length, 1);
     assert.equal(skipped[0].reason.includes('no baseline'), true, skipped[0].reason);
     assert.equal(
@@ -428,13 +428,13 @@ describe('the conditional second pass', () => {
     // Stryker exposes no --thresholds flag and thresholds.break defaults to null, so a run
     // with surviving mutants exits 0. Measured: a fixture with two survivors exited 0 with no
     // config and 1 with this one. The failure condition therefore lives in a file, and it has
-    // to be a file under .dare or the builder owns whether the gate can fail.
+    // to be a file under .meeseeks or the builder owns whether the gate can fail.
     const { gates } = gatesFor(
       nodeToolchain,
-      { root: '/repo', dareDir: '/repo/.dare', changedFiles: ['src/a.ts'] },
+      { root: '/repo', meeseeksDir: '/repo/.meeseeks', changedFiles: ['src/a.ts'] },
       CONDITIONAL_GATE_OPERATIONS,
     );
-    assert.equal(gates[0].command.includes(path.join('/repo/.dare', MUTATION_CONFIG)), true);
+    assert.equal(gates[0].command.includes(path.join('/repo/.meeseeks', MUTATION_CONFIG)), true);
     // The property is that a threshold exists at all, since Stryker's default of `null` means
     // survivors exit 0 and the gate cannot fail. The *number* is a judgement recorded beside the
     // constant, and asserting it here would only restate the constant.
@@ -458,7 +458,7 @@ describe('the dotnet toolchain', () => {
    * @returns {string} a throwaway repository root
    */
   function repo(files) {
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-dotnet-'));
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-dotnet-'));
     temporaryDirs.push(dir);
     for (const [relative, contents] of Object.entries(files)) {
       const full = path.join(dir, ...relative.split('/'));
@@ -500,7 +500,7 @@ describe('the dotnet toolchain', () => {
   describe('the security-audit command', () => {
     // This test exists to stop the command being "simplified" back to the obvious one. The
     // obvious one is wrong and only running it says so.
-    const operation = dotnetToolchain.operations['security-audit']({ root: '/repo', dareDir: '/repo/.dare' });
+    const operation = dotnetToolchain.operations['security-audit']({ root: '/repo', meeseeksDir: '/repo/.meeseeks' });
     const audit = operation.kind === 'command' ? operation.command : [];
 
     it('is the audit-promoting restore, verified to exit 1 on a known advisory', () => {
@@ -533,7 +533,7 @@ describe('the dotnet toolchain', () => {
 
   describe('the operations it declines', () => {
     /** @param {'types' | 'e2e' | 'mutation'} name */
-    const declined = (name) => dotnetToolchain.operations[name]({ root: '/repo', dareDir: '/repo/.dare' });
+    const declined = (name) => dotnetToolchain.operations[name]({ root: '/repo', meeseeksDir: '/repo/.meeseeks' });
 
     it('declines typecheck, because the compiler subsumes it', () => {
       const types = declined('types');
@@ -564,7 +564,7 @@ describe('the dotnet toolchain', () => {
   });
 
   it('writes its unit report where the ratchet will look for it', () => {
-    const unit = dotnetToolchain.operations.unit({ root: '/repo', dareDir: '/repo/.dare' });
+    const unit = dotnetToolchain.operations.unit({ root: '/repo', meeseeksDir: '/repo/.meeseeks' });
     assert.equal(unit.kind, 'command');
     assert.deepEqual(unit.kind === 'command' ? unit.command : [], [
       'dotnet',
@@ -572,7 +572,7 @@ describe('the dotnet toolchain', () => {
       '--logger',
       `trx;LogFileName=${TRX_REPORT}`,
       '--results-directory',
-      '/repo/.dare',
+      '/repo/.meeseeks',
     ]);
   });
 
@@ -608,7 +608,7 @@ describe('every toolchain declares the reports it writes', () => {
       // looking for a file nothing produces, and finding it absent is not evidence.
       const declined = ['unit', 'e2e'].filter(
         (name) =>
-          toolchain.operations[/** @type {'unit' | 'e2e'} */ (name)]({ root: '/repo', dareDir: '/repo/.dare' })
+          toolchain.operations[/** @type {'unit' | 'e2e'} */ (name)]({ root: '/repo', meeseeksDir: '/repo/.meeseeks' })
             .kind === 'not-applicable',
       );
       if (declined.includes('e2e') && !declined.includes('unit')) {

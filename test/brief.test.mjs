@@ -25,7 +25,7 @@ const temporaryDirs = [];
 
 /** @returns {string} */
 function makeTempDir() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-brief-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-brief-'));
   temporaryDirs.push(dir);
   return dir;
 }
@@ -66,7 +66,7 @@ describe('compileBrief', () => {
   it('always carries the scope discipline and the protected-state constraint', () => {
     const brief = compileBrief({ iteration: 1, chaos: 1, objective: GATES_OBJECTIVE });
     assert.equal(brief.includes('Do not touch code unrelated to the objective'), true);
-    assert.equal(brief.includes('Do not write anything under `.dare/`, at any depth'), true);
+    assert.equal(brief.includes('Do not write anything under `.meeseeks/`, at any depth'), true);
     assert.equal(brief.includes('Do not declare the work finished'), true);
   });
 
@@ -76,7 +76,7 @@ describe('compileBrief', () => {
     // names three files is the same defect one layer up — the builder is told a weaker
     // rule than the hook enforces and spends an iteration discovering the difference.
     const brief = compileBrief({ iteration: 1, chaos: 1, objective: GATES_OBJECTIVE });
-    assert.deepEqual(brief.match(/`\.dare\/[\w-]+\.json`/g), null);
+    assert.deepEqual(brief.match(/`\.meeseeks\/[\w-]+\.json`/g), null);
   });
 
   it('covers an artifact it does not name, which the guard denies by position', () => {
@@ -84,9 +84,9 @@ describe('compileBrief', () => {
     // and is refused anyway, so the documented rule and the enforced rule are one rule.
     const brief = compileBrief({ iteration: 1, chaos: 1, objective: GATES_OBJECTIVE });
     assert.equal(brief.includes('red-evidence.json'), false);
-    assert.equal(isProtectedStatePath('.dare/red-evidence.json', '/repo'), true);
-    assert.equal(isProtectedStatePath('.dare/invented-tomorrow.json', '/repo'), true);
-    assert.equal(isProtectedStatePath('.dare-notes/state.json', '/repo'), false);
+    assert.equal(isProtectedStatePath('.meeseeks/red-evidence.json', '/repo'), true);
+    assert.equal(isProtectedStatePath('.meeseeks/invented-tomorrow.json', '/repo'), true);
+    assert.equal(isProtectedStatePath('.meeseeks-notes/state.json', '/repo'), false);
   });
 
   it('renders each chaos level as a different scope budget', () => {

@@ -14,7 +14,7 @@
  * and the mutation gate mutates the builder's source against the builder's tests. This is the one
  * artifact written *before* any code exists and never shown to the thing it judges.
  *
- * **Held out means not supplied, and the distinction is §6.1's.** The cases live under `.dare/`,
+ * **Held out means not supplied, and the distinction is §6.1's.** The cases live under `.meeseeks/`,
  * so §6's positional rule makes them driver-owned — a builder may not write them. They are also
  * never rendered into a brief, a system prompt or a review prompt. That second half is a
  * *discipline*, not a barrier: a builder executing arbitrary code can read the file, and this
@@ -23,7 +23,7 @@
  * build to a test it has not been shown.
  *
  * **A3 was deferred on the grounds that "the builder would own whether the gate can fail".** That
- * objection was answered for Stryker at §4.4 by writing the threshold into `.dare/` and passing
+ * objection was answered for Stryker at §4.4 by writing the threshold into `.meeseeks/` and passing
  * it positionally. The same move applies here, and the deferral no longer holds.
  */
 
@@ -102,7 +102,7 @@ export function parseRelation(id, value) {
 /** The store, driver-owned by §6's positional rule. */
 export const ORACLE_FILE = 'oracle.json';
 
-/** Where cases are materialised. Inside `.dare/` so a builder cannot pre-create the inputs. */
+/** Where cases are materialised. Inside `.meeseeks/` so a builder cannot pre-create the inputs. */
 const SCRATCH = 'oracle-scratch';
 
 /** Thrown when the oracle cannot be trusted. Never caught into a pass. */
@@ -199,24 +199,24 @@ export function parseOracleCases(text) {
 }
 
 /**
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @param {OracleCase[]} cases
  * @returns {string} the path written
  */
-export function writeOracle(dareDir, cases) {
+export function writeOracle(meeseeksDir, cases) {
   if (cases.length === 0) throw new OracleError('refusing to write an empty oracle');
-  mkdirSync(dareDir, { recursive: true });
-  const file = path.join(dareDir, ORACLE_FILE);
+  mkdirSync(meeseeksDir, { recursive: true });
+  const file = path.join(meeseeksDir, ORACLE_FILE);
   writeFileSync(file, `${JSON.stringify({ version: 1, cases }, null, 2)}\n`, 'utf8');
   return file;
 }
 
 /**
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @returns {OracleCase[]}
  */
-export function readOracle(dareDir) {
-  const file = path.join(dareDir, ORACLE_FILE);
+export function readOracle(meeseeksDir) {
+  const file = path.join(meeseeksDir, ORACLE_FILE);
   if (!existsSync(file)) throw new OracleError('no held-out cases: the oracle was never authored');
   /** @type {unknown} */
   let parsed;
@@ -337,7 +337,7 @@ export function resolveArtifactCommand(root) {
  * Run every held-out case against the built artifact.
  *
  * @param {{
- *   dareDir: string, root: string, command: string[],
+ *   meeseeksDir: string, root: string, command: string[],
  *   run: (command: string, args: string[], options: { cwd: string }) =>
  *     { ok: boolean, status: number, stdout: string, stderr: string },
  * }} options
@@ -347,13 +347,13 @@ export function runOracle(options) {
   /** @type {OracleCase[]} */
   let cases;
   try {
-    cases = readOracle(options.dareDir);
+    cases = readOracle(options.meeseeksDir);
   } catch (error) {
     // Missing, unparseable or empty all fail. An oracle that cannot be read is the one shape
     // that reads exactly like an oracle everything passed.
     return { name: 'oracle', ok: false, status: 1, detail: /** @type {Error} */ (error).message };
   }
-  const scratch = path.join(options.dareDir, SCRATCH);
+  const scratch = path.join(options.meeseeksDir, SCRATCH);
   /** @type {string[]} */
   const failures = [];
   try {

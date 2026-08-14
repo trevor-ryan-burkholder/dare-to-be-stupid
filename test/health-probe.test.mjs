@@ -22,7 +22,7 @@ const temporaryDirs = [];
 
 /** @returns {string} */
 function makeTempDir() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-health-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-health-'));
   temporaryDirs.push(dir);
   return dir;
 }

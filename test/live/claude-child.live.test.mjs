@@ -13,7 +13,7 @@
  * needs one live check, not more assertions.**
  *
  * It does not run by default and it does not silently skip. `npm run test:live` without
- * `DARE_LIVE=1` fails, loudly, saying what it would have cost. A command that quietly passes
+ * `MEESEEKS_LIVE=1` fails, loudly, saying what it would have cost. A command that quietly passes
  * having done nothing is the exact shape of failure the rest of this codebase refuses.
  */
 
@@ -22,7 +22,7 @@ import { describe, it } from 'node:test';
 
 import { claudeArgs, parseClaudeEnvelope, spawnClaude } from '../../scripts/driver.mjs';
 
-const ARMED = process.env.DARE_LIVE === '1';
+const ARMED = process.env.MEESEEKS_LIVE === '1';
 
 /** Generous: a live round trip includes model latency nobody here controls. */
 const LIVE_TIMEOUT = 180_000;
@@ -45,13 +45,13 @@ describe('the live tier', () => {
     assert.equal(
       ARMED,
       true,
-      'the live tier spends real money and is off by default. Re-run with DARE_LIVE=1 when you mean it: ' +
+      'the live tier spends real money and is off by default. Re-run with MEESEEKS_LIVE=1 when you mean it: ' +
         'one trivial prompt cost $0.26 on 10 August 2026, mostly cache creation.',
     );
   });
 });
 
-describe('a real claude -p child', { skip: ARMED ? false : 'DARE_LIVE is not set' }, () => {
+describe('a real claude -p child', { skip: ARMED ? false : 'MEESEEKS_LIVE is not set' }, () => {
   it('accepts the argv the driver builds, and answers the prompt', { timeout: LIVE_TIMEOUT }, () => {
     // The regression this whole tier exists for. If the prompt is ever parsed as an operand
     // again, the child exits with "Input must be provided either through stdin or as a prompt
@@ -88,7 +88,7 @@ describe('a real claude -p child', { skip: ARMED ? false : 'DARE_LIVE is not set
   });
 });
 
-describe('per-phase reasoning effort reaches a real child', { skip: ARMED ? false : 'DARE_LIVE is not set' }, () => {
+describe('per-phase reasoning effort reaches a real child', { skip: ARMED ? false : 'MEESEEKS_LIVE is not set' }, () => {
   // `claudeArgs` is the function whose defect bought this tier: `--allowedTools` is variadic,
   // the prompt followed it, and the CLI read the prompt as one more tool name. Every phase but
   // `builder` was dead and no assertion about the array could have found it. `--effort` is a
@@ -117,7 +117,7 @@ describe('per-phase reasoning effort reaches a real child', { skip: ARMED ? fals
   });
 });
 
-describe('cold phases are actually isolated', { skip: ARMED ? false : 'DARE_LIVE is not set' }, () => {
+describe('cold phases are actually isolated', { skip: ARMED ? false : 'MEESEEKS_LIVE is not set' }, () => {
   // Measured before 0.69.0: a child in the repo AND in an empty temp directory was handed the
   // operator's plugin SessionStart injections and the project MEMORY.md, and quoted this
   // machine's memory line back verbatim when asked without tools. The injected text carries

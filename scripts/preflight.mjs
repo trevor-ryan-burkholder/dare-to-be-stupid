@@ -2,7 +2,7 @@
  * Preflight (DESIGN.md §3.5).
  *
  * The goal is that the only things an operator does are install the plugin, be in a repo,
- * and run `/dare`. Everything else is either checked and explained here, or installed by
+ * and run `/meeseeks`. Everything else is either checked and explained here, or installed by
  * the run itself. Preflight runs *before* the driver and fails loud rather than starting a
  * half-configured unattended run.
  *
@@ -172,7 +172,7 @@ export function checkGitRepository(probe) {
     'git-repository',
     ok,
     ok ? 'inside a git work tree' : 'not inside a git work tree',
-    'Run `dare` from inside a git repository; the ratchet resets to commits and cannot work without one.',
+    'Run `meeseeks` from inside a git repository; the ratchet resets to commits and cannot work without one.',
   );
 }
 
@@ -196,26 +196,26 @@ export function checkHasCommits(probe) {
 }
 
 /**
- * Is this porcelain line dare's own run state rather than the operator's work?
+ * Is this porcelain line Meeseeks's own run state rather than the operator's work?
  *
  * `git status --porcelain` emits two status characters, a space, then the path.
  *
  * @param {string} line
  * @returns {boolean}
  */
-function isDareOwned(line) {
+function isMeeseeksOwned(line) {
   const target = line.slice(3).trim().replace(/^"|"$/g, '');
-  return target === '.dare' || target === '.dare/' || target.startsWith('.dare/');
+  return target === '.meeseeks' || target === '.meeseeks/' || target.startsWith('.meeseeks/');
 }
 
 /**
  * The check exists to stop the ratchet's `git reset --hard` from destroying work the
- * operator has not committed. `.dare/` is not that work — it is the run's own state, which
+ * operator has not committed. `.meeseeks/` is not that work — it is the run's own state, which
  * preflight scaffolds itself.
  *
- * Counting it made preflight unpassable: the first run writes `.dare/config.json`, and
+ * Counting it made preflight unpassable: the first run writes `.meeseeks/config.json`, and
  * every run after that failed on the file the previous run had created. An untracked
- * `.dare/` is also safe from `reset --hard`, which leaves untracked files alone.
+ * `.meeseeks/` is also safe from `reset --hard`, which leaves untracked files alone.
  *
  * @param {Probe} probe
  * @returns {CheckResult}
@@ -228,7 +228,7 @@ export function checkCleanWorkingTree(probe) {
   const dirty = result.stdout
     .split('\n')
     .filter((line) => line.trim().length > 0)
-    .filter((line) => !isDareOwned(line));
+    .filter((line) => !isMeeseeksOwned(line));
   return check(
     'clean-working-tree',
     dirty.length === 0,
@@ -263,7 +263,7 @@ export function checkRemoteIsNotProduction(probe) {
         'safe-remote',
         false,
         `remote ${url} contains ${JSON.stringify(word)}`,
-        'Point dare at a throwaway repository. It is pre-production only and never runs against anything with users.',
+        'Point meeseeks at a throwaway repository. It is pre-production only and never runs against anything with users.',
       );
     }
   }
@@ -288,18 +288,18 @@ export function checkNetwork(probe) {
 }
 
 /**
- * Scaffolds `.dare/config.json` when it is absent — the one check that fixes itself.
+ * Scaffolds `.meeseeks/config.json` when it is absent — the one check that fixes itself.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @returns {CheckResult}
  */
-export function checkConfig(dareDir) {
+export function checkConfig(meeseeksDir) {
   try {
-    const { created, path: file } = initConfig(dareDir);
+    const { created, path: file } = initConfig(meeseeksDir);
     return check('config', true, created ? `scaffolded ${file}` : `loaded ${file}`, 'Nothing to do.');
   } catch (error) {
     const message = error instanceof ConfigError ? error.message : /** @type {Error} */ (error).message;
-    return check('config', false, message, 'Fix or delete .dare/config.json and let `dare init` scaffold a fresh one.');
+    return check('config', false, message, 'Fix or delete .meeseeks/config.json and let `meeseeks init` scaffold a fresh one.');
   }
 }
 
@@ -318,18 +318,18 @@ export function checkConfig(dareDir) {
  * entire run whose log means nothing. Refusing is the cheap error, and a stale lock left by a
  * killed driver clears itself rather than locking the repository forever.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @param {{ isAlive?: (pid: number) => boolean, self?: number }} [options]
  * @returns {CheckResult}
  */
-export function checkNoConcurrentRun(dareDir, options = {}) {
+export function checkNoConcurrentRun(meeseeksDir, options = {}) {
   const isAlive = options.isAlive ?? pidIsAlive;
   const self = options.self ?? process.pid;
-  const lockPath = path.join('.dare', RUN_LOCK_FILE);
+  const lockPath = path.join('.meeseeks', RUN_LOCK_FILE);
   /** @type {ReturnType<typeof readRunLock>} */
   let lock;
   try {
-    lock = readRunLock(dareDir);
+    lock = readRunLock(meeseeksDir);
   } catch (error) {
     // Unreadable is not free. See `readRunLock`: a lock that will not parse is not evidence
     // that nobody holds one.
@@ -375,7 +375,7 @@ export function checkAgentSurface(cwd) {
     'agent-surface',
     blocking.length === 0,
     summary,
-    'Remove the offending hook, instruction, MCP entry or credential. dare runs unattended with permissions ' +
+    'Remove the offending hook, instruction, MCP entry or credential. meeseeks runs unattended with permissions ' +
       'skipped, so it trusts this repository completely.',
   );
 }
@@ -408,7 +408,7 @@ export function checkDangerAcknowledged(options) {
  *   interactive?: boolean,
  *   nodeVersion?: string,
  *   probe?: Probe,
- *   dareDir?: string,
+ *   meeseeksDir?: string,
  *   sandbox?: boolean,
  * }} options
  * @returns {{ ok: boolean, checks: CheckResult[], failures: CheckResult[] }}
@@ -416,7 +416,7 @@ export function checkDangerAcknowledged(options) {
 export function runPreflight(options) {
   const cwd = options.cwd;
   const probe = options.probe ?? defaultProbe(cwd);
-  const dareDir = options.dareDir ?? path.join(cwd, '.dare');
+  const meeseeksDir = options.meeseeksDir ?? path.join(cwd, '.meeseeks');
 
   const checks = [
     checkNodeVersion(options.nodeVersion ?? process.versions.node),
@@ -426,8 +426,8 @@ export function runPreflight(options) {
     checkCleanWorkingTree(probe),
     checkRemoteIsNotProduction(probe),
     checkNetwork(probe),
-    checkConfig(dareDir),
-    checkNoConcurrentRun(dareDir),
+    checkConfig(meeseeksDir),
+    checkNoConcurrentRun(meeseeksDir),
     checkSandboxAvailable(probe, options.sandbox ?? false),
     checkAgentSurface(cwd),
     checkDangerAcknowledged({ yes: options.yes ?? false, interactive: options.interactive ?? false }),

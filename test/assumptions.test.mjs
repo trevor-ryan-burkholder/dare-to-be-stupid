@@ -37,10 +37,10 @@ const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtur
 const temporaryDirs = [];
 
 /** @returns {string} */
-function makeDareDir() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-assumptions-'));
+function makeMeeseeksDir() {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-assumptions-'));
   temporaryDirs.push(dir);
-  return path.join(dir, '.dare');
+  return path.join(dir, '.meeseeks');
 }
 
 after(() => {
@@ -187,23 +187,23 @@ describe('parseAssumptions', () => {
 
 describe('the log', () => {
   it('reads an absent file as empty', () => {
-    assert.deepEqual(readAssumptions(makeDareDir()).entries, []);
+    assert.deepEqual(readAssumptions(makeMeeseeksDir()).entries, []);
   });
 
   it('appends with the iteration each assumption was made on', () => {
-    const dareDir = makeDareDir();
-    appendAssumptions(dareDir, 4, [GOOD]);
-    assert.deepEqual(readAssumptions(dareDir).entries, [{ iteration: 4, ...GOOD }]);
+    const meeseeksDir = makeMeeseeksDir();
+    appendAssumptions(meeseeksDir, 4, [GOOD]);
+    assert.deepEqual(readAssumptions(meeseeksDir).entries, [{ iteration: 4, ...GOOD }]);
   });
 
   it('is append-only: an earlier entry survives a later append', () => {
     // The value of the log is that it shows what was believed at the time. Rewriting an entry
     // would turn a record into a summary.
-    const dareDir = makeDareDir();
-    appendAssumptions(dareDir, 1, [{ cites: 'PRD-1.1', ambiguity: '', assumed: 'first' }]);
-    appendAssumptions(dareDir, 2, [{ cites: 'PRD-1.1', ambiguity: '', assumed: 'second' }]);
+    const meeseeksDir = makeMeeseeksDir();
+    appendAssumptions(meeseeksDir, 1, [{ cites: 'PRD-1.1', ambiguity: '', assumed: 'first' }]);
+    appendAssumptions(meeseeksDir, 2, [{ cites: 'PRD-1.1', ambiguity: '', assumed: 'second' }]);
     assert.deepEqual(
-      readAssumptions(dareDir).entries.map((entry) => entry.assumed),
+      readAssumptions(meeseeksDir).entries.map((entry) => entry.assumed),
       ['first', 'second'],
     );
   });
@@ -215,10 +215,10 @@ describe('the log', () => {
     ['no entries array', '{"version":1}'],
   ])) {
     it(`throws on ${label} rather than silently discarding a real log`, () => {
-      const dareDir = makeDareDir();
-      mkdirSync(dareDir, { recursive: true });
-      writeFileSync(path.join(dareDir, ASSUMPTIONS_FILE), body, 'utf8');
-      assert.throws(() => readAssumptions(dareDir), AssumptionsError);
+      const meeseeksDir = makeMeeseeksDir();
+      mkdirSync(meeseeksDir, { recursive: true });
+      writeFileSync(path.join(meeseeksDir, ASSUMPTIONS_FILE), body, 'utf8');
+      assert.throws(() => readAssumptions(meeseeksDir), AssumptionsError);
     });
   }
 });

@@ -97,7 +97,7 @@ the time. Delete it. Fails question 2.
 
 ### F6 — LOW, scope: the audit prompt itself
 
-Named seams already fixed by 0.35–0.73 and verified rather than found: `DARE_IGNORED_PATHS`
+Named seams already fixed by 0.35–0.73 and verified rather than found: `MEESEEKS_IGNORED_PATHS`
 covers `pins.json`, `assumptions.json`, `review.json`, plus `*.log` with the dogfood-run-4
 unlinked-inode story (`driver.mjs:1816–1837`), and the all-or-nothing ignore check became
 per-entry (`driver.mjs:1872–1876`) — the enumeration-bug pattern was found *and* fixed in this

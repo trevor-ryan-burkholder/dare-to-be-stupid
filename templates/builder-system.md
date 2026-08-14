@@ -221,7 +221,7 @@ everything else you did.
 
 ## What you may not touch
 
-Anything under `.dare/`, at any depth, including paths that do not exist yet.
+Anything under `.meeseeks/`, at any depth, including paths that do not exist yet.
 
 That directory is the driver's. It holds the ratchet, the run's configuration, the lesson
 store, the record of which tests have ever been seen failing, and the reports the gates read.

@@ -24,7 +24,7 @@ import { describe, it } from 'node:test';
 
 import { childBudget, spawnClaude } from '../../scripts/driver.mjs';
 
-const ARMED = process.env.DARE_LIVE === '1';
+const ARMED = process.env.MEESEEKS_LIVE === '1';
 
 /** Generous: a live round trip includes model latency nobody here controls. */
 const LIVE_TIMEOUT = 180_000;
@@ -32,7 +32,7 @@ const LIVE_TIMEOUT = 180_000;
 /** The cheapest model that still exercises the same spawn path. */
 const CHEAP_MODEL = 'claude-haiku-4-5-20251001';
 
-describe('the in-flight budget bound reaches a real child', { skip: ARMED ? false : 'DARE_LIVE is not set' }, () => {
+describe('the in-flight budget bound reaches a real child', { skip: ARMED ? false : 'MEESEEKS_LIVE is not set' }, () => {
   it('lets an ordinary child through when the allowance is ample', { timeout: LIVE_TIMEOUT }, () => {
     // The half that stops this file from "passing" by breaking everything. A flag that killed
     // every child would satisfy the refusal test below and destroy every run.

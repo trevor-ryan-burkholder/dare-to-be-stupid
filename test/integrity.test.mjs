@@ -30,7 +30,7 @@ import {
  * @returns {string} a throwaway repository root
  */
 function repo(contents = {}) {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-integrity-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-integrity-'));
   if (contents.pkg !== undefined) {
     const body = typeof contents.pkg === 'string' ? contents.pkg : JSON.stringify(contents.pkg, null, 2);
     writeFileSync(path.join(dir, 'package.json'), body, 'utf8');

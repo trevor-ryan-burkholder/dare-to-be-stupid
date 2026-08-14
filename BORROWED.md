@@ -1,6 +1,6 @@
 # Worth stealing
 
-A survey of adjacent projects and research, filtered to things `dare` does not already do
+A survey of adjacent projects and research, filtered to things `meeseeks` does not already do
 better. Ranked by value, with honest costs. Nothing here is committed — this is a menu.
 
 Sources at the bottom.
@@ -14,7 +14,7 @@ Sources at the bottom.
 **From:** *SCAFFOLD-CEGIS: Preventing Latent Security Degradation in LLM-Driven Iterative
 Code Refinement* (arXiv 2603.08520).
 
-This paper describes `dare`'s architecture and then describes how it fails. The finding
+This paper describes `meeseeks`'s architecture and then describes how it fails. The finding
 they call the **iterative refinement paradox**: specification drift during multi-objective
 optimisation causes security to degrade *gradually across iterations*. With GPT-4o,
 **43.7% of iteration chains contained more vulnerabilities than the baseline after ten
@@ -25,20 +25,20 @@ Two details that matter here specifically:
 - **A security gate does not fix it, and measurably makes it worse.** Adding SAST gating
   raised the latent degradation rate from 12.5% (unprotected baseline) to **20.8%**. The
   stated cause: static rules cannot see *structural* degradation — removal of defensive
-  logic, weakening of exception handling. `dare` currently has exactly this: `npm audit`
+  logic, weakening of exception handling. `meeseeks` currently has exactly this: `npm audit`
   plus a security auditor, per iteration, with no memory.
 - **Their fix is the ratchet.** They "enforce safety monotonicity through four-layer gated
   verification" and reach a 100% safety-monotonicity rate. That is the mechanism already at
   the centre of this design, pointed at a different property.
 
-**What it means for `dare`:** the ratchet is monotonic on *test ids* only. Security is
+**What it means for `meeseeks`:** the ratchet is monotonic on *test ids* only. Security is
 evaluated fresh each iteration and can silently erode. The fix uses machinery that already
 exists: when the security auditor cites a defensive element with `file:line` — an auth
 guard, an input validation, an exception handler — pin it. A later iteration that removes
 it is a regression, triggering the same `git reset --hard` and regression objective as a
 dropped test id.
 
-**Cost:** moderate. Needs a second pinned set in `.dare/state.json` and a way to re-check
+**Cost:** moderate. Needs a second pinned set in `.meeseeks/state.json` and a way to re-check
 pinned elements cheaply (grep for the guard, not a full audit). **Value:** highest on this
 page. It closes the one degradation path the design currently cannot see, using the one
 mechanism it already trusts.
@@ -51,12 +51,12 @@ mechanism it already trusts.
 Check, Not What You Requested* (arXiv 2606.28430).
 
 The framing: "a coding agent verifying its own patch still sits inside one incentive loop."
-`dare` already fixed the *review* half of this — the reviewer is a separate cold process.
+`meeseeks` already fixed the *review* half of this — the reviewer is a separate cold process.
 But the **builder still writes the tests the ratchet is built from.** The ratchet is
 rigorous about protecting ids; it has no opinion on whether those ids were worth having.
 An agent that writes its own checks builds to its own checks.
 
-**What it means for `dare`:** a held-out suite, authored in a separate `claude -p` from the
+**What it means for `meeseeks`:** a held-out suite, authored in a separate `claude -p` from the
 PRD alone, never shown to the builder, run only at gate time. Regressions against it count
 for the ratchet. The builder cannot satisfice against tests it has never read.
 
@@ -83,7 +83,7 @@ that is enforced by a reviewer *reading* the tests — an LLM judgment that cost
 iteration when it fires. Mutation testing is the deterministic form: mutate the source,
 confirm the tests fail. A tautological test survives every mutant, and that is a number.
 
-**What it means for `dare`:** moves the single most important quality property from Phase 5
+**What it means for `meeseeks`:** moves the single most important quality property from Phase 5
 judgment to a Phase 3 exit code, where it is free and unarguable.
 
 **Cost:** slow. Wants scoping to changed files, or a config flag, or running only when the
@@ -98,7 +98,7 @@ to a rule the project already believes in.
 
 **From:** GSD Core's plan step explicitly "verifies the plan fits a fresh context window."
 
-`dare` assembles Build Brief + PRD + design docs + retrieved lessons + conditional history,
+`meeseeks` assembles Build Brief + PRD + design docs + retrieved lessons + conditional history,
 and that input **grows across iterations** with nothing checking it. This is the project's
 favourite bug class: silent degradation, no failure signal, the builder just quietly worse
 around iteration 12. Measure the assembled prompt before spawn; fail loud or trim by
@@ -133,13 +133,13 @@ special-case three fixed inputs, but not an invariant over generated ones. Worth
 ## Tier 3 — considered, probably already covered
 
 - **Structured remediation instead of binary fail** (OuroLoop): failures return a diagnosis
-  and a suggested correction strategy rather than a bare verdict. `dare`'s objective/Build
+  and a suggested correction strategy rather than a bare verdict. `meeseeks`'s objective/Build
   Brief mechanism already does this; the `no-tests` brief is exactly the pattern. Nothing to
   take.
 - **Two-stage review — spec compliance, then code quality** (Superpowers, ~820k installs):
-  `dare`'s three-way specialised panel is a finer-grained version of the same idea. Nothing
+  `meeseeks`'s three-way specialised panel is a finer-grained version of the same idea. Nothing
   to take.
-- **Fresh subagent per task** (Superpowers, GSD, ECC all converge here): `dare` uses a fresh
+- **Fresh subagent per task** (Superpowers, GSD, ECC all converge here): `meeseeks` uses a fresh
   OS process per phase, which is strictly stronger isolation. Nothing to take.
 
 ---
@@ -150,11 +150,11 @@ special-case three fixed inputs, but not an invariant over generated ones. Worth
   historical performance can drift *downward*. That is a direct violation of **nothing
   defaults to pass**, and it would make the gates negotiable by the thing they constrain.
   This is the same category as letting the builder edit `state.json`.
-- **Multi-runtime installers** (GSD, ECC, Superpowers all ship them). `dare` is Claude Code
+- **Multi-runtime installers** (GSD, ECC, Superpowers all ship them). `meeseeks` is Claude Code
   only on purpose; portability is a tax on the guard hook and the envelope parser, both of
   which are version-pinned by design.
 - **An interactive discussion phase** (GSD's "Discuss"). Unattended is the premise.
-- **Cooperative parallel waves** (GSD). `dare`'s race is competitive on the *same* task;
+- **Cooperative parallel waves** (GSD). `meeseeks`'s race is competitive on the *same* task;
   waves split *different* tasks and buy merge-conflict surface. Different problem.
 - **Changesets** (GSD). `release-check` is better tuned to the plugin-cache trap that
   actually cost hours here.
@@ -164,10 +164,10 @@ special-case three fixed inputs, but not an invariant over generated ones. Worth
 ## Validation, not a change
 
 The emerging vocabulary calls this **loop engineering**: a bounded artifact made of a
-trigger, a goal, a verification step, a stopping rule, and a memory. `dare` has all five —
-`/dare`, the PRD, gates plus the panel, the terminal states, and the ratchet plus lessons.
+trigger, a goal, a verification step, a stopping rule, and a memory. `meeseeks` has all five —
+`/meeseeks`, the PRD, gates plus the panel, the terminal states, and the ratchet plus lessons.
 
-GSD Core's central thesis is **context rot**, quality decaying as a window fills. `dare` is
+GSD Core's central thesis is **context rot**, quality decaying as a window fills. `meeseeks` is
 immune by construction: every phase is a fresh process, not a fresh subagent.
 
 Worth knowing mostly because it means the remaining risk is not architectural. It is in the
@@ -189,7 +189,7 @@ stops when all are true.
 
 Ralph lets the *builder* set `passes` — which is precisely the hole this project exists to
 close, so that half is validation, not a steal. But the underlying idea is sound and
-currently missing: **Dare re-litigates every requirement, every iteration, at full cold-panel
+currently missing: **Meeseeks re-litigates every requirement, every iteration, at full cold-panel
 cost.** A requirement a cold reviewer already passed with `file:line` evidence is re-argued
 from scratch on iteration 12 for no reason.
 
@@ -208,7 +208,7 @@ carried pass. Pinned requirements are driver-owned, therefore sealed under A1.
 **From:** Karpathy guidelines, principle 3.
 
 The most precisely articulated version of a rule `templates/builder-system.md` already
-gestures at. Worth taking close to verbatim, because in Dare an unnecessary diff is not a
+gestures at. Worth taking close to verbatim, because in Meeseeks an unnecessary diff is not a
 style problem — it is regression surface, and a regression costs a full iteration plus a
 hard reset:
 
@@ -277,8 +277,8 @@ always-loaded "rules" from on-demand "skills" is the right shape to copy at smal
 
 ## R7. Small items
 
-- **Per-run archiving** (Ralph archives to `archive/YYYY-MM-DD-feature/`). Dare overwrites
-  `.dare` state per run. Archiving instead of overwriting costs almost nothing and makes the
+- **Per-run archiving** (Ralph archives to `archive/YYYY-MM-DD-feature/`). Meeseeks overwrites
+  `.meeseeks` state per run. Archiving instead of overwriting costs almost nothing and makes the
   C2 run manifest genuinely forensic rather than only current.
 - **Arm the impeccable gate from the `web-ui` capability** (B5). `DESIGN.md` §5.1 currently
   skips `gate:design-slop` via an ad-hoc frontend check; the capability model makes that a
@@ -356,7 +356,7 @@ working and being deleted.
 Two independent reasons, either sufficient on its own.
 
 **The target does not move.** A hypothesis loop *discovers* its objective function; that is the
-whole point of one. Dare's is declared in the PRD, and every invariant in the design exists to
+whole point of one. Meeseeks's is declared in the PRD, and every invariant in the design exists to
 hold it still — the cold reviewer, the guard hook, the monotonic ratchet, nothing defaults to
 pass. A loop permitted to hypothesise about what it is building is R8's rejected pattern with a
 research vocabulary. This is the general case of the self-improving thresholds rejected in round
@@ -418,7 +418,7 @@ RED evidence narrow it. Neither closes it.
 **Outcome, 13 August 2026 — built, and the shipped design is not the sketch above.** What landed
 at 0.70.0–0.72.0 (`DESIGN.md` §4.6, `scripts/oracle.mjs`): deterministic **argv-and-stdout
 cases**, not a test suite — no runner config for the builder to own, which with §4.4's
-driver-owned-threshold move is what dissolved obstacle 1. Cases live under `.dare/` (driver-owned
+driver-owned-threshold move is what dissolved obstacle 1. Cases live under `.meeseeks/` (driver-owned
 by §6's positional rule) and are **not supplied** rather than sealed — §6.1's distinction, stated
 in `oracle.mjs`'s own header. Authored in Phase 0b from the PRD alone, before design, under a
 dedicated `oracle-author` phase whose `allowedTools` is the empty set; authoring failure **ends
@@ -504,7 +504,7 @@ Observed in two consecutive runs before the mechanism had a name.
 - **Asynchronous agents writing shared state.** The paper's own mechanism condemns it — that is
   *more* handoffs — and a shared writable store with no single owner is §6's defect at scale: a
   process that can write the evidence it is judged by is not being judged.
-- **"A shared verified context."** Not rejected, already built: `.dare/` is that store, and §8.1
+- **"A shared verified context."** Not rejected, already built: `.meeseeks/` is that store, and §8.1
   states the principle outright — *"The repository and the driver's own artifacts are the memory.
   A child's conversation is disposable."* The blackboard is not an alternative to the coordinator
   here; the coordinator is what makes it trustworthy.
@@ -547,7 +547,7 @@ permutation invariance catches run 12's defect *without anyone having thought of
 
 The harness barely changes: an `OracleCase` today is argv plus expected output; a **relation case**
 is two argv-plus-transform pairs and a comparison, still deterministic, still exit-code-and-stdout,
-still sealed under `.dare/`. One schema extension in `oracle.mjs`, one section in
+still sealed under `.meeseeks/`. One schema extension in `oracle.mjs`, one section in
 `templates/oracle-author.md` teaching the five standard relation shapes (permute, scale, duplicate,
 subset, identity-merge). The literature is deep if wanted — Chen et al.'s survey is canonical and
 there is active work applying MT to generated code specifically — but the mechanism needs none of

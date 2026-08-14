@@ -119,17 +119,17 @@ function validateStoredLesson(value) {
 }
 
 /**
- * Read `.dare/lessons.json`.
+ * Read `.meeseeks/lessons.json`.
  *
  * Never throws. A missing file is a run that has not learned anything; a broken one is a
  * run that has lost what it learned, which is a warning rather than a stop (see the module
  * comment — nothing that decides pass or fail reads this file).
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @returns {{ store: LessonStore, problem: string | null }}
  */
-export function readLessons(dareDir) {
-  const file = path.join(dareDir, STORE_FILE);
+export function readLessons(meeseeksDir) {
+  const file = path.join(meeseeksDir, STORE_FILE);
   if (!existsSync(file)) return { store: emptyStore(), problem: null };
 
   /** @type {unknown} */
@@ -176,15 +176,15 @@ export function readLessons(dareDir) {
 }
 
 /**
- * Write `.dare/lessons.json` atomically.
+ * Write `.meeseeks/lessons.json` atomically.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @param {LessonStore} store
  * @returns {string} the path written
  */
-export function saveLessons(dareDir, store) {
-  mkdirSync(dareDir, { recursive: true });
-  const file = path.join(dareDir, STORE_FILE);
+export function saveLessons(meeseeksDir, store) {
+  mkdirSync(meeseeksDir, { recursive: true });
+  const file = path.join(meeseeksDir, STORE_FILE);
   const temporary = `${file}.tmp`;
   const payload = {
     version: STORE_VERSION,

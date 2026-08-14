@@ -24,7 +24,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { describe, it } from 'node:test';
 
-const ARMED = process.env.DARE_LIVE === '1';
+const ARMED = process.env.MEESEEKS_LIVE === '1';
 
 /**
  * @param {string} command
@@ -34,7 +34,7 @@ function versionOf(command) {
   return execFileSync(command, ['--version'], { encoding: 'utf8', stdio: 'pipe' }).trim();
 }
 
-describe('the binary under test', { skip: ARMED ? false : 'DARE_LIVE is not set' }, () => {
+describe('the binary under test', { skip: ARMED ? false : 'MEESEEKS_LIVE is not set' }, () => {
   it('is the same `claude` the driver would spawn, not one npm put on the PATH', () => {
     // The driver calls `shell('claude', …)` with the operator's environment. Resolve the same
     // way a login shell does, deliberately stripping the node_modules/.bin entries npm injected.

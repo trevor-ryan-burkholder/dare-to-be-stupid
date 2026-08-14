@@ -191,9 +191,9 @@ export const dotnetToolchain = {
 
     // Verified: exit 0 with 2 passed and 1 skipped, exit 1 with a failure. The logger argument
     // carries its own semicolon and is one argv element — there is no shell here to split it.
-    /** @param {{ dareDir: string }} context */
-    unit: ({ dareDir }) =>
-      command(['dotnet', 'test', '--logger', `trx;LogFileName=${TRX_REPORT}`, '--results-directory', dareDir]),
+    /** @param {{ meeseeksDir: string }} context */
+    unit: ({ meeseeksDir }) =>
+      command(['dotnet', 'test', '--logger', `trx;LogFileName=${TRX_REPORT}`, '--results-directory', meeseeksDir]),
 
     // Not written, because it cannot be verified here. Playwright for .NET is a per-project
     // package with its own install step rather than anything the SDK ships, so there is no

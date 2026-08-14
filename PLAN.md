@@ -359,7 +359,7 @@ answer and closes the item just as well.
 ### 18. Improve-mode cost concentration — OPEN, **PREPARED** (`DOGFOOD.md` operator queue)
 Segment one cost 7× segment two on a four-file repository. Measure on something mid-sized
 before improve mode meets a real codebase; outcome is either a fix or written budget guidance
-in `commands/dare.md`.
+in `commands/meeseeks.md`.
 
 ### 19. Deploy's ssh half — DONE (live-verified 13 Aug against a real droplet)
 Argv nobody has run (`HANDOFF.md`, queue item 4 boundary). Live-verify it once, or mark it
@@ -387,7 +387,7 @@ Prerequisites named in `HANDOFF.md`: pin `hooks/guard.mjs` as a security element
 and the `CLAUDE.md` scope note is the operator's call to suspend — nobody else's.
 
 **The engineering prerequisites are now met (0.107.0); the decision is still not mine.**
-`extraGates` in protected `.dare/config.json` makes `release-check` declarable as a required gate
+`extraGates` in protected `.meeseeks/config.json` makes `release-check` declarable as a required gate
 named `operator:release-check`, so a builder editing `scripts/` without bumping now fails an
 iteration instead of breaking the install-cache invariant silently. **Both remaining blockers are
 the operator's:** suspending the `CLAUDE.md` scope note, and deciding to run at all.
@@ -418,7 +418,7 @@ the plan.
 **Two real gaps found, both from 0.88.0–0.94.0 and both user-facing.** `protected-guard` — a
 whole deny category — appeared in **no** document: README said the guard "denies four
 categories" and listed four, `DESIGN.md` §6 never named it, and `CLAUDE.md`'s invariant *titled*
-"the guard hook is not editable by what it guards" described only `.dare/` in its body. All
+"the guard hook is not editable by what it guards" described only `.meeseeks/` in its body. All
 three fixed. README's `qualityPlugins` default was also stale by one plugin.
 
 Two new invariants written into `CLAUDE.md`, because both are load-bearing and both are easy to

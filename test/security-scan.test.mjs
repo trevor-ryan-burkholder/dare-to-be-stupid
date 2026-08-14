@@ -26,7 +26,7 @@ const temporaryDirs = [];
  * @returns {string}
  */
 function makeRepo(files) {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-scan-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-scan-'));
   temporaryDirs.push(dir);
   for (const [relative, contents] of Object.entries(files)) {
     const full = path.join(dir, relative);
@@ -136,7 +136,7 @@ describe('allowed: instruction-file neighbours', () => {
   const allowed = [
     { 'CLAUDE.md': 'Follow the instructions in DESIGN.md before writing code.\n' },
     { 'CLAUDE.md': 'Do not ignore failing tests.\n' },
-    { 'CLAUDE.md': 'Previous iterations are recorded in .dare/bloopers.log.\n' },
+    { 'CLAUDE.md': 'Previous iterations are recorded in .meeseeks/bloopers.log.\n' },
     { 'AGENTS.md': 'Run `npm test` and read the output above.\n' },
     // The same words outside an instruction file are prose, not a directive to an agent.
     { 'docs/threat-model.md': 'An attacker might tell the agent to ignore all previous instructions.\n' },

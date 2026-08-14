@@ -25,7 +25,7 @@ const temporaryDirs = [];
  * @returns {string}
  */
 function makeProject(files = {}) {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-plugins-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-plugins-'));
   temporaryDirs.push(dir);
   for (const [relative, contents] of Object.entries(files)) {
     const full = path.join(dir, relative);

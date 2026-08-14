@@ -1,7 +1,7 @@
 /**
  * Agent-config security scan (DESIGN.md §3.6).
  *
- * The guard hook is *runtime* safety. This is the static, pre-run half. `dare` runs
+ * The guard hook is *runtime* safety. This is the static, pre-run half. `meeseeks` runs
  * `--dangerously-skip-permissions` unattended, which means it trusts the repo it is
  * pointed at: a poisoned `CLAUDE.md`, a malicious PreToolUse hook, a rogue MCP server or
  * a committed credential could hijack or exfiltrate through the builder long before the

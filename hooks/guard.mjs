@@ -6,7 +6,7 @@
  * of permission mode, which makes this the only reliable place to put a limit.
  *
  * Blocked categories, and nothing else:
- *   1. protected-state — any mutation of any path under `.dare/`, **while inside a run**.
+ *   1. protected-state — any mutation of any path under `.meeseeks/`, **while inside a run**.
  *      A run does not write the state or evidence it is judged by. Outside a run there is
  *      no constrained process, and the operator may edit their own configuration from
  *      wherever they like — including from inside Claude Code, which is the only place some
@@ -14,7 +14,7 @@
  *   2. git-history    — `git push --force`, `rebase`, `filter-branch`, `reflog expire`.
  *      Recovery stays possible.
  *   3. rm-recursive   — recursive `rm` outside the temp directory.
- *   4. nested-dare    — a builder invoking `/dare`. CLAUDE.md invariant "No nesting";
+ *   4. nested-meeseeks    — a builder invoking `/meeseeks`. CLAUDE.md invariant "No nesting";
  *      DESIGN.md §13.6 requires this at the hook as well as at the driver.
  *
  * Only category 1 is scoped to a run. The other three are refused to everyone: none of
@@ -28,7 +28,7 @@
  * stamping an "allow" over it. Exit code is 0 either way.
  *
  * Scope assumptions, recorded rather than guessed at silently:
- *   - The protected set is the whole `.dare/` tree, not an enumerated list of basenames.
+ *   - The protected set is the whole `.meeseeks/` tree, not an enumerated list of basenames.
  *     Enumeration left `red-evidence.json` writable, and that file is what makes
  *     RED-before-GREEN mean anything: a builder that can write it can manufacture the proof
  *     that its own test was once failing.
@@ -71,7 +71,7 @@ function deny(rule, reason) {
 const PATH_KEY_RE = /(^|_)path$|Path$/;
 
 /**
- * A `.dare` path component on its own. The whole runtime directory is protected.
+ * A `.meeseeks` path component on its own. The whole runtime directory is protected.
  *
  * This used to be an enumerated list of three basenames — `state.json`, `config.json`,
  * `lessons.json`. Enumeration was the bug, and `red-evidence.json` is the proof of it: that
@@ -82,13 +82,13 @@ const PATH_KEY_RE = /(^|_)path$|Path$/;
  * what the ratchet reads to decide whether anything regressed. Neither was on the list, and
  * every future driver-owned artifact would have had to be remembered onto it.
  *
- * The rule is now positional rather than nominal: anything under a `.dare` directory is
+ * The rule is now positional rather than nominal: anything under a `.meeseeks` directory is
  * state or evidence owned by the driver, and the process being judged does not write it.
  */
-const DARE_DIR_RE = /(^|[^\w.-])\.dare(?![\w.-])/;
+const MEESEEKS_DIR_RE = /(^|[^\w.-])\.meeseeks(?![\w.-])/;
 
-/** The `/dare` slash command as a standalone word. */
-const SLASH_DARE_RE = /(^|\s)\/dare(\s|$)/;
+/** The `/meeseeks` slash command as a standalone word. */
+const SLASH_MEESEEKS_RE = /(^|\s)\/meeseeks(\s|$)/;
 
 // ---------------------------------------------------------------------------
 // Shell tokenizer
@@ -305,14 +305,14 @@ function commandName(segment) {
 }
 
 /**
- * Does this path land anywhere inside a `.dare` directory?
+ * Does this path land anywhere inside a `.meeseeks` directory?
  *
  * Resolved first, so `..` cannot walk into one and a relative path is judged against the
- * working directory the tool call actually ran in. Depth is not bounded: `.dare/briefs/
- * iter-004.md` and `.dare/reports/unit.json` are as protected as `.dare/state.json`, and a
+ * working directory the tool call actually ran in. Depth is not bounded: `.meeseeks/briefs/
+ * iter-004.md` and `.meeseeks/reports/unit.json` are as protected as `.meeseeks/state.json`, and a
  * directory the driver has not invented yet is protected on the day it appears.
  *
- * Matching is on whole path segments, so a sibling named `.dare-notes` is untouched.
+ * Matching is on whole path segments, so a sibling named `.meeseeks-notes` is untouched.
  *
  * @param {string} candidate
  * @param {string} cwd
@@ -321,7 +321,7 @@ function commandName(segment) {
 export function isProtectedStatePath(candidate, cwd) {
   if (candidate.length === 0) return false;
   const resolved = path.resolve(cwd, candidate);
-  return resolved.split(/[\\/]/).includes('.dare');
+  return resolved.split(/[\\/]/).includes('.meeseeks');
 }
 
 /**
@@ -339,7 +339,7 @@ const GUARD_MANIFEST = path.join(path.dirname(GUARD_FILE), 'hooks.json');
  * Is this path the guard itself?
  *
  * `CLAUDE.md`'s invariant reads *"the guard hook is not editable by what it guards"*. That was
- * true of `.dare/` and **false of the guard**: the positional rule protected the run's evidence
+ * true of `.meeseeks/` and **false of the guard**: the positional rule protected the run's evidence
  * and nothing protected the file deciding what a run may do. A builder holding
  * `--dangerously-skip-permissions` could rewrite its own constraint, and no required id would
  * have noticed.
@@ -365,7 +365,7 @@ export function isProtectedGuardPath(candidate, cwd) {
  * the hook has no dependency on the driver: hooks run from an install cache and must work
  * even when nothing else of the plugin is loadable.
  */
-const RUN_MARKER_ENV = 'DARE_RUNNING';
+const RUN_MARKER_ENV = 'MEESEEKS_RUNNING';
 
 /**
  * Is this tool call happening inside a run?
@@ -376,9 +376,9 @@ const RUN_MARKER_ENV = 'DARE_RUNNING';
  * its configuration or its lesson store is not constrained by any of them.
  *
  * An operator is not that process. Before this distinction existed the rule was
- * unconditional, which meant nobody could change `.dare/config.json` from inside Claude
+ * unconditional, which meant nobody could change `.meeseeks/config.json` from inside Claude
  * Code at any time, and `HANDOFF.md`'s own instruction to delete a useless
- * `.dare/lessons.json` was impossible to carry out. The fix for that must not be "ask the
+ * `.meeseeks/lessons.json` was impossible to carry out. The fix for that must not be "ask the
  * human to leave the agent and run a command", because a plugin that offloads its own work
  * onto a terminal has not done the work.
  *
@@ -396,7 +396,7 @@ export function insideRun(env) {
 }
 
 const PROTECTED_REASON =
-  'references the .dare runtime directory. It holds the ratchet, the configuration, the RED evidence, the ' +
+  'references the .meeseeks runtime directory. It holds the ratchet, the configuration, the RED evidence, the ' +
   'archived briefs and the test reports — the state and evidence a run is judged by, which the run does not ' +
   'write (DESIGN.md §6). Read them with the Read tool, which is not hooked.';
 
@@ -407,7 +407,7 @@ const PROTECTED_REASON =
  * whitelist that fails open on the case nobody thought of — `cp`, `tee`, `sed -i`, `>`,
  * `mv`, a heredoc, `python -c`. So the whole directory is off limits from Bash inside a run,
  * reads included, and the collateral is deliberate: the Read tool is not matched by
- * `hooks.json`, so reading `.dare` remains possible by the route that cannot also write it.
+ * `hooks.json`, so reading `.meeseeks` remains possible by the route that cannot also write it.
  *
  * The builder does not need the shell route regardless. Its brief arrives in the prompt,
  * not from disk.
@@ -417,12 +417,12 @@ const PROTECTED_REASON =
  * @returns {Decision}
  */
 function checkProtectedState(command, segments) {
-  if (DARE_DIR_RE.test(command)) {
+  if (MEESEEKS_DIR_RE.test(command)) {
     return deny('protected-state', `Command ${PROTECTED_REASON}`);
   }
   for (const segment of segments) {
     for (const token of segment) {
-      if (DARE_DIR_RE.test(token.value)) {
+      if (MEESEEKS_DIR_RE.test(token.value)) {
         return deny('protected-state', `Command ${PROTECTED_REASON}`);
       }
     }
@@ -552,7 +552,7 @@ function checkRecursiveRemove(segments, cwd) {
 }
 
 const NESTED_REASON =
-  'dare does not spawn dare. Nested runs are blocked at the driver and at the hook (CLAUDE.md invariant, DESIGN.md §13.6). ' +
+  'meeseeks does not spawn meeseeks. Nested runs are blocked at the driver and at the hook (CLAUDE.md invariant, DESIGN.md §13.6). ' +
   'This is a TEXT match, not a detected invocation: the rule scans command position including heredoc bodies, so a commit ' +
   'message or a here-doc that merely mentions the command is refused too. That is deliberate - a heredoc can carry a script - ' +
   'and it has now caught an operator writing prose about this project three times. If that is what happened, reword rather ' +
@@ -578,21 +578,21 @@ const SHELL_INVOKERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
  * @param {Token[][]} segments
  * @returns {Decision}
  */
-function checkNestedDare(segments) {
+function checkNestedRun(segments) {
   for (const raw of segments) {
     const segment = stripPrefixes(raw);
     if (segment.length === 0) continue;
 
     const name = commandName(segment);
     const first = segment[0].value;
-    if (name === 'dare' || first === '/dare' || SLASH_DARE_RE.test(first)) {
-      return deny('nested-dare', NESTED_REASON);
+    if (name === 'meeseeks' || first === '/meeseeks' || SLASH_MEESEEKS_RE.test(first)) {
+      return deny('nested-meeseeks', NESTED_REASON);
     }
 
     if (name !== 'claude') continue;
     for (const token of segment.slice(1)) {
-      if (token.value === '/dare' || SLASH_DARE_RE.test(token.value)) {
-        return deny('nested-dare', NESTED_REASON);
+      if (token.value === '/meeseeks' || SLASH_MEESEEKS_RE.test(token.value)) {
+        return deny('nested-meeseeks', NESTED_REASON);
       }
     }
   }
@@ -626,7 +626,7 @@ function wrappedCommands(segments) {
  * Every token is resolved as a path and compared, rather than pattern-matched: the rule is
  * positional like `protected-state`, and for anything other than this repository no token can
  * resolve to it. Reads are refused along with writes for the same reason `protected-state`
- * refuses `cat .dare/config.json` — a shell string cannot be told apart from a write reliably,
+ * refuses `cat .meeseeks/config.json` — a shell string cannot be told apart from a write reliably,
  * and a rule that fails open on the first heredoc is worse than a blunt one. The Read tool is
  * not hooked, so reading the guard is still available by the ordinary route.
  *
@@ -682,7 +682,7 @@ export function checkBashCommand(command, cwd, options = {}) {
   const checks = [
     running ? checkProtectedState(command, segments) : ALLOW,
     running ? checkProtectedGuard(command, segments, cwd) : ALLOW,
-    checkNestedDare(segments),
+    checkNestedRun(segments),
     checkGitHistory(segments),
     checkRecursiveRemove(segments, cwd),
   ];
@@ -716,7 +716,7 @@ function checkToolPaths(toolInput, cwd) {
     if (isProtectedStatePath(value, cwd)) {
       return deny(
         'protected-state',
-        `${value} is inside the .dare runtime directory. A run does not write the state or evidence it is ` +
+        `${value} is inside the .meeseeks runtime directory. A run does not write the state or evidence it is ` +
           'judged by (DESIGN.md §6). Reading it is fine; the Read tool is not hooked.',
       );
     }
@@ -777,7 +777,7 @@ export function renderDecision(decision) {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: `[dare:${decision.rule}] ${decision.reason}`,
+      permissionDecisionReason: `[meeseeks:${decision.rule}] ${decision.reason}`,
     },
   })}\n`;
 }

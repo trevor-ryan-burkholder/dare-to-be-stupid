@@ -51,7 +51,7 @@ Statuses:
 
 ---
 
-You are modifying the `dare-to-be-stupid` Claude Code plugin. Treat this as an existing
+You are modifying the `meeseeks` Claude Code plugin. Treat this as an existing
 autonomous software-delivery harness with strong invariants, not a greenfield agent framework.
 
 ## Before making changes
@@ -61,7 +61,7 @@ autonomous software-delivery harness with strong invariants, not a greenfield ag
 3. Read `BORROWED.md` — the research behind A2, A3, A4, C4 and D2
 4. Read `scripts/driver.mjs`, then all scripts under `scripts/`
 5. Read `hooks/guard.mjs` and all templates under `templates/`
-6. Inspect the current test suite and the `.dare` runtime files
+6. Inspect the current test suite and the `.meeseeks` runtime files
 7. Compare documented behaviour against actual implementation
 
 **This brief has been reconciled once but is not self-verifying.** Where it and the repository
@@ -80,47 +80,47 @@ item below explicitly calls for one.
 
 # A. Integrity and evidence
 
-## A1. Protect all `.dare/**` runtime state — **DONE (0.10.0)**
+## A1. Protect all `.meeseeks/**` runtime state — **DONE (0.10.0)**
 
-`hooks/guard.mjs` protects the whole `.dare` tree positionally, not by enumerated basename,
-scoped to `DARE_RUNNING`. `test/guard.test.mjs:334–353` is already the forgery-regression suite
-the original brief asked for: Write, Edit, `>`, `tee`, `cp`, `python3 -c`, and `cd .dare`
+`hooks/guard.mjs` protects the whole `.meeseeks` tree positionally, not by enumerated basename,
+scoped to `MEESEEKS_RUNNING`. `test/guard.test.mjs:334–353` is already the forgery-regression suite
+the original brief asked for: Write, Edit, `>`, `tee`, `cp`, `python3 -c`, and `cd .meeseeks`
 without ever spelling the path.
 
-> **Correction.** The original claimed `.dare/red-evidence.json` might still be writable and
+> **Correction.** The original claimed `.meeseeks/red-evidence.json` might still be writable and
 > called that the highest-priority defect on the page. It is not writable. Enumeration *was*
 > the bug and `red-evidence.json` *was* the proof of it — that is why the rule is positional
 > now, and the reasoning is in `guard.mjs`'s header.
 
 ## A1a. Two places still state the old, weaker rule — **DONE (0.19.0)**
 
-`templates/builder-system.md:145` says the untouchable set is `.dare/state.json` and
-`.dare/config.json`. `brief.mjs:194–195` says `state.json`, `config.json` and `lessons.json`,
+`templates/builder-system.md:145` says the untouchable set is `.meeseeks/state.json` and
+`.meeseeks/config.json`. `brief.mjs:194–195` says `state.json`, `config.json` and `lessons.json`,
 and that one is worse because it is compiled into every brief the builder actually reads. It has
 been the entire tree since 0.10.0.
 
 The builder is being told a weaker rule than the hook enforces, which costs an iteration the
 first time it tries something the guard denies and it had no reason to expect. Fix both, and
-state the rule positionally — anything under `.dare` — so the next artifact does not have to be
+state the rule positionally — anything under `.meeseeks` — so the next artifact does not have to be
 remembered onto a list. That is the same defect at the documentation layer that the enumerated
 basenames were at the enforcement layer.
 
-**Landed 0.19.0.** Both places now say "anything under `.dare/`, at any depth, including paths
+**Landed 0.19.0.** Both places now say "anything under `.meeseeks/`, at any depth, including paths
 that do not exist yet" and name **no file at all**. Three tests hold it: the brief and the
-template each assert `match(/`\.dare\/[\w-]+\.json`/g)` is `null`, so re-introducing a filename
+template each assert `match(/`\.meeseeks\/[\w-]+\.json`/g)` is `null`, so re-introducing a filename
 fails rather than merely reading oddly; and one test pairs the brief against
-`isProtectedStatePath`, showing `.dare/red-evidence.json` is absent from the wording and denied
+`isProtectedStatePath`, showing `.meeseeks/red-evidence.json` is absent from the wording and denied
 anyway. The wording is now a *description* of the enforced rule rather than a second, weaker rule.
 
-## A2. Classify `.dare` artifacts — **DONE (docs only, at 0.19.0)**
+## A2. Classify `.meeseeks` artifacts — **DONE (docs only, at 0.19.0)**
 
 The original asked for `readable` and `sealed`, where sealed meant unreadable by any child marked
-`DARE_RUNNING`. **Sealing reads is not achievable. The item is replaced, not deferred.**
+`MEESEEKS_RUNNING`. **Sealing reads is not achievable. The item is replaced, not deferred.**
 
 Two reasons, either sufficient on its own:
 
 - **The builder executes arbitrary code.** It runs `--dangerously-skip-permissions` and it writes
-  the test suite. `readFileSync('.dare/anything')` inside a test file is read at *runtime*, and
+  the test suite. `readFileSync('.meeseeks/anything')` inside a test file is read at *runtime*, and
   PreToolUse hooks fire on tool calls — not on what the code a builder wrote goes on to do. There
   is no hook position that sees it.
 - **The read surface cannot be enumerated.** Write-protection became sound when it stopped naming
@@ -162,7 +162,7 @@ Three findings, and only the third was work:
    read route and stopping at `Read`/`Glob`/`Grep` is the enumeration the item warns about.
 3. **§1.1 was claiming a discipline as a fact.** "It does **not** receive the build log,
    iteration history, or any hint that an agent wrote the code" reads as enforced and is not: a
-   read-only reviewer in a repository containing `.dare/briefs/iter-003.md` can open it. Now
+   read-only reviewer in a repository containing `.meeseeks/briefs/iter-003.md` can open it. Now
    labelled *not supplied* with the framing argument that actually carries the weight. This is
    the highest-value application of the new vocabulary and it was not on the item's list.
 
@@ -269,7 +269,7 @@ resolve, and it is the whole difference between this and a threshold that drifts
 The builder cannot reach any of it: the reviewer is a separate cold child, and the state is
 driver-owned under A1.
 
-**Landed 0.29.0 in full**, mechanism and wiring. `scripts/pins.mjs`, `.dare/pins.json`, a new
+**Landed 0.29.0 in full**, mechanism and wiring. `scripts/pins.mjs`, `.meeseeks/pins.json`, a new
 `security-escalation` phase in `PHASE_PERMISSIONS`, `DESIGN.md` §4.3. 47 unit tests on the
 mechanism plus 8 on the driver wiring.
 
@@ -337,7 +337,7 @@ the item's plan would have shipped a gate that could never fail.** Verified agai
 So the gate's failure condition lives in a *file*. Had that been the project's `stryker.config`,
 **the builder would own whether the gate can ever fail** — which is defect 1 of A3, arriving
 through a different door. `stryker run` takes a config path positionally, so the driver writes
-`.dare/stryker.config.json` and passes it, and §6 puts it beyond the builder's reach.
+`.meeseeks/stryker.config.json` and passes it, and §6 puts it beyond the builder's reach.
 
 Everything else landed as decided. Two additions the item did not specify:
 
@@ -366,7 +366,7 @@ the ones that look fine but prove nothing.
 > project's linter can be configured not to run, and the check would be negotiable by the thing it
 > constrains.
 
-Put it in `integrity.mjs`, where dare runs the check and the project's configuration is never
+Put it in `integrity.mjs`, where meeseeks runs the check and the project's configuration is never
 consulted. That module already walks the tree (`nocheckedFiles`) and already has the right
 philosophy — deny the known cheat, do not allowlist the known tool.
 
@@ -430,7 +430,7 @@ rather than carries; the full panel still runs before a `SHIPPED` verdict. Pinne
 are driver-owned. The Ralph design where the *builder* marks its own stories complete is
 exactly what this must not become.
 
-> **Correction — the cost premise was false.** The original said Dare "re-litigates every
+> **Correction — the cost premise was false.** The original said Meeseeks "re-litigates every
 > requirement at full cold-panel cost, every iteration." Phase 5 sits behind
 > `if (!gateOutcome.ok) continue` (`driver.mjs:1158`) and behind the ratchet's reset and reject
 > paths. An iteration that fails a gate never pays for a reviewer.
@@ -497,7 +497,7 @@ own work**. Declaring an ambiguity is not an assessment. State that distinction 
 
 A new output contract whose behaviour another binary owns, so it needs a **tier-3 live check**.
 
-**Landed 0.30.0.** `scripts/assumptions.mjs`, `.dare/assumptions.json`, a new section in
+**Landed 0.30.0.** `scripts/assumptions.mjs`, `.meeseeks/assumptions.json`, a new section in
 `builder-system.md`, the log rendered into every reviewer prompt, `DESIGN.md` §8.3. 41 tests.
 
 The correction was right about the shape and the cost. Three things it did not specify:
@@ -523,7 +523,7 @@ builder emitting a block on *every* iteration because being asked implies an exp
 second is the one that matters, since it fills the reviewer's context with generalities. Exact
 command, ready to run:
 
-    DARE_LIVE=1 npm run test:live
+    MEESEEKS_LIVE=1 npm run test:live
 
 Expect a few cents. If the block appears where nothing was ambiguous, the fix is the template,
 not the parser.
@@ -534,7 +534,7 @@ not the parser.
 
 ## B1. Project capability manifest — **DONE (0.11.0, 0.12.0)**
 
-`scripts/capabilities.mjs`, `.dare/capabilities.json`, declared ∪ detected, closed vocabulary,
+`scripts/capabilities.mjs`, `.meeseeks/capabilities.json`, declared ∪ detected, closed vocabulary,
 `UNDETECTABLE` recording why `library` has no detector. `DESIGN.md` §3.7, `HANDOFF.md` item 1.
 
 The original proposed a `testKinds` field. The repository derives gate requirements from
@@ -543,7 +543,7 @@ truth for the same fact. Do not add it.
 
 **`PRODUCT.md` reconciliation — DECIDED 11 August 2026.** Split by question, not by file.
 
-- `.dare/capabilities.json` owns what the software **does**: closed vocabulary, arms gates,
+- `.meeseeks/capabilities.json` owns what the software **does**: closed vocabulary, arms gates,
   driver-owned, machine-read.
 - `PRODUCT.md` owns who it is **for** and how it should feel: users, mode, brand voice,
   anti-references. Prose, impeccable's, lives in the target repository.
@@ -728,7 +728,7 @@ than papered over. `HANDOFF.md` item 6.
 
 ## C2. Run manifest — **DONE (0.17.0)** / per-run archiving — **DONE (0.28.0)**
 
-`scripts/run-manifest.mjs` writes `.dare/run.json` once after the design phase. There is
+`scripts/run-manifest.mjs` writes `.meeseeks/run.json` once after the design phase. There is
 deliberately no reader function and a test greps `scripts/` for one, so no code path can
 consult the contents. `DESIGN.md` §7.1, `HANDOFF.md` item 7.
 
@@ -742,15 +742,15 @@ The item forbade designing this before saying what is actually lost. Saying it t
 
 **`progress` is initialised to `{ iteration: 0, … }` in memory at the top of every run.** It is
 never loaded from `state.json`. So `iterationNumber` restarts at 1 each run, and
-`writeBrief(dareDir, 1, …)` writes `.dare/briefs/iter-001.md` **over the previous run's**.
+`writeBrief(meeseeksDir, 1, …)` writes `.meeseeks/briefs/iter-001.md` **over the previous run's**.
 Briefs do not accumulate across runs; **they collide, one file at a time**, and the loss is
 silent because the replacement looks exactly like the original. The original brief's claim
 ("state is replaced per run") is false, and the correction's replacement for it ("briefs
-accumulate under `.dare/briefs/`") is also false. What is carried forward is `state.json`,
+accumulate under `.meeseeks/briefs/`") is also false. What is carried forward is `state.json`,
 `lessons.json`, `red-evidence.json` and `bloopers.log`. What is destroyed is `run.json`,
 `reality-check.md`, and the briefs.
 
-`archivePreviousRun` in `run-manifest.mjs` moves those three to `.dare/runs/NNN/` before this
+`archivePreviousRun` in `run-manifest.mjs` moves those three to `.meeseeks/runs/NNN/` before this
 run writes anything. `DESIGN.md` §7.2. Four decisions:
 
 - **Numbered, not timestamped** — no clock in that module, sorts correctly, survives a machine
@@ -764,9 +764,9 @@ run writes anything. `DESIGN.md` §7.2. Four decisions:
 - **The test reports are not archived.** They are rewritten every *iteration*, so keeping the
   last one preserves an arbitrary moment while implying it was the run's.
 
-> **Correction.** The original justified it with "`.dare` state is currently replaced per run."
+> **Correction.** The original justified it with "`.meeseeks` state is currently replaced per run."
 > That is false. `state.json` is loaded and carried forward — it is how the ratchet survives a
-> run boundary — and briefs accumulate under `.dare/briefs/`. Only `run.json` is overwritten.
+> run boundary — and briefs accumulate under `.meeseeks/briefs/`. Only `run.json` is overwritten.
 > The idea stands; the stated reason does not. Say what is actually lost between runs before
 > designing where to put it.
 
@@ -786,13 +786,13 @@ adapter rather than in tier 3, and it found what no structural test could: `dotn
 
 **A9's output contract has a tier-3 test that has never run.**
 `test/live/assumptions-contract.live.test.mjs` exists as of 0.30.0 and is armed only by
-`DARE_LIVE=1`, which spends money. Until it runs, that contract is asserted and unverified —
+`MEESEEKS_LIVE=1`, which spends money. Until it runs, that contract is asserted and unverified —
 by this repository's own rule, the state most likely to be mistaken for coverage. Run it before
 D2, not after.
 
 ## C4. Context budget check — **DONE (0.20.0)**
 
-Dare assembles Build Brief + PRD + design docs + retrieved lessons + conditional history, and
+Meeseeks assembles Build Brief + PRD + design docs + retrieved lessons + conditional history, and
 that input grows across iterations with nothing checking it. This is the repository's
 characteristic bug class: silent degradation, no failure signal, the builder quietly worse by
 iteration 12. Measure the assembled prompt before spawn. Fail loud, or trim by an explicit
@@ -894,7 +894,7 @@ occurred unless it did.**
 
 **Prepared 11 August 2026 in `DOGFOOD.md`, and NOT RUN. No end-to-end validation occurred.**
 Cases A, B, D, E and F each carry a shell script, the exact command, the terminal state that
-counts as success, and the `.dare/` artifacts to collect. Case C stays blocked with B3. Five
+counts as success, and the `.meeseeks/` artifacts to collect. Case C stays blocked with B3. Five
 artifacts worth watching did not exist when this item was written — prompt size per child,
 `pins.json`, `assumptions.json`, the mutation gate and `runs/NNN/` — and each is listed with why
 it is unproven.
@@ -916,7 +916,7 @@ history; builder-only dangerous permission bypass; reentrancy protection.
 Do not add: a persistent giant conversation; vector databases; semantic memory infrastructure;
 Kafka; distributed orchestration; generic workflow engines; MCP dependencies for core
 execution; more agent personas beyond A3; a consensus parliament; agent swarms by default;
-another framework layered over Dare.
+another framework layered over Meeseeks.
 
 **"More agent personas" is the conditional item on that list, and this line exists because the
 condition kept getting lost.** The governing rule is the one at the top of this brief: *do not add
@@ -942,7 +942,7 @@ next proposal — is real, published, and works: FunSearch and AlphaEvolve are t
 QuantEvolve and HypoAgents the current expressions (`BORROWED.md` round three). It does not
 belong here, for two independent reasons, either of which is sufficient.
 
-*The target does not move.* A hypothesis loop discovers its objective function. Dare's is
+*The target does not move.* A hypothesis loop discovers its objective function. Meeseeks's is
 declared in the PRD and is the thing every invariant exists to hold still. A loop permitted to
 hypothesise about what it is building is Ralph's builder-marks-its-own-stories hole in better
 vocabulary.
@@ -1056,7 +1056,7 @@ Two tests, one per paragraph.
 ## F4. Condition lessons on circumstances — `templates/lesson-extractor.md` — **DONE (0.24.0)**
 
 From `BORROWED.md` R10. `HANDOFF.md` records the lesson store's usefulness as unproven in a way
-the tests cannot reach, and names the failure exactly: read `.dare/lessons.json` after a real run
+the tests cannot reach, and names the failure exactly: read `.meeseeks/lessons.json` after a real run
 and delete it if it has filled with generalities.
 
 `lessons.mjs` already has the structure that would prevent that. A lesson with no `trigger` is
@@ -1104,7 +1104,7 @@ the item. **There is nothing left to stop and ask about below the line marked ti
 
 **Tier 1 — mechanical, no invariant conflict, land independently**
 
-1. `A1a` the whole `.dare` tree, stated positionally, in both places that state it
+1. `A1a` the whole `.meeseeks` tree, stated positionally, in both places that state it
 2. `A2` rename the tiers to driver-owned / not supplied, and write down why sealing is impossible
 3. `C4` context budget check
 4. `A6` assertion check in `integrity.mjs`
@@ -1150,7 +1150,7 @@ Achievable now:
 - prompt size is checked before spawn and cannot silently degrade
 - lesson triggers name circumstances a later iteration could recognise, not restatements of the
   lesson text
-- truthiness-only assertions fail a gate **dare runs**, not one the project configures
+- truthiness-only assertions fail a gate **meeseeks runs**, not one the project configures
 - the PRD author enforces right-sizing; the builder template enforces surgical diffs at chaos 1
 - assumptions that cite nothing are discarded rather than recorded, and the ones that survive
   reach the reviewer through a live-tested output contract
@@ -1168,7 +1168,7 @@ Achievable now:
 
 Already true; verify rather than rebuild:
 
-- Claude children cannot mutate any `.dare/**` artifact
+- Claude children cannot mutate any `.meeseeks/**` artifact
 - RED evidence cannot be forged by builders
 - Node behaviour works unchanged through the toolchain abstraction
 - ratchet logic consumes normalised test records, not framework-specific formats

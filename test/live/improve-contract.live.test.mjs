@@ -25,7 +25,7 @@ import { after, describe, it } from 'node:test';
 
 import { requiredIdsFor, spawnClaude } from '../../scripts/driver.mjs';
 
-const ARMED = process.env.DARE_LIVE === '1';
+const ARMED = process.env.MEESEEKS_LIVE === '1';
 const LIVE_TIMEOUT = 420_000;
 
 /** @type {string[]} */
@@ -46,7 +46,7 @@ after(() => {
  * @returns {string}
  */
 function makeRepo() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-improve-live-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-improve-live-'));
   temporaryDirs.push(dir);
   mkdirSync(path.join(dir, 'src'), { recursive: true });
   writeFileSync(
@@ -78,7 +78,7 @@ function makeRepo() {
   return dir;
 }
 
-describe('the improvement authoring contract', { skip: ARMED ? false : 'DARE_LIVE is not set' }, () => {
+describe('the improvement authoring contract', { skip: ARMED ? false : 'MEESEEKS_LIVE is not set' }, () => {
   it('returns a grounded, bounded PRD from a real repository', { timeout: LIVE_TIMEOUT }, () => {
     const repo = makeRepo();
     const result = spawnClaude({

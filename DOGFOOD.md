@@ -18,13 +18,13 @@
 > Run 2 found the red-evidence deadlock (fixed at 0.39.0). Run 3 was launched immediately after
 > that fix to see whether the ratchet finally advances.
 >
-> **Reading run 3's result**, in `~/dare-dogfood/rejection`:
+> **Reading run 3's result**, in `~/meeseeks-dogfood/rejection`:
 >
 > ```bash
 > tail -30 run.log                     # terminal state and the closing tally
-> cat .dare/state.json                 # passing[] non-empty means THE RATCHET ADVANCED - a first
-> grep -c '"' .dare/red-evidence.json  # baseline vs seenFailing
-> ls .dare/runs/                       # 001, 002 ... archiving working
+> cat .meeseeks/state.json                 # passing[] non-empty means THE RATCHET ADVANCED - a first
+> grep -c '"' .meeseeks/red-evidence.json  # baseline vs seenFailing
+> ls .meeseeks/runs/                       # 001, 002 ... archiving working
 > grep 'review outstanding\|panel unanimous\|cannot ship' run.log
 > ```
 >
@@ -40,12 +40,12 @@
 > log inside the tree becomes tracked, and a hard reset reverts it — destroying the record of the
 > reset itself. Worse, git *replaces* the file rather than truncating it, so the shell's open
 > descriptor is left on an unlinked inode and **every line written after the reset goes nowhere.**
-> Run 4's outcome had to be reconstructed from `.dare/` and the reflog.
+> Run 4's outcome had to be reconstructed from `.meeseeks/` and the reflog.
 >
 > ```bash
 > # right: the log lives outside the tree
-> mkdir -p ~/dare-logs
-> node <plugin>/scripts/driver.mjs PRD.md --yes > ~/dare-logs/run5.log 2>&1
+> mkdir -p ~/meeseeks-logs
+> node <plugin>/scripts/driver.mjs PRD.md --yes > ~/meeseeks-logs/run5.log 2>&1
 > ```
 >
 > `*.log` is ignored from 0.49.0, which fixes it for new runs. The general rule stands anyway:
@@ -88,10 +88,10 @@ outside a unit test:
 |---|---|---|
 | **the ship condition itself** | 0.56.0–0.58.0 | **exercised, runs 9 and 10.** 0.56.0 is satisfiable but cost a wasted iteration; 0.58.0's widened remit worked and had nowhere to land until `DoD-6` (0.60.0) gave it one. 0.57.0's retraction is still unobserved |
 | prompt size climbing across iterations | 0.20.0 | observed climbing — run 3's brief grew 16,022 → 31,562 characters after findings were fed back. The 400,000-character ceiling has still never been reached, so it remains reasoned rather than measured |
-| `.dare/pins.json` filling | 0.29.0 | **proven, runs 3, 5 and 10.** `moved` (run 5) re-pinned with no reset; `removed` (run 10) issued a regression objective and the element was restored. **`unknown` — and therefore quarantine — remains unobserved:** case H |
-| `.dare/assumptions.json` filling | 0.30.0 | **proven from run 3 onward.** The citation bar at 0.45.0 was set by a live tier-3 failure, not by reasoning |
+| `.meeseeks/pins.json` filling | 0.29.0 | **proven, runs 3, 5 and 10.** `moved` (run 5) re-pinned with no reset; `removed` (run 10) issued a regression objective and the element was restored. **`unknown` — and therefore quarantine — remains unobserved:** case H |
+| `.meeseeks/assumptions.json` filling | 0.30.0 | **proven from run 3 onward.** The citation bar at 0.45.0 was set by a live tier-3 failure, not by reasoning |
 | the mutation gate | 0.31.0 | provisioning closed at 0.43.0, threshold `break: 60` at 0.47.0 — **and it was still crashing rather than running until 0.65.0.** Stryker's tsconfig preprocessor imports `typescript` from its own npx install, where it is absent; run 10 lost three of six iterations to it |
-| `.dare/runs/NNN/` archiving | 0.28.0 | **fired live in run 4** — `.dare/runs/003/`, carrying `assumptions.json` beside `briefs/` and `run.json` |
+| `.meeseeks/runs/NNN/` archiving | 0.28.0 | **fired live in run 4** — `.meeseeks/runs/003/`, carrying `assumptions.json` beside `briefs/` and `run.json` |
 | the .NET toolchain | 0.32.0 | **all five commands executed against SDK 8.0.423** (13 Aug); **never driven by a run** — item 20 case C. The old "no SDK on this machine" note was stale: the SDK is installed |
 | the TRX reporter | 0.33.0 | only ever seen xunit output from a scaffolded solution |
 | per-toolchain guidance | 0.34.0 | proven selected and archived; never proven *read* |
@@ -111,8 +111,8 @@ git --version
 
 ```bash
 set -o pipefail   # or the terminal-state exit code becomes tee's, which is always 0
-mkdir -p ~/dare-logs
-node /path/to/dare-to-be-stupid/scripts/driver.mjs PRD.md --yes 2>&1 | tee ~/dare-logs/runN.log
+mkdir -p ~/meeseeks-logs
+node /path/to/meeseeks/scripts/driver.mjs PRD.md --yes 2>&1 | tee ~/meeseeks-logs/runN.log
 ```
 
 **`tee`, not `>`.** A plain redirect sends *everything* to the file, so anyone watching the
@@ -125,9 +125,9 @@ is looking at, and the run appears hung when it is working.
 0 whatever the driver did, and **every run looks like it shipped.** The terminal state is read
 from the exit code: 0 is `SHIPPED`, non-zero is everything else.
 
-The style layer itself needs nothing: `styleMode` keys off `DARE_STYLE` alone and never asks
+The style layer itself needs nothing: `styleMode` keys off `MEESEEKS_STYLE` alone and never asks
 whether stdout is a terminal, so the voice survives a pipe, a redirect and a captured buffer
-identically. `DARE_STYLE=plain` is the only thing that turns it off.
+identically. `MEESEEKS_STYLE=plain` is the only thing that turns it off.
 
 This instruction used to say the opposite — install at the version under test and check the pin —
 and that is how you walk into the trap it was warning about. The install cache is keyed by
@@ -148,17 +148,17 @@ Installing now buys exactly two things, neither of which a dogfood run needs: th
 and the guard firing in **your own interactive sessions** — which taxes unrelated work and will
 refuse your `rm -rf` when a shell variable is unresolved.
 
-Each scenario gets its **own throwaway repository**. Never point `/dare` at anything you would
+Each scenario gets its **own throwaway repository**. Never point `/meeseeks` at anything you would
 mind losing: the ratchet runs `git reset --hard`.
 
 ```bash
 scenario() {                      # usage: scenario link-shortener
   local name="$1"
-  local dir="$HOME/dare-dogfood/$name"
+  local dir="$HOME/meeseeks-dogfood/$name"
   mkdir -p "$dir" && cd "$dir" || return 1
   git init --quiet
   git config user.email dogfood@example.invalid
-  git config user.name 'Dare Dogfood'
+  git config user.name 'Meeseeks Dogfood'
   git commit --quiet --allow-empty -m 'empty start'
   echo "$dir"
 }
@@ -199,7 +199,7 @@ returns. Measured between 4% and 20% of the ceiling; one builder alone cost 9.5M
 
 **Give every scenario enough budget to reach a second iteration.** Both earlier attempts died in
 the first one, so a run that stops at iteration 1 tells you nothing you do not already know.
-After `dare init` scaffolds `.dare/config.json`, edit it *before* starting the run — the guard
+After `meeseeks init` scaffolds `.meeseeks/config.json`, edit it *before* starting the run — the guard
 hook allows an operator to edit it from outside a run, and refuses a run's own children:
 
 ```json
@@ -212,7 +212,7 @@ hook allows an operator to edit it from outside a run, and refuses a run's own c
 
 ```bash
 scenario link-shortener
-/dare "A simple link shortener with an admin analytics page."
+/meeseeks "A simple link shortener with an admin analytics page."
 ```
 
 **Expected terminal state:** `SHIPPED`, `STALLED` or `BUDGET`. Any of the three is a result. What
@@ -221,13 +221,13 @@ would be a *defect* is `ABORTED` from preflight, or a second run of iteration 1 
 **Collect, whatever happens:**
 
 ```bash
-cat .dare/run.json                      # what this run was
-cat .dare/state.json                    # did any id ever enter the ratchet?
-ls .dare/briefs/                        # one per iteration
-cat .dare/pins.json 2>/dev/null         # did the security reviewer's evidence produce a pin?
-cat .dare/assumptions.json 2>/dev/null  # did the builder emit the block?
-cat .dare/lessons.json 2>/dev/null      # generalities, or conditions?
-cat .dare/bloopers.log 2>/dev/null      # every hard reset
+cat .meeseeks/run.json                      # what this run was
+cat .meeseeks/state.json                    # did any id ever enter the ratchet?
+ls .meeseeks/briefs/                        # one per iteration
+cat .meeseeks/pins.json 2>/dev/null         # did the security reviewer's evidence produce a pin?
+cat .meeseeks/assumptions.json 2>/dev/null  # did the builder emit the block?
+cat .meeseeks/lessons.json 2>/dev/null      # generalities, or conditions?
+cat .meeseeks/bloopers.log 2>/dev/null      # every hard reset
 ```
 
 and from the run's own output, every line matching `characters of prompt` — that is the C4
@@ -241,10 +241,10 @@ ever reported it.
 
 ```bash
 scenario task-spa
-/dare "A small task management SPA with local or database persistence."
+/meeseeks "A small task management SPA with local or database persistence."
 ```
 
-Same evidence. The extra thing to check is that `.dare/capabilities.json` resolved
+Same evidence. The extra thing to check is that `.meeseeks/capabilities.json` resolved
 `persistent-storage`, and that the gate list in the Build Brief reflects it.
 
 ## Case C — .NET
@@ -256,11 +256,11 @@ an operator awake — and for nothing else.
 
 ```bash
 scenario dotnet-api
-/dare "A small HTTP service that stores and returns short notes, in C#."
+/meeseeks "A small HTTP service that stores and returns short notes, in C#."
 ```
 
 **Staged and verified ready, 13 August, everything but the launch.** `dotnet 8.0.423` present;
-`~/dare-dogfood/dotnet-api` initialised with a git repo and a `.dare/`; `schemathesis` present at
+`~/meeseeks-dogfood/dotnet-api` initialised with a git repo and a `.meeseeks/`; `schemathesis` present at
 `~/.local/bin`, which matters because a .NET **API** arms R18's gate — the first time that gate
 will run outside a fixture. The adapter declines `types`, `e2e` and `mutation` **by name**, so
 none of those can fail for the wrong reason.
@@ -282,7 +282,7 @@ anything else. Watch four things specifically:
   which means the first iteration may be gated with npm commands against a .NET project. This
   is the known ambiguity recorded in `BRIEF.md` B3 and `toolchains/index.mjs`. If it derails
   the run, the fix is architect declaration confirmed by detection, which is not built.
-- **Does `.dare/unit.trx` appear, and does the ratchet read it?** `Toolchain.reports` was added
+- **Does `.meeseeks/unit.trx` appear, and does the ratchet read it?** `Toolchain.reports` was added
   precisely so it would. If `passing: 0` persists while `dotnet test` reports passing tests,
   the report is being written and not read — check the filename first.
 - **What does a real TRX from a generated project look like?** The reporter has only ever seen
@@ -325,7 +325,7 @@ PRD-2.1  GET /export/notes.pdf returns a PDF whose first page shows every note's
          rendered as text and not as an image, with the file size under 200 kB.
 PRD
 git add PRD.md && git commit --quiet -m 'PRD'
-/dare PRD.md
+/meeseeks PRD.md
 ```
 
 **PRD-2.1 is the trap** — an observable requirement that is genuinely hard, so the builder is
@@ -338,7 +338,7 @@ likely to stub it.
 - `combinePanel` reports an entry for **every** required id, not only the failing one
 
 **What would be a serious defect:** `SHIPPED`. That means either the reviewer accepted a stub, or
-an id passed by never being judged. Keep the whole `.dare/` directory if this happens — it is the
+an id passed by never being judged. Keep the whole `.meeseeks/` directory if this happens — it is the
 most important artifact this project could produce.
 
 ## Case E — deliberate regression — **PASSED, run 4, 12 August 2026**
@@ -351,26 +351,26 @@ criterion"). The recipe stays for re-running against future versions.
 **Newly reachable.** Run 3 advanced the ratchet to 93 ids at iteration 1, which is the
 precondition this scenario always needed and never had. Every earlier run ended `passing: 0`.
 
-Run Case A or D first until at least one iteration advances the ratchet — `.dare/state.json`
+Run Case A or D first until at least one iteration advances the ratchet — `.meeseeks/state.json`
 must show a non-empty `passing` array and a non-null `lastGoodCommit`. Then, **from outside the
 run** (the guard denies a run's children, not you), break a test the ratchet holds:
 
 ```bash
-cat .dare/state.json          # note a passing id and lastGoodCommit
+cat .meeseeks/state.json          # note a passing id and lastGoodCommit
 # edit the source so that one previously passing test now fails - change a return value,
 # not the test itself. The ratchet must catch the code regressing, not the test disappearing.
 git add -A && git commit -m 'deliberate regression'
-/dare PRD.md                  # resume; state.json is carried forward across runs
+/meeseeks PRD.md                  # resume; state.json is carried forward across runs
 ```
 
 **What success looks like:**
 
-- `.dare/bloopers.log` gains a record naming the regressed id and a diff stat
+- `.meeseeks/bloopers.log` gains a record naming the regressed id and a diff stat
 - the run performs `git reset --hard` back to `lastGoodCommit`
 - the next Build Brief's objective is `regression`, headed *"Restore the tests listed below"*
 - nothing else proceeds that iteration — no reviewer is called
 
-**Also check `.dare/runs/001/`.** This is the first real test of C2 archiving: the second `/dare`
+**Also check `.meeseeks/runs/001/`.** This is the first real test of C2 archiving: the second `/meeseeks`
 should have moved the first run's `run.json`, `briefs/` and `reality-check.md` there rather than
 overwriting them.
 
@@ -398,8 +398,8 @@ So this case optimises for reaching the end of the pipeline rather than for brea
   panel findings were still falling (5 → 4 → 3) when the budget ended.
 
 ```bash
-scenario csvstat            # then write PRD.md and .dare/config.json before launching
-node <plugin>/scripts/driver.mjs PRD.md --yes > ~/dare-logs/run6.log 2>&1
+scenario csvstat            # then write PRD.md and .meeseeks/config.json before launching
+node <plugin>/scripts/driver.mjs PRD.md --yes > ~/meeseeks-logs/run6.log 2>&1
 ```
 
 **What each outcome means.** `SHIPPED` is the first ever, and the thing to check immediately is
@@ -415,7 +415,7 @@ serious bug.
 ## Case F — security regression
 
 Depends on A4, which landed in 0.29.0, and on a run that reaches the panel at least once so a
-pin exists. **Check `.dare/pins.json` is non-empty before attempting it** — if the security
+pin exists. **Check `.meeseeks/pins.json` is non-empty before attempting it** — if the security
 reviewer's evidence never produced a pin, this scenario cannot run and that absence is itself
 the finding to report.
 
@@ -424,7 +424,7 @@ With a pin present, delete the guard it names, from outside the run, and resume.
 
 - **removed** → hard reset and a regression objective naming the element
 - **moved** → the pin re-points, no reset
-- **unknown** → `.dare/pins.json` shows `status: quarantined`, and **the run cannot reach
+- **unknown** → `.meeseeks/pins.json` shows `status: quarantined`, and **the run cannot reach
   `SHIPPED`** even if the panel passes
 
 The third outcome is the one worth engineering for. Confirm the run does not ship.
@@ -463,7 +463,7 @@ exactly the failure this ordering exists to catch (`HANDOFF.md`, "Tier 3 ran for
 time"). Separate from the dogfood runs and much cheaper — a few cents, under a minute:
 
 ```bash
-DARE_LIVE=1 npm run test:live
+MEESEEKS_LIVE=1 npm run test:live
 ```
 
 It covers the builder's assumptions output contract (`test/live/assumptions-contract.live.test.mjs`)
@@ -548,13 +548,13 @@ pinned snippet** — not delete it, which produces `removed`:
 # replace with an equivalent whose shape is unrecognisable, e.g. a table-driven check in a
 # different file, re-exported under the old name. The behaviour must be identical and the
 # suite must stay green, or you are testing the ratchet again.
-grep -rn "$(node -e 'console.log(JSON.parse(require("fs").readFileSync(".dare/pins.json")).security[0].snippet)')" src/ || echo "snippet gone - good"
+grep -rn "$(node -e 'console.log(JSON.parse(require("fs").readFileSync(".meeseeks/pins.json")).security[0].snippet)')" src/ || echo "snippet gone - good"
 npx vitest run   # must still be green
 ```
 
 **Expect `unknown`.** Confirm all three:
 
-1. `.dare/pins.json` shows `status: quarantined` for that element;
+1. `.meeseeks/pins.json` shows `status: quarantined` for that element;
 2. the run **does not reach `SHIPPED`** even if the panel passes every id;
 3. the quarantine is *surfaced* to the operator, not merely recorded.
 
@@ -596,8 +596,8 @@ Collect, in this order:
 **Do this on a throwaway repository and check `git worktree list` afterwards even if the run
 looks clean.**
 
-**Staged and validated 13 August, launch only.** `~/dare-dogfood/caseI`: fresh repository on
-`main`, the **real** rejection PRD copied from `~/dare-dogfood/rejection` — the one carrying
+**Staged and validated 13 August, launch only.** `~/meeseeks-dogfood/caseI`: fresh repository on
+`main`, the **real** rejection PRD copied from `~/meeseeks-dogfood/rejection` — the one carrying
 `PRD-4.1`, sub-millisecond HTTP on a freshly started process, which is impossible by construction
 and is the stall engine the race needs. One commit, one worktree, config **checked through
 `validateConfig` itself** rather than eyeballed:
@@ -617,7 +617,7 @@ race never arms.
 
 ```bash
 set -o pipefail
-node ~/dev/dare-to-be-stupid/scripts/driver.mjs PRD.md --yes 2>&1 | tee ~/dare-logs/caseI.log
+node ~/dev/meeseeks/scripts/driver.mjs PRD.md --yes 2>&1 | tee ~/meeseeks-logs/caseI.log
 ```
 
 **Host note that would have killed the staging silently:** this machine runs **git 2.25.1**, and
@@ -628,7 +628,7 @@ a one-off, and any recipe on this page that reaches for `--initial-branch` is wr
 **Two PRDs are called "the rejection PRD" on this page and they are not the same document.** Case
 D above prints one whose trap is `PRD-2.1` (a PDF export); the run that actually happened used one
 whose trap is `PRD-4.1` (sub-millisecond latency), and that is the copy in
-`~/dare-dogfood/rejection`. Case I wants the **latter** — an impossible *non-functional*
+`~/meeseeks-dogfood/rejection`. Case I wants the **latter** — an impossible *non-functional*
 requirement stalls more reliably than a merely hard feature, because no amount of building moves
 it.
 
@@ -663,11 +663,11 @@ principle `PLAN.md` inherits — a result that can invalidate later construction
 **Common preamble for every run in this section.** Do these once, not per run:
 
 ```bash
-cd ~/dev/dare-to-be-stupid
+cd ~/dev/meeseeks
 git log --oneline -1                       # note the version under test
 npm run lint && npm run typecheck && npm test
 npm run test:integration
-DARE_LIVE=1 npm run test:live              # cheap, and it catches a broken contract before an hour of run does
+MEESEEKS_LIVE=1 npm run test:live              # cheap, and it catches a broken contract before an hour of run does
 npm run release-check
 ```
 
@@ -675,7 +675,7 @@ Then, **before each individual run**:
 
 ```bash
 ps -eo pid,etime,args | grep -E 'driver\.mjs|claude -p' | grep -v grep   # must be empty
-ls ~/dare-dogfood/<target>/.dare/lock.json 2>/dev/null                   # must not exist
+ls ~/meeseeks-dogfood/<target>/.meeseeks/lock.json 2>/dev/null                   # must not exist
 ```
 
 And **during** every run, the standing rule that has already paid for itself twice: if something
@@ -694,19 +694,19 @@ ps -eo pid,args | grep '[c]laude --' | head       # kill any survivor by pid
 its own caller. That is not hypothetical — it happened while following the previous version of
 this instruction.
 
-**Before any intervention between runs, correct `lastGoodCommit`.** `.dare/state.json` persists
+**Before any intervention between runs, correct `lastGoodCommit`.** `.meeseeks/state.json` persists
 across runs, so the next run's first hard reset targets a commit from the *previous* one,
 **discarding everything the operator committed in between, silently.** Measured: case H's first
 intervention was reverted this way, guard and all. After committing an intervention, point the
-ratchet at it with a one-line edit to `.dare/state.json` (the guard permits an operator to edit
-`.dare/` outside a run):
+ratchet at it with a one-line edit to `.meeseeks/state.json` (the guard permits an operator to edit
+`.meeseeks/` outside a run):
 
     lastGoodCommit  ->  git rev-parse HEAD
 
 Only when the tree is genuinely green. It is a claim that this commit is a good state, and the
 ratchet will believe it.
 
-**Evidence to keep from every run, without exception.** The whole `.dare/` directory, the full
+**Evidence to keep from every run, without exception.** The whole `.meeseeks/` directory, the full
 log, and the answer to "what does the binary actually do now", obtained by running it rather than
 by reading the panel. Runs 9, 10 and improve3 all produced a tree materially better than the
 verdict the run gave it, and that pattern is only visible from outside the panel.
@@ -723,10 +723,10 @@ was right.
 Target: a CLI-shaped project, which is the only capability the oracle is armed for.
 
 ```bash
-mkdir -p ~/dare-dogfood/oracle1 && cd ~/dare-dogfood/oracle1
+mkdir -p ~/meeseeks-dogfood/oracle1 && cd ~/meeseeks-dogfood/oracle1
 git init && git commit --allow-empty -m 'initial'
-mkdir -p .dare
-cat > .dare/config.json <<'JSON'
+mkdir -p .meeseeks
+cat > .meeseeks/config.json <<'JSON'
 {
   "maxIterations": 6,
   "tokenCeiling": 15000000,
@@ -740,8 +740,8 @@ Use the **case G** PRD from earlier in this file — the smallest thing that cou
 proven to reach a ship at run 8 — so that the oracle is the only moved variable.
 
 ```bash
-cd ~/dare-dogfood/oracle1
-node ~/dev/dare-to-be-stupid/scripts/driver.mjs 2>&1 | tee ~/dare-logs/oracle1.log
+cd ~/meeseeks-dogfood/oracle1
+node ~/dev/meeseeks/scripts/driver.mjs 2>&1 | tee ~/meeseeks-logs/oracle1.log
 ```
 
 **Legitimate outcomes, all three of which are results:**
@@ -752,7 +752,7 @@ node ~/dev/dare-to-be-stupid/scripts/driver.mjs 2>&1 | tee ~/dare-logs/oracle1.l
 | a run blocked by an oracle case that is **right** | the held-out principle working; the best possible result |
 | a run blocked by an oracle case that is **wrong** | the false-failure rate is non-zero; the dispute path is now the subject, and this is why the run exists |
 
-**Evidence to collect, beyond the standard set:** `.dare/oracle/` in full (the authored cases are
+**Evidence to collect, beyond the standard set:** `.meeseeks/oracle/` in full (the authored cases are
 the artifact), the Phase 0b authoring cost in tokens and seconds, and for every oracle failure a
 hand-adjudication of whether the case was actually right. **A false oracle case that blocked a
 correct build is the finding; do not let it be summarised as "the oracle worked".**
@@ -787,11 +787,11 @@ Case G's PRD again is the right choice: short enough to finish, and already know
 
 ```bash
 # run A
-mkdir -p ~/dare-dogfood/panelA && cd ~/dare-dogfood/panelA && git init && git commit --allow-empty -m init
-node ~/dev/dare-to-be-stupid/scripts/driver.mjs 2>&1 | tee ~/dare-logs/panelA.log
-# run B, fresh tree, only .dare/config.json differs
-mkdir -p ~/dare-dogfood/panelB && cd ~/dare-dogfood/panelB && git init && git commit --allow-empty -m init
-node ~/dev/dare-to-be-stupid/scripts/driver.mjs 2>&1 | tee ~/dare-logs/panelB.log
+mkdir -p ~/meeseeks-dogfood/panelA && cd ~/meeseeks-dogfood/panelA && git init && git commit --allow-empty -m init
+node ~/dev/meeseeks/scripts/driver.mjs 2>&1 | tee ~/meeseeks-logs/panelA.log
+# run B, fresh tree, only .meeseeks/config.json differs
+mkdir -p ~/meeseeks-dogfood/panelB && cd ~/meeseeks-dogfood/panelB && git init && git commit --allow-empty -m init
+node ~/dev/meeseeks/scripts/driver.mjs 2>&1 | tee ~/meeseeks-logs/panelB.log
 ```
 
 **What to record, per run:** total review cost in dollars and tokens; review wall-clock; the
@@ -821,7 +821,7 @@ recipe is already written above** under "Case H — the `unknown` pin verdict". 
 **What makes this an experiment and not a test:** if `unknown` proves unreachable in practice,
 `DESIGN.md` §4.3 needs rewriting rather than defending. Both outcomes close the item.
 
-**Evidence:** `.dare/pins.json` across iterations, the security reviewer's verbatim verdict for
+**Evidence:** `.meeseeks/pins.json` across iterations, the security reviewer's verbatim verdict for
 the moved element, and the terminal state. The assertion under test is that a quarantined element
 **blocks `SHIPPED`** — if a run ships with one standing, that is a serious defect and the run
 should be stopped and reported rather than completed.
@@ -858,18 +858,18 @@ genuine test suite. A checkout of a small open-source CLI is ideal; a copy of a 
 not mind mangling is fine. It must have meaningful git history or improve mode refuses.
 
 ```bash
-cd ~/dare-dogfood/improve-mid
-mkdir -p .dare && cat > .dare/config.json <<'JSON'
+cd ~/meeseeks-dogfood/improve-mid
+mkdir -p .meeseeks && cat > .meeseeks/config.json <<'JSON'
 { "maxIterations": 3, "tokenCeiling": 20000000, "costCeiling": 30 }
 JSON
-node ~/dev/dare-to-be-stupid/scripts/driver.mjs --improve 2>&1 | tee ~/dare-logs/improve-mid.log
+node ~/dev/meeseeks/scripts/driver.mjs --improve 2>&1 | tee ~/meeseeks-logs/improve-mid.log
 ```
 
 **What to record:** per-segment token and dollar cost, in a table, against the four-file baseline
 above. The question is whether the 7× is a property of improve mode or of that particular tiny
 repository.
 
-**Outcome is either a fix or written budget guidance in `commands/dare.md`** — the item permits
+**Outcome is either a fix or written budget guidance in `commands/meeseeks.md`** — the item permits
 both, and "improve mode wants a ceiling this size per file" is a perfectly good result.
 
 ---
@@ -936,7 +936,7 @@ needing a real host.**
 |---|---|
 | `hooks/guard.mjs` protected from the run | **done at 0.88.0** — `protected-guard` is positional and self-referential, covering the guard and its manifest |
 | `release-check` reachable so a builder cannot break the install-cache invariant | **partly** — 0.89.0's header check landed and `tools/release-check.mjs` is not a declared gate. A builder editing `scripts/` without bumping still breaks it silently |
-| the `CLAUDE.md` scope note suspended | **not done, and not mine to do.** The note says *"Do not run `/dare` against this repository"*. The operator has said the rule can be retired later; retiring it is a deliberate act |
+| the `CLAUDE.md` scope note suspended | **not done, and not mine to do.** The note says *"Do not run `/meeseeks` against this repository"*. The operator has said the rule can be retired later; retiring it is a deliberate act |
 
 **The remaining engineering prerequisite** is the middle row: add `release-check` as a gate for
 this target, or accept that a run can break the plugin cache invariant without anything noticing.

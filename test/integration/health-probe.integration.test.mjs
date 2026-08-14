@@ -37,7 +37,7 @@ after(() => {
  * @returns {string}
  */
 function makeApp(parts) {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-health-integration-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-health-integration-'));
   temporaryDirs.push(dir);
   const manifest = { name: 'probe-target', private: true, scripts: { start: parts.start ?? 'node server.js' } };
   writeFileSync(path.join(dir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');

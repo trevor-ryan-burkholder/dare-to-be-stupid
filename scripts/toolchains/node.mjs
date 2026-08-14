@@ -27,7 +27,7 @@ export const UNIT_REPORT = 'test-report.json';
 export const E2E_REPORT = 'e2e-report.json';
 
 /**
- * The mutation runner's configuration, written by the driver into `.dare/` and therefore
+ * The mutation runner's configuration, written by the driver into `.meeseeks/` and therefore
  * beyond the builder's reach (§6).
  *
  * This file is not a convenience. Stryker exposes no `--thresholds.*` flag — verified against
@@ -63,7 +63,7 @@ export const MUTATION_CONFIG = 'stryker.config.json';
  * `60` is a floor, chosen to catch the failure this gate exists for — a suite insensitive to its
  * own code — while tolerating the survivors that ordinary correct code produces. `high`/`low` only
  * colour the report. The drift objection is answered by ownership rather than by the number: this
- * file is written by the driver into `.dare/`, so the builder cannot negotiate it, and moving it
+ * file is written by the driver into `.meeseeks/`, so the builder cannot negotiate it, and moving it
  * takes a commit here with a measurement attached. **If you change it, record what you measured.**
  */
 /**
@@ -120,9 +120,9 @@ export const nodeToolchain = {
     build: () => command(['npm', 'run', 'build']),
     lint: () => command(['npm', 'run', 'lint']),
     types: () => command(['npm', 'run', 'typecheck']),
-    /** @param {{ dareDir: string }} context */
-    unit: ({ dareDir }) =>
-      command(['npx', 'vitest', 'run', '--reporter=json', `--outputFile=${path.join(dareDir, UNIT_REPORT)}`]),
+    /** @param {{ meeseeksDir: string }} context */
+    unit: ({ meeseeksDir }) =>
+      command(['npx', 'vitest', 'run', '--reporter=json', `--outputFile=${path.join(meeseeksDir, UNIT_REPORT)}`]),
     e2e: () => command(['npx', 'playwright', 'test']),
     'security-audit': () => command(['npm', 'audit', '--audit-level=high']),
 
@@ -130,8 +130,8 @@ export const nodeToolchain = {
     // from documentation, which is the rule HANDOFF.md's argv defect bought: the flags are
     // `run <configFile>`, `--testRunner`, `--mutate` (comma separated, verified with two
     // files), `--reporters` and `--logLevel`.
-    /** @param {{ dareDir: string, changedFiles?: string[] }} context */
-    mutation: ({ dareDir, changedFiles }) => {
+    /** @param {{ meeseeksDir: string, changedFiles?: string[] }} context */
+    mutation: ({ meeseeksDir, changedFiles }) => {
       // An absent list and an empty one are different facts and must not share a sentence.
       // Watched in a live improve-mode run: the gate reported "no first-party source changed"
       // while three source files were modified in the tree. It was right to decline — iteration 1
@@ -176,7 +176,7 @@ export const nodeToolchain = {
         '@stryker-mutator/vitest-runner',
         'stryker',
         'run',
-        path.join(dareDir, MUTATION_CONFIG),
+        path.join(meeseeksDir, MUTATION_CONFIG),
         '--testRunner',
         'vitest',
         '--mutate',
@@ -206,7 +206,7 @@ export const nodeToolchain = {
     }
   },
 
-  // The files the test operations above write, relative to `.dare`. The driver reads exactly
+  // The files the test operations above write, relative to `.meeseeks`. The driver reads exactly
   // these; nothing here is inferred from a filename convention.
   reports: [UNIT_REPORT, E2E_REPORT],
 

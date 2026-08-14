@@ -28,7 +28,7 @@ import { describe, it } from 'node:test';
 
 import { claudeArgs, spawnClaude } from '../../scripts/driver.mjs';
 
-const ARMED = process.env.DARE_LIVE === '1';
+const ARMED = process.env.MEESEEKS_LIVE === '1';
 
 /** Generous: a live round trip includes model latency nobody here controls. */
 const LIVE_TIMEOUT = 180_000;
@@ -53,7 +53,7 @@ function settingsFor(options) {
   return JSON.parse(String(args[at + 1]));
 }
 
-describe('the sandbox declaration reaches a real child', { skip: ARMED ? false : 'DARE_LIVE is not set' }, () => {
+describe('the sandbox declaration reaches a real child', { skip: ARMED ? false : 'MEESEEKS_LIVE is not set' }, () => {
   it('puts the sandbox in the blob a writing phase is handed, beside the guard', () => {
     // Not instead of the guard. R19 is explicit that this is an added floor and never a
     // replaced one, and a blob that gained a sandbox and lost the hook would be a regression

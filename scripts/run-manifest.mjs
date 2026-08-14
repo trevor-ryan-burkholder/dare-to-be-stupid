@@ -1,5 +1,5 @@
 /**
- * `.dare/run.json` — what this run was, written once at the start (DESIGN.md §7.1).
+ * `.meeseeks/run.json` — what this run was, written once at the start (DESIGN.md §7.1).
  *
  * A run can end four hours later on a machine nobody is watching, and the first question
  * afterwards is always some version of *what was this, exactly*: which plugin build, which
@@ -16,7 +16,7 @@
  * and did not get is a real fault — but what is in it decides nothing.
  *
  * **No secrets.** The configuration is recorded as a hash rather than embedded. Today
- * `.dare/config.json` holds only models, counts and booleans, so embedding it would be
+ * `.meeseeks/config.json` holds only models, counts and booleans, so embedding it would be
  * harmless; hashing it stays harmless after someone adds a field that is not. The hash still
  * answers the question worth asking — "was this the same configuration as that run?"
  *
@@ -31,7 +31,7 @@ import path from 'node:path';
 
 import { ASSUMPTIONS_FILE } from './assumptions.mjs';
 
-/** Driver-owned. Protected by the `.dare/**` invariant (§6) with no rule of its own. */
+/** Driver-owned. Protected by the `.meeseeks/**` invariant (§6) with no rule of its own. */
 export const RUN_MANIFEST = 'run.json';
 
 /** Where a finished run's artifacts are moved when the next one starts. */
@@ -41,7 +41,7 @@ export const RUN_ARCHIVE_DIR = 'runs';
  * What belongs to one run, and is therefore destroyed by the next one.
  *
  * Establishing this list was the whole of the work, because the two accounts previously
- * written down were both wrong. `.dare` state is **not** replaced per run — `state.json` is
+ * written down were both wrong. `.meeseeks` state is **not** replaced per run — `state.json` is
  * loaded and carried forward, which is how the ratchet survives a run boundary, and
  * `lessons.json`, `red-evidence.json` and `bloopers.log` all persist deliberately. But the
  * briefs do **not** merely accumulate either. Iteration numbering lives in `progress`, which
@@ -233,17 +233,17 @@ export function buildRunManifest(input) {
 }
 
 /**
- * Write `.dare/run.json` atomically.
+ * Write `.meeseeks/run.json` atomically.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @param {RunManifest} manifest
  * @returns {string} the path written
  * @throws {RunManifestError} when the file cannot be written
  */
-export function writeRunManifest(dareDir, manifest) {
-  const file = path.join(dareDir, RUN_MANIFEST);
+export function writeRunManifest(meeseeksDir, manifest) {
+  const file = path.join(meeseeksDir, RUN_MANIFEST);
   try {
-    mkdirSync(dareDir, { recursive: true });
+    mkdirSync(meeseeksDir, { recursive: true });
     const temporary = `${file}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
     renameSync(temporary, file);
@@ -254,7 +254,7 @@ export function writeRunManifest(dareDir, manifest) {
 }
 
 /**
- * The next free archive slot under `.dare/runs/`.
+ * The next free archive slot under `.meeseeks/runs/`.
  *
  * Numbered rather than timestamped, for the reason nothing else in this module reads a clock:
  * an integer is derived from what is on disk, needs no argument, and sorts correctly when
@@ -282,7 +282,7 @@ function nextArchiveSlot(archiveRoot) {
 }
 
 /**
- * Move the previous run's artifacts into `.dare/runs/NNN/` before this one starts.
+ * Move the previous run's artifacts into `.meeseeks/runs/NNN/` before this one starts.
  *
  * **It moves; it never reads.** The no-reader guarantee above is about a manifest's *contents*
  * influencing a run, and `renameSync` does not open the file. Nothing here parses, inspects or
@@ -298,20 +298,20 @@ function nextArchiveSlot(archiveRoot) {
  * a manifest: the alternative is destroying the previous run's evidence and continuing, which
  * is the outcome archiving exists to prevent.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @returns {string | null} the archive directory, or null when there was nothing to archive
  * @throws {RunManifestError}
  */
-export function archivePreviousRun(dareDir) {
-  const present = PER_RUN_ARTIFACTS.filter((name) => existsSync(path.join(dareDir, name)));
+export function archivePreviousRun(meeseeksDir) {
+  const present = PER_RUN_ARTIFACTS.filter((name) => existsSync(path.join(meeseeksDir, name)));
   if (present.length === 0) return null;
 
-  const archiveRoot = path.join(dareDir, RUN_ARCHIVE_DIR);
+  const archiveRoot = path.join(meeseeksDir, RUN_ARCHIVE_DIR);
   try {
     mkdirSync(archiveRoot, { recursive: true });
     const target = path.join(archiveRoot, nextArchiveSlot(archiveRoot));
     mkdirSync(target, { recursive: true });
-    for (const name of present) renameSync(path.join(dareDir, name), path.join(target, name));
+    for (const name of present) renameSync(path.join(meeseeksDir, name), path.join(target, name));
     return target;
   } catch (error) {
     throw new RunManifestError(

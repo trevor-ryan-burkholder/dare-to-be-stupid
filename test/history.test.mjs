@@ -20,7 +20,7 @@ const temporaryDirs = [];
 
 /** @returns {string} */
 function makeTempDir() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-history-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-history-'));
   temporaryDirs.push(dir);
   return dir;
 }
@@ -134,7 +134,7 @@ describe('historyContext', () => {
     assert.deepStrictEqual(historyContext({ cwd: matureRepo(), run, findings: ['PRD-2.1: src/new.ts:1 is wrong'] }), []);
   });
 
-  it('says nothing at all on a greenfield run, however many commits dare has added', () => {
+  it('says nothing at all on a greenfield run, however many commits meeseeks has added', () => {
     // Every commit is the builder's own work. Quoting them back is quoting the builder.
     assert.deepStrictEqual(
       historyContext({ cwd: matureRepo(), run, findings: ['PRD-1.1: src/auth.ts:2 bad'], greenfield: true }),

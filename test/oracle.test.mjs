@@ -36,7 +36,7 @@ const temporaryDirs = [];
 
 /** @returns {string} */
 function makeTempDir() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-oracle-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-oracle-'));
   temporaryDirs.push(dir);
   return dir;
 }
@@ -62,28 +62,28 @@ const aCase = (over = {}) => ({
 describe('the oracle store', () => {
   it('fails the gate when it was never authored, rather than passing over nothing', () => {
     // The one shape that reads exactly like an oracle everything passed.
-    const dareDir = path.join(makeTempDir(), '.dare');
-    mkdirSync(dareDir, { recursive: true });
-    const result = runOracle({ dareDir, root: '/repo', command: ['node', 'bin.js'], run: () => ({ ok: true, status: 0, stdout: '', stderr: '' }) });
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    mkdirSync(meeseeksDir, { recursive: true });
+    const result = runOracle({ meeseeksDir, root: '/repo', command: ['node', 'bin.js'], run: () => ({ ok: true, status: 0, stdout: '', stderr: '' }) });
     assert.equal(result.ok, false);
     assert.match(result.detail, /never authored/);
   });
 
   it('fails the gate on a store that will not parse', () => {
-    const dareDir = path.join(makeTempDir(), '.dare');
-    mkdirSync(dareDir, { recursive: true });
-    writeFileSync(path.join(dareDir, 'oracle.json'), '{ not json', 'utf8');
-    assert.equal(runOracle({ dareDir, root: '/r', command: ['node'], run: () => ({ ok: true, status: 0, stdout: '', stderr: '' }) }).ok, false);
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    mkdirSync(meeseeksDir, { recursive: true });
+    writeFileSync(path.join(meeseeksDir, 'oracle.json'), '{ not json', 'utf8');
+    assert.equal(runOracle({ meeseeksDir, root: '/r', command: ['node'], run: () => ({ ok: true, status: 0, stdout: '', stderr: '' }) }).ok, false);
   });
 
   it('refuses to write an empty oracle', () => {
-    assert.throws(() => writeOracle(path.join(makeTempDir(), '.dare'), []), OracleError);
+    assert.throws(() => writeOracle(path.join(makeTempDir(), '.meeseeks'), []), OracleError);
   });
 
   it('round-trips what it wrote', () => {
-    const dareDir = path.join(makeTempDir(), '.dare');
-    writeOracle(dareDir, [aCase()]);
-    const read = readOracle(dareDir);
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    writeOracle(meeseeksDir, [aCase()]);
+    const read = readOracle(meeseeksDir);
     assert.equal(read.length, 1);
     assert.equal(read[0].expectStdout, '{"columns":[]}');
     assert.deepStrictEqual(read[0].argv, ['in.csv']);
@@ -158,9 +158,9 @@ describe('judging', () => {
 describe('running the cases', () => {
   /** @param {import('../scripts/oracle.mjs').OracleCase[]} cases @param {(cwd: string) => { ok: boolean, status: number, stdout: string, stderr: string }} responder */
   function runWith(cases, responder) {
-    const dareDir = path.join(makeTempDir(), '.dare');
-    writeOracle(dareDir, cases);
-    return runOracle({ dareDir, root: '/repo', command: ['node', 'dist/bin.js'], run: (_c, _a, o) => responder(o.cwd) });
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    writeOracle(meeseeksDir, cases);
+    return runOracle({ meeseeksDir, root: '/repo', command: ['node', 'dist/bin.js'], run: (_c, _a, o) => responder(o.cwd) });
   }
 
   it('materialises each case\'s files and runs in that directory', () => {
@@ -182,12 +182,12 @@ describe('running the cases', () => {
   });
 
   it('cleans its scratch directory up, so one case cannot see the previous one\'s files', () => {
-    const dareDir = path.join(makeTempDir(), '.dare');
-    writeOracle(dareDir, [aCase({ id: 'A', files: [{ path: 'only-a.csv', content: 'x' }] }), aCase({ id: 'B', files: [] })]);
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    writeOracle(meeseeksDir, [aCase({ id: 'A', files: [{ path: 'only-a.csv', content: 'x' }] }), aCase({ id: 'B', files: [] })]);
     /** @type {string[][]} */
     const listings = [];
     runOracle({
-      dareDir,
+      meeseeksDir,
       root: '/repo',
       command: ['node'],
       run: (_c, _a, o) => {
@@ -234,20 +234,20 @@ describe('resolveArtifactCommand', () => {
 describe('the oracle as a gate', () => {
   it('fails, naming what it looked for, when there is no entry point', () => {
     const dir = makeTempDir();
-    const result = oracleGate(dir, path.join(dir, '.dare'), { run: () => ({ ok: true, status: 0, stdout: '', stderr: '' }) });
+    const result = oracleGate(dir, path.join(dir, '.meeseeks'), { run: () => ({ ok: true, status: 0, stdout: '', stderr: '' }) });
     assert.equal(result.ok, false);
     assert.match(result.detail, /declares no `bin`/);
   });
 
-  it('is absent unless armed, and absent unless the driver supplied a .dare', () => {
+  it('is absent unless armed, and absent unless the driver supplied a .meeseeks', () => {
     // Both are required. An oracle with nowhere to read from would report a clean pass over
     // nothing, and this is the one gate whose whole value is independence from the builder.
     const dir = makeTempDir();
     const named = (/** @type {Record<string, unknown>} */ o) => staticGates(dir, o).map((g) => g.name);
     assert.equal(named({}).includes('oracle'), false);
-    assert.equal(named({ oracle: true }).includes('oracle'), false, 'armed with no dareDir');
-    assert.equal(named({ dareDir: path.join(dir, '.dare') }).includes('oracle'), false, 'dareDir with no arming');
-    assert.equal(named({ oracle: true, dareDir: path.join(dir, '.dare') }).includes('oracle'), true);
+    assert.equal(named({ oracle: true }).includes('oracle'), false, 'armed with no meeseeksDir');
+    assert.equal(named({ meeseeksDir: path.join(dir, '.meeseeks') }).includes('oracle'), false, 'meeseeksDir with no arming');
+    assert.equal(named({ oracle: true, meeseeksDir: path.join(dir, '.meeseeks') }).includes('oracle'), true);
   });
 });
 
@@ -379,8 +379,8 @@ describe('metamorphic relations', () => {
   });
 
   it('runs the relation as a second real invocation, in its own scratch', () => {
-    const dareDir = path.join(makeTempDir(), '.dare');
-    writeOracle(dareDir, [
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    writeOracle(meeseeksDir, [
       aCase({
         id: 'P-1',
         expectStdout: null,
@@ -391,8 +391,8 @@ describe('metamorphic relations', () => {
     /** @type {string[][]} */
     const invocations = [];
     const result = runOracle({
-      dareDir,
-      root: path.dirname(dareDir),
+      meeseeksDir,
+      root: path.dirname(meeseeksDir),
       command: ['node', 'cli.js'],
       run: (_c, args) => {
         invocations.push(args);
@@ -405,8 +405,8 @@ describe('metamorphic relations', () => {
   });
 
   it('fails the gate when the second run breaks the relation', () => {
-    const dareDir = path.join(makeTempDir(), '.dare');
-    writeOracle(dareDir, [
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    writeOracle(meeseeksDir, [
       aCase({
         id: 'P-1',
         expectStdout: null,
@@ -415,8 +415,8 @@ describe('metamorphic relations', () => {
     ]);
     let call = 0;
     const result = runOracle({
-      dareDir,
-      root: path.dirname(dareDir),
+      meeseeksDir,
+      root: path.dirname(meeseeksDir),
       command: ['node', 'cli.js'],
       run: () => ({ ok: true, status: 0, stdout: call++ === 0 ? '{"mean":0}' : '{"mean":0.333}', stderr: '' }),
     });

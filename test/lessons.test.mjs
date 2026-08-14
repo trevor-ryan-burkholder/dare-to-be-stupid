@@ -41,7 +41,7 @@ const temporaryDirs = [];
 
 /** @returns {string} */
 function makeTempDir() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-lessons-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-lessons-'));
   temporaryDirs.push(dir);
   return dir;
 }

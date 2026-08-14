@@ -1,5 +1,5 @@
 /**
- * `.dare/config.json` — defaults, validation, scaffolding (DESIGN.md §10).
+ * `.meeseeks/config.json` — defaults, validation, scaffolding (DESIGN.md §10).
  *
  * Validation is strict on purpose. An unknown key is an error rather than a shrug: a
  * typo'd `maxIteration` that silently keeps the default would let an unattended run
@@ -28,7 +28,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 /** @typedef {{ path: string, status: number }} SmokeCheck */
 /** @typedef {{ enabled: boolean, command: string[], url: string, smoke: SmokeCheck[], timeoutMs: number }} DeployConfig */
 /** @typedef {{ after: number }} RealityCheckConfig */
-/** @typedef {{ enabled: boolean }} DareMeConfig */
+/** @typedef {{ enabled: boolean }} ImproviseConfig */
 /** @typedef {{ enabled: boolean, n: number, after: number }} RaceConfig */
 /** @typedef {{ minConfidence: number }} AdvisoryConfig */
 /** @typedef {{ enabled: boolean, maxPerBrief: number }} LessonsConfig */
@@ -47,9 +47,9 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
  *   effort: Record<string, string>, oracle: OracleConfig,
  *   panelCarry: PanelCarryConfig, sandbox: SandboxConfig,
  *   deploy: DeployConfig, extractTests: boolean,
- *   chaos: number, realityCheck: RealityCheckConfig, dareMe: DareMeConfig, race: RaceConfig,
+ *   chaos: number, realityCheck: RealityCheckConfig, improvise: ImproviseConfig, race: RaceConfig,
  *   advisory: AdvisoryConfig, lessons: LessonsConfig, contextBudget: ContextBudgetConfig
- * }} DareConfig
+ * }} MeeseeksConfig
  */
 
 /** Thrown when configuration cannot be trusted. */
@@ -91,7 +91,7 @@ export const DEFAULT_OWNERSHIP = {
 
 /**
  * The defaults from DESIGN.md §10.
- * @returns {DareConfig}
+ * @returns {MeeseeksConfig}
  */
 export function defaultConfig() {
   return {
@@ -213,7 +213,7 @@ export function defaultConfig() {
     extractTests: true,
     chaos: 1,
     realityCheck: { after: 3 },
-    dareMe: { enabled: true },
+    improvise: { enabled: true },
     race: { enabled: false, n: 3, after: 2 },
     advisory: { minConfidence: 0.7 },
     lessons: { enabled: true, maxPerBrief: 3 },
@@ -359,7 +359,7 @@ function requireSmokeChecks(value) {
  * and a builder could break it every iteration without a single gate noticing.
  *
  * **Why config rather than detection.** Guessing which of a project's scripts are gating is the
- * kind of inference that is wrong quietly. An operator naming them is unambiguous, and `.dare/`
+ * kind of inference that is wrong quietly. An operator naming them is unambiguous, and `.meeseeks/`
  * is positionally protected (§6), so a gate declared here is one the builder cannot delete —
  * which is the whole difference between a gate and a suggestion. `BRIEF.md` §E rejects thresholds
  * that adapt because they make gates negotiable by the thing they constrain; a builder-editable
@@ -419,16 +419,16 @@ function rejectUnknownKeys(source, allowed, where) {
 /**
  * Merge a partial config over the defaults and validate the result.
  *
- * @param {unknown} input the parsed contents of `.dare/config.json`
- * @returns {DareConfig}
+ * @param {unknown} input the parsed contents of `.meeseeks/config.json`
+ * @returns {MeeseeksConfig}
  * @throws {ConfigError}
  */
 export function validateConfig(input) {
   const defaults = defaultConfig();
   const source = requireObject(input ?? {}, 'config');
-  rejectUnknownKeys(source, new Set(Object.keys(defaults)), '.dare/config.json');
+  rejectUnknownKeys(source, new Set(Object.keys(defaults)), '.meeseeks/config.json');
 
-  /** @type {DareConfig} */
+  /** @type {MeeseeksConfig} */
   const merged = { ...defaults };
 
   if ('maxIterations' in source) merged.maxIterations = requirePositiveInteger(source.maxIterations, 'maxIterations');
@@ -574,7 +574,7 @@ export function validateConfig(input) {
       const risky = riskyRemoteWord(url);
       if (risky !== null) {
         throw new ConfigError(
-          `deploy.url contains ${risky}: dare is pre-production only and never points at anything with users`,
+          `deploy.url contains ${risky}: meeseeks is pre-production only and never points at anything with users`,
         );
       }
       if (smoke.length === 0) {
@@ -595,11 +595,11 @@ export function validateConfig(input) {
     };
   }
 
-  if ('dareMe' in source) {
-    const dareMe = requireObject(source.dareMe, 'dareMe');
-    rejectUnknownKeys(dareMe, new Set(['enabled']), 'dareMe');
-    merged.dareMe = {
-      enabled: 'enabled' in dareMe ? requireBoolean(dareMe.enabled, 'dareMe.enabled') : defaults.dareMe.enabled,
+  if ('improvise' in source) {
+    const improvise = requireObject(source.improvise, 'improvise');
+    rejectUnknownKeys(improvise, new Set(['enabled']), 'improvise');
+    merged.improvise = {
+      enabled: 'enabled' in improvise ? requireBoolean(improvise.enabled, 'improvise.enabled') : defaults.improvise.enabled,
     };
   }
 
@@ -654,37 +654,37 @@ export function validateConfig(input) {
  * Apply environment overrides (DESIGN.md §13.4). Only the stupidity dial is overridable;
  * everything else stays in the file so an unattended run is reproducible from the repo.
  *
- * @param {DareConfig} config
+ * @param {MeeseeksConfig} config
  * @param {Record<string, string | undefined>} env
- * @returns {DareConfig}
+ * @returns {MeeseeksConfig}
  */
 export function applyEnvOverrides(config, env) {
-  const raw = env.DARE_CHAOS;
+  const raw = env.MEESEEKS_CHAOS;
   if (raw === undefined || raw === '') return config;
   const chaos = Number(raw);
   if (!Number.isInteger(chaos) || chaos < 1 || chaos > 3) {
-    throw new ConfigError(`DARE_CHAOS must be 1, 2 or 3; got ${JSON.stringify(raw)}.`);
+    throw new ConfigError(`MEESEEKS_CHAOS must be 1, 2 or 3; got ${JSON.stringify(raw)}.`);
   }
   return { ...config, chaos };
 }
 
 /**
- * Read `.dare/config.json`.
+ * Read `.meeseeks/config.json`.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @param {{ env?: Record<string, string | undefined> }} [options]
- * @returns {DareConfig}
+ * @returns {MeeseeksConfig}
  * @throws {ConfigError} when the file is missing, unreadable, or invalid
  */
-export function loadConfig(dareDir, options = {}) {
-  const file = path.join(dareDir, CONFIG_FILE);
+export function loadConfig(meeseeksDir, options = {}) {
+  const file = path.join(meeseeksDir, CONFIG_FILE);
   /** @type {string} */
   let raw;
   try {
     raw = readFileSync(file, 'utf8');
   } catch (error) {
     if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') {
-      throw new ConfigError(`${file} does not exist. Run \`dare init\` to scaffold it.`);
+      throw new ConfigError(`${file} does not exist. Run \`meeseeks init\` to scaffold it.`);
     }
     throw new ConfigError(`${file} could not be read: ${/** @type {Error} */ (error).message}`);
   }
@@ -699,15 +699,15 @@ export function loadConfig(dareDir, options = {}) {
 }
 
 /**
- * Write `.dare/config.json` atomically.
+ * Write `.meeseeks/config.json` atomically.
  *
- * @param {string} dareDir
- * @param {DareConfig} config
+ * @param {string} meeseeksDir
+ * @param {MeeseeksConfig} config
  * @returns {string} the path written
  */
-export function writeConfig(dareDir, config) {
-  mkdirSync(dareDir, { recursive: true });
-  const file = path.join(dareDir, CONFIG_FILE);
+export function writeConfig(meeseeksDir, config) {
+  mkdirSync(meeseeksDir, { recursive: true });
+  const file = path.join(meeseeksDir, CONFIG_FILE);
   const temporary = `${file}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
   renameSync(temporary, file);
@@ -734,19 +734,19 @@ export function riskyRemoteWord(remote) {
 }
 
 /**
- * Create `.dare/config.json` if it is not already there.
+ * Create `.meeseeks/config.json` if it is not already there.
  *
- * @param {string} dareDir
- * @returns {{ created: boolean, path: string, config: DareConfig }}
+ * @param {string} meeseeksDir
+ * @returns {{ created: boolean, path: string, config: MeeseeksConfig }}
  */
-export function initConfig(dareDir) {
-  const file = path.join(dareDir, CONFIG_FILE);
+export function initConfig(meeseeksDir) {
+  const file = path.join(meeseeksDir, CONFIG_FILE);
   try {
-    return { created: false, path: file, config: loadConfig(dareDir) };
+    return { created: false, path: file, config: loadConfig(meeseeksDir) };
   } catch (error) {
     if (!(error instanceof ConfigError) || !error.message.includes('does not exist')) throw error;
   }
   const config = defaultConfig();
-  writeConfig(dareDir, config);
+  writeConfig(meeseeksDir, config);
   return { created: true, path: file, config };
 }

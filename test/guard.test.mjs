@@ -60,7 +60,7 @@ function pathEvent(fixture, key, filePath) {
  * The environment of a builder: the marker the driver stamps on every child it spawns.
  * The default for these tables, because a run is the process the guard exists to constrain.
  */
-const IN_RUN = { DARE_RUNNING: '1' };
+const IN_RUN = { MEESEEKS_RUNNING: '1' };
 
 /** The environment of a person at a keyboard, who is not the accused. */
 const OPERATOR = /** @type {Record<string, string | undefined>} */ ({});
@@ -99,16 +99,16 @@ function assertAllowed(event, env = IN_RUN) {
 
 describe('blocked: protected-state', () => {
   const denied = [
-    ["echo '{}' > .dare/state.json", 'redirect over state'],
-    ['cat .dare/config.json', 'read of config'],
-    ["sed -i 's/a/b/' ./.dare/state.json", 'in-place edit through ./'],
-    ["cd .dare && echo '{}' > state.json", 'chdir first, protected name second'],
-    ['rm .dare/state.json', 'deletion'],
-    ['python3 -c "open(\'.dare/config.json\',\'w\').write(\'{}\')"', 'write from an interpreter'],
-    ['cp /tmp/fake.json "$HOME/.dare/state.json"', 'absolute path through $HOME'],
-    ['npm run build | tee .dare/state.json', 'tee in a pipeline'],
-    ['printf \'%s\' \'{}\' > .dare"/state.json"', 'path split across quotes'],
-    ['echo "$(cat .dare/state.json)"', 'inside a command substitution'],
+    ["echo '{}' > .meeseeks/state.json", 'redirect over state'],
+    ['cat .meeseeks/config.json', 'read of config'],
+    ["sed -i 's/a/b/' ./.meeseeks/state.json", 'in-place edit through ./'],
+    ["cd .meeseeks && echo '{}' > state.json", 'chdir first, protected name second'],
+    ['rm .meeseeks/state.json', 'deletion'],
+    ['python3 -c "open(\'.meeseeks/config.json\',\'w\').write(\'{}\')"', 'write from an interpreter'],
+    ['cp /tmp/fake.json "$HOME/.meeseeks/state.json"', 'absolute path through $HOME'],
+    ['npm run build | tee .meeseeks/state.json', 'tee in a pipeline'],
+    ['printf \'%s\' \'{}\' > .meeseeks"/state.json"', 'path split across quotes'],
+    ['echo "$(cat .meeseeks/state.json)"', 'inside a command substitution'],
   ];
   for (const [command, label] of denied) {
     it(`denies ${label}: ${command}`, () => {
@@ -116,24 +116,24 @@ describe('blocked: protected-state', () => {
     });
   }
 
-  it('denies a Write to .dare/state.json', () => {
-    assertDenied(pathEvent('pretooluse-write.json', 'file_path', '.dare/state.json'), 'protected-state');
+  it('denies a Write to .meeseeks/state.json', () => {
+    assertDenied(pathEvent('pretooluse-write.json', 'file_path', '.meeseeks/state.json'), 'protected-state');
   });
 
-  it('denies a Write to the absolute .dare/config.json', () => {
+  it('denies a Write to the absolute .meeseeks/config.json', () => {
     assertDenied(
-      pathEvent('pretooluse-write.json', 'file_path', `${FIXTURE_CWD}/.dare/config.json`),
+      pathEvent('pretooluse-write.json', 'file_path', `${FIXTURE_CWD}/.meeseeks/config.json`),
       'protected-state',
     );
   });
 
   it('denies an Edit that reaches state through a traversal', () => {
-    assertDenied(pathEvent('pretooluse-edit.json', 'file_path', 'src/../.dare/state.json'), 'protected-state');
+    assertDenied(pathEvent('pretooluse-edit.json', 'file_path', 'src/../.meeseeks/state.json'), 'protected-state');
   });
 
   it('denies a NotebookEdit whose notebook_path is ratchet state', () => {
     assertDenied(
-      pathEvent('pretooluse-notebook-edit.json', 'notebook_path', '.dare/state.json'),
+      pathEvent('pretooluse-notebook-edit.json', 'notebook_path', '.meeseeks/state.json'),
       'protected-state',
     );
   });
@@ -141,7 +141,7 @@ describe('blocked: protected-state', () => {
   it('denies a non-matched tool that carries a protected path, in case the matcher widens', () => {
     const event = loadEvent('pretooluse-write.json');
     event.tool_name = 'Read';
-    event.tool_input = { file_path: '.dare/state.json' };
+    event.tool_input = { file_path: '.meeseeks/state.json' };
     assertDenied(event, 'protected-state');
   });
 
@@ -149,10 +149,10 @@ describe('blocked: protected-state', () => {
   // is handed is not constrained by it: it could write itself whatever instruction it
   // preferred and receive that back as evidence on the next iteration.
   const deniedLessons = [
-    ["echo '[]' > .dare/lessons.json", 'redirect over the lesson store'],
-    ['rm .dare/lessons.json', 'deleting the lesson store'],
-    ["cd .dare && echo '{}' > lessons.json", 'chdir first, protected name second'],
-    ['bash -c "cat .dare/lessons.json"', 'reaching it through a wrapped shell'],
+    ["echo '[]' > .meeseeks/lessons.json", 'redirect over the lesson store'],
+    ['rm .meeseeks/lessons.json', 'deleting the lesson store'],
+    ["cd .meeseeks && echo '{}' > lessons.json", 'chdir first, protected name second'],
+    ['bash -c "cat .meeseeks/lessons.json"', 'reaching it through a wrapped shell'],
   ];
   for (const [command, label] of deniedLessons) {
     it(`denies ${label}: ${command}`, () => {
@@ -160,27 +160,27 @@ describe('blocked: protected-state', () => {
     });
   }
 
-  it('denies a Write to .dare/lessons.json', () => {
-    assertDenied(pathEvent('pretooluse-write.json', 'file_path', '.dare/lessons.json'), 'protected-state');
+  it('denies a Write to .meeseeks/lessons.json', () => {
+    assertDenied(pathEvent('pretooluse-write.json', 'file_path', '.meeseeks/lessons.json'), 'protected-state');
   });
 
-  it('denies an Edit to the absolute .dare/lessons.json', () => {
-    assertDenied(pathEvent('pretooluse-edit.json', 'file_path', `${FIXTURE_CWD}/.dare/lessons.json`), 'protected-state');
+  it('denies an Edit to the absolute .meeseeks/lessons.json', () => {
+    assertDenied(pathEvent('pretooluse-edit.json', 'file_path', `${FIXTURE_CWD}/.meeseeks/lessons.json`), 'protected-state');
   });
 });
 
 describe('protected-state is scoped to a run, not to the plugin being installed', () => {
   // The rule protects these files from the run they constrain. Applied unconditionally it
-  // also locked out the operator, in every session, forever: `.dare/config.json` could not
+  // also locked out the operator, in every session, forever: `.meeseeks/config.json` could not
   // be changed from inside Claude Code at all, and HANDOFF.md's own instruction to delete a
-  // useless `.dare/lessons.json` could not be carried out. The answer to that is not to send
+  // useless `.meeseeks/lessons.json` could not be carried out. The answer to that is not to send
   // the human to a terminal.
 
   const protectedCommands = [
-    "echo '{}' > .dare/state.json",
-    'cat .dare/config.json',
-    'rm .dare/lessons.json',
-    "cd .dare && echo '{}' > config.json",
+    "echo '{}' > .meeseeks/state.json",
+    'cat .meeseeks/config.json',
+    'rm .meeseeks/lessons.json',
+    "cd .meeseeks && echo '{}' > config.json",
   ];
 
   for (const command of protectedCommands) {
@@ -193,7 +193,7 @@ describe('protected-state is scoped to a run, not to the plugin being installed'
     });
   }
 
-  for (const target of ['.dare/config.json', '.dare/state.json', '.dare/lessons.json']) {
+  for (const target of ['.meeseeks/config.json', '.meeseeks/state.json', '.meeseeks/lessons.json']) {
     it(`lets an operator Write ${target}, and refuses a run the same Write`, () => {
       const event = pathEvent('pretooluse-write.json', 'file_path', target);
       assertAllowed(event, OPERATOR);
@@ -202,7 +202,7 @@ describe('protected-state is scoped to a run, not to the plugin being installed'
   }
 
   it('treats an empty marker as outside a run, since that is how an unset variable arrives', () => {
-    assertAllowed(bashEvent('cat .dare/config.json'), { DARE_RUNNING: '' });
+    assertAllowed(bashEvent('cat .meeseeks/config.json'), { MEESEEKS_RUNNING: '' });
   });
 
   it('still refuses the other three categories to an operator', () => {
@@ -210,28 +210,28 @@ describe('protected-state is scoped to a run, not to the plugin being installed'
     // nested runs do not become reasonable because a human asked for them in this session.
     assertDenied(bashEvent('git push --force origin main'), 'git-history', OPERATOR);
     assertDenied(bashEvent('rm -rf /home/someone/project'), 'rm-recursive', OPERATOR);
-    assertDenied(bashEvent('/dare "build me a thing"'), 'nested-dare', OPERATOR);
+    assertDenied(bashEvent('/meeseeks "build me a thing"'), 'nested-meeseeks', OPERATOR);
   });
 
   it('defaults to the deny side when a caller says nothing about where it is', () => {
     // checkBashCommand is exported. A caller that forgets the third argument must get the
     // stricter answer; a guard whose default is "allow" is a guard with an off switch.
-    const decision = checkBashCommand('cat .dare/config.json', FIXTURE_CWD);
+    const decision = checkBashCommand('cat .meeseeks/config.json', FIXTURE_CWD);
     assert.equal(decision.decision, 'deny');
   });
 });
 
 describe('allowed: protected-state neighbours', () => {
-  // The protected set is positional — inside a `.dare` directory — so the neighbours that
+  // The protected set is positional — inside a `.meeseeks` directory — so the neighbours that
   // matter are names that merely resemble one. Blocking these would make the guard a
   // nuisance; blocking nothing would make it decorative.
   const allowed = [
     ['cat package.json', 'an unrelated json file'],
     ['cat tsconfig.json', 'a name that merely ends in config.json'],
-    ['cat lessons.json', 'a lessons file that is not inside .dare'],
+    ['cat lessons.json', 'a lessons file that is not inside .meeseeks'],
     ["echo '{}' > src/state.json", 'an application file that happens to be called state.json'],
-    ['cat .darerc', 'a dotfile whose name only starts with .dare'],
-    ['npm run dare-report', 'a script name containing dare'],
+    ['cat .meeseeksrc', 'a dotfile whose name only starts with .meeseeks'],
+    ['npm run meeseeks-report', 'a script name containing meeseeks'],
   ];
   for (const [command, label] of allowed) {
     it(`allows ${label}: ${command}`, () => {
@@ -242,9 +242,9 @@ describe('allowed: protected-state neighbours', () => {
   const allowedWrites = [
     ['pretooluse-write.json', 'file_path', 'src/state.json'],
     ['pretooluse-write.json', 'file_path', 'docs/config.json'],
-    ['pretooluse-write.json', 'file_path', '.darerc'],
-    ['pretooluse-write.json', 'file_path', 'vendor/mydare/state.json'],
-    ['pretooluse-write.json', 'file_path', 'docs/.dare-notes/state.json'],
+    ['pretooluse-write.json', 'file_path', '.meeseeksrc'],
+    ['pretooluse-write.json', 'file_path', 'vendor/mymeeseeks/state.json'],
+    ['pretooluse-write.json', 'file_path', 'docs/.meeseeks-notes/state.json'],
     ['pretooluse-edit.json', 'file_path', 'src/index.mjs'],
   ];
   for (const [fixture, key, filePath] of allowedWrites) {
@@ -255,37 +255,37 @@ describe('allowed: protected-state neighbours', () => {
 
   it('does not treat a document that merely mentions the path as a write to it', () => {
     const event = loadEvent('pretooluse-write.json');
-    event.tool_input = { file_path: 'docs/ratchet.md', content: 'The ratchet lives in .dare/state.json.\n' };
+    event.tool_input = { file_path: 'docs/ratchet.md', content: 'The ratchet lives in .meeseeks/state.json.\n' };
     assertAllowed(event);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Category 1, widened — the whole .dare tree, not an enumerated list
+// Category 1, widened — the whole .meeseeks tree, not an enumerated list
 // ---------------------------------------------------------------------------
 
-describe('blocked: every mutation under .dare/', () => {
+describe('blocked: every mutation under .meeseeks/', () => {
   // The enumerated list this replaced covered state.json, config.json and lessons.json.
   // Everything else the driver owns was writable by the process it was meant to constrain.
   const deniedWrites = [
-    ['.dare/state.json', 'the ratchet itself'],
-    ['.dare/config.json', 'the configuration'],
-    ['.dare/lessons.json', 'the lesson store'],
-    ['.dare/red-evidence.json', 'the RED evidence'],
-    ['.dare/test-report.json', 'the report the ratchet reads'],
-    ['.dare/e2e-report.json', 'the browser report'],
-    ['.dare/briefs/iter-004.md', 'an archived build brief, nested a directory deep'],
-    ['.dare/bloopers.log', 'the blooper reel'],
+    ['.meeseeks/state.json', 'the ratchet itself'],
+    ['.meeseeks/config.json', 'the configuration'],
+    ['.meeseeks/lessons.json', 'the lesson store'],
+    ['.meeseeks/red-evidence.json', 'the RED evidence'],
+    ['.meeseeks/test-report.json', 'the report the ratchet reads'],
+    ['.meeseeks/e2e-report.json', 'the browser report'],
+    ['.meeseeks/briefs/iter-004.md', 'an archived build brief, nested a directory deep'],
+    ['.meeseeks/bloopers.log', 'the blooper reel'],
     // A builder that could rewrite this could declare away the capability whose gate it
     // cannot pass, and the run would ship having never checked it (DESIGN.md §3.7).
-    ['.dare/capabilities.json', 'the capability manifest'],
+    ['.meeseeks/capabilities.json', 'the capability manifest'],
     // Added to this list before the file existed, as a driver-owned artifact the enumerated
     // rule would have missed. It exists now (§7.1) and needed no new rule, which is the
     // positional guard doing exactly what it was changed to do in 0.10.0.
-    ['.dare/run.json', 'the run manifest'],
-    ['.dare/state.json.bak', 'a backup beside the ratchet'],
-    ['./.dare/state.json', 'a path with a leading dot segment'],
-    ['src/../.dare/state.json', 'a path that walks back into the directory'],
+    ['.meeseeks/run.json', 'the run manifest'],
+    ['.meeseeks/state.json.bak', 'a backup beside the ratchet'],
+    ['./.meeseeks/state.json', 'a path with a leading dot segment'],
+    ['src/../.meeseeks/state.json', 'a path that walks back into the directory'],
   ];
   for (const [filePath, label] of deniedWrites) {
     it(`denies writing ${label}: ${filePath}`, () => {
@@ -297,23 +297,23 @@ describe('blocked: every mutation under .dare/', () => {
     ['pretooluse-edit.json', 'file_path'],
     ['pretooluse-notebook-edit.json', 'notebook_path'],
   ]) {
-    it(`denies ${fixture} against .dare/red-evidence.json`, () => {
-      assertDenied(pathEvent(fixture, key, '.dare/red-evidence.json'), 'protected-state');
+    it(`denies ${fixture} against .meeseeks/red-evidence.json`, () => {
+      assertDenied(pathEvent(fixture, key, '.meeseeks/red-evidence.json'), 'protected-state');
     });
   }
 
   const deniedCommands = [
-    ['ls .dare', 'listing it'],
-    ['cat .dare/bloopers.log', 'reading through the shell, which cannot be told from writing'],
-    ['rm .dare/red-evidence.json', 'deleting evidence'],
-    ['mv .dare/state.json /tmp/x', 'moving the ratchet out of the way'],
-    ['cp /tmp/forged.json .dare/red-evidence.json', 'copying a forgery over it'],
-    ["sed -i 's/a/b/' .dare/state.json", 'editing in place'],
-    ['echo "{}" | tee .dare/red-evidence.json', 'writing through a pipe'],
-    ['cd .dare && echo {} > red-evidence.json', 'never spelling the full path'],
-    ['git add .dare/bloopers.log', 'staging it'],
-    ['ls .dare && cat tsconfig.json', 'hiding it in a chain'],
-    ['bash -c "rm .dare/state.json"', 'wrapping it in a shell'],
+    ['ls .meeseeks', 'listing it'],
+    ['cat .meeseeks/bloopers.log', 'reading through the shell, which cannot be told from writing'],
+    ['rm .meeseeks/red-evidence.json', 'deleting evidence'],
+    ['mv .meeseeks/state.json /tmp/x', 'moving the ratchet out of the way'],
+    ['cp /tmp/forged.json .meeseeks/red-evidence.json', 'copying a forgery over it'],
+    ["sed -i 's/a/b/' .meeseeks/state.json", 'editing in place'],
+    ['echo "{}" | tee .meeseeks/red-evidence.json', 'writing through a pipe'],
+    ['cd .meeseeks && echo {} > red-evidence.json', 'never spelling the full path'],
+    ['git add .meeseeks/bloopers.log', 'staging it'],
+    ['ls .meeseeks && cat tsconfig.json', 'hiding it in a chain'],
+    ['bash -c "rm .meeseeks/state.json"', 'wrapping it in a shell'],
   ];
   for (const [command, label] of deniedCommands) {
     it(`denies ${label}: ${command}`, () => {
@@ -325,21 +325,21 @@ describe('blocked: every mutation under .dare/', () => {
     // The scoping rule is unchanged by the widening: this is a limit on the run, not on the
     // person who owns the files. HANDOFF.md tells an operator to delete a useless lesson
     // store, and that instruction has to remain possible from inside Claude Code.
-    assertAllowed(pathEvent('pretooluse-write.json', 'file_path', '.dare/red-evidence.json'), OPERATOR);
-    assertAllowed(bashEvent('rm .dare/lessons.json'), OPERATOR);
+    assertAllowed(pathEvent('pretooluse-write.json', 'file_path', '.meeseeks/red-evidence.json'), OPERATOR);
+    assertAllowed(bashEvent('rm .meeseeks/lessons.json'), OPERATOR);
   });
 });
 
 describe('RED evidence cannot be forged by the process it judges', () => {
-  // The regression this exists for: `.dare/red-evidence.json` records which tests were ever
+  // The regression this exists for: `.meeseeks/red-evidence.json` records which tests were ever
   // observed failing. RED-before-GREEN says a test with no red history does not count toward
   // the ratchet. A builder that can write this file can award itself that history, and the
   // rule stops meaning anything — silently, because the forged file parses.
   const forgeries = [
-    ['pretooluse-write.json', 'file_path', '.dare/red-evidence.json'],
-    ['pretooluse-edit.json', 'file_path', '.dare/red-evidence.json'],
-    ['pretooluse-write.json', 'file_path', './.dare/red-evidence.json'],
-    ['pretooluse-write.json', 'file_path', 'src/../.dare/red-evidence.json'],
+    ['pretooluse-write.json', 'file_path', '.meeseeks/red-evidence.json'],
+    ['pretooluse-edit.json', 'file_path', '.meeseeks/red-evidence.json'],
+    ['pretooluse-write.json', 'file_path', './.meeseeks/red-evidence.json'],
+    ['pretooluse-write.json', 'file_path', 'src/../.meeseeks/red-evidence.json'],
   ];
   for (const [fixture, key, filePath] of forgeries) {
     it(`refuses ${fixture} -> ${filePath}`, () => {
@@ -348,9 +348,9 @@ describe('RED evidence cannot be forged by the process it judges', () => {
   }
 
   for (const command of [
-    'echo \'{"seenFailing":["test/a.test.js::works"]}\' > .dare/red-evidence.json',
-    'cat forged.json > .dare/red-evidence.json',
-    'python3 -c "open(\'.dare/red-evidence.json\',\'w\').write(\'{}\')"',
+    'echo \'{"seenFailing":["test/a.test.js::works"]}\' > .meeseeks/red-evidence.json',
+    'cat forged.json > .meeseeks/red-evidence.json',
+    'python3 -c "open(\'.meeseeks/red-evidence.json\',\'w\').write(\'{}\')"',
   ]) {
     it(`refuses the shell route: ${command.slice(0, 48)}`, () => {
       assertDenied(bashEvent(command), 'protected-state');
@@ -437,7 +437,7 @@ describe('allowed: rm-recursive neighbours', () => {
   const allowed = [
     ['rm package-lock.json', 'a non-recursive delete'],
     ['rm -f dist/bundle.js', 'force without recursion'],
-    ['rm -rf /tmp/dare-scratch', 'recursive delete inside /tmp'],
+    ['rm -rf /tmp/meeseeks-scratch', 'recursive delete inside /tmp'],
     ['rm -rf /tmp/a /tmp/b', 'several operands, all inside /tmp'],
     ['rm -rf /tmp/scratch 2>/dev/null', 'a redirected fd that is not an operand'],
     ['rm -rf', 'recursive flags with nothing to delete'],
@@ -452,20 +452,20 @@ describe('allowed: rm-recursive neighbours', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Category 4 — nested dare
+// Category 4 — nested meeseeks
 // ---------------------------------------------------------------------------
 
-describe('blocked: nested-dare', () => {
+describe('blocked: nested-meeseeks', () => {
   const denied = [
-    ['dare', 'the bare command'],
-    ['dare "build me a thing"', 'the command with an idea'],
-    ['/dare', 'the slash command on its own'],
-    ['claude -p "/dare ship it"', 'the slash command handed to a claude child'],
-    ['npm test && dare', 'the second command in a chain'],
+    ['meeseeks', 'the bare command'],
+    ['meeseeks "build me a thing"', 'the command with an idea'],
+    ['/meeseeks', 'the slash command on its own'],
+    ['claude -p "/meeseeks ship it"', 'the slash command handed to a claude child'],
+    ['npm test && meeseeks', 'the second command in a chain'],
   ];
   for (const [command, label] of denied) {
     it(`denies ${label}: ${command}`, () => {
-      assertDenied(bashEvent(command), 'nested-dare');
+      assertDenied(bashEvent(command), 'nested-meeseeks');
     });
   }
 });
@@ -476,8 +476,8 @@ describe('blocked: commands hidden inside a shell wrapper', () => {
   const denied = [
     ['bash -c "rm -rf /etc"', 'rm-recursive'],
     ["sh -c 'git push --force'", 'git-history'],
-    ['bash -c "cat .dare/config.json"', 'protected-state'],
-    ["sh -c '/dare'", 'nested-dare'],
+    ['bash -c "cat .meeseeks/config.json"', 'protected-state'],
+    ["sh -c '/meeseeks'", 'nested-meeseeks'],
     ['zsh -c "rm -rf node_modules"', 'rm-recursive'],
   ];
   for (const [command, rule] of denied) {
@@ -491,21 +491,21 @@ describe('blocked: commands hidden inside a shell wrapper', () => {
   });
 });
 
-describe('allowed: nested-dare neighbours', () => {
+describe('allowed: nested-meeseeks neighbours', () => {
   const allowed = [
     // Prose is not an invocation. The first version denied the slash command anywhere in
     // the line, and it caught a heredoc that mentioned the command in a code comment —
     // while this plugin was installed, on its own author, editing this file.
-    ['echo "run /dare to start a build"', 'the slash command quoted inside prose'],
-    ['git commit -m "document the /dare command"', 'the slash command in a commit message'],
-    ['grep -rn "/dare" docs/', 'searching the docs for the slash command'],
-    ['printf "%s\\n" "usage: /dare <path>"', 'the slash command inside usage text'],
-    ['echo "I dare you"', 'the word dare in prose'],
-    ['npm test -- test/dare.test.mjs', 'a test file named after the plugin'],
-    ['ls /daredevil', 'a path that merely starts with /dare'],
-    ['claude -p "summarize the dare design"', 'a claude child that is not a dare run'],
-    ['git log --grep=dare', 'searching history for the word'],
-    ['cat docs/dare-notes.md', 'a document named after the plugin'],
+    ['echo "run /meeseeks to start a build"', 'the slash command quoted inside prose'],
+    ['git commit -m "document the /meeseeks command"', 'the slash command in a commit message'],
+    ['grep -rn "/meeseeks" docs/', 'searching the docs for the slash command'],
+    ['printf "%s\\n" "usage: /meeseeks <path>"', 'the slash command inside usage text'],
+    ['echo "I meeseeks you"', 'the word meeseeks in prose'],
+    ['npm test -- test/meeseeks.test.mjs', 'a test file named after the plugin'],
+    ['ls /daredevil', 'a path that merely starts with /meeseeks'],
+    ['claude -p "summarize the meeseeks design"', 'a claude child that is not a meeseeks run'],
+    ['git log --grep=meeseeks', 'searching history for the word'],
+    ['cat docs/meeseeks-notes.md', 'a document named after the plugin'],
   ];
   for (const [command, label] of allowed) {
     it(`allows ${label}: ${command}`, () => {
@@ -550,10 +550,10 @@ describe('blocked: malformed-payload', () => {
 
 describe('deny reasons', () => {
   it('names the runtime directory, and points at the route that still works', () => {
-    const result = evaluate(bashEvent('cat .dare/state.json'), { env: IN_RUN });
+    const result = evaluate(bashEvent('cat .meeseeks/state.json'), { env: IN_RUN });
     assert.equal(
       result.decision === 'deny' ? result.reason : '',
-      'Command references the .dare runtime directory. It holds the ratchet, the configuration, the RED ' +
+      'Command references the .meeseeks runtime directory. It holds the ratchet, the configuration, the RED ' +
         'evidence, the archived briefs and the test reports — the state and evidence a run is judged by, which ' +
         'the run does not write (DESIGN.md §6). Read them with the Read tool, which is not hooked.',
     );
@@ -586,10 +586,10 @@ describe('deny reasons', () => {
   });
 
   it('names the no-nesting invariant for a nested run', () => {
-    const result = evaluate(bashEvent('/dare'));
+    const result = evaluate(bashEvent('/meeseeks'));
     const reason = result.decision === 'deny' ? result.reason : '';
     assert.equal(
-      reason.startsWith('dare does not spawn dare. Nested runs are blocked at the driver and at the hook'),
+      reason.startsWith('meeseeks does not spawn meeseeks. Nested runs are blocked at the driver and at the hook'),
       true,
       reason,
     );
@@ -603,7 +603,7 @@ describe('deny reasons', () => {
   // that; the sentence is made to say so, because a message that misdirects costs an
   // investigation and this repository has paid for that repeatedly.
   it('says the denial is a text match, so prose about the command is diagnosable in seconds', () => {
-    const result = evaluate(bashEvent('/dare'));
+    const result = evaluate(bashEvent('/meeseeks'));
     const reason = result.decision === 'deny' ? result.reason : '';
     assert.equal(reason.includes('TEXT match, not a detected invocation'), true, reason);
     assert.equal(reason.includes('heredoc'), true, reason);
@@ -613,8 +613,8 @@ describe('deny reasons', () => {
   it('still denies, and denies identically, whatever the sentence now says', () => {
     // The message changed; the behaviour must not have. A commit message mentioning the command
     // is refused exactly as before.
-    assertDenied(bashEvent('/dare'), 'nested-dare');
-    assertDenied(bashEvent("sh -c '/dare'"), 'nested-dare');
+    assertDenied(bashEvent('/meeseeks'), 'nested-meeseeks');
+    assertDenied(bashEvent("sh -c '/meeseeks'"), 'nested-meeseeks');
   });
 });
 
@@ -624,23 +624,23 @@ describe('deny reasons', () => {
 
 describe('isProtectedStatePath', () => {
   const cases = [
-    ['.dare/state.json', true],
-    ['.dare/config.json', true],
-    ['./.dare/state.json', true],
-    ['src/../.dare/state.json', true],
-    [`${FIXTURE_CWD}/.dare/config.json`, true],
+    ['.meeseeks/state.json', true],
+    ['.meeseeks/config.json', true],
+    ['./.meeseeks/state.json', true],
+    ['src/../.meeseeks/state.json', true],
+    [`${FIXTURE_CWD}/.meeseeks/config.json`, true],
     // Everything under the directory, at any depth, including names not yet invented.
-    ['.dare/bloopers.log', true],
-    ['.dare/red-evidence.json', true],
-    ['.dare/state.json.bak', true],
-    ['.dare/briefs/iter-004.md', true],
-    ['.dare/reports/nested/deep/unit.json', true],
-    ['.dare', true],
+    ['.meeseeks/bloopers.log', true],
+    ['.meeseeks/red-evidence.json', true],
+    ['.meeseeks/state.json.bak', true],
+    ['.meeseeks/briefs/iter-004.md', true],
+    ['.meeseeks/reports/nested/deep/unit.json', true],
+    ['.meeseeks', true],
     // Names that only resemble one. Matching is on whole segments.
-    ['mydare/state.json', false],
+    ['mymeeseeks/state.json', false],
     ['state.json', false],
-    ['docs/.dare-notes/state.json', false],
-    ['.darerc', false],
+    ['docs/.meeseeks-notes/state.json', false],
+    ['.meeseeksrc', false],
     ['', false],
   ];
   for (const [candidate, expected] of cases) {
@@ -717,7 +717,7 @@ describe('renderDecision', () => {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason: '[dare:git-history] because.',
+        permissionDecisionReason: '[meeseeks:git-history] because.',
       },
     });
   });
@@ -754,7 +754,7 @@ describe('guard.mjs as a process', () => {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason: '[dare:git-history] Force push is blocked so recovery stays possible (DESIGN.md §6).',
+        permissionDecisionReason: '[meeseeks:git-history] Force push is blocked so recovery stays possible (DESIGN.md §6).',
       },
     });
   });
@@ -767,11 +767,11 @@ describe('guard.mjs as a process', () => {
 
   it('reads the run marker from its own environment, which is the only way it arrives', async () => {
     // The unit tables inject `env`; production does not. This is that seam. The driver sets
-    // DARE_RUNNING on the `claude` child and the hook inherits it - confirmed live against
+    // MEESEEKS_RUNNING on the `claude` child and the hook inherits it - confirmed live against
     // claude 2.1.226 before this scoping was written, not assumed.
-    const payload = JSON.stringify(bashEvent('cat .dare/config.json'));
+    const payload = JSON.stringify(bashEvent('cat .meeseeks/config.json'));
 
-    const inRun = await run(payload, { ...process.env, DARE_RUNNING: '1' });
+    const inRun = await run(payload, { ...process.env, MEESEEKS_RUNNING: '1' });
     assert.equal(inRun.code, 0);
     assert.equal(
       JSON.parse(inRun.stdout).hookSpecificOutput.permissionDecision,
@@ -780,7 +780,7 @@ describe('guard.mjs as a process', () => {
     );
 
     const operator = { ...process.env };
-    delete operator.DARE_RUNNING;
+    delete operator.MEESEEKS_RUNNING;
     const outsideRun = await run(payload, operator);
     assert.equal(outsideRun.code, 0);
     assert.equal(outsideRun.stdout, '', 'an operator was locked out of their own configuration');
@@ -795,7 +795,7 @@ describe('guard.mjs as a process', () => {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
         permissionDecisionReason:
-          '[dare:malformed-payload] PreToolUse payload was not valid JSON. A guard that fails open is not a guard.',
+          '[meeseeks:malformed-payload] PreToolUse payload was not valid JSON. A guard that fails open is not a guard.',
       },
     });
   });
@@ -805,13 +805,13 @@ describe('guard.mjs as a process', () => {
     assert.equal(code, 0);
     assert.equal(
       JSON.parse(stdout).hookSpecificOutput.permissionDecisionReason,
-      '[dare:malformed-payload] PreToolUse payload was not valid JSON. A guard that fails open is not a guard.',
+      '[meeseeks:malformed-payload] PreToolUse payload was not valid JSON. A guard that fails open is not a guard.',
     );
   });
 });
 
 // CLAUDE.md's invariant reads: "The guard hook is not editable by what it guards." That was
-// true of `.dare/` and false of the guard itself. The positional rule protects the run's
+// true of `.meeseeks/` and false of the guard itself. The positional rule protects the run's
 // evidence; nothing protected the file deciding what a run may do, so a builder holding
 // `--dangerously-skip-permissions` could rewrite its own constraint and no required id would
 // notice.
@@ -856,7 +856,7 @@ describe('allowed: guard neighbours', () => {
   // Blocking everything is not passing. These are the names most likely to be caught by a
   // careless rule, and every one of them is ordinary work a builder may legitimately do.
   // Note what is NOT here: `cat hooks/guard.mjs`. A shell string cannot be told apart from a
-  // write reliably, which is exactly why protected-state denies `cat .dare/config.json` too.
+  // write reliably, which is exactly why protected-state denies `cat .meeseeks/config.json` too.
   // Reading through the Read tool stays fine — it is not hooked.
   const allowed = [
     ["echo 'x' > test/guard.test.mjs", 'the guard test, which is not the guard'],

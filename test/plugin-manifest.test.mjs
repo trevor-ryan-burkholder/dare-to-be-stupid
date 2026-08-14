@@ -31,13 +31,13 @@ function readJson(relative) {
 
 const PLUGIN = readJson('.claude-plugin/plugin.json');
 const MARKETPLACE = readJson('.claude-plugin/marketplace.json');
-const COMMAND = read('commands/dare.md');
+const COMMAND = read('commands/meeseeks.md');
 const HOOKS = readJson('hooks/hooks.json');
 const PACKAGE = readJson('package.json');
 
 describe('plugin.json', () => {
   it('declares the fields the loader needs', () => {
-    assert.equal(PLUGIN.name, 'dare-to-be-stupid');
+    assert.equal(PLUGIN.name, 'meeseeks');
     assert.equal(typeof PLUGIN.version, 'string');
     assert.equal(typeof PLUGIN.description, 'string');
     assert.equal(PLUGIN.license, 'MIT');
@@ -58,7 +58,7 @@ describe('plugin.json', () => {
   });
 
   it('keeps every component where the loader looks for it by convention', () => {
-    for (const relative of ['commands/dare.md', 'hooks/hooks.json', 'output-styles/junkion.md']) {
+    for (const relative of ['commands/meeseeks.md', 'hooks/hooks.json', 'output-styles/meeseeks.md']) {
       assert.equal(existsSync(path.join(ROOT, relative)), true, `component missing: ${relative}`);
     }
   });
@@ -104,15 +104,15 @@ describe('the guard hook registration', () => {
 
   it('matches every tool that could write to the ratchet, not only Bash', () => {
     // DESIGN.md §7's comment says "PreToolUse on Bash", but the invariant is that a
-    // builder cannot write .dare/state.json — which is unenforceable against the Write
+    // builder cannot write .meeseeks/state.json — which is unenforceable against the Write
     // tool if the matcher only covers Bash.
     for (const tool of ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit']) {
       assert.equal(entry.matcher.split('|').includes(tool), true, `matcher does not cover ${tool}`);
     }
   });
 
-  it('does not match the read-only tools, which is what keeps .dare readable', () => {
-    // The invariant is "a run may read .dare but may not write it". The reading half is not
+  it('does not match the read-only tools, which is what keeps .meeseeks readable', () => {
+    // The invariant is "a run may read .meeseeks but may not write it". The reading half is not
     // enforced by any branch in guard.mjs — it is enforced here, by the hook never firing on
     // a read at all. Adding Read to this matcher would silently turn the guard from a write
     // barrier into a blackout, so the exclusion is asserted rather than assumed.
@@ -127,7 +127,7 @@ describe('the guard hook registration', () => {
   });
 });
 
-describe('the /dare command', () => {
+describe('the /meeseeks command', () => {
   it('has frontmatter with a description and an argument hint', () => {
     assert.equal(COMMAND.startsWith('---\n'), true);
     const frontmatter = COMMAND.slice(4, COMMAND.indexOf('\n---', 4));

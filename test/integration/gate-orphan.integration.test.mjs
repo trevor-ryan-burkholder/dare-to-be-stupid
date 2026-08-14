@@ -125,7 +125,7 @@ function leaksAGrandchild(pidFile) {
 
 describe('a timed-out gate takes its leaked descendants with it', { skip: process.platform === 'win32' }, () => {
   it('kills a grandchild that outlived the gate, and names it in the detail', () => {
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-orphan-'));
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-orphan-'));
     const pidFile = path.join(dir, 'sleeper.pid');
     try {
       const started = Date.now();
@@ -165,7 +165,7 @@ describe('a timed-out gate takes its leaked descendants with it', { skip: proces
   // with it — the sweep is a set difference, and this is the half that proves the subtraction
   // is real rather than the whole group being signalled.
   it('leaves a process that was already there before the gate started', () => {
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-orphan-'));
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-orphan-'));
     try {
       // A bystander in the driver's own process group, started before any gate runs. Nothing
       // detaches it, so it shares the group the sweep samples — which is the only reason this

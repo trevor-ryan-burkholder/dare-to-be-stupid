@@ -151,7 +151,7 @@ const SKIP_DIRS = new Set([
   'dist',
   'build',
   'coverage',
-  '.dare',
+  '.meeseeks',
   '.next',
   '.stryker-tmp',
 ]);

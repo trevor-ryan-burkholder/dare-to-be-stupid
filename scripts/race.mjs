@@ -19,7 +19,7 @@
  *     and asking one to choose between candidates the gates could not separate would be
  *     adding judgement exactly where determinism was available.
  *   - **The driver keeps the ratchet.** Candidates work in their own worktrees, where
- *     `.dare/` is untracked and therefore absent. No candidate can read or advance the
+ *     `.meeseeks/` is untracked and therefore absent. No candidate can read or advance the
  *     ratchet; only the main driver does, and only once a winner has been merged.
  *
  * Everything that touches git is injected, so the decisions above are tested without a
@@ -233,7 +233,7 @@ export function parseNumstat(stdout) {
  * @returns {string} the directory name for a candidate's worktree
  */
 export function worktreeName(index) {
-  return `dare-race-${String(index).padStart(2, '0')}`;
+  return `meeseeks-race-${String(index).padStart(2, '0')}`;
 }
 
 /**
@@ -297,16 +297,16 @@ export function removeWorktrees(options) {
 /**
  * Does this path look like a worktree a race created?
  *
- * Matched on the directory name `createWorktrees` writes — `dare-race-01` and up — rather than
+ * Matched on the directory name `createWorktrees` writes — `meeseeks-race-01` and up — rather than
  * on the parent, so a sweep still recognises one whose parent was renamed or partially cleaned.
- * A worktree of the operator's called `dare-race-07` would be caught by this; that name is ours
+ * A worktree of the operator's called `meeseeks-race-07` would be caught by this; that name is ours
  * and the collision is accepted rather than unnoticed.
  *
  * @param {string} worktreePath
  * @returns {boolean}
  */
 function looksLikeRaceWorktree(worktreePath) {
-  return /^dare-race-\d+$/.test(path.basename(worktreePath));
+  return /^meeseeks-race-\d+$/.test(path.basename(worktreePath));
 }
 
 /**
@@ -314,7 +314,7 @@ function looksLikeRaceWorktree(worktreePath) {
  *
  * **This runs at race *start*, and the timing is the design.** `removeWorktrees` runs on the
  * driver's paths out, which covers every ordinary ending and none of the important one: killing a
- * driver mid-race with `-9` left three worktrees at `/tmp/dare-race-55237-4/` on 13 August 2026,
+ * driver mid-race with `-9` left three worktrees at `/tmp/meeseeks-race-55237-4/` on 13 August 2026,
  * and `git worktree add` refuses a directory it already knows about — so one abandoned race breaks
  * every later race in that repository, and the error names a directory rather than the race that
  * left it behind. No `finally` and no signal handler survives `SIGKILL`, so cleanup at the end
@@ -389,7 +389,7 @@ export function sweepRaceWorktrees(options) {
  * describes. Keeping them is not the cautious option; it is the one that ships unjudged code.
  *
  * Nothing is destroyed. `git stash push --include-untracked` preserves the lot, ignored paths
- * excepted, which is what keeps `.dare/` — ratchet, pins, briefs — out of it entirely. The stash
+ * excepted, which is what keeps `.meeseeks/` — ratchet, pins, briefs — out of it entirely. The stash
  * is **not** popped after a successful merge: re-applying ungated changes on top of the winner
  * rebuilds exactly the tree this avoids, and could conflict with the winner's diff while doing it.
  * It *is* popped when the merge fails anyway, because a failed race must leave the tree as it

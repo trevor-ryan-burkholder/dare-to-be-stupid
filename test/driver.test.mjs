@@ -34,11 +34,11 @@ import {
   childEnvironment,
   permissionsFor,
   commandGates,
-  dareIgnoreUpdate,
+  meeseeksIgnoreUpdate,
   architectGateFragment,
   recordPanelVerdict,
   suiteSensitivityEvidence,
-  ensureDareIgnored,
+  ensureMeeseeksIgnored,
   firstIterationTask,
   unitGateCommand,
   ensurePlaywrightBrowsers,
@@ -66,7 +66,7 @@ import {
   shipTimeMutationScope,
   claudeArgs,
   formatGateFailure,
-  DARE_IGNORED_PATHS,
+  MEESEEKS_IGNORED_PATHS,
   OUTCOME_FILE,
   REVIEW_RECORD,
   isColdPhase,
@@ -97,7 +97,7 @@ const temporaryDirs = [];
 
 /** @returns {string} */
 function makeTempDir() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-driver-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-driver-'));
   temporaryDirs.push(dir);
   return dir;
 }
@@ -850,8 +850,8 @@ describe('claudeArgs and the permission policy', () => {
   // (DESIGN.md §6), and until 0.59.0 the driver never registered it with the children it
   // spawns. It relied on `hooks/hooks.json`, which Claude Code applies to the operator's
   // own sessions — **a `claude -p` child does not load the operator's plugin PreToolUse
-  // hooks.** Measured on 12 August 2026: a child stamped `DARE_RUNNING=1` overwrote
-  // `.dare/state.json` through both Write and Bash, in dangerous *and* non-dangerous mode,
+  // hooks.** Measured on 12 August 2026: a child stamped `MEESEEKS_RUNNING=1` overwrote
+  // `.meeseeks/state.json` through both Write and Bash, in dangerous *and* non-dangerous mode,
   // with `permission_denials: []`. The same write is denied the moment the hook arrives in
   // `--settings`.
   //
@@ -1238,11 +1238,11 @@ describe('assertNotNested', () => {
   });
 
   it('allows a run when the marker is empty', () => {
-    assert.equal(assertNotNested({ DARE_RUNNING: '' }), undefined);
+    assert.equal(assertNotNested({ MEESEEKS_RUNNING: '' }), undefined);
   });
 
   it('refuses a nested run', () => {
-    assert.throws(() => assertNotNested({ DARE_RUNNING: '1' }), DriverError);
+    assert.throws(() => assertNotNested({ MEESEEKS_RUNNING: '1' }), DriverError);
   });
 });
 
@@ -1569,15 +1569,15 @@ describe('writeMutationConfig', () => {
   it('writes a config carrying a breaking threshold the builder cannot reach', () => {
     // Stryker has no --thresholds flag and thresholds.break defaults to null, so surviving
     // mutants exit 0. The threshold therefore has to live in a file, and it has to be a file
-    // under .dare or the builder owns whether the gate can fail at all.
+    // under .meeseeks or the builder owns whether the gate can fail at all.
     //
     // "cannot reach" in this title means cannot *edit*, which is the property. It used to also
     // read as "cannot achieve" - the threshold was 100 - and that turned out to be literally
     // true of correct repositories too. The number lives beside the constant with the
     // measurement that set it; here we assert only that the gate is capable of failing.
-    const dareDir = path.join(makeTempDir(), '.dare');
-    const file = writeMutationConfig(dareDir);
-    assert.equal(file, path.join(dareDir, 'stryker.config.json'));
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    const file = writeMutationConfig(meeseeksDir);
+    assert.equal(file, path.join(meeseeksDir, 'stryker.config.json'));
     const written = JSON.parse(readFileSync(file, 'utf8')).thresholds.break;
     assert.equal(typeof written, 'number');
     assert.equal(written > 0, true, 'a break of 0 or null cannot fail, which is the default this exists to override');
@@ -1593,8 +1593,8 @@ describe('writeMutationConfig', () => {
     // 0.43.0's finding for a second package: Stryker resolves from where Stryker lives, not
     // from the project. `-p typescript` does not fix it — measured — because npx siblings are
     // not on Node's ESM resolution path from inside @stryker-mutator/core.
-    const dareDir = path.join(makeTempDir(), '.dare');
-    const written = JSON.parse(readFileSync(writeMutationConfig(dareDir), 'utf8'));
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    const written = JSON.parse(readFileSync(writeMutationConfig(meeseeksDir), 'utf8'));
     assert.equal(written.tsconfigFile, '', 'the preprocessor is armed again and the gate can crash on a TS tree');
   });
 });
@@ -1633,13 +1633,13 @@ describe('driveRun', () => {
 
   /**
    * @param {Partial<import('../scripts/driver.mjs').Effects>} overrides
-   * @param {Partial<import('../scripts/config.mjs').DareConfig>} [configOverrides]
+   * @param {Partial<import('../scripts/config.mjs').MeeseeksConfig>} [configOverrides]
    * @param {string[]} [seedPassing]
    * @param {string[]} [requiredIds]
    */
   function run(overrides, configOverrides = {}, seedPassing = [], requiredIds = ['PRD-1.1'], unitCommand = 'npx vitest run --reporter=json') {
     const root = makeTempDir();
-    const dareDir = path.join(root, '.dare');
+    const meeseeksDir = path.join(root, '.meeseeks');
     if (seedPassing.length > 0) {
       // A seeded ratchet means a reset is reachable, and the reset really shells out to
       // git — so the root has to be a real repository with a real commit to return to.
@@ -1651,7 +1651,7 @@ describe('driveRun', () => {
       writeFileSync(path.join(root, 'app.txt'), 'good\n', 'utf8');
       git(['add', 'app.txt']);
       git(['commit', '--quiet', '-m', 'good state']);
-      saveState(dareDir, {
+      saveState(meeseeksDir, {
         version: 1,
         iteration: 1,
         passing: seedPassing,
@@ -1660,14 +1660,14 @@ describe('driveRun', () => {
     }
     const outcome = driveRun({
       config: { ...defaultConfig(), maxIterations: 5, stallLimit: 3, reviewers: ['correctness'], ...configOverrides },
-      dareDir,
+      meeseeksDir,
       rootDir: root,
       requiredIds,
       task: 'build the thing',
       unitCommand,
       effects: effectsWith(overrides),
     });
-    return { outcome, dareDir, root };
+    return { outcome, meeseeksDir, root };
   }
 
   // The deploy command was the only call in the driver bounded by nothing. `tokenCeiling` and
@@ -1743,7 +1743,7 @@ describe('driveRun', () => {
     });
   });
 
-  // 0.63.0. Until then the deploy lived inside `ship()` — after the dare/GRAND-PRIZE tag was
+  // 0.63.0. Until then the deploy lived inside `ship()` — after the meeseeks/GRAND-PRIZE tag was
   // already written — and its failure was printed and ignored, so a run could announce a
   // grand prize having deployed nothing (DESIGN.md §10.1).
   describe('a deploy that does not come up withholds the ship', () => {
@@ -1801,9 +1801,9 @@ describe('driveRun', () => {
     });
 
     it('carries the deploy failure into the next objective, so the builder is told what broke', () => {
-      const { dareDir } = run({ readTestReports: oneGreenTest, deploy: () => ({ ok: false, detail: 'smoke: /api/items expected 200, answered 404' }) });
-      const briefs = readdirSync(path.join(dareDir, 'briefs'));
-      const text = briefs.map((file) => readFileSync(path.join(dareDir, 'briefs', file), 'utf8')).join('\n');
+      const { meeseeksDir } = run({ readTestReports: oneGreenTest, deploy: () => ({ ok: false, detail: 'smoke: /api/items expected 200, answered 404' }) });
+      const briefs = readdirSync(path.join(meeseeksDir, 'briefs'));
+      const text = briefs.map((file) => readFileSync(path.join(meeseeksDir, 'briefs', file), 'utf8')).join('\n');
       assert.match(text, /answered 404/);
     });
   });
@@ -1823,7 +1823,7 @@ describe('driveRun', () => {
       let builders = 0;
       const outcome = driveRun({
         config: { ...defaultConfig(), maxIterations: 4, tokenCeiling: 2_000_000, reviewers: ['correctness'] },
-        dareDir: path.join(root, '.dare'),
+        meeseeksDir: path.join(root, '.meeseeks'),
         rootDir: root,
         requiredIds: ['PRD-1.1'],
         task: 'build the thing',
@@ -1879,7 +1879,7 @@ describe('driveRun', () => {
       const root = makeTempDir();
       const outcome = driveRun({
         config: { ...defaultConfig(), maxIterations: 1, reviewers: ['correctness'] },
-        dareDir: path.join(root, '.dare'),
+        meeseeksDir: path.join(root, '.meeseeks'),
         rootDir: root,
         requiredIds: ['PRD-1.1'],
         task: 'build the thing',
@@ -1897,10 +1897,10 @@ describe('driveRun', () => {
     /** @param {string} text what the builder's final message says */
     function runWithBuilderSaying(text) {
       const root = makeTempDir();
-      const dareDir = path.join(root, '.dare');
+      const meeseeksDir = path.join(root, '.meeseeks');
       const outcome = driveRun({
         config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
-        dareDir,
+        meeseeksDir,
         rootDir: root,
         requiredIds: ['PRD-1.1'],
         task: 'build the thing',
@@ -1916,16 +1916,16 @@ describe('driveRun', () => {
           ],
         }),
       });
-      return { outcome, dareDir };
+      return { outcome, meeseeksDir };
     }
 
     it('records a cited assumption where the reviewer will see it', () => {
-      const { dareDir } = runWithBuilderSaying(
+      const { meeseeksDir } = runWithBuilderSaying(
         'Added the handler.\n\n```json\n' +
           JSON.stringify({ assumptions: [{ cites: 'PRD-2.4', assumed: '410 Gone' }] }) +
           '\n```\n',
       );
-      assert.deepEqual(readAssumptions(dareDir).entries, [
+      assert.deepEqual(readAssumptions(meeseeksDir).entries, [
         { iteration: 1, cites: 'PRD-2.4', ambiguity: '', assumed: '410 Gone' },
       ]);
     });
@@ -1933,18 +1933,18 @@ describe('driveRun', () => {
     it('discards an uncited assumption instead of recording it', () => {
       // The citation bar, end to end. An unverifiable assumption in the auditor's hands is
       // worse than no assumption, because it costs a cold read and cannot be checked.
-      const { dareDir } = runWithBuilderSaying(
+      const { meeseeksDir } = runWithBuilderSaying(
         'Added the handler.\n\n```json\n' + JSON.stringify({ assumptions: [{ assumed: 'probably json' }] }) + '\n```\n',
       );
-      assert.deepEqual(readAssumptions(dareDir).entries, []);
+      assert.deepEqual(readAssumptions(meeseeksDir).entries, []);
     });
 
     it('ships normally when the builder says nothing about assumptions', () => {
       // The common case, and the benign neighbour: a contract that punished silence would
       // fail every iteration that had nothing ambiguous to report.
-      const { outcome, dareDir } = runWithBuilderSaying('Added the handler.');
+      const { outcome, meeseeksDir } = runWithBuilderSaying('Added the handler.');
       assert.equal(outcome.state, 'SHIPPED');
-      assert.deepEqual(readAssumptions(dareDir).entries, []);
+      assert.deepEqual(readAssumptions(meeseeksDir).entries, []);
     });
 
     it('fails the iteration on a malformed block rather than treating it as silence', () => {
@@ -1961,7 +1961,7 @@ describe('driveRun', () => {
       let reviewed = 0;
       driveRun({
         config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
-        dareDir: path.join(root, '.dare'),
+        meeseeksDir: path.join(root, '.meeseeks'),
         rootDir: root,
         requiredIds: ['PRD-1.1'],
         task: 'build the thing',
@@ -1989,11 +1989,11 @@ describe('driveRun', () => {
      */
     function runWithPins(pins, overrides) {
       const root = makeTempDir();
-      const dareDir = path.join(root, '.dare');
-      writePins(dareDir, pins);
+      const meeseeksDir = path.join(root, '.meeseeks');
+      writePins(meeseeksDir, pins);
       const outcome = driveRun({
         config: { ...defaultConfig(), maxIterations: 2, stallLimit: 3, reviewers: ['correctness'] },
-        dareDir,
+        meeseeksDir,
         rootDir: root,
         requiredIds: ['PRD-1.1'],
         task: 'build the thing',
@@ -2012,7 +2012,7 @@ describe('driveRun', () => {
           ...overrides,
         }),
       });
-      return { outcome, dareDir };
+      return { outcome, meeseeksDir };
     }
 
     /** @param {string} finding */
@@ -2072,22 +2072,22 @@ describe('driveRun', () => {
 
     it('re-pins at the new location when the reviewer says it moved, and does not ship-block', () => {
       const pins = { version: 1, security: [activePin()], requirements: [] };
-      const { outcome, dareDir } = runWithPins(pins, {
+      const { outcome, meeseeksDir } = runWithPins(pins, {
         readSource: (/** @type {string} */ file) => (file === 'src/moved.ts' ? GUARD : 'gone'),
         securityEscalation: () => escalationSaying('moved', { evidence: 'src/moved.ts:3', snippet: GUARD }),
       });
-      assert.equal(readPins(dareDir).security[0].file, 'src/moved.ts');
-      assert.equal(readPins(dareDir).security[0].status, 'active');
+      assert.equal(readPins(meeseeksDir).security[0].file, 'src/moved.ts');
+      assert.equal(readPins(meeseeksDir).security[0].status, 'active');
       assert.equal(outcome.state, 'SHIPPED');
     });
 
     it('quarantines, and records why, when the reviewer cannot tell', () => {
       const pins = { version: 1, security: [activePin()], requirements: [] };
-      const { dareDir } = runWithPins(pins, {
+      const { meeseeksDir } = runWithPins(pins, {
         readSource: () => 'gone',
         securityEscalation: () => escalationSaying('unknown'),
       });
-      const stored = readPins(dareDir).security[0];
+      const stored = readPins(meeseeksDir).security[0];
       assert.equal(stored.status, 'quarantined');
       assert.equal(stored.reason, 'because');
     });
@@ -2097,11 +2097,11 @@ describe('driveRun', () => {
       // evidence a guard was deleted, and resetting on one hands the builder an objective
       // it cannot satisfy.
       const pins = { version: 1, security: [activePin()], requirements: [] };
-      const { dareDir } = runWithPins(pins, {
+      const { meeseeksDir } = runWithPins(pins, {
         readSource: () => 'gone',
         securityEscalation: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: 'I am not sure, sorry.' }),
       });
-      assert.equal(readPins(dareDir).security[0].status, 'quarantined');
+      assert.equal(readPins(meeseeksDir).security[0].status, 'quarantined');
     });
 
     it('aborts rather than carrying pins forward unverified when nothing can read the tree', () => {
@@ -2216,9 +2216,9 @@ describe('driveRun', () => {
   });
 
   it('records the passing tests in the ratchet when it ships', () => {
-    const { outcome, dareDir } = run({ readTestReports: () => [ONE_PASSING] });
+    const { outcome, meeseeksDir } = run({ readTestReports: () => [ONE_PASSING] });
     assert.deepStrictEqual(outcome.passing, ['test/a.test.js::works']);
-    assert.equal(loadState(dareDir).lastGoodCommit, 'commit1');
+    assert.equal(loadState(meeseeksDir).lastGoodCommit, 'commit1');
   });
 
   it('does not ship when a reviewer withholds evidence', () => {
@@ -2287,12 +2287,12 @@ describe('driveRun', () => {
   });
 
   it('hard-resets and writes a blooper when a passing test disappears', () => {
-    const { outcome, dareDir } = run(
+    const { outcome, meeseeksDir } = run(
       { readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE] },
       { maxIterations: 2 },
       ['test/a.test.js::works'],
     );
-    const log = readFileSync(path.join(dareDir, 'bloopers.log'), 'utf8')
+    const log = readFileSync(path.join(meeseeksDir, 'bloopers.log'), 'utf8')
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line));
@@ -2335,7 +2335,7 @@ describe('driveRun', () => {
     // The blooper log and the ratchet state can both look right while the reset never
     // happened. This asserts the file on disk went back to the last good commit.
     const root = makeTempDir();
-    const dareDir = path.join(root, '.dare');
+    const meeseeksDir = path.join(root, '.meeseeks');
     const git = (/** @type {string[]} */ args) =>
       execFileSync('git', args, { cwd: root, stdio: 'pipe' }).toString().trim();
     git(['init', '--quiet']);
@@ -2344,7 +2344,7 @@ describe('driveRun', () => {
     writeFileSync(path.join(root, 'app.txt'), 'good\n', 'utf8');
     git(['add', 'app.txt']);
     git(['commit', '--quiet', '-m', 'good state']);
-    saveState(dareDir, {
+    saveState(meeseeksDir, {
       version: 1,
       iteration: 1,
       passing: ['test/a.test.js::works'],
@@ -2353,7 +2353,7 @@ describe('driveRun', () => {
 
     driveRun({
       config: { ...defaultConfig(), maxIterations: 1, reviewers: ['correctness'] },
-      dareDir,
+      meeseeksDir,
       rootDir: root,
       requiredIds: ['PRD-1.1'],
       task: 'build the thing',
@@ -2370,12 +2370,12 @@ describe('driveRun', () => {
   });
 
   it('never loses a ratchet id to a reset', () => {
-    const { dareDir } = run(
+    const { meeseeksDir } = run(
       { readTestReports: () => [COLLECTED_WITHOUT_THE_PROTECTED_ONE] },
       { maxIterations: 2 },
       ['test/a.test.js::works'],
     );
-    assert.deepStrictEqual(loadState(dareDir).passing, ['test/a.test.js::works']);
+    assert.deepStrictEqual(loadState(meeseeksDir).passing, ['test/a.test.js::works']);
   });
 
   it('ends BUDGET when the iteration limit is reached', () => {
@@ -2425,7 +2425,7 @@ describe('driveRun', () => {
   });
 
   it('ends ABORTED when the reality check says the PRD is unbuildable', () => {
-    const { outcome, dareDir } = run(
+    const { outcome, meeseeksDir } = run(
       {
         readTestReports: () => [ONE_PASSING],
         review: () => ({ ok: true, costUsd: 0, tokens: 1, raw: '', text: '{"requirements":[]}' }),
@@ -2441,7 +2441,7 @@ describe('driveRun', () => {
     );
     assert.equal(outcome.state, 'ABORTED');
     assert.equal(
-      readFileSync(path.join(dareDir, 'reality-check.md'), 'utf8'),
+      readFileSync(path.join(meeseeksDir, 'reality-check.md'), 'utf8'),
       'This PRD is unbuildable: no database exists.',
     );
   });
@@ -2599,14 +2599,14 @@ describe('driveRun', () => {
   it('archives a brief for every iteration', () => {
     // The brief is the only record of what the builder was actually asked for. A run that
     // ends badly is diagnosed from these; reconstructing them from what it did is guesswork.
-    const { dareDir } = run(
+    const { meeseeksDir } = run(
       {
         readTestReports: () => [ONE_PASSING],
         gates: () => ({ ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'no' }] }),
       },
       { maxIterations: 3 },
     );
-    assert.deepStrictEqual(readdirSync(path.join(dareDir, 'briefs')).sort(), [
+    assert.deepStrictEqual(readdirSync(path.join(meeseeksDir, 'briefs')).sort(), [
       'iter-001.md',
       'iter-002.md',
       'iter-003.md',
@@ -2650,7 +2650,7 @@ describe('driveRun', () => {
     let iteration = 0;
     /** @type {string[]} */
     const extractions = [];
-    const { dareDir } = run(
+    const { meeseeksDir } = run(
       {
         readTestReports: () => [ONE_PASSING],
         gates: () => {
@@ -2692,7 +2692,7 @@ describe('driveRun', () => {
     assert.equal(extractions[0].includes('gate:lint'), true);
     assert.equal(extractions[0].includes('First observed on iteration 1'), true);
 
-    const stored = JSON.parse(readFileSync(path.join(dareDir, 'lessons.json'), 'utf8'));
+    const stored = JSON.parse(readFileSync(path.join(meeseeksDir, 'lessons.json'), 'utf8'));
     assert.equal(stored.version, 1);
     assert.deepStrictEqual(
       stored.lessons.map((/** @type {{ id: string }} */ lesson) => lesson.id),
@@ -2703,7 +2703,7 @@ describe('driveRun', () => {
     assert.deepStrictEqual(stored.lessons[0].evidence.resolved, 3);
 
     // And it reaches a later brief, because its trigger matches that objective.
-    const later = readFileSync(path.join(dareDir, 'briefs', 'iter-004.md'), 'utf8');
+    const later = readFileSync(path.join(meeseeksDir, 'briefs', 'iter-004.md'), 'utf8');
     assert.equal(later.includes('Read the playwright config'), true, 'the stored lesson never reached a brief');
   });
 
@@ -2790,7 +2790,7 @@ describe('driveRun', () => {
       () =>
         driveRun({
           config: { ...defaultConfig(), reviewers: ['security'] },
-          dareDir: makeTempDir(),
+          meeseeksDir: makeTempDir(),
           rootDir: makeTempDir(),
           requiredIds: ['PRD-1.1', 'DoD-2-security'],
           task: 'x',
@@ -2852,7 +2852,7 @@ describe('driveRun', () => {
   });
 
   it('leaves lastGoodCommit alone when it lands early, so the ratchet stays trustworthy', () => {
-    const { dareDir } = run(
+    const { meeseeksDir } = run(
       {
         readTestReports: () => [ONE_PASSING],
         review: () => ({ ok: false, costUsd: 0, tokens: 0, raw: 'rate limit', text: '', exhausted: true }),
@@ -2860,7 +2860,7 @@ describe('driveRun', () => {
       { maxIterations: 5 },
       ['test/a.test.js::works'],
     );
-    const state = loadState(dareDir);
+    const state = loadState(meeseeksDir);
     assert.notEqual(state.lastGoodCommit, 'wip1');
     assert.deepStrictEqual(state.passing, ['test/a.test.js::works']);
   });
@@ -2925,7 +2925,7 @@ describe('parseDriverArgs', () => {
     assert.equal(parseDriverArgs(['./PRD.md']).input, './PRD.md');
   });
 
-  it('treats no arguments as no input, which is dare-me mode', () => {
+  it('treats no arguments as no input, which is meeseeks-me mode', () => {
     assert.equal(parseDriverArgs([]).input, '');
   });
 
@@ -3082,14 +3082,14 @@ describe('overlayGates', () => {
 describe('commandGates', () => {
   it('covers every deterministic gate DESIGN.md phase 3 names', () => {
     assert.deepStrictEqual(
-      commandGates('/repo', '/repo/.dare').map((gate) => gate.name),
+      commandGates('/repo', '/repo/.meeseeks').map((gate) => gate.name),
       ['build', 'lint', 'types', 'unit', 'e2e', 'security-audit'],
     );
   });
 
   it('points the unit reporter at the file the ratchet reads', () => {
-    const unit = commandGates('/repo', '/repo/.dare').find((gate) => gate.name === 'unit');
-    assert.equal(unit?.command.includes(`--outputFile=${path.join('/repo/.dare', 'test-report.json')}`), true);
+    const unit = commandGates('/repo', '/repo/.meeseeks').find((gate) => gate.name === 'unit');
+    assert.equal(unit?.command.includes(`--outputFile=${path.join('/repo/.meeseeks', 'test-report.json')}`), true);
   });
 
   it('produces the exact commands the extraction was supposed to preserve', () => {
@@ -3097,12 +3097,12 @@ describe('commandGates', () => {
     // implementation through it behaves identically to the six lines it replaced. Asserting
     // the argv, not just the names, is what makes that checkable rather than asserted.
     assert.deepStrictEqual(
-      commandGates('/repo', '/repo/.dare').map((gate) => gate.command),
+      commandGates('/repo', '/repo/.meeseeks').map((gate) => gate.command),
       [
         ['npm', 'run', 'build'],
         ['npm', 'run', 'lint'],
         ['npm', 'run', 'typecheck'],
-        ['npx', 'vitest', 'run', '--reporter=json', `--outputFile=${path.join('/repo/.dare', 'test-report.json')}`],
+        ['npx', 'vitest', 'run', '--reporter=json', `--outputFile=${path.join('/repo/.meeseeks', 'test-report.json')}`],
         ['npx', 'playwright', 'test'],
         ['npm', 'audit', '--audit-level=high'],
       ],
@@ -3111,7 +3111,7 @@ describe('commandGates', () => {
 
   it('marks every gate required, because none of them is advisory', () => {
     assert.equal(
-      commandGates('/repo', '/repo/.dare').every((gate) => gate.required === true),
+      commandGates('/repo', '/repo/.meeseeks').every((gate) => gate.required === true),
       true,
     );
   });
@@ -3271,7 +3271,7 @@ describe('staticGates', () => {
   it('does not require a browser step in CI from a project with no browser', () => {
     // The defect, as observed live. `toolchain.ci` requires Playwright unconditionally, so an
     // api project whose `e2e` gate had just been declined as inapplicable still could not
-    // satisfy `ci` - not by any honest workflow. Dogfood run 2's `.dare/assumptions.json`
+    // satisfy `ci` - not by any honest workflow. Dogfood run 2's `.meeseeks/assumptions.json`
     // records the builder reasoning about that exact contradiction and resolving it with
     // `npx playwright test` under `continue-on-error: true`; run 3's cold panel then reported
     // that step as one that always succeeds by construction. The loop built the defect it caught.
@@ -3756,7 +3756,7 @@ describe('suiteSensitivityEvidence', () => {
 describe('recordPanelVerdict', () => {
   // An independent audit of the first SHIPPED this project produced could not verify the claim
   // behind it: "the evidence for it is not in the repo". All that existed was an unannotated
-  // dare/GRAND-PRIZE tag on a commit named "iteration 2". The loop persisted reality-check.md,
+  // meeseeks/GRAND-PRIZE tag on a commit named "iteration 2". The loop persisted reality-check.md,
   // which only ever explains an ABORTED - it recorded its excuses and not its verdicts.
 
   /** @param {number} iteration @param {string} verdict */
@@ -3771,8 +3771,8 @@ describe('recordPanelVerdict', () => {
   });
 
   it('writes the verdict where an auditor can disagree with it', () => {
-    const dareDir = path.join(makeTempDir(), '.dare');
-    const file = recordPanelVerdict(dareDir, entry(1, 'fail'));
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    const file = recordPanelVerdict(meeseeksDir, entry(1, 'fail'));
     const stored = JSON.parse(readFileSync(file, 'utf8'));
     assert.equal(stored.panels.length, 1);
     assert.equal(stored.panels[0].verdict, 'fail');
@@ -3783,9 +3783,9 @@ describe('recordPanelVerdict', () => {
   it('appends, because the sequence across iterations is the interesting part', () => {
     // Run 5's panel went 5 findings, then 4, then 3. That convergence existed only in a log,
     // and a log is what a hard reset destroyed in run 4.
-    const dareDir = path.join(makeTempDir(), '.dare');
-    recordPanelVerdict(dareDir, entry(1, 'fail'));
-    const file = recordPanelVerdict(dareDir, entry(2, 'pass'));
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    recordPanelVerdict(meeseeksDir, entry(1, 'fail'));
+    const file = recordPanelVerdict(meeseeksDir, entry(2, 'pass'));
     const stored = JSON.parse(readFileSync(file, 'utf8'));
     assert.deepStrictEqual(
       stored.panels.map((/** @type {{ iteration: number }} */ p) => p.iteration),
@@ -3795,17 +3795,17 @@ describe('recordPanelVerdict', () => {
 
   it('rebuilds from a corrupt record rather than killing a healthy run', () => {
     // This file decides nothing, so it degrades like the lesson store and not like the ratchet.
-    const dareDir = path.join(makeTempDir(), '.dare');
-    mkdirSync(dareDir, { recursive: true });
-    writeFileSync(path.join(dareDir, 'review.json'), '{ not json', 'utf8');
-    const stored = JSON.parse(readFileSync(recordPanelVerdict(dareDir, entry(3, 'pass')), 'utf8'));
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    mkdirSync(meeseeksDir, { recursive: true });
+    writeFileSync(path.join(meeseeksDir, 'review.json'), '{ not json', 'utf8');
+    const stored = JSON.parse(readFileSync(recordPanelVerdict(meeseeksDir, entry(3, 'pass')), 'utf8'));
     assert.equal(stored.panels.length, 1);
     assert.equal(stored.panels[0].iteration, 3);
   });
 
   it('is never tracked by git, so a reset cannot revert the evidence', () => {
-    const ignored = String(dareIgnoreUpdate('')).split('\n').map((line) => line.trim());
-    assert.equal(ignored.includes('.dare/review.json'), true);
+    const ignored = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
+    assert.equal(ignored.includes('.meeseeks/review.json'), true);
   });
 });
 
@@ -3906,52 +3906,52 @@ describe('unitGateCommand', () => {
   it('reads the command from the resolved toolchain rather than assuming node', () => {
     const dir = makeTempDir();
     writeFileSync(path.join(dir, 'package.json'), '{"scripts":{"test":"vitest run"}}', 'utf8');
-    const command = unitGateCommand(dir, path.join(dir, '.dare'));
+    const command = unitGateCommand(dir, path.join(dir, '.meeseeks'));
     assert.equal(typeof command, 'string');
     assert.equal(String(command).includes('vitest'), true, `got: ${command}`);
   });
 });
 
-describe('dareIgnoreUpdate', () => {
+describe('meeseeksIgnoreUpdate', () => {
   it('ignores the ratchet state in a .gitignore that does not cover it', () => {
-    const updated = dareIgnoreUpdate('node_modules/\n');
+    const updated = meeseeksIgnoreUpdate('node_modules/\n');
     assert.notEqual(updated, null);
-    assert.equal(String(updated).includes('\n.dare/state.json\n'), true);
+    assert.equal(String(updated).includes('\n.meeseeks/state.json\n'), true);
     assert.equal(String(updated).startsWith('node_modules/\n'), true);
   });
 
   it('leaves the settings file committable, because settings are not machine state', () => {
     // Observed on the first real run: the operator had committed their config, which is a
     // reasonable thing to want in version control. A blanket ignore fights them.
-    const ignored = String(dareIgnoreUpdate('')).split('\n').map((line) => line.trim());
-    assert.equal(ignored.includes('.dare/config.json'), false, 'settings must stay committable');
-    assert.equal(ignored.includes('.dare/state.json'), true, 'machine state must not be');
+    const ignored = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
+    assert.equal(ignored.includes('.meeseeks/config.json'), false, 'settings must stay committable');
+    assert.equal(ignored.includes('.meeseeks/state.json'), true, 'machine state must not be');
   });
 
   it('ignores every machine-state file the driver writes', () => {
-    const ignored = String(dareIgnoreUpdate('')).split('\n').map((line) => line.trim());
-    for (const file of ['.dare/state.json', '.dare/red-evidence.json', '.dare/bloopers.log']) {
+    const ignored = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
+    for (const file of ['.meeseeks/state.json', '.meeseeks/red-evidence.json', '.meeseeks/bloopers.log']) {
       assert.equal(ignored.includes(file), true, `not ignored: ${file}`);
     }
   });
 
   it('adds a newline first when the file does not end in one', () => {
-    assert.equal(String(dareIgnoreUpdate('node_modules/')).startsWith('node_modules/\n'), true);
+    assert.equal(String(meeseeksIgnoreUpdate('node_modules/')).startsWith('node_modules/\n'), true);
   });
 
   it('handles an absent .gitignore', () => {
-    assert.equal(String(dareIgnoreUpdate('')).includes('.dare/state.json'), true);
+    assert.equal(String(meeseeksIgnoreUpdate('')).includes('.meeseeks/state.json'), true);
   });
 
   it('ignores the pin store, which holds two of the three monotonic properties', () => {
     // The serious one. `pins.json` carries pinned security elements and cold-passed
     // requirements, so tracked, a hard reset to lastGoodCommit restores an older copy and a pin
     // earned since that commit is gone - along with any recorded quarantine, which is what stops
-    // a run shipping over lost protection. Found by running `git ls-files .dare` on a real
+    // a run shipping over lost protection. Found by running `git ls-files .meeseeks` on a real
     // repository before deliberately triggering a reset; it was tracked there.
-    const ignored = String(dareIgnoreUpdate('')).split('\n').map((line) => line.trim());
-    assert.equal(ignored.includes('.dare/pins.json'), true);
-    assert.equal(ignored.includes('.dare/assumptions.json'), true);
+    const ignored = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
+    assert.equal(ignored.includes('.meeseeks/pins.json'), true);
+    assert.equal(ignored.includes('.meeseeks/assumptions.json'), true);
   });
 
   it('ignores logs, because a reset destroys the run’s own record of the reset', () => {
@@ -3960,62 +3960,62 @@ describe('dareIgnoreUpdate', () => {
     // erasing the evidence of the reset. Worse, git replaced the file rather than truncating it, so
     // the shell's open descriptor pointed at an unlinked inode and every later line went nowhere.
     // The terminal state of that run is unrecoverable.
-    const ignored = String(dareIgnoreUpdate('')).split('\n').map((line) => line.trim());
+    const ignored = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
     assert.equal(ignored.includes('*.log'), true);
   });
 
   it('repairs a stanza written by an older build instead of declaring it covered', () => {
-    // The reason the gap survived. The check tested only for `.dare/state.json`, so a repository
+    // The reason the gap survived. The check tested only for `.meeseeks/state.json`, so a repository
     // carrying the old stanza reported "already covered" forever and never received the newer
     // lines. An all-or-nothing check on a list that later grows stops covering its own list.
-    const old = ['node_modules/', '.dare/state.json', '.dare/lessons.json', '.dare/briefs/', ''].join('\n');
-    const updated = dareIgnoreUpdate(old);
+    const old = ['node_modules/', '.meeseeks/state.json', '.meeseeks/lessons.json', '.meeseeks/briefs/', ''].join('\n');
+    const updated = meeseeksIgnoreUpdate(old);
     assert.notEqual(updated, null, 'an incomplete stanza was reported as covered');
     const lines = String(updated).split('\n').map((line) => line.trim());
-    assert.equal(lines.includes('.dare/pins.json'), true);
+    assert.equal(lines.includes('.meeseeks/pins.json'), true);
     // And it appends only what was missing rather than restating the whole stanza.
-    assert.equal(lines.filter((line) => line === '.dare/state.json').length, 1, 'duplicated an existing entry');
+    assert.equal(lines.filter((line) => line === '.meeseeks/state.json').length, 1, 'duplicated an existing entry');
     assert.equal(lines.filter((line) => line === 'node_modules/').length, 1);
   });
 
   it('adds nothing once every path is present', () => {
     // The neighbour: a repair pass that keeps appending on every run would grow the file without
-    // bound, and `ensureDareIgnored` reports "changed" each time it writes.
-    const complete = String(dareIgnoreUpdate(''));
-    assert.equal(dareIgnoreUpdate(complete), null, 'not idempotent');
+    // bound, and `ensureMeeseeksIgnored` reports "changed" each time it writes.
+    const complete = String(meeseeksIgnoreUpdate(''));
+    assert.equal(meeseeksIgnoreUpdate(complete), null, 'not idempotent');
   });
 
-  const alreadyCovered = ['.dare/\n', '.dare\n', '/.dare/\n', 'node_modules/\n.dare/\nbuild/\n', '  .dare/  \n'];
+  const alreadyCovered = ['.meeseeks/\n', '.meeseeks\n', '/.meeseeks/\n', 'node_modules/\n.meeseeks/\nbuild/\n', '  .meeseeks/  \n'];
   for (const existing of alreadyCovered) {
     it(`leaves ${JSON.stringify(existing)} alone`, () => {
-      // Only a blanket ignore is complete coverage. `.dare/state.json` alone is not, and used to
+      // Only a blanket ignore is complete coverage. `.meeseeks/state.json` alone is not, and used to
       // be treated as though it were.
-      assert.equal(dareIgnoreUpdate(existing), null);
+      assert.equal(meeseeksIgnoreUpdate(existing), null);
     });
   }
 
   it('is not fooled by a similarly named entry', () => {
-    assert.notEqual(dareIgnoreUpdate('.daredevil/\nmydare/\n'), null);
+    assert.notEqual(meeseeksIgnoreUpdate('.meeseeksdevil/\nmymeeseeks/\n'), null);
   });
 });
 
-describe('ensureDareIgnored', () => {
+describe('ensureMeeseeksIgnored', () => {
   it('writes the stanza once and is then a no-op', () => {
     const dir = makeTempDir();
-    assert.equal(ensureDareIgnored(dir), true);
+    assert.equal(ensureMeeseeksIgnored(dir), true);
     const first = readFileSync(path.join(dir, '.gitignore'), 'utf8');
-    assert.equal(ensureDareIgnored(dir), false);
+    assert.equal(ensureMeeseeksIgnored(dir), false);
     assert.equal(readFileSync(path.join(dir, '.gitignore'), 'utf8'), first);
   });
 
   it('keeps whatever was already there', () => {
     const dir = makeTempDir();
     writeFileSync(path.join(dir, '.gitignore'), 'node_modules/\ndist/\n', 'utf8');
-    ensureDareIgnored(dir);
+    ensureMeeseeksIgnored(dir);
     const contents = readFileSync(path.join(dir, '.gitignore'), 'utf8');
     assert.equal(contents.includes('node_modules/'), true);
     assert.equal(contents.includes('dist/'), true);
-    assert.equal(contents.includes('.dare/'), true);
+    assert.equal(contents.includes('.meeseeks/'), true);
   });
 
   it('really keeps git from staging the ratchet', () => {
@@ -4027,14 +4027,14 @@ describe('ensureDareIgnored', () => {
     git(['init', '--quiet']);
     git(['config', 'user.email', 'd@example.invalid']);
     git(['config', 'user.name', 'D']);
-    ensureDareIgnored(dir);
-    mkdirSync(path.join(dir, '.dare'), { recursive: true });
-    writeFileSync(path.join(dir, '.dare', 'state.json'), '{}', 'utf8');
-    writeFileSync(path.join(dir, '.dare', 'config.json'), '{}', 'utf8');
+    ensureMeeseeksIgnored(dir);
+    mkdirSync(path.join(dir, '.meeseeks'), { recursive: true });
+    writeFileSync(path.join(dir, '.meeseeks', 'state.json'), '{}', 'utf8');
+    writeFileSync(path.join(dir, '.meeseeks', 'config.json'), '{}', 'utf8');
     git(['add', '-A']);
     const staged = git(['diff', '--cached', '--name-only']);
-    assert.equal(staged.includes('.dare/state.json'), false, 'the ratchet must never be staged');
-    assert.equal(staged.includes('.dare/config.json'), true, 'settings should still be committable');
+    assert.equal(staged.includes('.meeseeks/state.json'), false, 'the ratchet must never be staged');
+    assert.equal(staged.includes('.meeseeks/config.json'), true, 'settings should still be committable');
   });
 });
 
@@ -4056,7 +4056,7 @@ describe('ensurePlaywrightBrowsers', () => {
     const cwd = makeTempDir();
     /** @type {string[]} */
     const calls = [];
-    const result = ensurePlaywrightBrowsers({ cwd, dareDir: path.join(cwd, '.dare'), run: runnerRecording(calls) });
+    const result = ensurePlaywrightBrowsers({ cwd, meeseeksDir: path.join(cwd, '.meeseeks'), run: runnerRecording(calls) });
     assert.equal(result.installed, false);
     assert.deepStrictEqual(calls, []);
   });
@@ -4066,10 +4066,10 @@ describe('ensurePlaywrightBrowsers', () => {
     writeFileSync(path.join(cwd, 'playwright.config.js'), 'module.exports = {};\n', 'utf8');
     /** @type {string[]} */
     const calls = [];
-    const dareDir = path.join(cwd, '.dare');
-    assert.equal(ensurePlaywrightBrowsers({ cwd, dareDir, run: runnerRecording(calls) }).installed, true);
+    const meeseeksDir = path.join(cwd, '.meeseeks');
+    assert.equal(ensurePlaywrightBrowsers({ cwd, meeseeksDir, run: runnerRecording(calls) }).installed, true);
     assert.deepStrictEqual(calls, ['npx playwright install chromium']);
-    assert.equal(ensurePlaywrightBrowsers({ cwd, dareDir, run: runnerRecording(calls) }).installed, false);
+    assert.equal(ensurePlaywrightBrowsers({ cwd, meeseeksDir, run: runnerRecording(calls) }).installed, false);
     assert.deepStrictEqual(calls, ['npx playwright install chromium'], 'must not reinstall');
   });
 
@@ -4084,7 +4084,7 @@ describe('ensurePlaywrightBrowsers', () => {
     const calls = [];
     const result = ensurePlaywrightBrowsers({
       cwd,
-      dareDir: path.join(cwd, '.dare'),
+      meeseeksDir: path.join(cwd, '.meeseeks'),
       run: runnerRecording(calls),
       capabilities: ['api', 'persistent-storage'],
     });
@@ -4103,7 +4103,7 @@ describe('ensurePlaywrightBrowsers', () => {
     const calls = [];
     const result = ensurePlaywrightBrowsers({
       cwd,
-      dareDir: path.join(cwd, '.dare'),
+      meeseeksDir: path.join(cwd, '.meeseeks'),
       run: runnerRecording(calls),
       capabilities: ['web-ui'],
     });
@@ -4116,12 +4116,12 @@ describe('ensurePlaywrightBrowsers', () => {
     writeFileSync(path.join(cwd, 'playwright.config.ts'), 'export default {};\n', 'utf8');
     /** @type {string[]} */
     const calls = [];
-    const dareDir = path.join(cwd, '.dare');
-    const result = ensurePlaywrightBrowsers({ cwd, dareDir, run: runnerRecording(calls, false) });
+    const meeseeksDir = path.join(cwd, '.meeseeks');
+    const result = ensurePlaywrightBrowsers({ cwd, meeseeksDir, run: runnerRecording(calls, false) });
     assert.equal(result.installed, false);
     assert.equal(result.detail.includes('no browser'), true);
     // A failed install must be retried next iteration, not remembered as done.
-    ensurePlaywrightBrowsers({ cwd, dareDir, run: runnerRecording(calls, false) });
+    ensurePlaywrightBrowsers({ cwd, meeseeksDir, run: runnerRecording(calls, false) });
     assert.equal(calls.length, 2);
   });
 
@@ -4182,7 +4182,7 @@ describe('formatGateFailure', () => {
 // The terminal record (0.68.0)
 // ---------------------------------------------------------------------------
 
-describe('.dare/outcome.json', () => {
+describe('.meeseeks/outcome.json', () => {
   /** @param {Partial<import('../scripts/driver.mjs').Effects>} [overrides] */
   function localEffects(overrides = {}) {
     /** @type {import('../scripts/driver.mjs').ClaudeResult} */
@@ -4207,21 +4207,21 @@ describe('.dare/outcome.json', () => {
   // inside the tree, `git add -A` tracked it, and the ratchet's own `git reset --hard` reverted
   // it. Worse, git replaces the file rather than truncating, so the shell's descriptor pointed
   // at an unlinked inode and every line after the reset went nowhere. That run's result had to
-  // be reconstructed from `.dare/`, `git log` and the reflog.
+  // be reconstructed from `.meeseeks/`, `git log` and the reflog.
 
   /** @param {Partial<import('../scripts/driver.mjs').Effects>} overrides */
   function outcomeOf(overrides) {
     const root = makeTempDir();
-    const dareDir = path.join(root, '.dare');
+    const meeseeksDir = path.join(root, '.meeseeks');
     const result = driveRun({
       config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
-      dareDir,
+      meeseeksDir,
       rootDir: root,
       requiredIds: ['PRD-1.1'],
       task: 'build the thing',
       effects: localEffects(overrides),
     });
-    const file = path.join(dareDir, 'outcome.json');
+    const file = path.join(meeseeksDir, 'outcome.json');
     return { result, written: existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null };
   }
 
@@ -4244,15 +4244,15 @@ describe('.dare/outcome.json', () => {
     // Forensics. Destroying a completed run's result because its receipt could not be filed
     // would be exactly the wrong way round — so the failure is reported, not raised.
     const root = makeTempDir();
-    const dareDir = path.join(root, '.dare');
-    mkdirSync(dareDir, { recursive: true });
+    const meeseeksDir = path.join(root, '.meeseeks');
+    mkdirSync(meeseeksDir, { recursive: true });
     // A directory where the file must go: the write fails, the run must not.
-    mkdirSync(path.join(dareDir, 'outcome.json'), { recursive: true });
+    mkdirSync(path.join(meeseeksDir, 'outcome.json'), { recursive: true });
     /** @type {string[]} */
     const logged = [];
     const result = driveRun({
       config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
-      dareDir,
+      meeseeksDir,
       rootDir: root,
       requiredIds: ['PRD-1.1'],
       task: 'build the thing',
@@ -4275,7 +4275,7 @@ describe('isColdPhase and --safe-mode', () => {
   //
   // safe mode fixes it and cannot be applied everywhere: it disables hooks INCLUDING one handed
   // to it explicitly in --settings. Measured - a child given safe mode and the 0.59.0 guard still
-  // overwrote .dare/state.json with permission_denials: []. So the split is by write capability.
+  // overwrote .meeseeks/state.json with permission_denials: []. So the split is by write capability.
 
   it('isolates every read-only phase', () => {
     for (const phase of ['review', 'reality-check', 'lesson-extractor', 'security-escalation']) {
@@ -4315,7 +4315,7 @@ describe('isColdPhase and --safe-mode', () => {
   });
 });
 
-describe('every .dare artifact the driver writes is ignored by git', () => {
+describe('every .meeseeks artifact the driver writes is ignored by git', () => {
   // §4.3: the pin store was tracked once, and a `git reset --hard` restoring an older copy
   // silently discards a pin earned since that commit. The all-or-nothing *check* was fixed then;
   // the *list* is still maintained by hand, and at 0.68.0 it drifted again — outcome.json was
@@ -4325,7 +4325,7 @@ describe('every .dare artifact the driver writes is ignored by git', () => {
   // name lives in a constant cannot be added without this failing.
   it('covers every named artifact constant', () => {
     // RUN_MANIFEST was missing until 0.86.0 and was found the way the previous two were: by
-    // watching a live run leave `?? .dare/run.json` in `git status`, one `git add -A` away from
+    // watching a live run leave `?? .meeseeks/run.json` in `git status`, one `git add -A` away from
     // being tracked. Third instance of the same defect, and the list is still the enumeration
     // it has always been — the test is what makes it self-correcting, not the list.
     // RUN_ARCHIVE_DIR is the fifth, and it is a *directory* rather than a file — which is how it
@@ -4333,18 +4333,18 @@ describe('every .dare artifact the driver writes is ignored by git', () => {
     // by `git add -A` and then destroyed by a hard reset to a commit that predated them.
     for (const name of [OUTCOME_FILE, REVIEW_RECORD, RUN_LOCK_FILE, RUN_MANIFEST, `${RUN_ARCHIVE_DIR}/`]) {
       assert.equal(
-        DARE_IGNORED_PATHS.includes(`.dare/${name}`),
+        MEESEEKS_IGNORED_PATHS.includes(`.meeseeks/${name}`),
         true,
-        `.dare/${name} is written by the driver and would be tracked, so a reset would restore an older copy`,
+        `.meeseeks/${name} is written by the driver and would be tracked, so a reset would restore an older copy`,
       );
     }
   });
 
   it('does not ignore the operator-owned files, which are theirs to commit', () => {
     // config.json is edited by the operator outside a run and is reasonable to version. The rule
-    // is about artifacts the *driver* writes and the ratchet could roll back, not about .dare/.
-    for (const theirs of ['.dare/config.json', '.dare/capabilities.json']) {
-      assert.equal(DARE_IGNORED_PATHS.includes(theirs), false, `${theirs} is the operator's to track`);
+    // is about artifacts the *driver* writes and the ratchet could roll back, not about .meeseeks/.
+    for (const theirs of ['.meeseeks/config.json', '.meeseeks/capabilities.json']) {
+      assert.equal(MEESEEKS_IGNORED_PATHS.includes(theirs), false, `${theirs} is the operator's to track`);
     }
   });
 });
@@ -4390,7 +4390,7 @@ describe('a failing gate reports both streams', () => {
 // next one, and a later hard reset would restore an older copy of a tool's cache.
 describe('a gate tool cache is ignored, like node_modules before it', () => {
   it('adds every tool cache to a .gitignore that has none', () => {
-    const updated = dareIgnoreUpdate('');
+    const updated = meeseeksIgnoreUpdate('');
     assert.notEqual(updated, null);
     for (const cache of TOOL_CACHE_PATHS) {
       assert.equal(String(updated).includes(cache), true, `${cache} was not ignored:\n${updated}`);
@@ -4398,7 +4398,7 @@ describe('a gate tool cache is ignored, like node_modules before it', () => {
   });
 
   it('adds only the cache that is missing, rather than duplicating one already there', () => {
-    const updated = String(dareIgnoreUpdate('node_modules/\n'));
+    const updated = String(meeseeksIgnoreUpdate('node_modules/\n'));
     assert.equal(updated.includes('.hypothesis/'), true, updated);
     assert.equal(updated.split('node_modules/').length - 1, 1, `node_modules was duplicated:\n${updated}`);
   });
@@ -4406,7 +4406,7 @@ describe('a gate tool cache is ignored, like node_modules before it', () => {
   it('accepts the unslashed spelling as already covering it', () => {
     // `.hypothesis` and `.hypothesis/` are the same instruction to git, and appending the other
     // form would be noise in a file the operator also reads.
-    const updated = dareIgnoreUpdate('.dare/\nnode_modules\n.hypothesis\n');
+    const updated = meeseeksIgnoreUpdate('.meeseeks/\nnode_modules\n.hypothesis\n');
     assert.equal(updated, null);
   });
 
@@ -4550,7 +4550,7 @@ describe('a security id can never be carried past a panel', () => {
 
 // The fifth instance of one defect, and the first that destroyed evidence rather than merely
 // polluting a tree. archivePreviousRun moves the previous run's outcome, review, manifest,
-// assumptions and briefs into .dare/runs/NNN so a second run cannot overwrite them. Untracked and
+// assumptions and briefs into .meeseeks/runs/NNN so a second run cannot overwrite them. Untracked and
 // un-ignored, git add -A committed all eight files and the next hard reset deleted every one -
 // confirmed from caseH's reflog, where two discarded commits each carried eight files under that
 // path.
@@ -4558,20 +4558,20 @@ describe('the per-run archive is ignored, or archiving destroys what it preserve
   it('ignores the archive directory, not just the files inside it', () => {
     // A directory entry, because the archive's contents are named per run and a list of
     // filenames is exactly what it slipped past.
-    assert.equal(DARE_IGNORED_PATHS.includes(`.dare/${RUN_ARCHIVE_DIR}/`), true);
+    assert.equal(MEESEEKS_IGNORED_PATHS.includes(`.meeseeks/${RUN_ARCHIVE_DIR}/`), true);
   });
 
   it('writes it into a fresh .gitignore', () => {
-    const updated = String(dareIgnoreUpdate(''));
-    assert.equal(updated.includes(`.dare/${RUN_ARCHIVE_DIR}/`), true, updated);
+    const updated = String(meeseeksIgnoreUpdate(''));
+    assert.equal(updated.includes(`.meeseeks/${RUN_ARCHIVE_DIR}/`), true, updated);
   });
 
   it('adds it to a .gitignore written by an older build that lacks it', () => {
     // The self-correcting half. A repository carrying an older stanza must gain the entry
     // rather than keep an incomplete list forever, which is the defect 0.77.0 already paid for.
-    const older = ['.dare/state.json', '.dare/briefs/', '.dare/outcome.json', 'node_modules/'].join('\n');
-    const updated = dareIgnoreUpdate(older);
+    const older = ['.meeseeks/state.json', '.meeseeks/briefs/', '.meeseeks/outcome.json', 'node_modules/'].join('\n');
+    const updated = meeseeksIgnoreUpdate(older);
     assert.notEqual(updated, null, 'an older stanza was left incomplete');
-    assert.equal(String(updated).includes(`.dare/${RUN_ARCHIVE_DIR}/`), true);
+    assert.equal(String(updated).includes(`.meeseeks/${RUN_ARCHIVE_DIR}/`), true);
   });
 });

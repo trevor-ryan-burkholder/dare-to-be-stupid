@@ -35,7 +35,7 @@ const temporaryDirs = [];
 
 /** @returns {string} */
 function makeTempDir() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-ratchet-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-ratchet-'));
   temporaryDirs.push(dir);
   return dir;
 }
@@ -331,8 +331,8 @@ describe('loadState', () => {
 });
 
 describe('saveState', () => {
-  it('creates the .dare directory when it does not exist', () => {
-    const dir = path.join(makeTempDir(), '.dare');
+  it('creates the .meeseeks directory when it does not exist', () => {
+    const dir = path.join(makeTempDir(), '.meeseeks');
     saveState(dir, stateWith({ passing: ['a::1'] }));
     assert.deepStrictEqual(loadState(dir).passing, ['a::1']);
   });

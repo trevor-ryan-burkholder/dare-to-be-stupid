@@ -4,7 +4,7 @@ argument-hint: [path-to-PRD.md | "an idea in quotes" | --improve ["area"] | (not
 allowed-tools: Bash(node:*), Bash(git status:*), Bash(git rev-parse:*)
 ---
 
-# /dare
+# /meeseeks
 
 Start an autonomous run in the current repository.
 
@@ -16,7 +16,7 @@ Start an autonomous run in the current repository.
   child reads it and writes `PRD.md` from what it finds, grounding every requirement in a real
   `file:line`, then the ordinary loop fixes them. Refused on a repository with no meaningful
   history, because an author with nothing to read invents requirements the builder cannot satisfy
-- nothing — "dare me" mode invents its own idea, if `dareMe.enabled` is set
+- nothing — "meeseeks me" mode invents its own idea, if `improvise.enabled` is set
 
 ## Do this, in order
 
@@ -52,7 +52,7 @@ holds the ratchet, and ends in one of four states: `SHIPPED`, `STALLED`, `BUDGET
   your reasoning about the code.
 - **Do not re-run a failed preflight with a workaround.** If the working tree is dirty, say
   so and stop; committing on the user's behalf is not your call.
-- **Do not edit `.dare/state.json` or `.dare/config.json` once a run has started.** A hook
+- **Do not edit `.meeseeks/state.json` or `.meeseeks/config.json` once a run has started.** A hook
   denies it from inside a run. That is the ratchet, and it is not editable by the processes
   it constrains. Before and after a run they are ordinary files: if the user wants a
   different `maxIterations` or a cleared lesson store, edit it here rather than handing them

@@ -1,17 +1,17 @@
-# CLAUDE.md — dare-to-be-stupid
+# CLAUDE.md — meeseeks
 
 Conventions for working **on this repo** (the plugin itself). `DESIGN.md` is the spec and
 the source of truth; when this file and `DESIGN.md` disagree, `DESIGN.md` wins — fix this
 file.
 
 > **Scope note.** This repo *builds* an autonomous loop. It is not itself run by that loop.
-> Do not run `/dare` against this repository.
+> Do not run `/meeseeks` against this repository.
 
 ---
 
 ## What this is
 
-A Claude Code plugin. `/dare <path|"idea"|∅>` hands a PRD to an autonomous loop that
+A Claude Code plugin. `/meeseeks <path|"idea"|∅>` hands a PRD to an autonomous loop that
 designs, builds, gates, reviews, and ships until it passes an enterprise definition of
 done, or the budget dies. Pre-production only.
 
@@ -44,7 +44,7 @@ These are the load-bearing properties. A change that breaks one is wrong even if
 - **Nothing defaults to pass.** Missing evidence, unparseable reviewer output, a crashed
   gate, a timeout — all fail. If you are writing `catch { return pass }`, stop.
 - **The guard hook is not editable by what it guards.** Processes inside a run — marked by
-  `DARE_RUNNING` in their environment — may not write **anything under `.dare/`, at any depth,
+  `MEESEEKS_RUNNING` in their environment — may not write **anything under `.meeseeks/`, at any depth,
   including artifacts that do not exist yet.** The rule is *positional*, not a list of names:
   enumeration was the original defect, because each new artifact defaulted to writable until
   somebody remembered to add it, and `red-evidence.json`, `test-report.json` and the archived
@@ -52,7 +52,7 @@ These are the load-bearing properties. A change that breaks one is wrong even if
   operator edits them from wherever they like, including from inside Claude Code. The boundary
   is the run, not the plugin being installed: a rule that also locks out the person who owns the
   repository has stopped being a guard and started being a nuisance.
-  **And the file itself, since 0.88.0.** This bullet's title was true of `.dare/` and false of
+  **And the file itself, since 0.88.0.** This bullet's title was true of `.meeseeks/` and false of
   the guard for a long time: nothing stopped a builder rewriting the rule that constrained it.
   `protected-guard` closes that, resolved from `import.meta.url` so it protects whichever copy is
   actually deciding. For any ordinary target it never fires — the guard lives in an install cache
@@ -68,10 +68,10 @@ These are the load-bearing properties. A change that breaks one is wrong even if
   **If you touch `claudeArgs` or `childSettings`, run tier 3.** A unit test cannot see this
   break, and the visible signals all lie: the plugin *is* loaded in those children — its
   SessionStart hook reaches them.
-- **Style never touches logic.** The Junkion layer renders at output only. It may not
-  inform gate results, ratchet state, or reviewer JSON. `DARE_STYLE=plain` must fully
+- **Style never touches logic.** The Meeseeks layer renders at output only. It may not
+  inform gate results, ratchet state, or reviewer JSON. `MEESEEKS_STYLE=plain` must fully
   bypass it.
-- **No nesting.** `dare` never spawns `dare`. Enforced at the driver *and* the guard hook.
+- **No nesting.** `meeseeks` never spawns `meeseeks`. Enforced at the driver *and* the guard hook.
 - **Monotonic means three properties now, not one.** Test ids (the ratchet), security elements
   and cold-passed requirements (`scripts/pins.mjs`, `DESIGN.md` §4.3). Each has a different
   escape from a false pin, and **the escape is the load-bearing half**: a security pin escalates
@@ -125,7 +125,7 @@ npm test              # tier 1: unit + fixture tests, no external binaries
 
 `npm run test:all` is tiers 1 and 2.
 
-The live tier is armed by `DARE_LIVE=1` and **fails without it** rather than skipping. That is
+The live tier is armed by `MEESEEKS_LIVE=1` and **fails without it** rather than skipping. That is
 deliberate: a green tick for a suite that made no API call is a lie the reader will take for
 coverage.
 

@@ -10,7 +10,7 @@
  * Every condition here exists to keep this from becoming a habit:
  *
  *   - A repository with almost no history has nothing to say. On a run that generated the
- *     whole application an hour ago every commit is dare's own, and quoting them back to
+ *     whole application an hour ago every commit is Meeseeks's own, and quoting them back to
  *     the builder is quoting the builder.
  *   - A file first touched by this run is not mature, however much history surrounds it.
  *   - Blame is asked for one cited line at a time, never a file at a time.

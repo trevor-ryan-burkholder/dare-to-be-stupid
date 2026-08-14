@@ -162,7 +162,7 @@ describe('the builder template', () => {
     ['inputs you did not choose', 'why a property is harder to satisfice than an example'],
     ['toBeTruthy', 'a concrete example of an assertion that proves nothing'],
     ['route handler', 'where guards belong'],
-    ['Anything under `.dare/`, at any depth', 'what it may not touch, stated positionally'],
+    ['Anything under `.meeseeks/`, at any depth', 'what it may not touch, stated positionally'],
     ['invisible to the ratchet', 'what a suite the gates cannot collect is worth'],
   ];
   for (const [needle, what] of required) {
@@ -311,11 +311,11 @@ describe('the builder template', () => {
   });
 
   it('names no protected file, because the rule the hook enforces is the directory', () => {
-    // The template used to say `.dare/state.json` and `.dare/config.json`, which has been
+    // The template used to say `.meeseeks/state.json` and `.meeseeks/config.json`, which has been
     // wrong since 0.10.0 made the guard positional. A builder told a shorter list than the
     // hook enforces spends an iteration finding out, and every artifact invented after the
     // list was written defaults to looking writable.
-    assert.deepEqual(BUILDER.match(/`\.dare\/[\w-]+\.json`/g), null);
+    assert.deepEqual(BUILDER.match(/`\.meeseeks\/[\w-]+\.json`/g), null);
     assert.equal(BUILDER.includes('positionally'), true, 'never says how the rule is enforced');
   });
 });
@@ -502,7 +502,7 @@ describe('every template', () => {
       assert.equal(contents.length > 500, true, `${name} is suspiciously short`);
     });
 
-    it(`${name} carries no Junkion styling`, () => {
+    it(`${name} carries no Meeseeks styling`, () => {
       // DESIGN.md §9: the comedy is in the output layer only. A prompt written in the
       // voice would change what the model does, which is exactly what the style layer is
       // forbidden from doing.
@@ -565,7 +565,7 @@ describe('the template directory, scanned rather than listed', () => {
   // The list above names the persona system prompts and is hand-maintained. The directory holds
   // more than that - toolchain fragments, frontend direction, the oracle author, the security
   // escalation - and an enumeration that has to be remembered is the defect this repository has
-  // now paid for three times: .dare protection by basename, ensureDareIgnored's short list, and
+  // now paid for three times: .meeseeks protection by basename, ensureMeeseeksIgnored's short list, and
   // CI_REQUIRED_COMMANDS. So the check that must never be skipped is applied positionally.
   const dir = new URL('../templates/', import.meta.url);
   const files = readdirSync(dir).filter((name) => name.endsWith('.md')).sort();
@@ -577,7 +577,7 @@ describe('the template directory, scanned rather than listed', () => {
   for (const name of files) {
     const contents = readFileSync(new URL(name, dir), 'utf8');
 
-    it(`${name} carries no Junkion styling`, () => {
+    it(`${name} carries no Meeseeks styling`, () => {
       // DESIGN.md §9: the comedy is in the output layer only. A prompt written in the voice
       // would change what the model does, which is exactly what the style layer may not do.
       for (const tell of ['VOLUNTARY RECALL', 'GRAND PRIZE', 'LIMITED-TIME', 'STAY TUNED', 'UNACCEPTABLE']) {

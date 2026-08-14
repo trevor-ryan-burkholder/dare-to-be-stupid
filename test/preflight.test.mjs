@@ -34,7 +34,7 @@ const temporaryDirs = [];
 
 /** @returns {string} */
 function makeTempDir() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-preflight-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-preflight-'));
   temporaryDirs.push(dir);
   return dir;
 }
@@ -80,7 +80,7 @@ function preflight(options = {}) {
   const cwd = options.cwd ?? makeTempDir();
   return runPreflight({
     cwd,
-    dareDir: path.join(cwd, '.dare'),
+    meeseeksDir: path.join(cwd, '.meeseeks'),
     probe: options.probe ?? probeWith(),
     yes: options.yes ?? true,
     nodeVersion: options.nodeVersion ?? '22.12.0',
@@ -122,7 +122,7 @@ describe('a healthy machine passes', () => {
     );
   });
 
-  it('scaffolds .dare/config.json on the way through', () => {
+  it('scaffolds .meeseeks/config.json on the way through', () => {
     const config = preflight({ cwd: makeTempDir() }).checks.find((entry) => entry.name === 'config');
     assert.equal(config?.ok, true);
     assert.equal(config?.detail.startsWith('scaffolded '), true);
@@ -163,12 +163,12 @@ describe('each check fails on its own', () => {
     assert.deepStrictEqual(failedNames(preflight({ cwd })), ['agent-surface']);
   });
 
-  it('fails when .dare/config.json cannot be understood', () => {
+  it('fails when .meeseeks/config.json cannot be understood', () => {
     const cwd = makeTempDir();
-    const dareDir = path.join(cwd, '.dare');
+    const meeseeksDir = path.join(cwd, '.meeseeks');
     const first = preflight({ cwd });
     assert.equal(first.ok, true);
-    writeFileSync(path.join(dareDir, 'config.json'), '{ not json', 'utf8');
+    writeFileSync(path.join(meeseeksDir, 'config.json'), '{ not json', 'utf8');
     assert.deepStrictEqual(failedNames(preflight({ cwd })), ['config']);
   });
 });
@@ -213,21 +213,21 @@ describe('individual checks', () => {
   });
 
   it('does not count its own run state, or preflight could never pass twice', () => {
-    // The first run scaffolds .dare/config.json. Counting that made every subsequent run
-    // fail on the file the previous run had created, so /dare refused after attempt one.
+    // The first run scaffolds .meeseeks/config.json. Counting that made every subsequent run
+    // fail on the file the previous run had created, so /meeseeks refused after attempt one.
     const result = checkCleanWorkingTree(
-      probeWith({ 'git status --porcelain': { ok: true, stdout: '?? .dare/\n' } }),
+      probeWith({ 'git status --porcelain': { ok: true, stdout: '?? .meeseeks/\n' } }),
     );
     assert.equal(result.ok, true);
     assert.equal(result.detail, 'working tree is clean');
   });
 
-  it('ignores every path under .dare/ but nothing else', () => {
+  it('ignores every path under .meeseeks/ but nothing else', () => {
     const result = checkCleanWorkingTree(
       probeWith({
         'git status --porcelain': {
           ok: true,
-          stdout: '?? .dare/\n M .dare/state.json\n?? .dare/bloopers.log\n M src/app.ts\n',
+          stdout: '?? .meeseeks/\n M .meeseeks/state.json\n?? .meeseeks/bloopers.log\n M src/app.ts\n',
         },
       }),
     );
@@ -237,7 +237,7 @@ describe('individual checks', () => {
 
   it('is not fooled by a path that merely starts with the same letters', () => {
     const result = checkCleanWorkingTree(
-      probeWith({ 'git status --porcelain': { ok: true, stdout: '?? .daredevil/notes.md\n' } }),
+      probeWith({ 'git status --porcelain': { ok: true, stdout: '?? .meeseeksdevil/notes.md\n' } }),
     );
     assert.equal(result.ok, false);
   });
@@ -306,25 +306,25 @@ describe('formatPreflight', () => {
 // launched into the same tree. Two drivers were then mutating one repository, each able to
 // `git reset --hard` it and commit over the other. Run 15's result is void.
 describe('checkNoConcurrentRun', () => {
-  /** @returns {string} a fresh `.dare` directory */
-  function makeDareDir() {
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-preflight-lock-'));
+  /** @returns {string} a fresh `.meeseeks` directory */
+  function makeMeeseeksDir() {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-preflight-lock-'));
     temporaryDirs.push(dir);
-    const dareDir = path.join(dir, '.dare');
-    mkdirSync(dareDir, { recursive: true });
-    return dareDir;
+    const meeseeksDir = path.join(dir, '.meeseeks');
+    mkdirSync(meeseeksDir, { recursive: true });
+    return meeseeksDir;
   }
 
   it('passes when nothing holds the repository', () => {
-    const result = checkNoConcurrentRun(makeDareDir(), { isAlive: () => true });
+    const result = checkNoConcurrentRun(makeMeeseeksDir(), { isAlive: () => true });
     assert.equal(result.ok, true);
     assert.equal(result.detail, 'no other driver holds this repository');
   });
 
   it('blocks when the recorded driver is still alive, and names its pid', () => {
-    const dareDir = makeDareDir();
-    claimRunLock(dareDir, { pid: 4242, startedAt: '2026-08-13T10:00:00.000Z' });
-    const result = checkNoConcurrentRun(dareDir, { isAlive: () => true, self: 1 });
+    const meeseeksDir = makeMeeseeksDir();
+    claimRunLock(meeseeksDir, { pid: 4242, startedAt: '2026-08-13T10:00:00.000Z' });
+    const result = checkNoConcurrentRun(meeseeksDir, { isAlive: () => true, self: 1 });
     assert.equal(result.ok, false);
     assert.equal(result.blocking, true);
     assert.equal(result.detail.includes('4242'), true, result.detail);
@@ -335,27 +335,27 @@ describe('checkNoConcurrentRun', () => {
   // failed to stop a driver here and `-9` worked, so the killed-driver case is the common one
   // rather than the exotic one.
   it('treats a lock whose process is gone as stale, and lets the run start', () => {
-    const dareDir = makeDareDir();
-    claimRunLock(dareDir, { pid: 4242, startedAt: '2026-08-13T10:00:00.000Z' });
-    const result = checkNoConcurrentRun(dareDir, { isAlive: () => false, self: 1 });
+    const meeseeksDir = makeMeeseeksDir();
+    claimRunLock(meeseeksDir, { pid: 4242, startedAt: '2026-08-13T10:00:00.000Z' });
+    const result = checkNoConcurrentRun(meeseeksDir, { isAlive: () => false, self: 1 });
     assert.equal(result.ok, true);
     assert.equal(result.detail.includes('stale'), true, result.detail);
   });
 
   it('does not block a process on its own lock', () => {
-    const dareDir = makeDareDir();
-    claimRunLock(dareDir, { pid: 99, startedAt: 'x' });
-    assert.equal(checkNoConcurrentRun(dareDir, { isAlive: () => true, self: 99 }).ok, true);
+    const meeseeksDir = makeMeeseeksDir();
+    claimRunLock(meeseeksDir, { pid: 99, startedAt: 'x' });
+    assert.equal(checkNoConcurrentRun(meeseeksDir, { isAlive: () => true, self: 99 }).ok, true);
   });
 
   // Nothing defaults to pass, and the direction matters: a lock that will not parse is not
   // evidence that nobody holds one.
   it('blocks on a lock it cannot read, rather than reporting the repository free', () => {
-    const dareDir = makeDareDir();
-    writeFileSync(path.join(dareDir, RUN_LOCK_FILE), '{not json', 'utf8');
-    const result = checkNoConcurrentRun(dareDir, { isAlive: () => false });
+    const meeseeksDir = makeMeeseeksDir();
+    writeFileSync(path.join(meeseeksDir, RUN_LOCK_FILE), '{not json', 'utf8');
+    const result = checkNoConcurrentRun(meeseeksDir, { isAlive: () => false });
     assert.equal(result.ok, false);
-    assert.equal(result.fix.includes(path.join('.dare', RUN_LOCK_FILE)), true, result.fix);
+    assert.equal(result.fix.includes(path.join('.meeseeks', RUN_LOCK_FILE)), true, result.fix);
   });
 });
 

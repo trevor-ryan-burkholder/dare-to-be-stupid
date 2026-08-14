@@ -38,7 +38,7 @@ import { ToolchainError } from './shared.mjs';
  */
 
 /**
- * @typedef {{ root: string, dareDir: string, changedFiles?: string[] }} OperationContext
+ * @typedef {{ root: string, meeseeksDir: string, changedFiles?: string[] }} OperationContext
  *
  * `changedFiles` is measured against the last **ratchet-advancing** commit rather than the
  * last iteration, and that is not a detail. A regression iteration changes nothing but the
@@ -56,7 +56,7 @@ import { ToolchainError } from './shared.mjs';
  *   ci: { operation: OperationName, pattern: RegExp }[]
  * }} Toolchain
  *
- * `reports` names the files this toolchain's test operations write, relative to `.dare`. It
+ * `reports` names the files this toolchain's test operations write, relative to `.meeseeks`. It
  * exists because the driver used to hardcode node's two filenames, so a toolchain writing
  * anything else produced a report nobody read — and a report nobody reads is indistinguishable
  * from a run in which no test passed, which is exactly how both live runs on 10 August 2026

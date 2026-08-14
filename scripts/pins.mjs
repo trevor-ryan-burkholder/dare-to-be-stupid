@@ -8,7 +8,7 @@
  * **Security elements (A4).** SCAFFOLD-CEGIS (arXiv 2603.08520) reports that security degrades
  * *gradually across iterations* through specification drift — 43.7% of ten-round chains ended
  * more vulnerable than baseline — and, importantly, that adding a static security gate made it
- * **worse**, 12.5% to 20.8%, because static rules cannot see removed defensive logic. Dare has
+ * **worse**, 12.5% to 20.8%, because static rules cannot see removed defensive logic. Meeseeks has
  * exactly the shape they measured: `npm audit` plus a security auditor, per iteration, with no
  * memory. Their fix is the mechanism already at the centre of this design, pointed at a
  * different property.
@@ -63,7 +63,7 @@
  * target that cannot be resolved at all is a **failure** rather than a carried pass. The Ralph
  * design where the *builder* marks its own stories complete is exactly what this must not
  * become, and the distance between the two is that nothing here is written by a builder — the
- * store is driver-owned and the guard hook denies every write under `.dare` positionally.
+ * store is driver-owned and the guard hook denies every write under `.meeseeks` positionally.
  *
  * This module reads no clock and runs no command. `pinnedAt` is an iteration number, passed in.
  */
@@ -72,7 +72,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-/** Driver-owned. Protected by the `.dare/**` invariant (§6) with no rule of its own. */
+/** Driver-owned. Protected by the `.meeseeks/**` invariant (§6) with no rule of its own. */
 export const PINS_FILE = 'pins.json';
 
 /** Bumped when a field's meaning changes. */
@@ -349,12 +349,12 @@ export function shippingBlockers(pins) {
  * silently discards every recorded guard and every carried pass, and the run would look
  * healthier for having lost them.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @returns {PinStore}
  * @throws {PinsError}
  */
-export function readPins(dareDir) {
-  const file = path.join(dareDir, PINS_FILE);
+export function readPins(meeseeksDir) {
+  const file = path.join(meeseeksDir, PINS_FILE);
   if (!existsSync(file)) return emptyPins();
   /** @type {unknown} */
   let parsed;
@@ -383,20 +383,20 @@ export function readPins(dareDir) {
 /**
  * Write the pin store atomically.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @param {PinStore} pins
  * @returns {string} the path written
  * @throws {PinsError}
  */
-export function writePins(dareDir, pins) {
-  const file = path.join(dareDir, PINS_FILE);
+export function writePins(meeseeksDir, pins) {
+  const file = path.join(meeseeksDir, PINS_FILE);
   const ordered = {
     version: PINS_VERSION,
     security: [...pins.security].sort((a, b) => a.id.localeCompare(b.id) || a.evidence.localeCompare(b.evidence)),
     requirements: [...pins.requirements].sort((a, b) => a.id.localeCompare(b.id)),
   };
   try {
-    mkdirSync(dareDir, { recursive: true });
+    mkdirSync(meeseeksDir, { recursive: true });
     const temporary = `${file}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(ordered, null, 2)}\n`, 'utf8');
     renameSync(temporary, file);

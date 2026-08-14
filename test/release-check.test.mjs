@@ -66,9 +66,9 @@ describe('isShipped', () => {
   const shipped = [
     'hooks/guard.mjs',
     'scripts/driver.mjs',
-    'commands/dare.md',
+    'commands/meeseeks.md',
     'templates/reviewer-system.md',
-    'output-styles/junkion.md',
+    'output-styles/meeseeks.md',
     '.claude-plugin/plugin.json',
     '.claude-plugin/marketplace.json',
   ];
@@ -322,7 +322,7 @@ describe('the command', () => {
     const git = (/** @type {string[]} */ args) => (args[0] === 'log' ? 'abc1234\n' : '\n');
     // A directory with manifests at a version and a HANDOFF.md at another. Written rather
     // than mocked, because the point is that `main` reads the file off disk.
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-release-'));
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-release-'));
     try {
       mkdirSync(path.join(dir, '.claude-plugin'));
       writeFileSync(path.join(dir, '.claude-plugin/plugin.json'), JSON.stringify({ version: '9.9.9' }));
@@ -341,7 +341,7 @@ describe('the command', () => {
     /** @type {string[]} */
     const lines = [];
     const git = (/** @type {string[]} */ args) => (args[0] === 'log' ? 'abc1234\n' : '\n');
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-release-'));
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-release-'));
     try {
       mkdirSync(path.join(dir, '.claude-plugin'));
       writeFileSync(path.join(dir, '.claude-plugin/plugin.json'), JSON.stringify({ version: '9.9.9' }));

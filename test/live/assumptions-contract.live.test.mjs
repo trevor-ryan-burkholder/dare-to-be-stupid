@@ -19,7 +19,7 @@
  * **This has never been run.** It was written alongside A9 and deliberately not executed; the
  * session that added it was not permitted to spend. Run it before trusting the contract:
  *
- *     DARE_LIVE=1 npm run test:live
+ *     MEESEEKS_LIVE=1 npm run test:live
  *
  * Expect a few cents and under a minute. If (2) is what happens, the fix is in the template
  * rather than the parser — tighten "emit no block at all if nothing was ambiguous".
@@ -31,7 +31,7 @@ import { describe, it } from 'node:test';
 import { parseAssumptions } from '../../scripts/assumptions.mjs';
 import { builderSystemPrompt, spawnClaude } from '../../scripts/driver.mjs';
 
-const ARMED = process.env.DARE_LIVE === '1';
+const ARMED = process.env.MEESEEKS_LIVE === '1';
 
 /** Generous: a live round trip includes model latency nobody here controls. */
 const LIVE_TIMEOUT = 180_000;
@@ -62,7 +62,7 @@ function askBuilder(prompt) {
 describe('tier 3 — the assumptions output contract', { timeout: LIVE_TIMEOUT }, () => {
   it('is armed, or fails rather than skipping', () => {
     // A green tick for a suite that made no API call is a lie the reader takes for coverage.
-    assert.equal(ARMED, true, 'set DARE_LIVE=1 to run tier 3; it spends real money');
+    assert.equal(ARMED, true, 'set MEESEEKS_LIVE=1 to run tier 3; it spends real money');
   });
 
   it('emits a parseable, cited block when the specification is genuinely ambiguous', () => {

@@ -1,5 +1,5 @@
 /**
- * Tests for `.dare/config.json` (DESIGN.md §10).
+ * Tests for `.meeseeks/config.json` (DESIGN.md §10).
  *
  * The behaviour worth defending is strictness. An unattended run reads this file once and
  * then acts on it for hours, so a typo that silently keeps a default is a run that does
@@ -28,7 +28,7 @@ const temporaryDirs = [];
 
 /** @returns {string} */
 function makeTempDir() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-config-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-config-'));
   temporaryDirs.push(dir);
   return dir;
 }
@@ -85,7 +85,7 @@ describe('defaultConfig', () => {
       extractTests: true,
       chaos: 1,
       realityCheck: { after: 3 },
-      dareMe: { enabled: true },
+      improvise: { enabled: true },
       race: { enabled: false, n: 3, after: 2 },
       advisory: { minConfidence: 0.7 },
       lessons: { enabled: true, maxPerBrief: 3 },
@@ -151,7 +151,7 @@ describe('defaultConfig', () => {
   });
 
   // 0.61.0. Until then `deploy` was a stub: one `execFileSync` fired *after* the
-  // dare/GRAND-PRIZE tag was already written, whose failure was printed and ignored, with
+  // meeseeks/GRAND-PRIZE tag was already written, whose failure was printed and ignored, with
   // nothing checking the deployed result. A run could announce a grand prize having deployed
   // nothing. See DESIGN.md §10.1.
   describe('the deploy contract', () => {
@@ -383,23 +383,23 @@ describe('validateConfig refuses what it cannot trust', () => {
 });
 
 describe('applyEnvOverrides', () => {
-  it('lets DARE_CHAOS override the dial', () => {
-    assert.equal(applyEnvOverrides(defaultConfig(), { DARE_CHAOS: '3' }).chaos, 3);
+  it('lets MEESEEKS_CHAOS override the dial', () => {
+    assert.equal(applyEnvOverrides(defaultConfig(), { MEESEEKS_CHAOS: '3' }).chaos, 3);
   });
 
   it('leaves the config alone when the variable is absent or empty', () => {
     assert.deepStrictEqual(applyEnvOverrides(defaultConfig(), {}), defaultConfig());
-    assert.deepStrictEqual(applyEnvOverrides(defaultConfig(), { DARE_CHAOS: '' }), defaultConfig());
+    assert.deepStrictEqual(applyEnvOverrides(defaultConfig(), { MEESEEKS_CHAOS: '' }), defaultConfig());
   });
 
   it('overrides nothing else', () => {
-    const overridden = applyEnvOverrides(defaultConfig(), { DARE_CHAOS: '2', DARE_MAX_ITERATIONS: '999' });
+    const overridden = applyEnvOverrides(defaultConfig(), { MEESEEKS_CHAOS: '2', MEESEEKS_MAX_ITERATIONS: '999' });
     assert.equal(overridden.maxIterations, 25);
   });
 
   for (const value of ['0', '4', 'feral', '2.5', '-1']) {
-    it(`rejects DARE_CHAOS=${JSON.stringify(value)}`, () => {
-      assert.throws(() => applyEnvOverrides(defaultConfig(), { DARE_CHAOS: value }), ConfigError);
+    it(`rejects MEESEEKS_CHAOS=${JSON.stringify(value)}`, () => {
+      assert.throws(() => applyEnvOverrides(defaultConfig(), { MEESEEKS_CHAOS: value }), ConfigError);
     });
   }
 });
@@ -417,10 +417,10 @@ describe('loadConfig and writeConfig', () => {
     assert.deepStrictEqual(readdirSync(dir), ['config.json']);
   });
 
-  it('tells the operator to run dare init when the file is missing', () => {
+  it('tells the operator to run meeseeks init when the file is missing', () => {
     assert.throws(
       () => loadConfig(makeTempDir()),
-      (error) => error instanceof ConfigError && error.message.includes('dare init'),
+      (error) => error instanceof ConfigError && error.message.includes('meeseeks init'),
     );
   });
 
@@ -433,13 +433,13 @@ describe('loadConfig and writeConfig', () => {
   it('applies environment overrides on load', () => {
     const dir = makeTempDir();
     writeConfig(dir, defaultConfig());
-    assert.equal(loadConfig(dir, { env: { DARE_CHAOS: '3' } }).chaos, 3);
+    assert.equal(loadConfig(dir, { env: { MEESEEKS_CHAOS: '3' } }).chaos, 3);
   });
 });
 
 describe('initConfig', () => {
   it('creates the file the first time', () => {
-    const dir = path.join(makeTempDir(), '.dare');
+    const dir = path.join(makeTempDir(), '.meeseeks');
     const result = initConfig(dir);
     assert.equal(result.created, true);
     assert.deepStrictEqual(result.config, defaultConfig());
@@ -478,7 +478,7 @@ describe('riskyRemoteWord', () => {
   }
 
   const safe = [
-    'git@github.com:example/dare-to-be-stupid.git',
+    'git@github.com:example/meeseeks.git',
     'https://github.com/acme/procurement.git',
     'https://github.com/acme/products.git',
     'https://github.com/acme/reproduction-tests.git',

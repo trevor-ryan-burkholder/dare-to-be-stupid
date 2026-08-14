@@ -18,7 +18,7 @@ import { describe, it } from 'node:test';
 import { spawnClaude } from '../../scripts/driver.mjs';
 import { parseOracleCases } from '../../scripts/oracle.mjs';
 
-const ARMED = process.env.DARE_LIVE === '1';
+const ARMED = process.env.MEESEEKS_LIVE === '1';
 const LIVE_TIMEOUT = 300_000;
 
 /** A deliberately tiny PRD: small enough to be cheap, specific enough to have real edges. */
@@ -36,7 +36,7 @@ stderr, prints nothing to stdout, and exits 2.
 naming the 1-based line number to stderr, prints nothing to stdout, and exits 3.
 `;
 
-describe('the oracle authoring contract', { skip: ARMED ? false : 'DARE_LIVE is not set' }, () => {
+describe('the oracle authoring contract', { skip: ARMED ? false : 'MEESEEKS_LIVE is not set' }, () => {
   it('returns cases the parser accepts, from a real child', { timeout: LIVE_TIMEOUT }, () => {
     const result = spawnClaude({
       prompt: `${readFileSync(new URL('../../templates/oracle-author.md', import.meta.url), 'utf8')}\n\n---\n\nPRD.md:\n\n${PRD}`,

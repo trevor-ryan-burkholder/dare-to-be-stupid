@@ -2,7 +2,7 @@
  * The context budget — what a child is about to be handed, measured before it is spawned
  * (DESIGN.md §3.9).
  *
- * This exists because of the failure mode this codebase is worst at seeing. Dare assembles a
+ * This exists because of the failure mode this codebase is worst at seeing. Meeseeks assembles a
  * builder's input from the Build Brief, the system prompt, the PRD, design documents,
  * retrieved lessons and conditional git history, and that input grows across iterations with
  * nothing looking at it. There is no exception, no exit code and no red line — the builder is
@@ -15,7 +15,7 @@
  * **It counts characters, and calls them characters.** There is no tokenizer here and there
  * will not be one — hard constraint 1 forbids the dependency, and a hand-rolled estimate is
  * worse than no number at all, because `~48000 tokens` reads as a measurement and is a guess.
- * `.dare/run.json` refuses to write `"unknown"` for the same reason. A character count is
+ * `.meeseeks/run.json` refuses to write `"unknown"` for the same reason. A character count is
  * exact, is free, and tracks the thing the item is actually about: unbounded growth. It is a
  * proxy for context occupancy and it is labelled as one everywhere it appears.
  *
@@ -113,6 +113,6 @@ export function checkContextBudget(options) {
       `${options.phase}: prompt is ${characters} characters, over the ${limit} character budget. ` +
       `Largest first: ${breakdown}. Not spawned, and nothing was truncated - a shortened prompt ` +
       'is a different task handed over without saying so. Raise contextBudget.maxCharacters in ' +
-      '.dare/config.json if this input is genuinely this large, or find what grew.',
+      '.meeseeks/config.json if this input is genuinely this large, or find what grew.',
   };
 }

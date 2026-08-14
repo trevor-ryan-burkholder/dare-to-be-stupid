@@ -10,7 +10,7 @@
  *
  * This module renders. It does not gather: no filesystem reads, no git, no clock. That is
  * what makes a brief a pure function of the run's state, and what lets the archived
- * `.dare/briefs/iter-NNN.md` be read afterwards as a true record of what the builder was
+ * `.meeseeks/briefs/iter-NNN.md` be read afterwards as a true record of what the builder was
  * actually told rather than an approximation of it.
  *
  * Nothing here is truncated silently. Where a list is capped, the brief says how many were
@@ -217,7 +217,7 @@ export function compileBrief(input) {
     '',
     '- Do not touch code unrelated to the objective above. Every unrelated change is regression',
     '  surface, and a regression costs a full iteration plus a hard reset.',
-    '- Do not write anything under `.dare/`, at any depth, including paths that do not exist yet.',
+    '- Do not write anything under `.meeseeks/`, at any depth, including paths that do not exist yet.',
     '  That directory is driver-owned - the ratchet, the evidence and the reports the gates read -',
     '  and a PreToolUse hook denies the write positionally rather than by name.',
     '- Do not declare the work finished. Something else decides that.',
@@ -325,20 +325,20 @@ export function briefFileName(iteration, candidate) {
 }
 
 /**
- * Archive a brief under `.dare/briefs/`.
+ * Archive a brief under `.meeseeks/briefs/`.
  *
  * These are debugging artifacts. When a run ends badly the first question is what the
  * builder was actually asked for on the iteration it went wrong, and reconstructing that
  * from a log of what it did is guesswork.
  *
- * @param {string} dareDir
+ * @param {string} meeseeksDir
  * @param {number} iteration
  * @param {string} contents
  * @param {number} [candidate]
  * @returns {string} the path written
  */
-export function writeBrief(dareDir, iteration, contents, candidate) {
-  const dir = path.join(dareDir, 'briefs');
+export function writeBrief(meeseeksDir, iteration, contents, candidate) {
+  const dir = path.join(meeseeksDir, 'briefs');
   mkdirSync(dir, { recursive: true });
   const file = path.join(dir, briefFileName(iteration, candidate));
   writeFileSync(file, contents, 'utf8');

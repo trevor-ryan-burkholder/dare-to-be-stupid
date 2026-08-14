@@ -52,7 +52,7 @@ function git(cwd, argv) {
  * @returns {string}
  */
 function makeRepo() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'dare-race-integration-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-race-integration-'));
   temporaryDirs.push(dir);
   git(dir, ['init', '--quiet']);
   // Not `--initial-branch`: it arrived in git 2.28 and this suite found a machine without it
@@ -283,7 +283,7 @@ describe('landing a winner on the dirty tree a race actually finds', () => {
   });
 });
 
-// Killing a driver mid-race with -9 left three worktrees at /tmp/dare-race-55237-4/ on 13 August
+// Killing a driver mid-race with -9 left three worktrees at /tmp/meeseeks-race-55237-4/ on 13 August
 // 2026. The claim worth proving against real git is the *consequence*: that an abandoned worktree
 // makes the next race fail on a directory git already knows about, and that the sweep restores
 // the repository to a state where racing works again. Neither half is visible to a unit test,

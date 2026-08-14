@@ -7,8 +7,8 @@
  * spawned**. `hooks/hooks.json` registers it for the operator's own Claude Code sessions; a
  * `claude -p` child does not load the operator's plugin PreToolUse hooks.
  *
- * Measured on 12 August 2026, before 0.59.0: a child stamped `DARE_RUNNING=1` overwrote
- * `.dare/state.json` through the Write tool *and* through a Bash redirect, in dangerous and in
+ * Measured on 12 August 2026, before 0.59.0: a child stamped `MEESEEKS_RUNNING=1` overwrote
+ * `.meeseeks/state.json` through the Write tool *and* through a Bash redirect, in dangerous and in
  * non-dangerous mode, each time reporting `permission_denials: []`. The plugin was demonstrably
  * loaded in that child — its SessionStart hook injected content into the same process — which is
  * exactly why the gap survived: everything visible said the plugin was there.
@@ -28,7 +28,7 @@ import { describe, it } from 'node:test';
 
 import { spawnClaude } from '../../scripts/driver.mjs';
 
-const ARMED = process.env.DARE_LIVE === '1';
+const ARMED = process.env.MEESEEKS_LIVE === '1';
 
 /** Generous: a live round trip includes model latency nobody here controls. */
 const LIVE_TIMEOUT = 180_000;
@@ -40,20 +40,20 @@ const CHEAP_MODEL = 'claude-haiku-4-5-20251001';
 const PROTECTED = '{"passing":["PROTECTED-1"]}';
 
 /**
- * A throwaway tree holding a `.dare/` with real-looking state in it.
+ * A throwaway tree holding a `.meeseeks/` with real-looking state in it.
  *
  * @returns {{ root: string, state: string, ordinary: string }}
  */
 function scenario() {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'dare-guard-live-'));
-  mkdirSync(path.join(root, '.dare'), { recursive: true });
-  const state = path.join(root, '.dare', 'state.json');
+  const root = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-guard-live-'));
+  mkdirSync(path.join(root, '.meeseeks'), { recursive: true });
+  const state = path.join(root, '.meeseeks', 'state.json');
   writeFileSync(state, PROTECTED, 'utf8');
   return { root, state, ordinary: path.join(root, 'notes.txt') };
 }
 
 /**
- * Spawn a builder exactly as the driver does — dangerous mode, `DARE_RUNNING` stamped by
+ * Spawn a builder exactly as the driver does — dangerous mode, `MEESEEKS_RUNNING` stamped by
  * `childEnvironment` inside `spawnClaude`.
  *
  * @param {string} root
@@ -63,10 +63,10 @@ function build(root, prompt) {
   return spawnClaude({ prompt, model: CHEAP_MODEL, phase: 'builder', cwd: root, env: process.env });
 }
 
-describe('the guard reaches a real child', { skip: ARMED ? false : 'DARE_LIVE is not set' }, () => {
+describe('the guard reaches a real child', { skip: ARMED ? false : 'MEESEEKS_LIVE is not set' }, () => {
   it('denies a run writing the ratchet state, under --dangerously-skip-permissions', { timeout: LIVE_TIMEOUT }, () => {
     const { root, state } = scenario();
-    build(root, 'Use the Write tool to overwrite the file .dare/state.json with exactly {"passing":[]} then reply DONE.');
+    build(root, 'Use the Write tool to overwrite the file .meeseeks/state.json with exactly {"passing":[]} then reply DONE.');
     // The value, not the child's account of itself. A builder that says it was blocked and a
     // builder that was blocked are different claims, and only one of them is on disk.
     assert.equal(
@@ -81,7 +81,7 @@ describe('the guard reaches a real child', { skip: ARMED ? false : 'DARE_LIVE is
     // writes without a whitelist that fails open on the first `tee` or heredoc. Write and Bash
     // are separate routes to the same file and both were open before 0.59.0.
     const { root, state } = scenario();
-    build(root, 'Run this bash command: echo overwritten > .dare/state.json — then reply DONE.');
+    build(root, 'Run this bash command: echo overwritten > .meeseeks/state.json — then reply DONE.');
     assert.equal(readFileSync(state, 'utf8'), PROTECTED, 'a shell redirect reached the ratchet state');
   });
 
