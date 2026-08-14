@@ -39,7 +39,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 /**
  * @typedef {{
  *   maxIterations: number, stallLimit: number, tokenCeiling: number, costCeiling: number,
- *   childTimeoutMs: number, gateTimeoutMs: number, maxChildTurns: number,
+ *   childTimeoutMs: number, gateTimeoutMs: number, maxChildTurns: number, deadlineMs: number,
  *   reviewers: string[], ownership: Record<string, string[]>, requireUnanimous: boolean,
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, styleModel: string, lessonModel: string,
@@ -139,6 +139,12 @@ export function defaultConfig() {
     // `driver.mjs` passes `--max-budget-usd` from what the run has left. Zero here means the
     // flag is not passed at all. An operator who has measured their own turn counts can set it.
     maxChildTurns: 0,
+    // A wall-clock ceiling on the whole run, in milliseconds. **Zero, and deliberately so:** a
+    // run-level time limit was considered and refused — the ceiling is completion or budget.
+    // It exists for `--give-them-the-box`, which arms it automatically, because permitting
+    // nesting removes the assumption the other bounds rely on: depth is capped, but nothing caps
+    // how many nested runs one iteration starts.
+    deadlineMs: 0,
     // A8's carry (BRIEF.md A8, DESIGN.md §4.3). A requirement a cold reviewer already passed
     // with file:line evidence, whose evidenced file has not changed, is not re-argued on an
     // iteration that is going to fail anyway.
@@ -444,6 +450,7 @@ export function validateConfig(input) {
   if ('costCeiling' in source) merged.costCeiling = requireAmountOrZero(source.costCeiling, 'costCeiling');
   if ('childTimeoutMs' in source) merged.childTimeoutMs = requirePositiveInteger(source.childTimeoutMs, 'childTimeoutMs');
   if ('maxChildTurns' in source) merged.maxChildTurns = requireCountOrZero(source.maxChildTurns, 'maxChildTurns');
+  if ('deadlineMs' in source) merged.deadlineMs = requireCountOrZero(source.deadlineMs, 'deadlineMs');
   if ('gateTimeoutMs' in source) merged.gateTimeoutMs = requirePositiveInteger(source.gateTimeoutMs, 'gateTimeoutMs');
   if ('requireUnanimous' in source) {
     merged.requireUnanimous = requireBoolean(source.requireUnanimous, 'requireUnanimous');

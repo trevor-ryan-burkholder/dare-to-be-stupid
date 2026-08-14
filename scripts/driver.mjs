@@ -140,6 +140,9 @@ export const BOX_ENV = 'MEESEEKS_GIVE_THEM_THE_BOX';
  */
 export const MAX_BOX_DEPTH = 2;
 
+/** The wall clock `--give-them-the-box` imposes when the operator has not set one. */
+export const BOXED_DEADLINE_MS = 1_800_000;
+
 /** Thrown when a run must not start or must not continue. */
 export class DriverError extends Error {
   /** @param {string} message */
@@ -742,9 +745,28 @@ export function gateScore(results) {
  *
  * @param {RunProgress} progress
  * @param {MeeseeksConfig} config
+ * @param {number} [elapsedMs] wall clock since the run began, checked only when
+ *   `config.deadlineMs` is non-zero
  * @returns {{ continue: true } | { continue: false, state: TerminalState, reason: string }}
  */
-export function shouldContinue(progress, config) {
+export function shouldContinue(progress, config, elapsedMs = 0) {
+  // **The wall clock, and it is off unless something switched it on.** A run-level time ceiling
+  // was considered and refused for ordinary runs — the ceiling is completion or budget. It exists
+  // for one case: `--give-them-the-box`, where nesting is permitted and the usual bounds stop
+  // being sufficient. Depth is capped at two, but nothing caps how many nested runs a builder
+  // starts *within* one iteration, so the reachable work is
+  // `iterations x invocations x depth`, and only the middle term has no limit. With the ceilings
+  // also switched off for development, that product is unbounded in practice.
+  //
+  // Checked between iterations, which is where it can be checked: a child that hangs is bounded
+  // by `childTimeoutMs`, and a blocking `execFileSync` cannot be interrupted by a timer anyway.
+  if (config.deadlineMs > 0 && elapsedMs >= config.deadlineMs) {
+    return {
+      continue: false,
+      state: 'BUDGET',
+      reason: `wall-clock deadline reached: ${Math.round(elapsedMs / 1000)}s of ${Math.round(config.deadlineMs / 1000)}s`,
+    };
+  }
   // **Zero means no ceiling**, the convention `maxChildTurns` already uses. Intended for
   // development and dogfooding on a plan where spend is not the constraint, and deliberately not
   // the default: `BRIEF.md` §E lists hard budget limits among the things to preserve, so this is
@@ -1475,6 +1497,9 @@ export function driveRun(options) {
    */
   let firstBriefChars = 0;
 
+  /** When this run began, for `config.deadlineMs`. Read through `effects.now()` like every clock here. */
+  const startedAtMs = Date.parse(effects.now());
+
   /**
    * Consecutive failures per gate name, within this run. See `repeatedGateNote`.
    *
@@ -1695,7 +1720,7 @@ export function driveRun(options) {
       : `token ceiling reached: ${progress.spentTokens} of ${config.tokenCeiling}`;
 
   for (;;) {
-    const permission = shouldContinue(progress, config);
+    const permission = shouldContinue(progress, config, Date.parse(effects.now()) - startedAtMs);
     if (!permission.continue) return finish(permission.state, permission.reason);
 
     const iterationNumber = progress.iteration + 1;
@@ -4404,6 +4429,21 @@ export function main(argv, io = {}) {
     write(verbatim(/** @type {Error} */ (error).message));
     return 1;
   }
+
+  // **Nesting arms the wall clock**, and this is the one place a deadline is imposed rather than
+  // configured. Permitting a run inside a run removes the assumption the other bounds rely on:
+  // depth is capped at two, but nothing caps how many nested runs one iteration starts, so the
+  // reachable work is `iterations x invocations x depth` and only the middle term is unbounded.
+  // With the ceilings switched off for development — `tokenCeiling: 0` — that product has no
+  // limit at all, which is exactly the combination this guards.
+  //
+  // An operator who set their own `deadlineMs` keeps it. Otherwise thirty minutes, a number
+  // chosen to be embarrassing to hit rather than derived from anything.
+  if (boxed && config.deadlineMs === 0) {
+    config.deadlineMs = BOXED_DEADLINE_MS;
+    write(verbatim(`--give-them-the-box: a ${BOXED_DEADLINE_MS / 60000}-minute wall clock is armed with it.`));
+  }
+
   const { input, confirmPrd, improve } = parseDriverArgs(argv);
 
   // What Phase 0 and Phase 1 cost. These run before `driveRun` exists, so without carrying

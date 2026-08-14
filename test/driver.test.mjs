@@ -599,6 +599,46 @@ describe('shouldContinue', () => {
   });
 });
 
+describe('the wall clock, which only nesting arms', () => {
+  const base = {
+    iteration: 0,
+    spentTokens: 0,
+    spentUsd: 0,
+    stalledIterations: 0,
+    bestGateScore: 0,
+    bestGateShare: 0,
+    bestPassingCount: 0,
+  };
+
+  it('is off by default, however long a run has been going', () => {
+    // A run-level time limit was considered and refused for ordinary runs: the ceiling is
+    // completion or budget. Zero means off and off is the default.
+    const config = { ...defaultConfig(), deadlineMs: 0 };
+    assert.deepStrictEqual(shouldContinue(base, config, 86_400_000), { continue: true });
+  });
+
+  it('ends the run once the deadline is reached', () => {
+    const config = { ...defaultConfig(), deadlineMs: 1000 };
+    const result = shouldContinue(base, config, 1000);
+    assert.equal(result.continue === false ? result.state : '', 'BUDGET');
+    assert.equal(result.continue === false ? result.reason.includes('wall-clock deadline') : false, true);
+  });
+
+  it('lets a run continue right up to the deadline', () => {
+    const config = { ...defaultConfig(), deadlineMs: 1000 };
+    assert.deepStrictEqual(shouldContinue(base, config, 999), { continue: true });
+  });
+
+  it('is checked even when every other ceiling is switched off', () => {
+    // The combination it exists for: nesting permitted and ceilings at zero for development.
+    // Depth is capped at two, but nothing caps how many nested runs one iteration starts, so
+    // without this the reachable work has no bound at all.
+    const config = { ...defaultConfig(), tokenCeiling: 0, costCeiling: 0, deadlineMs: 60_000 };
+    const result = shouldContinue({ ...base, spentTokens: 999_999_999 }, config, 60_000);
+    assert.equal(result.continue === false ? result.reason.includes('wall-clock deadline') : false, true);
+  });
+});
+
 describe('zero ceilings mean no ceiling', () => {
   const base = {
     iteration: 0,

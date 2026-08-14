@@ -1961,6 +1961,7 @@ makes signal forwarding possible at all.
 | `lessonModel` | `claude-sonnet-5` | the cold lesson extractor (§13.8); advisory, so it never needs the strongest model |
 | `effort` | see §10.2 | reasoning effort per phase (`low`…`max`), keyed by the phase names the driver uses |
 | `qualityPlugins` | `["impeccable", "knip", "semgrep"]` | auto-installed in Phase 1 (§5); impeccable required, the other two degrade to a warning |
+| `deadlineMs` | **0** | wall-clock ceiling on the whole run, milliseconds; `0` is off. A run-level time limit was considered and refused for ordinary runs — the ceiling is completion or budget. `--give-them-the-box` arms it at 30 minutes, because permitting nesting removes what the other bounds rely on: depth is capped, but nothing caps how many nested runs one iteration starts |
 | `extraGates` | `[]` | `{ name, command }` checks this project considers gating that no toolchain knows about. Run every iteration, required, listed in the brief as `operator:<name>`. Declared rather than detected, and declared *here* — `.meeseeks/` is positionally protected (§6), so a builder cannot delete a gate that constrains it |
 | `deploy.enabled` | **false** | preview-only when enabled; never prod |
 | `deploy.command` | `[]` | argv array run **before** the ship decision when `enabled`; a string is refused (§10.1) |

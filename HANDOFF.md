@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.128.0`. Measured at 0.128.0: `npm test` **1859 pass**,
+**State:** `main` at `0.129.0`. Measured at 0.129.0: `npm test` **1863 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -58,6 +58,29 @@ Phase 6 sets it, so a fully green iteration happened and the old code would have
 **Early banking remains unconfirmed in the wild.**
 
 **Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
+
+### 0.129.0 — nesting arms a wall clock, because depth is not the same as bounded
+
+**The hazard, and the operator spotted it before a run did.** With `--give-them-the-box` the depth
+cap stops recursion at two — and that is all it stops. **Nothing caps how many nested runs a
+builder starts within a single iteration.** The reachable work is
+`iterations × invocations × depth`, and only the middle term has no limit. Combine that with
+0.128.0's uncapped ceilings for development and the product is unbounded in practice: a run that
+cannot end on budget, spawning runs that cannot end on budget.
+
+**So the box arms a thirty-minute wall clock, and this is the one place a deadline is imposed
+rather than configured.** An operator who set their own `deadlineMs` keeps it. The run announces
+it beside the unsupported-mode banner, so an unlimited-looking run says out loud that it is not.
+
+**This does not resurrect item 17.** A run-level time limit was considered and *refused* for
+ordinary runs — the ceiling is completion or budget, and `deadlineMs` defaults to **0, off**. What
+changed is that one mode removes the assumption the other bounds rely on, and that mode now brings
+its own.
+
+**Checked between iterations, which is where it can be checked.** A hung child is bounded by
+`childTimeoutMs`, and a blocking `execFileSync` cannot be interrupted by a timer anyway — so a
+deadline that pretended to fire mid-child would be a promise the architecture cannot keep until
+item 10 lands.
 
 ### 0.128.0 — zero means no ceiling, for development on a plan where spend is not the constraint
 
