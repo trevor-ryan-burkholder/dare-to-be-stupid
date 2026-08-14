@@ -173,7 +173,17 @@ be the first race whose candidates carry distinct stall hypotheses (C5).
 
 ## Phase 2 — the repriced rewrite. After item 8.
 
-### 10. R21 — async driver: heartbeat, parallel panel, process groups — OPEN, **UNBLOCKED: item 8 says keep the panel and parallelise it**
+### 10. R21 — async driver: heartbeat, parallel panel, process groups — **DONE (0.141.0–0.143.0)**
+
+**Landed as three slices, exactly per the five-step plan below.** 0.141.0: `shell()` to async
+spawn behind the identical `ShellResult` contract, propagated through fourteen driver functions
+and five modules, zero behaviour change, all four tiers green including live. 0.142.0: the
+heartbeat — a pulse every sixty seconds while any child runs, the operator's named top blocker.
+0.143.0: the parallel panel — declared-order determinism preserved (R21's constraint verbatim),
+overlap proven by an adversarial reversed-completion test (180ms of delays, 96.6ms of wall
+clock), overshoot widening documented beside the ceilings. The hostile reviewer's one real
+finding (an overflow/timeout discriminator flip in a doubly-degenerate window) was fixed before
+commit. **This was the final planned feature.**
 
 **Measured live in `ship1`, 13 August, and it is worse than "3× where it could be `max()`":**
 
