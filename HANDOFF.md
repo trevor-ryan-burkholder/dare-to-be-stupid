@@ -1,7 +1,7 @@
 # START HERE — handoff, last swept 14 August 2026
 
-**State:** `main` at `0.141.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.141.0: `npm test` **1889 pass**,
-`npm run test:integration` **37 pass**, `npm run lint` and `npm run typecheck` clean,
+**State:** `main` at `0.142.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.142.0: `npm test` **1891 pass**,
+`npm run test:integration` **38 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
@@ -101,6 +101,31 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.142.0 — the heartbeat: hung and working stop looking alike
+
+**Item 10 step 3, the operator's named top blocker, and the entire reason step 1 existed.** While
+any `claude -p` child runs, `runChild` now prints a pulse every sixty seconds — `review: still
+running, 4m elapsed of 30m allowed` — unstyled and factual, so the reader's question stays
+arithmetic instead of dread. Under `execFileSync` this was *impossible*: the event loop was
+blocked for the whole call, which is why a design phase once sat silent for nine and a half
+minutes, indistinguishable from a corpse.
+
+**The start line's old sentence became a lie the moment the pulse existed** — *"no output until it
+returns"* now reads *"progress every minute"*, and the two tests pinning the old words moved with
+the truth.
+
+**Cleared in `finally`, because a heartbeat that outlives its child is a lie with a pulse.** The
+wiring is asserted in tier 2 through the real `main` — `io.heartbeatMs` is the test seam, exactly
+as `io.spawn` is: a slow canned child plus a 30ms pulse must produce at least two beats, and no
+beat may appear after the run's terminal line. A first draft put that test in the tier-1 harness,
+which drives `driveRun` with injected effects and never touches `runChild` at all — a test that
+would have passed while proving nothing, caught before it shipped.
+
+**Tier 3 not owed:** the pulse wraps *around* the spawn call; `spawnClaude`, `claudeArgs`, the
+envelope and the templates are untouched.
+
+**Next: the parallel panel** — the measured 73% of wall clock.
 
 ### 0.141.0 — the driver goes async: item 10 steps 1 and 2, zero behaviour change, all four tiers green
 

@@ -22,7 +22,7 @@
 
 import { execFileSync, spawn as spawnProcess } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { clearTimeout, setTimeout } from 'node:timers';
+import { clearInterval, clearTimeout, setInterval, setTimeout } from 'node:timers';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -4517,8 +4517,37 @@ export async function spawnClaude(options) {
  * @returns {string}
  */
 export function childStartLine(phase, model, characters, timeoutMs) {
-  const base = `${phase}: ${model} running on ${characters} characters of prompt, no output until it returns`;
+  const base = `${phase}: ${model} running on ${characters} characters of prompt, progress every minute`;
   return timeoutMs === undefined ? base : `${base}, killed after ${formatDuration(timeoutMs)}`;
+}
+
+/**
+ * How often a running child announces that it is still running.
+ *
+ * Sixty seconds: rare enough that a twenty-minute reviewer costs twenty lines rather than a
+ * scroll of them, frequent enough that "hung" and "working" diverge within a minute of each
+ * other. Item 10's whole first commit — the async conversion — exists so this interval can
+ * fire at all: under `execFileSync` the event loop was blocked and a timer here was
+ * impossible, which is why a design phase once sat silent for nine and a half minutes,
+ * indistinguishable from a corpse.
+ */
+export const HEARTBEAT_MS = 60_000;
+
+/**
+ * The line printed while a child is still running.
+ *
+ * Unstyled and factual, like the bracket lines around it: the phase (the start line may be a
+ * screen back), how long so far, and the ceiling — so the reader's question stays arithmetic
+ * ("47m of 30m would be a bug; 4m of 30m is a Tuesday") rather than dread.
+ *
+ * @param {string} phase
+ * @param {number} elapsedMs
+ * @param {number} [timeoutMs]
+ * @returns {string}
+ */
+export function heartbeatLine(phase, elapsedMs, timeoutMs) {
+  const base = `${phase}: still running, ${formatDuration(elapsedMs)} elapsed`;
+  return timeoutMs === undefined ? base : `${base} of ${formatDuration(timeoutMs)} allowed`;
 }
 
 /**
@@ -4558,6 +4587,7 @@ export function childEndLine(phase, result, seconds) {
  *   env?: Record<string, string | undefined>,
  *   log?: (line: string) => void,
  *   spawn?: typeof spawnClaude,
+ *   heartbeatMs?: number,
  * }} [io] `spawn` exists so a test can drive the **real** loop -- real gates, real git, real
  *   `gateTree` -- with canned child envelopes instead of paid ones. Three composition sites
  *   inside this function were unassertable without it (`quality:` and `operator:` gates reaching
@@ -4577,6 +4607,7 @@ export async function main(argv, io = {}) {
   const env = boxed ? { ...(io.env ?? process.env), [BOX_ENV]: '1' } : (io.env ?? process.env);
   const write = io.log ?? ((/** @type {string} */ line) => process.stdout.write(`${line}\n`));
   const spawn = io.spawn ?? spawnClaude;
+  const heartbeatMs = io.heartbeatMs ?? HEARTBEAT_MS;
   const mode = styleMode(env);
 
   /**
@@ -4613,7 +4644,15 @@ export async function main(argv, io = {}) {
     write(verbatim(childStartLine(options.phase, options.model, measured.characters, config.childTimeoutMs)));
     const startedAt = Date.now();
     const allowance = childBudget(config, handedOutUsd);
-    const result = await spawn({
+    // The heartbeat. Cleared in `finally`, because a heartbeat that outlives its child is a
+    // lie with a pulse. `io.heartbeatMs` exists for tests, exactly as `io.spawn` does.
+    const pulse = setInterval(
+      () => write(verbatim(heartbeatLine(options.phase, Date.now() - startedAt, config.childTimeoutMs))),
+      heartbeatMs,
+    );
+    let result;
+    try {
+      result = await spawn({
       ...options,
       contextLimit: config.contextBudget.maxCharacters,
       // Supplied here rather than at each call site, for the same reason the context budget
@@ -4621,8 +4660,11 @@ export async function main(argv, io = {}) {
       // door, so a phase added later cannot forget the ceiling.
       timeoutMs: config.childTimeoutMs,
       sandbox: config.sandbox.enabled,
-      ...allowance,
-    });
+        ...allowance,
+      });
+    } finally {
+      clearInterval(pulse);
+    }
     // Counted here because **every** child in the loop passes through this function — the
     // authoring phases, the design phase, the builder, the panel, and each race candidate.
     // So this total is the run's total, summed over the same envelopes `driveRun` charges

@@ -90,6 +90,7 @@ import {
   gateScore,
   childEndLine,
   childStartLine,
+  heartbeatLine,
   parseClaudeEnvelope,
   parseReviewerReport,
   recordProgress,
@@ -1442,6 +1443,20 @@ describe('appendBlooper', () => {
 // The loop, driven to each terminal state
 // ---------------------------------------------------------------------------
 
+describe('the heartbeat', () => {
+  it('names the phase, the elapsed time, and the ceiling', () => {
+    assert.equal(
+      heartbeatLine('review', 240_000, 1_800_000),
+      'review: still running, 4m elapsed of 30m allowed',
+    );
+  });
+
+  it('omits the ceiling only when there is none', () => {
+    assert.equal(heartbeatLine('builder', 61_000), 'builder: still running, 1m1s elapsed');
+  });
+
+});
+
 describe('the lines that bracket a child', () => {
   // Children are awaited one at a time and nothing ticks while one is out yet. These two lines
   // are the whole of the progress an operator gets, which is why their content is asserted
@@ -1449,7 +1464,7 @@ describe('the lines that bracket a child', () => {
   it('warns that silence is expected, and names the model doing the waiting', () => {
     assert.equal(
       childStartLine('design', 'claude-opus-5', 8432),
-      'design: claude-opus-5 running on 8432 characters of prompt, no output until it returns',
+      'design: claude-opus-5 running on 8432 characters of prompt, progress every minute',
     );
   });
 
@@ -1624,7 +1639,7 @@ describe('a child that never returns is killed and named', () => {
     // candidate ran 651s, so nine minutes of nothing is ordinary.
     assert.equal(
       childStartLine('builder', 'claude-sonnet-5', 1234, 1_800_000),
-      'builder: claude-sonnet-5 running on 1234 characters of prompt, no output until it returns, killed after 30m',
+      'builder: claude-sonnet-5 running on 1234 characters of prompt, progress every minute, killed after 30m',
     );
   });
 });
