@@ -411,7 +411,7 @@ during cloud-init. Both look exactly like a broken deploy and neither is one.
 
 ## Phase 5 — the box made real. Added 14 Aug by operator decision, after item 10 landed.
 
-### 24. Components — driver-delegated sub-runs in worktrees — OPEN, **SPECIFIED**
+### 24. Components — driver-delegated sub-runs in worktrees — IN PROGRESS, **CODE COMPLETE (0.144.0)**
 
 **Origin:** `--give-them-the-box` (0.115.0), the nesting cost/benefit ledger, case J's five-run
 finding that **builders decline by omission**, and the operator's 14 Aug decision to queue this
@@ -448,6 +448,23 @@ components); tier 2 drives one component end to end against real git with an inj
 child-driver effect — worktree created, config written and componentless, merge landed, outcome
 charged, and the failure path aborting by name; and one live boxed dogfood run ships a
 one-component repository.
+
+**Status (14 Aug 2026, 0.144.0):** built and then hardened in the same version. The
+implementation (config `components`, `scripts/components.mjs`, the Phase 1c driver phase) landed
+with 66 unit and 3 tier-2 tests; a hostile review then confirmed three majors by reproduction —
+a committed `outcome.json` read as the verdict of a child that never ran (fail-open), a
+committed symlink defeating the string-only dir containment and pointing a nested driver at a
+tree the operator never named, and the phase's force-sweep/branch-reset/merges running outside
+the run lock whose protection its own comment claimed — plus three minors (a crashed child's
+real spend silently unbilled, the parent's armed clock never consulted between components, and
+phase throws escaping `main` as stack traces with no verdict). All six fixed at 0.144.0:
+tracked-`.meeseeks` refusal plus stale-outcome removal, realpath containment checked before
+anything is created and again after, the lock claimed before the phase, the unbilled spend named
+in the abort message, a per-component wall-clock check, and a phase-wide catch that turns any
+surprise into the verbatim-then-stamp ABORTED shape. 1962 tier-1 and 46 tier-2 tests pass; every
+new refusal has a deny-path test and a benign neighbour. **Outstanding for DONE:** the
+Done-when's live half — one boxed dogfood run shipping a one-component repository — authorized
+by the operator as measurement run 3.
 
 ## Phase 4 — breadth, then the mirror.
 

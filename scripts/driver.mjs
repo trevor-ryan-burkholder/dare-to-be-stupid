@@ -21,7 +21,7 @@
  */
 
 import { execFileSync, spawn as spawnProcess } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { clearInterval, clearTimeout, setInterval, setTimeout } from 'node:timers';
 import os from 'node:os';
 import path from 'node:path';
@@ -36,6 +36,17 @@ import {
   resolveCapabilities,
   writeCapabilityManifest,
 } from './capabilities.mjs';
+import {
+  ComponentError,
+  checkComponentStateNotTracked,
+  componentChildConfig,
+  componentWorktreeName,
+  createComponentWorktree,
+  readComponentOutcome,
+  runComponentDriver,
+  sweepComponentWorktrees,
+  writeComponentChildConfig,
+} from './components.mjs';
 import { DEFAULT_OWNERSHIP, loadConfig } from './config.mjs';
 import { checkContextBudget, promptGrowthNote, measurePrompt } from './context-budget.mjs';
 import { applicableGates, gateApplies } from './gate-policy.mjs';
@@ -4609,17 +4620,24 @@ export function childEndLine(phase, result, seconds) {
  *   env?: Record<string, string | undefined>,
  *   log?: (line: string) => void,
  *   spawn?: typeof spawnClaude,
+ *   runComponent?: typeof runComponentDriver,
  *   heartbeatMs?: number,
  * }} [io] `spawn` exists so a test can drive the **real** loop -- real gates, real git, real
  *   `gateTree` -- with canned child envelopes instead of paid ones. Three composition sites
  *   inside this function were unassertable without it (`quality:` and `operator:` gates reaching
  *   the roster, the scoped restore firing, the prompt-growth note), each carrying the shape of
  *   the guard defect: correct code that nothing proved was ever called. Defaults to the real
- *   spawner, so production behaviour is untouched.
+ *   spawner, so production behaviour is untouched. `runComponent` is the same seam for the
+ *   component phase's nested driver, so tier 2 can fake the child driver while the worktree,
+ *   config and merge halves run against real git.
  * @returns {Promise<number>} process exit code
  */
 export async function main(argv, io = {}) {
   const cwd = io.cwd ?? process.cwd();
+  // When this run began, for handing components the parent's *remaining* wall clock rather
+  // than a fresh one. `driveRun` keeps its own start for the loop's deadline; this one exists
+  // because the component phase runs before `driveRun` does.
+  const startedAtMs = Date.now();
   // Read straight from argv rather than from `parseDriverArgs`, because `assertNotNested` runs
   // before the arguments are parsed and this is the one flag that has to be visible to it.
   // Armed into the environment so the guard hook and every descendant see the same fact from
@@ -4756,6 +4774,23 @@ export async function main(argv, io = {}) {
   const tracked = await checkStateNotTracked((command, args) => shell(command, args, { cwd }));
   if (!tracked.ok) {
     write(verbatim(`${tracked.detail}\n${tracked.fix}`));
+    return 1;
+  }
+
+  // Components are nested runs, and the permission to nest is typed, never configured
+  // (PLAN item 24). The config says *what* the components are; only `--give-them-the-box` on
+  // this session's command line says they may run, because a flag is typed by somebody watching
+  // and config is read quietly by a machine at three in the morning. Checked here beside the
+  // tracked-state refusal — a static property of the invocation, refused before any child is
+  // paid for.
+  if (config.components.length > 0 && !boxed) {
+    write(
+      verbatim(
+        `this configuration declares ${config.components.length} component(s), and every component is a nested ` +
+          'meeseeks run. Nesting needs the operator: re-run with --give-them-the-box. ' +
+          'The config cannot smuggle that permission, and this run will not borrow it.',
+      ),
+    );
     return 1;
   }
 
@@ -5068,6 +5103,197 @@ export async function main(argv, io = {}) {
   for (const warning of provisioning.warnings) write(verbatim(warning));
 
   await commitPhase('meeseeks: design documents');
+
+  // One driver per repository (DESIGN.md §3.5). Checked here as well as in preflight, because
+  // preflight runs in a *different process* — the `init` entry point — and the operator also
+  // launches this file directly, which is exactly what the two-driver incident on 13 August
+  // 2026 looked like in `ps`. Claimed *before* the component phase rather than beside
+  // `driveRun`: that phase force-removes worktrees, resets `meeseeks/component-*` branches and
+  // fast-forwards this tree, and each of those leans on the lock's one-driver-per-repository
+  // rule — a first draft claimed the lock downstream and ran all of it unprotected. A lock
+  // leaked by a crash between here and release self-heals: `checkNoConcurrentRun` treats a
+  // dead pid's lock as stale.
+  const concurrent = checkNoConcurrentRun(meeseeksDir);
+  if (!concurrent.ok) {
+    write(verbatim(`${concurrent.detail}\n${concurrent.fix}`));
+    return 1;
+  }
+  claimRunLock(meeseeksDir, { pid: process.pid, startedAt: new Date().toISOString() });
+
+  // ---- Phase 1c: components — driver-delegated sub-runs in worktrees (PLAN item 24) ------
+  //
+  // Between design and the loop, in declared order, strictly sequentially: each component is a
+  // whole nested driver run in a worktree on `meeseeks/component-<name>`, and each one's work is
+  // fast-forward-merged into this tree before the next begins — so component two builds on
+  // component one, and the loop below gates and cold-reads the merged whole. A component's
+  // SHIPPED is a pre-filter exactly as the panel carry is, never a substitute.
+  //
+  // The `boxed` gate was already enforced beside the tracked-state check; reaching here with
+  // components means the operator typed the flag, so a wall clock is armed.
+  if (config.components.length > 0) {
+    try {
+      const runComponent = io.runComponent ?? runComponentDriver;
+      // The nested driver is this file, resolved from the module rather than trusted from argv,
+      // so a component runs the same build whatever launched the parent.
+      const nestedDriver = fileURLToPath(import.meta.url);
+
+      // Self-healing at the start, exactly as races are: cleanup on the way out cannot survive
+      // SIGKILL, and `git worktree add` refuses a path git already knows about — one abandoned
+      // component would otherwise break every later run of this configuration.
+      const swept = await sweepComponentWorktrees({ cwd, run: shell });
+      for (const entry of swept.removed) write(verbatim(`component: removed an abandoned worktree at ${entry}`));
+      for (const problem of swept.problems) write(verbatim(`component: ${problem}`));
+
+      const componentsParent = path.join(os.tmpdir(), `meeseeks-components-${process.pid}`);
+      mkdirSync(componentsParent, { recursive: true });
+      // The same shape as a race's cleanup: the containing directory goes on every path out, the
+      // failing ones included. `git worktree remove` already emptied it of worktrees; this is the
+      // shell of the directory itself.
+      try {
+        for (const component of config.components) {
+          // The parent's armed wall clock, consulted before this component pays for anything:
+          // deadlines are otherwise enforced between a run's iterations, so a child overshooting
+          // in its own pre-loop would let the phase drift past the clock and the next component
+          // would still start — against a remaining allowance of nothing.
+          if (config.deadlineMs > 0 && Date.now() - startedAtMs >= config.deadlineMs) {
+            throw new ComponentError(
+              `component ${component.name}: the run's wall clock expired before this component started; ` +
+                'a child would inherit a clock that has already run out',
+            );
+          }
+          // Refused before the worktree exists: the worktree is a checkout of HEAD, so a committed
+          // `<dir>/.meeseeks/` — a SHIPPED outcome.json above all — would materialise inside it
+          // and be read as this run's verdict for a child that never built anything.
+          const trackedState = await checkComponentStateNotTracked({ cwd, run: shell, dir: component.dir });
+          if (!trackedState.ok) throw new ComponentError(`component ${component.name}: ${trackedState.detail}`);
+          const worktreeDir = path.join(componentsParent, componentWorktreeName(component.name));
+          const created = await createComponentWorktree({ cwd, run: shell, name: component.name, dir: worktreeDir });
+          if (!created.ok) {
+            throw new ComponentError(`component ${component.name}: worktree could not be created: ${created.detail}`);
+          }
+          try {
+            const componentCwd = path.join(worktreeDir, component.dir);
+            // The config validator's traversal rejections are string-only, and a builder in an
+            // earlier iteration can commit an ordinary symlink that sends `dir` outside the
+            // worktree — a nested driver, running with the builder's full permissions, in a tree
+            // the operator never named. Resolved twice: the deepest existing ancestor before
+            // anything is created, so nothing is ever made outside, and the directory itself
+            // after, which is the answer that stands.
+            const worktreeReal = realpathSync(worktreeDir);
+            const contained = (/** @type {string} */ resolved) =>
+              resolved === worktreeReal || resolved.startsWith(worktreeReal + path.sep);
+            const escape = () =>
+              new ComponentError(
+                `component ${component.name}: ${component.dir} resolves outside the component worktree ` +
+                  '(a symlink in the tree escapes it); a nested driver may not run in a tree the operator never named',
+              );
+            let ancestor = componentCwd;
+            while (!existsSync(ancestor)) ancestor = path.dirname(ancestor);
+            if (!contained(realpathSync(ancestor))) throw escape();
+            // A greenfield component's directory may not exist at HEAD yet; a child cannot be
+            // spawned into a directory that is not there.
+            mkdirSync(componentCwd, { recursive: true });
+            if (!contained(realpathSync(componentCwd))) throw escape();
+            const childStateDir = path.join(componentCwd, '.meeseeks');
+            // Ceilings from this run's remainder, the deadline from its remaining clock, and never
+            // a `components` key — the writer refuses one, the belt beside the depth cap's braces.
+            writeComponentChildConfig(
+              childStateDir,
+              componentChildConfig(config, {
+                spentTokens: preLoop.tokens,
+                spentUsd: preLoop.costUsd,
+                elapsedMs: Date.now() - startedAtMs,
+                boxDeadlineMs: BOXED_DEADLINE_MS,
+              }),
+            );
+            // Belt beside the tracked-state refusal above: whatever already sits at the outcome
+            // path is not this child's receipt, and `readComponentOutcome` cannot tell a stale
+            // record from a fresh one.
+            rmSync(path.join(childStateDir, OUTCOME_FILE), { force: true });
+            write(verbatim(`component ${component.name}: nested driver starting in ${component.dir} on ${created.branch}`));
+            const finished = await runComponent({
+              driver: nestedDriver,
+              spec: component.spec,
+              cwd: componentCwd,
+              // The ordinary child environment: the re-entrancy marker, and — because the box is
+              // armed — the depth count that keeps the bottom of the box where it is.
+              env: childEnvironment(env),
+              onLine: (line) => write(verbatim(`component:${component.name}: ${line}`)),
+            });
+
+            // Fail-closed: a component that recorded no outcome did not ship, whatever its exit
+            // code claimed. The outcome is read before the worktree is removed, because it lives
+            // inside the worktree.
+            const outcome = readComponentOutcome(path.join(childStateDir, OUTCOME_FILE));
+            if (outcome.ok) {
+              // Charged into the same pre-loop total the PRD and design phases use, so `driveRun`
+              // seeds its ceilings having paid for every component and the next component's own
+              // ceilings shrink by what this one spent. `handedOutUsd` too, for the same reason it
+              // exists at all: the next child's in-flight allowance must not ignore real spend.
+              preLoop.tokens += outcome.spentTokens;
+              preLoop.costUsd += outcome.costUsd;
+              handedOutUsd += outcome.costUsd;
+            }
+            if (!outcome.ok) {
+              const exit = finished.code === null ? 'no exit code' : `exit code ${finished.code}`;
+              // Whatever a child spent before dying without a receipt is real but unknowable —
+              // nothing durable records spend until the outcome is written — so the bill says so
+              // rather than silently omitting it.
+              throw new ComponentError(
+                `component ${component.name}: failed (${exit}): ${outcome.detail}; ` +
+                  "anything it spent before dying was never recorded and is missing from this run's bill" +
+                  (finished.detail === '' ? '' : `\n${finished.detail}`),
+              );
+            }
+            if (outcome.state !== 'SHIPPED') {
+              // Ending the run rather than continuing without the component is the default on
+              // purpose; softening it to continue-without is a recorded option, not this code.
+              throw new ComponentError(
+                `component ${component.name}: ended ${outcome.state}, not SHIPPED. ` +
+                  'The parent does not build on a component that did not ship.',
+              );
+            }
+            // The applyWinner machinery, exactly as a race winner lands: `--ff-only`, the dirty
+            // tree set aside first, nothing merged that was not gated.
+            const merged = await applyWinner({
+              cwd,
+              run: shell,
+              commit: created.branch,
+              stashLabel: `set aside before landing component ${component.name}`,
+            });
+            if (!merged.ok) {
+              throw new ComponentError(`component ${component.name}: SHIPPED but could not be merged: ${merged.detail}`);
+            }
+            write(
+              verbatim(
+                `component ${component.name}: SHIPPED and merged (${merged.detail}); ` +
+                  `${outcome.spentTokens} token(s) and $${outcome.costUsd.toFixed(4)} charged to this run`,
+              ),
+            );
+          } finally {
+            // On every path out, the failing ones included — a worktree that outlives its component
+            // refuses the next run's `worktree add`. The branch survives as the record of the work.
+            const cleaned = await removeWorktrees({ cwd, run: shell, worktrees: [{ index: 1, dir: worktreeDir }] });
+            for (const problem of cleaned.problems) write(verbatim(`component ${component.name}: ${problem}`));
+          }
+        }
+      } finally {
+        rmSync(componentsParent, { recursive: true, force: true });
+      }
+    } catch (error) {
+      // Expected refusals arrive as ComponentError carrying an operator-facing sentence;
+      // anything else — an ENOTDIR from a dir that names a committed file, a git wrapper
+      // throwing — is a surprise. Both end the run the same verbatim-then-stamp way
+      // (DESIGN.md §9) rather than escaping as a stack trace with no verdict, and both
+      // release the lock this phase runs under. The worktree and parent-directory cleanups
+      // have already run by here: a throw propagates through their `finally`s.
+      const failure = /** @type {Error} */ (error);
+      write(verbatim(failure instanceof ComponentError ? failure.message : `${failure.name}: ${failure.message}`));
+      write(stamp('ABORTED', { mode }));
+      clearRunLock(meeseeksDir);
+      return 1;
+    }
+  }
 
   // ---- Phases 2-6: the loop ---------------------------------------------
   // Whatever the resolved toolchain says it writes, not node's two filenames. Hardcoding
@@ -5398,18 +5624,6 @@ export async function main(argv, io = {}) {
       rmSync(parentDir, { recursive: true, force: true });
     }
   };
-
-  // One driver per repository (DESIGN.md §3.5). Checked here as well as in preflight, because
-  // preflight runs in a *different process* — the `init` entry point — and the operator also
-  // launches this file directly, which is exactly what the two-driver incident on 13 August
-  // 2026 looked like in `ps`. The window between that check and this claim is milliseconds;
-  // the window it closes was hours.
-  const concurrent = checkNoConcurrentRun(meeseeksDir);
-  if (!concurrent.ok) {
-    write(verbatim(`${concurrent.detail}\n${concurrent.fix}`));
-    return 1;
-  }
-  claimRunLock(meeseeksDir, { pid: process.pid, startedAt: new Date().toISOString() });
 
   /** @type {RunOutcome} */
   let outcome;

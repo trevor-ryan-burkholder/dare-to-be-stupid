@@ -209,6 +209,22 @@ inputs**, not gates on their own — but "design quality" *is* a DoD line the re
 checks (§4). This is also where the driver **auto-installs quality plugins** (§5) so their
 hooks/skills are live for every build iteration.
 
+### Phase 1c — Components (only with `--give-them-the-box`)
+When the config declares `components`, each one is a **whole nested driver run** in a git
+worktree on `meeseeks/component-<name>`, executed sequentially in declared order between the
+design commit and the loop. The parent writes the child a minimal derived config (ceilings from
+its own remainder, the remaining wall clock, never a `components` key), spawns the nested driver
+with the builder's own permissions, and consumes nothing but the branch and the child's
+`outcome.json` — fail-closed: missing, unreadable or stateless outcomes are failures, and
+anything short of `SHIPPED` ends the parent `ABORTED` naming the component. A shipped branch is
+fast-forward-merged before the next component starts, and the loop then gates and cold-panels
+the merged whole: a component's `SHIPPED` is a pre-filter like the panel carry, never a
+substitute. The phase runs under the run lock, refuses components whose `.meeseeks` is tracked
+at HEAD (a committed `outcome.json` would replay a stale verdict), and resolves the component
+dir through `realpath` so a committed symlink cannot point a nested driver outside the worktree.
+The point of nesting at all: per-subtree toolchains — `resolveToolchain` is one-per-run, so a
+polyglot repository is inexpressible without this.
+
 ### Phases 2–6
 Build, gates, ratchet, review, ship — the loop. Detailed below.
 
@@ -1964,6 +1980,7 @@ makes signal forwarding possible at all.
 | `qualityPlugins` | `["impeccable", "knip", "semgrep"]` | auto-installed in Phase 1 (§5); impeccable required, the other two degrade to a warning |
 | `deadlineMs` | **0** | wall-clock ceiling on the whole run, milliseconds; `0` is off. A run-level time limit was considered and refused for ordinary runs — the ceiling is completion or budget. `--give-them-the-box` arms it at 30 minutes, because permitting nesting removes what the other bounds rely on: depth is capped, but nothing caps how many nested runs one iteration starts |
 | `extraGates` | `[]` | `{ name, command }` checks this project considers gating that no toolchain knows about. Run every iteration, required, listed in the brief as `operator:<name>`. Declared rather than detected, and declared *here* — `.meeseeks/` is positionally protected (§6), so a builder cannot delete a gate that constrains it |
+| `components` | `[]` | `{ name, dir, spec }` sub-runs executed as whole nested drivers in worktrees before the loop (§2, Phase 1c). The config declares *what* the components are; only `--give-them-the-box` on the command line permits them to run — configured components without the flag refuse the run before any child is paid for. `name` is kebab-case (it becomes branch and worktree names), `dir` is repo-relative with no `..` and is realpath-checked against the worktree at run time, `spec` is a PRD path relative to the dir or a quoted idea |
 | `deploy.enabled` | **false** | preview-only when enabled; never prod |
 | `deploy.command` | `[]` | argv array run **before** the ship decision when `enabled`; a string is refused (§10.1) |
 | `deploy.url` | `""` | the fixed host the smoke checks ask. Required when `enabled`; refused if not http(s) or if it looks like production |

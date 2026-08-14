@@ -69,6 +69,9 @@ describe('defaultConfig', () => {
       lessonModel: 'claude-sonnet-5',
       qualityPlugins: ['impeccable', 'knip', 'semgrep', 'schemathesis'],
       extraGates: [],
+      // Empty means the component phase does not exist: no nested runs, no flag demanded, no
+      // behaviour change from a pre-components build.
+      components: [],
       effort: {
         builder: 'medium',
         prd: 'medium',
@@ -395,6 +398,97 @@ describe('validateConfig refuses what it cannot trust', () => {
     assert.throws(
       () => validateConfig({ reviewers: ['astrology'] }),
       (error) => error instanceof ConfigError && error.message.includes('security, correctness, design'),
+    );
+  });
+});
+
+describe('the component list', () => {
+  // PLAN item 24. Each entry causes a whole nested driver to be spawned with a budget carved
+  // from this run's remainder, so the validation stakes are higher than for any other key: a
+  // typo here is an unattended process pointed at the wrong directory.
+
+  it('accepts a valid component and keeps every field exactly', () => {
+    const config = validateConfig({
+      components: [{ name: 'parser-core2', dir: 'packages/parser', spec: 'PRD.md' }],
+    });
+    assert.deepStrictEqual(config.components, [{ name: 'parser-core2', dir: 'packages/parser', spec: 'PRD.md' }]);
+  });
+
+  it('accepts several components and preserves the declared order, because they run in it', () => {
+    const config = validateConfig({
+      components: [
+        { name: 'api', dir: 'services/api', spec: 'Build the API.' },
+        { name: 'web', dir: 'apps/web', spec: 'docs/web-prd.md' },
+      ],
+    });
+    assert.deepStrictEqual(
+      config.components.map((component) => component.name),
+      ['api', 'web'],
+    );
+  });
+
+  it('accepts an empty list, which switches the phase off entirely', () => {
+    assert.deepStrictEqual(validateConfig({ components: [] }).components, []);
+    assert.deepStrictEqual(validateConfig({}).components, []);
+  });
+
+  const rejected = [
+    [{ components: { name: 'a', dir: 'a', spec: 'x' } }, 'a single component where a list belongs'],
+    [{ components: ['parser'] }, 'a component that is only a string'],
+    [{ components: [{ dir: 'a', spec: 'x' }] }, 'a component with no name'],
+    [{ components: [{ name: 'a', spec: 'x' }] }, 'a component with no dir'],
+    [{ components: [{ name: 'a', dir: 'a' }] }, 'a component with no spec'],
+    [{ components: [{ name: '', dir: 'a', spec: 'x' }] }, 'an empty name'],
+    [{ components: [{ name: '   ', dir: 'a', spec: 'x' }] }, 'a name that is only whitespace'],
+    [{ components: [{ name: 'Parser', dir: 'a', spec: 'x' }] }, 'an upper-case name'],
+    [{ components: [{ name: 'my parser', dir: 'a', spec: 'x' }] }, 'a name with a space'],
+    [{ components: [{ name: 'a_b', dir: 'a', spec: 'x' }] }, 'a name with an underscore'],
+    [{ components: [{ name: 'a--b', dir: 'a', spec: 'x' }] }, 'a name with a double hyphen'],
+    [{ components: [{ name: '-a', dir: 'a', spec: 'x' }] }, 'a name starting with a hyphen'],
+    [{ components: [{ name: 'a-', dir: 'a', spec: 'x' }] }, 'a name ending with a hyphen'],
+    [{ components: [{ name: 5, dir: 'a', spec: 'x' }] }, 'a name that is not a string'],
+    [
+      {
+        components: [
+          { name: 'twin', dir: 'a', spec: 'x' },
+          { name: 'twin', dir: 'b', spec: 'y' },
+        ],
+      },
+      'two components sharing a name, which would share a branch',
+    ],
+    [{ components: [{ name: 'a', dir: '', spec: 'x' }] }, 'an empty dir'],
+    [{ components: [{ name: 'a', dir: '   ', spec: 'x' }] }, 'a dir that is only whitespace'],
+    [{ components: [{ name: 'a', dir: 5, spec: 'x' }] }, 'a dir that is not a string'],
+    [{ components: [{ name: 'a', dir: '/srv/app', spec: 'x' }] }, 'an absolute POSIX dir'],
+    [{ components: [{ name: 'a', dir: 'C:\\app', spec: 'x' }] }, 'an absolute Windows dir'],
+    [{ components: [{ name: 'a', dir: 'C:/app', spec: 'x' }] }, 'an absolute Windows dir with forward slashes'],
+    [{ components: [{ name: 'a', dir: '\\\\host\\share', spec: 'x' }] }, 'a UNC dir'],
+    [{ components: [{ name: 'a', dir: '..', spec: 'x' }] }, 'a dir that is the parent directory'],
+    [{ components: [{ name: 'a', dir: '../sibling', spec: 'x' }] }, 'a dir escaping through a leading ..'],
+    [{ components: [{ name: 'a', dir: 'x/../../y', spec: 'x' }] }, 'a dir escaping through an inner ..'],
+    [{ components: [{ name: 'a', dir: 'x\\..\\y', spec: 'x' }] }, 'a dir with a backslash-separated ..'],
+    [{ components: [{ name: 'a', dir: 'x', spec: '' }] }, 'an empty spec'],
+    [{ components: [{ name: 'a', dir: 'x', spec: '   ' }] }, 'a spec that is only whitespace'],
+    [{ components: [{ name: 'a', dir: 'x', spec: 5 }] }, 'a spec that is not a string'],
+    [{ components: [{ name: 'a', dir: 'x', spec: 'y', model: 'opus' }] }, 'an unknown component key'],
+  ];
+  for (const [input, label] of rejected) {
+    it(`rejects ${label}`, () => {
+      assert.throws(() => validateConfig(input), ConfigError);
+    });
+  }
+
+  it('allows a dir with .. in a file name, which is not an escape', () => {
+    // The benign neighbour of the traversal rejections: two literal dots inside a segment are
+    // just a name. Only a whole `..` segment can point outside the repository.
+    const config = validateConfig({ components: [{ name: 'a', dir: 'pkg/v1..2', spec: 'x' }] });
+    assert.equal(config.components[0].dir, 'pkg/v1..2');
+  });
+
+  it('names the offending component by index, so a list of five is debuggable', () => {
+    assert.throws(
+      () => validateConfig({ components: [{ name: 'good', dir: 'a', spec: 'x' }, { name: 'BAD', dir: 'b', spec: 'y' }] }),
+      (error) => error instanceof ConfigError && error.message.includes('components[1]'),
     );
   });
 });

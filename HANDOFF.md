@@ -1,7 +1,7 @@
 # START HERE — handoff, last swept 14 August 2026
 
-**State:** `main` at `0.143.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.143.0: `npm test` **1892 pass**,
-`npm run test:integration` **38 pass**, `npm run lint` and `npm run typecheck` clean,
+**State:** `main` at `0.144.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.144.0: `npm test` **1962 pass**,
+`npm run test:integration` **46 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
@@ -101,6 +101,47 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.144.0 — components: the box does something (PLAN item 24), then survives its own review
+
+**The mechanism.** `components: [{name, dir, spec}]` in config plus `--give-them-the-box` runs
+each component as a **whole nested driver** in a git worktree on `meeseeks/component-<name>`,
+sequentially in declared order between the design commit and the loop: componentless derived
+child config (ceilings from the parent's remainder with floors, the remaining wall clock),
+outcome read fail-closed, `SHIPPED` fast-forward-merged via the race's `applyWinner`, anything
+else `ABORTED` naming the component. The loop still gates and cold-panels the merged whole —
+pre-filter, never substitute. Built by a workflow implementer against the PLAN item 24 spec.
+
+**The hostile review earned its keep: three majors, each confirmed by reproduction, all fixed
+by hand in the same version.** (1) *Fail-open outcome:* a **committed** `<dir>/.meeseeks/outcome.json`
+saying SHIPPED materialises in the worktree checkout, the child refuses at its own tracked-state
+preflight and builds nothing, and the parent read the committed file as this run's verdict — a
+component that never ran, reported shipped. Fixed twice over: a per-component
+`checkComponentStateNotTracked` refusal before the worktree exists, and `rmSync` of any stale
+outcome beside the config write. (2) *Symlink escape:* the validator's traversal rejections are
+string-only, so a committed symlink resolved the child cwd outside the worktree — a nested
+driver with builder permissions in a tree the operator never named. Fixed with realpath
+containment, probed on the deepest existing ancestor *before* anything is created and rechecked
+after `mkdirSync`; the tier-2 test asserts nothing is ever created behind the symlink. (3) *The
+lock lie:* the phase's force-sweep, `-B` branch reset and ff-merges ran **before**
+`claimRunLock`, while `sweepComponentWorktrees`' own comment claimed the lock's protection. The
+claim now precedes the phase (a leaked lock self-heals — dead pids are stale), and a refused
+run provably does not clobber the other driver's lock. Three minors also fixed: a crashed
+child's unrecorded spend is now *named* in the abort (it is unknowable, not silently zero), the
+parent's armed clock is consulted before each component starts, and the whole phase sits in a
+catch that turns any surprise (the reviewer's ENOTDIR repro included) into the
+verbatim-then-stamp ABORTED shape with the lock released — expected refusals travel as
+`ComponentError`.
+
+**Residuals, recorded not hidden:** phases 0–1b (PRD, design) still run before the lock claim,
+as they always have — the destructive operations are now all inside it, but two drivers
+overlapping in the design phase could still both claim; closing that means a whole-`main`
+try/finally and is future work. No parent-side kill timer on a hung component child: termination
+relies on the child's own layered bounds. Per-component model/effort/iteration overrides are
+deliberately deferred; the child config is a minimal derived record, not an inherited copy.
+Tier 3 not owed: `spawnClaude`, `claudeArgs`, the envelope and the templates are untouched — the
+component child is a plain node process. **Item 24's Done-when live half (one boxed dogfood run
+shipping a one-component repository) is measurement run 3, operator-authorized.**
 
 ### 0.143.0 — the parallel panel: `max()` where `sum()` was being paid
 

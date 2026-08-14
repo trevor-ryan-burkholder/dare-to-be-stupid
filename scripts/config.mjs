@@ -26,6 +26,7 @@ import { DEFAULT_MAX_PROMPT_CHARACTERS } from './context-budget.mjs';
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 /** @typedef {{ path: string, status: number }} SmokeCheck */
+/** @typedef {{ name: string, dir: string, spec: string }} ComponentConfig */
 /** @typedef {{ enabled: boolean, command: string[], url: string, smoke: SmokeCheck[], timeoutMs: number }} DeployConfig */
 /** @typedef {{ after: number }} RealityCheckConfig */
 /** @typedef {{ enabled: boolean }} ImproviseConfig */
@@ -44,6 +45,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, styleModel: string, lessonModel: string,
  *   qualityPlugins: string[], extraGates: { name: string, command: string[] }[],
+ *   components: ComponentConfig[],
  *   effort: Record<string, string>, oracle: OracleConfig,
  *   panelCarry: PanelCarryConfig, sandbox: SandboxConfig,
  *   deploy: DeployConfig, extractTests: boolean,
@@ -188,6 +190,13 @@ export function defaultConfig() {
     // for why these are declared rather than detected, and why they live somewhere the builder
     // cannot reach.
     extraGates: [],
+    // Empty by default, and an empty list changes nothing at all: no phase runs, no flag is
+    // demanded, and a pre-components repository behaves exactly as it always did. Declaring one
+    // is only half a decision — components are nested runs, so a run that declares any refuses
+    // to start unless the operator also typed `--give-them-the-box` (PLAN item 24). The list
+    // lives here, guard-protected like the rest of this file, so a builder can neither add a
+    // component nor delete one.
+    components: [],
     effort: {
       builder: 'medium',
       prd: 'medium',
@@ -404,6 +413,76 @@ function requireExtraGates(value) {
 }
 
 /**
+ * What a component's name may look like: lower-case letters and digits, single hyphens between
+ * runs of them. The name is not a label — it becomes the branch `meeseeks/component-<name>` and
+ * the worktree directory `meeseeks-component-<name>`, so anything git or a filesystem could
+ * mangle is refused rather than escaped.
+ */
+const COMPONENT_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * Validate the component list: subtrees the driver hands to nested runs of itself (PLAN item 24).
+ *
+ * **Strict for the same reason `extraGates` is, with one extra stake.** Each entry causes a whole
+ * driver to be spawned in a worktree with a budget carved from this run's remainder, so a typo
+ * here is not a wrong setting — it is an unattended process working on the wrong directory
+ * against the wrong specification. And the config file cannot be allowed to *smuggle* anything:
+ * the permission to nest at all is `--give-them-the-box`, typed by the operator, and is checked
+ * in the driver rather than here because a validator cannot see the command line.
+ *
+ * `dir` must stay inside the repository. An absolute path or a `..` segment would point a child
+ * driver — running with the builder's full permissions — at a tree the operator never named, so
+ * both are refused outright rather than normalised: a path that needed normalising is a path
+ * whose meaning depended on who read it.
+ *
+ * @param {unknown} value
+ * @returns {ComponentConfig[]}
+ */
+function requireComponents(value) {
+  if (!Array.isArray(value)) throw new ConfigError('components must be an array of { name, dir, spec } objects');
+  /** @type {Set<string>} */
+  const seen = new Set();
+  return value.map((entry, index) => {
+    const where = `components[${index}]`;
+    const component = requireObject(entry, where);
+    rejectUnknownKeys(component, new Set(['name', 'dir', 'spec']), where);
+    if (!('name' in component)) throw new ConfigError(`${where} has no name: a component nothing can be called by`);
+    if (!('dir' in component)) throw new ConfigError(`${where} has no dir: there is no subtree to run in`);
+    if (!('spec' in component)) throw new ConfigError(`${where} has no spec: there is nothing to build`);
+    const name = requireString(component.name, `${where}.name`).trim();
+    if (!COMPONENT_NAME_PATTERN.test(name)) {
+      throw new ConfigError(
+        `${where}.name must be lower-case letters and digits separated by single hyphens, because it names ` +
+          `a git branch and a worktree directory; got ${JSON.stringify(component.name)}`,
+      );
+    }
+    if (seen.has(name)) {
+      throw new ConfigError(
+        `${where}.name ${JSON.stringify(name)} is declared twice; two components cannot share the branch ` +
+          `meeseeks/component-${name}`,
+      );
+    }
+    seen.add(name);
+    const dir = requireString(component.dir, `${where}.dir`);
+    if (dir.trim() === '') throw new ConfigError(`${where}.dir is empty: there is no subtree to run in`);
+    // Absolute in any dialect: POSIX, Windows drive-letter, UNC. `path.isAbsolute` answers for
+    // the platform this happens to run on, and a config file travels between platforms.
+    if (path.isAbsolute(dir) || /^[A-Za-z]:[\\/]/.test(dir) || dir.startsWith('\\\\')) {
+      throw new ConfigError(`${where}.dir must be a path relative to the repository root, got ${JSON.stringify(dir)}`);
+    }
+    // Any `..` segment, not only a leading one: `a/../../b` escapes just as surely, and even a
+    // `..` that happens to resolve inside the repository is a path whose meaning depends on
+    // what sits beside it.
+    if (dir.split(/[\\/]+/).includes('..')) {
+      throw new ConfigError(`${where}.dir must not contain "..": a component may not reach outside the repository (${JSON.stringify(dir)})`);
+    }
+    const spec = requireString(component.spec, `${where}.spec`);
+    if (spec.trim() === '') throw new ConfigError(`${where}.spec is empty: a nested run with nothing to build would improvise`);
+    return { name, dir, spec };
+  });
+}
+
+/**
  * @param {unknown} value
  * @param {string} key
  * @returns {Record<string, unknown>}
@@ -474,6 +553,7 @@ export function validateConfig(input) {
 
   if ('qualityPlugins' in source) merged.qualityPlugins = requireStringArray(source.qualityPlugins, 'qualityPlugins');
   if ('extraGates' in source) merged.extraGates = requireExtraGates(source.extraGates);
+  if ('components' in source) merged.components = requireComponents(source.components);
 
   if ('reviewers' in source) {
     const reviewers = requireStringArray(source.reviewers, 'reviewers');
