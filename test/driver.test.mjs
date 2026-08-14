@@ -599,6 +599,38 @@ describe('shouldContinue', () => {
   });
 });
 
+describe('--deadline as a flag', () => {
+  it('reads minutes and converts nothing on the way', () => {
+    assert.equal(parseDriverArgs(['PRD.md', '--deadline=90']).deadlineMinutes, 90);
+    assert.equal(parseDriverArgs(['PRD.md', '--deadline=720']).deadlineMinutes, 720);
+  });
+
+  it('distinguishes "not given" from "explicitly none"', () => {
+    // null and 0 are different instructions. An operator who types zero has said something, and
+    // a default quietly landing on top of it would be ignoring them.
+    assert.equal(parseDriverArgs(['PRD.md']).deadlineMinutes, null);
+    assert.equal(parseDriverArgs(['PRD.md', '--deadline=0']).deadlineMinutes, 0);
+  });
+
+  it('accepts a fractional number of minutes, because a test may want seconds', () => {
+    assert.equal(parseDriverArgs(['PRD.md', '--deadline=0.5']).deadlineMinutes, 0.5);
+  });
+
+  /** @type {string[]} */
+  const refused = ['--deadline', '--deadline=', '--deadline=soon', '--deadline=-5', '--deadline=Infinity'];
+  for (const flag of refused) {
+    it(`refuses ${flag} rather than defaulting`, () => {
+      // Fails closed. A mistyped ceiling that silently became "no ceiling" is the shape of every
+      // defect this project keeps finding.
+      assert.throws(() => parseDriverArgs(['PRD.md', flag]), DriverError);
+    });
+  }
+
+  it('keeps the flag out of the positional input', () => {
+    assert.equal(parseDriverArgs(['an idea', '--deadline=90']).input, 'an idea');
+  });
+});
+
 describe('the wall clock, which only nesting arms', () => {
   const base = {
     iteration: 0,
@@ -3106,6 +3138,7 @@ describe('parseDriverArgs', () => {
       confirmPrd: false,
       improve: false,
       giveThemTheBox: false,
+      deadlineMinutes: null,
     });
   });
 
@@ -3137,6 +3170,7 @@ describe('parseDriverArgs', () => {
       confirmPrd: true,
       improve: false,
       giveThemTheBox: false,
+      deadlineMinutes: null,
     });
   });
 });

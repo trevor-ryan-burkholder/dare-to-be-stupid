@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.129.0`. Measured at 0.129.0: `npm test` **1863 pass**,
+**State:** `main` at `0.130.0`. Measured at 0.130.0: `npm test` **1872 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -58,6 +58,29 @@ Phase 6 sets it, so a fully green iteration happened and the old code would have
 **Early banking remains unconfirmed in the wild.**
 
 **Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
+
+### 0.130.0 — `--deadline=<minutes>`, because thirty is a guess and the operator knows better
+
+**A flag rather than a config key, for the same reason `--give-them-the-box` is one:** it is a
+choice about *this* session, typed by somebody watching. Config is the target's standing
+instruction; a flag is tonight's. `--deadline=720` if the experiment wants twelve hours.
+
+**`null` and `0` are different instructions, and keeping them apart is the whole of the care
+here.** Not given means "no opinion, use whatever else applies". Explicit zero means "no wall
+clock", and an operator who typed that has said something. **A default landing quietly on top of
+it would be ignoring them** — which is the shape of half the defects found tonight.
+
+**So an explicit `--deadline=0` with the box is refused rather than overridden.** Nesting is capped
+in depth and not in how many runs an iteration starts, so unbounded-and-nested is the one
+combination with no limit at all. The refusal says that, and says to give it a number.
+
+**Fails closed on anything unreadable:** `--deadline`, `--deadline=`, `--deadline=soon`,
+`--deadline=-5` and `--deadline=Infinity` all refuse the run. A mistyped ceiling that silently
+became *no* ceiling is the exact failure this project keeps finding, and a ceiling that cannot be
+read is not a ceiling.
+
+The banner now reports the real number rather than the constant, so a run started with
+`--deadline=720 --give-them-the-box` announces twelve hours and not thirty minutes.
 
 ### 0.129.0 — nesting arms a wall clock, because depth is not the same as bounded
 

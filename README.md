@@ -22,6 +22,9 @@ definition of done, or the budget dies.
 /meeseeks ./PRD.md                              # build an existing spec
 /meeseeks "a link shortener with an admin page" # build from an idea
 /meeseeks                                       # improvise: it invents its own
+
+/meeseeks ./PRD.md --deadline=90                # a 90-minute wall clock; off unless asked for
+/meeseeks ./PRD.md --give-them-the-box          # unsupported: permits nested runs, arms a clock
 ```
 
 > **Pre-production only.** Build children run with `--dangerously-skip-permissions`. Point this at
@@ -39,11 +42,15 @@ The joke earns its place because the canon maps onto the machinery:
 | summoned for **one** task, ceases when it's done | a fresh `claude -p` child per invocation — no persistent conversation |
 | *"existence is pain"* — it must **end** | the ratchet and the iteration cap. **Termination is the product** |
 | the task must be simple or it suffers | PRD right-sizing, and a reality-check that can abort an unbuildable spec |
-| **a Meeseeks that can't finish summons more, and it compounds** | **exactly what the guard forbids.** No nesting, ever |
+| **a Meeseeks that can't finish summons more, and it compounds** | **what the guard forbids** — unless `--give-them-the-box` says otherwise, capped at depth two and on a wall clock |
 
-That last row is the point. **The most canon-accurate behaviour is the one thing the architecture
-absolutely refuses** — a box that hands out boxes is not a feature, it's the disaster the episode
-is about. `/meeseeks` never spawns `/meeseeks`, enforced at the driver *and* at the hook.
+That last row is the point. **The most canon-accurate behaviour is the one the architecture
+refuses by default** — a box that hands out boxes is not a feature, it's the disaster the episode
+is about. `/meeseeks` does not spawn `/meeseeks`, enforced at the driver *and* at the hook.
+
+`--give-them-the-box` permits it anyway, because a joke that only ever prints a refusal is one
+nobody gets to see happen. It is unsupported, loud, capped at **depth two**, and arms a wall clock
+— depth bounds recursion, but nothing bounds how many nested runs one iteration starts.
 
 ---
 
@@ -81,12 +88,12 @@ implicates, re-runs the suite to confirm the ids came back, and falls back to th
 they didn't. A whole-tree reset was measured discarding **15.2M tokens** of unrelated work in one
 run.
 
-> **It starts protecting at the first fully-green iteration, not at the first passing test.** The
-> ratchet is written only by an iteration that passes every gate *and* is reviewed. A run that
-> never gets there records nothing — case I held **71 passing tests across 8 iterations** and
-> `state.json` was never written, so breaking one of them would have gone unnoticed. This is
-> arguably correct (banking ids from a tree the loop considers broken has its own hazards) but it
-> is **not** what "every test id that has ever passed" implies, so it is said here.
+> **It starts protecting as soon as the suite proves an id, not when the whole tree is green.**
+> Until 0.121.0 the ratchet was written only by an iteration that passed every gate *and* was
+> reviewed — so case I held **71 passing tests across 8 iterations** with `state.json` never
+> written, and breaking one would have gone unnoticed. Ids are now banked whenever the **unit**
+> gate passes, because that is the claim being made: the suite ran and produced a report. The
+> reset target still only moves on a fully good iteration.
 
 **2. The builder cannot judge its own work.** Review happens in *separate* `claude -p` processes
 with no build log, no iteration history, and no hint an agent wrote the code. Three auditors —
@@ -133,8 +140,9 @@ declared here is one the builder **cannot delete**.
 ```jsonc
 {
   "maxIterations": 20,          // the cap that usually binds. See the note below.
-  "tokenCeiling": 120000000,
-  "costCeiling": 150,
+  "tokenCeiling": 120000000,  // 0 means no ceiling, for development
+  "costCeiling": 150,         // 0 means no ceiling
+  "deadlineMs": 0,            // wall clock; 0 is off. --give-them-the-box arms one
   "extraGates": [               // checks this project considers gating
     { "name": "release-check", "command": ["npm", "run", "release-check"] }
   ],

@@ -3645,8 +3645,35 @@ export function unprovenIds(options) {
 // ===========================================================================
 
 /**
+ * Read `--deadline=<minutes>` from argv.
+ *
+ * **Fails closed on anything that is not a number.** A mistyped ceiling that silently became "no
+ * ceiling" is the shape of every defect this project keeps finding, so `--deadline=soon` throws
+ * rather than defaulting. A bare `--deadline` with no value is the same mistake and gets the same
+ * answer.
+ *
  * @param {string[]} argv
- * @returns {{ input: string, yes: boolean, confirmPrd: boolean, improve: boolean, giveThemTheBox: boolean }}
+ * @returns {number | null} minutes, or null when the flag was not given
+ * @throws {DriverError} when the flag is present but not a non-negative finite number
+ */
+function parseDeadlineFlag(argv) {
+  const given = argv.find((argument) => argument === '--deadline' || argument.startsWith('--deadline='));
+  if (given === undefined) return null;
+  const raw = given.startsWith('--deadline=') ? given.slice('--deadline='.length) : '';
+  const minutes = Number(raw);
+  if (raw.trim() === '' || !Number.isFinite(minutes) || minutes < 0) {
+    throw new DriverError(
+      `--deadline needs a number of minutes, as --deadline=90; got ${JSON.stringify(raw)}. ` +
+        'A ceiling that cannot be read is not a ceiling.',
+    );
+  }
+  return minutes;
+}
+
+/**
+ * @param {string[]} argv
+ * @returns {{ input: string, yes: boolean, confirmPrd: boolean, improve: boolean, giveThemTheBox: boolean,
+ *   deadlineMinutes: number | null }}
  */
 export function parseDriverArgs(argv) {
   const flags = new Set(argv.filter((argument) => argument.startsWith('--')));
@@ -3669,6 +3696,12 @@ export function parseDriverArgs(argv) {
     // Config is read quietly by a machine at three in the morning, and this must never be
     // something a run inherits without a human having said it out loud.
     giveThemTheBox: flags.has('--give-them-the-box'),
+    // `--deadline=<minutes>`, the wall clock as a flag rather than a config key, for the same
+    // reason `--give-them-the-box` is one: it is a choice about *this* session, made by somebody
+    // watching, and thirty minutes is not always enough. `null` means "not given" and is
+    // deliberately distinct from `0`, which means "explicitly no deadline" — an operator who
+    // types zero has said something, and inheriting a default over it would be ignoring them.
+    deadlineMinutes: parseDeadlineFlag(argv),
   };
 }
 
@@ -4439,12 +4472,44 @@ export function main(argv, io = {}) {
   //
   // An operator who set their own `deadlineMs` keeps it. Otherwise thirty minutes, a number
   // chosen to be embarrassing to hit rather than derived from anything.
-  if (boxed && config.deadlineMs === 0) {
-    config.deadlineMs = BOXED_DEADLINE_MS;
-    write(verbatim(`--give-them-the-box: a ${BOXED_DEADLINE_MS / 60000}-minute wall clock is armed with it.`));
+  /** @type {{ input: string, confirmPrd: boolean, improve: boolean, deadlineMinutes: number | null }} */
+  let args;
+  try {
+    args = parseDriverArgs(argv);
+  } catch (error) {
+    write(verbatim(/** @type {Error} */ (error).message));
+    return 1;
   }
+  const { input, confirmPrd, improve } = args;
 
-  const { input, confirmPrd, improve } = parseDriverArgs(argv);
+  // `--deadline=<minutes>` outranks the config, because a flag is this session's instruction and
+  // the config is the target's standing one.
+  if (args.deadlineMinutes !== null) config.deadlineMs = Math.round(args.deadlineMinutes * 60_000);
+
+  if (boxed) {
+    // **Nesting may not be run without a clock, and an explicit zero is refused rather than
+    // overridden.** Silently replacing it with the default would ignore a typed instruction
+    // without saying so, which is the shape of defect this project keeps finding. Depth is capped
+    // at two but nothing caps how many nested runs one iteration starts, so an unbounded nested
+    // run is the one combination with no limit at all. `--deadline=720` if twelve hours is what
+    // the experiment needs.
+    if (args.deadlineMinutes === 0) {
+      write(
+        verbatim(
+          '--deadline=0 asks for no wall clock and --give-them-the-box requires one: nesting is capped in ' +
+            'depth but not in how many runs an iteration starts, so this is the one combination with no bound. ' +
+            'Give it a number of minutes.',
+        ),
+      );
+      return 1;
+    }
+    if (config.deadlineMs === 0) {
+      // Nothing set one, so the box brings its own. Thirty minutes is chosen to be embarrassing
+      // to hit rather than derived from anything.
+      config.deadlineMs = BOXED_DEADLINE_MS;
+    }
+    write(verbatim(`--give-them-the-box: a ${Math.round(config.deadlineMs / 60_000)}-minute wall clock is armed with it.`));
+  }
 
   // What Phase 0 and Phase 1 cost. These run before `driveRun` exists, so without carrying
   // them the ceiling silently restarts at zero when the loop begins — the defect the first
