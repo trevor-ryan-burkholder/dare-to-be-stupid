@@ -59,6 +59,24 @@ Phase 6 sets it, so a fully green iteration happened and the old code would have
 
 **Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
 
+### Item 18 answered, and two mechanisms fired live on the way
+
+**`STALLED` at 5 iterations, 19.3M tokens, \$21.41, ratchet 83.** The item-18 question — does the
+improve author's segment cost concentration scale? — has a clean answer: **the author is 0.3% of
+the run.** One pass, 15s, 61,047 tokens to read 12 files and write the PRD, against 19.3M for the
+loop. The 7× imbalance on the four-file repo was fixed overhead over a tiny denominator.
+Segmentation never engaged. Budget guidance belongs on iterations, not the author phase.
+
+**The repeat-regression note (0.109.0/0.110.0) fired live for the first time**, verbatim and
+correct: both ids named with counts, the layering escape offered before the rewrite. The builder
+did not crack the oscillation within the stall limit of 3, so the run ended `STALLED` — the first
+live `STALLED`, wearing its distinct lead-in before the cry. The note spoke; the stall limit did
+its job; nothing hung.
+
+**And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
+fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
+I could not.
+
 ### 0.139.0 — the scoped restore fired live, fell back correctly, and taught the guess a convention
 
 **First live firing of 0.112.0's mechanism, in the item-18 improve run.** Two ratcheted tests

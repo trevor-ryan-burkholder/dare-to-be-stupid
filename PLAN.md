@@ -371,7 +371,15 @@ answer and closes the item just as well.
 (a) build the boundary-checked budget, default off; (b) build it with a measured default; or
 (c) refuse it in `DESIGN.md` with the argument above.
 
-### 18. Improve-mode cost concentration — **IN PROGRESS 14 Aug**: running on csvstat2 (12 source files, 3× the repo where 7× was measured), uncapped
+### 18. Improve-mode cost concentration — **ANSWERED 14 Aug: the author is 0.3% of the run at 12 files**
+
+Run on csvstat2 (12 source files), uncapped. The improve author read the repository and wrote the
+PRD in **one pass: 15s, 61,047 tokens** — against a run total of 19.3M. **The author is not the
+cost centre; the loop is.** The 7× segment imbalance measured on the four-file repo was fixed
+overhead dominating a tiny denominator, not a scaling behaviour. Segmentation never engaged at 12
+files. The outcome (`STALLED` on a parse/summarise oscillation, 83 ids banked) is the loop's
+story, not the author's. Genuinely large repos (hundreds of files) remain unmeasured; at every
+size measured so far, budget guidance belongs on iterations, not on the author phase.
 Segment one cost 7× segment two on a four-file repository. Measure on something mid-sized
 before improve mode meets a real codebase; outcome is either a fix or written budget guidance
 in `commands/meeseeks.md`.
