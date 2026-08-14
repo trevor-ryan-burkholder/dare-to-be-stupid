@@ -371,7 +371,7 @@ answer and closes the item just as well.
 (a) build the boundary-checked budget, default off; (b) build it with a measured default; or
 (c) refuse it in `DESIGN.md` with the argument above.
 
-### 18. Improve-mode cost concentration — OPEN, **PREPARED** (`DOGFOOD.md` operator queue)
+### 18. Improve-mode cost concentration — **IN PROGRESS 14 Aug**: running on csvstat2 (12 source files, 3× the repo where 7× was measured), uncapped
 Segment one cost 7× segment two on a four-file repository. Measure on something mid-sized
 before improve mode meets a real codebase; outcome is either a fix or written budget guidance
 in `commands/meeseeks.md`.
