@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.120.0`. Measured at 0.120.0: `npm test` **1828 pass**,
+**State:** `main` at `0.121.0`. Measured at 0.121.0: `npm test` **1830 pass**,
 `npm run test:integration` **35 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -23,6 +23,35 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.121.0 — the ratchet banks ids as soon as the suite proves them, not only when everything is green
+
+**Case I's exposure closed.** `saveState` was reachable only from Phase 6, after the panel, so an
+iteration failing *any* gate recorded nothing — and that run held **71 passing tests across 8
+iterations** with no `state.json` ever written. A regression in any of the 71 would have gone
+unnoticed for the whole run, because the ratchet did not yet exist.
+
+**Gated on the `unit` gate, not on all of them, and that is the judgement.** A passing unit gate
+means the suite ran and produced a report the ratchet could read, which is the only claim being
+banked. Whether the docs are stubbed or CI is missing says nothing about whether these tests
+passed. A *failing* unit gate banks nothing, and that has its own test.
+
+**`lastGoodCommit` deliberately does not move here.** The commit is null at Phase 4 and
+`recordAdvance` already keeps the previous value, so **protection arrives early while the reset
+target stays the last iteration that was good in the full sense.** That asymmetry is the whole
+reason this is safe to do: nothing loosens about where a reset returns to.
+
+**Two process notes worth more than the change.**
+
+A `python` replace silently no-op'd because the target string's indentation had changed when I
+moved the block, and I had not asserted on the result. The test then failed for a reason that
+looked like the *product* being wrong — `state.json` absent — when the fixture was never applied.
+**Assert on every scripted replacement**; a silent no-op is indistinguishable from a bug in the
+thing under test, and I spent four rounds on it.
+
+The eventual diagnosis came from one `console.error` of `decision.action`, `passing.size` and
+`collected` — which said `reject / 0 / 0` and ended the guessing immediately. **Instrument the
+decision, not the outcome.**
 
 ### 0.120.0 — `gate-integrity` conflated "a class of values" with "one value", and polarity is the fix
 

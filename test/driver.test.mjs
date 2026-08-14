@@ -2898,6 +2898,62 @@ describe('driveRun', () => {
     assert.equal(outcome.costUsd, 0.75);
     assert.equal(outcome.spentTokens, 50);
   });
+
+  describe('the ratchet banks ids before an iteration is fully green', () => {
+
+    it('records passing ids when the unit gate passed but another gate failed', () => {
+      // Case I held 71 passing tests across 8 iterations and never wrote state.json, because
+      // saveState was reachable only after the panel. A regression in any of those 71 would have
+      // gone unnoticed for the whole run.
+      const { meeseeksDir: dir } = run(
+        {
+          gates: () => ({
+            ok: false,
+            results: [
+              { name: 'unit', ok: true, status: 0, detail: 'ran' },
+              { name: 'docs', ok: false, status: 1, detail: 'missing: README.md' },
+            ],
+          }),
+          readTestReports: () => [
+            {
+              numTotalTests: 1,
+              testResults: [
+                { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+              ],
+            },
+          ],
+        },
+        { maxIterations: 1 },
+        [],
+      );
+      const state = JSON.parse(readFileSync(path.join(dir, 'state.json'), 'utf8'));
+      assert.equal(state.passing.length > 0, true, 'nothing was banked despite a passing unit gate');
+    });
+
+    it('banks nothing when the unit gate itself failed', () => {
+      // The deny path. A failing unit gate is the case where the report cannot be trusted, and
+      // banking from it would ratchet in ids the suite never really proved.
+      const { meeseeksDir: dir } = run(
+        {
+          gates: () => ({
+            ok: false,
+            results: [{ name: 'unit', ok: false, status: 1, detail: 'suite failed' }],
+          }),
+          readTestReports: () => [
+            {
+              numTotalTests: 1,
+              testResults: [
+                { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+              ],
+            },
+          ],
+        },
+        { maxIterations: 1 },
+        [],
+      );
+      assert.equal(existsSync(path.join(dir, 'state.json')), false, 'banked ids from a failed suite');
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

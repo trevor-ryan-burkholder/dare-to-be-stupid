@@ -1808,6 +1808,29 @@ export function driveRun(options) {
     const state = loadState(meeseeksDir);
     const decision = evaluateIteration(state, passing, { commit: null, collected });
 
+    // ---- bank the ids as soon as the suite has proven them -------------
+    // **Case I is why this is here.** `saveState` used to be reachable only from Phase 6, after
+    // the panel, so an iteration that failed *any* gate recorded nothing. That run held **71
+    // passing tests across 8 iterations** and never wrote `state.json` at all — a regression in
+    // any of the 71 would have gone unnoticed for the entire run, because the ratchet did not
+    // yet exist. The single mechanism that makes the loop terminate was absent exactly while the
+    // run was thrashing, which is when it is worth having.
+    //
+    // Gated on the **unit** gate rather than on all of them, and that is the whole judgement: a
+    // passing unit gate means the suite ran and produced a report the ratchet could read, which
+    // is the only claim being banked. Whether the docs are stubbed or CI is missing says nothing
+    // about whether these tests passed.
+    //
+    // **`lastGoodCommit` deliberately does not move here.** `commit` is null at this point and
+    // `recordAdvance` keeps the previous value, so the reset target stays the last iteration that
+    // was good in the full sense. Protection arrives early; the place a reset returns to does
+    // not get looser. Phase 6 still advances with a real commit, and the passing set is a union,
+    // so the two cannot disagree.
+    const unitGate = gateOutcome.results.find((result) => result.name === 'unit');
+    if (decision.action === 'advance' && unitGate?.ok === true) {
+      saveState(meeseeksDir, decision.state);
+    }
+
     if (decision.action === 'reset') {
       appendBlooper(meeseeksDir, {
         iteration: iterationNumber,
