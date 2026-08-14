@@ -846,6 +846,12 @@ already killed one session's terminal.
 its own caller. That is not hypothetical — it happened while following the previous version of
 this instruction.
 
+**And once you have untracked it, never `git reset --hard` past the untracking commit** — the
+reset restores the *tracked* state wholesale and the trap re-arms itself. Measured twice in one
+night, second time by the person who had just documented it: J5's staging reset to the original
+PRD commit, which predated the untrack, and the stale capped config came back tracked. Reset to
+the untracking commit or later, or re-untrack after.
+
 **Never commit `.meeseeks/` in a target repository.** Case J3 was launched with a freshly
 written uncapped config and ran with the *original* capped one, because the config had been
 committed during staging and the pre-launch `git reset --hard` quietly restored the old copy — a

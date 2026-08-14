@@ -4,7 +4,7 @@
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
-**`npm run test:live` at 0.126.0: 27 of 27 across 11 files, 0 failures.** Re-run after `main`
+**`npm run test:live` at 0.136.0: 27 of 27 across 11 files, 0 failures** — re-run after the envelope parser gained the refund clamp, which `CLAUDE.md` requires tier 3 for. Re-run after `main`
 gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
 which `CLAUDE.md` requires tier 3 for. The header had been carrying a 0.110.0 result across
 sixteen versions of spawn-path changes.
