@@ -3069,6 +3069,23 @@ describe('driveRun', () => {
     assert.equal(outcome.spentTokens, 50);
   });
 
+  describe('zero ceilings inside the loop', () => {
+  it('does not end BUDGET mid-iteration either, which is where the first fix missed', () => {
+    // 0.128.0 fixed shouldContinue and not the mid-iteration charge, so with both ceilings at
+    // zero the first charged child satisfied spent >= 0 and case J2 died on iteration 1 with
+    // "cost ceiling reached: $4.38 of $0". This drives the real loop: a builder that reports
+    // real cost, ceilings at zero, and the run must reach its iteration cap rather than BUDGET
+    // on the first charge.
+    const { outcome } = run(
+      { build: () => ({ ok: true, text: 'done', costUsd: 4.38, tokens: 2_000_000, raw: '{}' }) },
+      { maxIterations: 2, tokenCeiling: 0, costCeiling: 0 },
+      [],
+    );
+    assert.equal(outcome.reason.includes('of $0'), false, outcome.reason);
+    assert.equal(outcome.reason.includes('of 0'), false, outcome.reason);
+  });
+  });
+
   describe('the ratchet banks ids before an iteration is fully green', () => {
 
     it('records passing ids when the unit gate passed but another gate failed', () => {

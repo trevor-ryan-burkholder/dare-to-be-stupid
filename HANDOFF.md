@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.132.0`. Measured at 0.132.0: `npm test` **1878 pass**,
+**State:** `main` at `0.133.0`. Measured at 0.133.0: `npm test` **1879 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -58,6 +58,26 @@ Phase 6 sets it, so a fully green iteration happened and the old code would have
 **Early banking remains unconfirmed in the wild.**
 
 **Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
+
+### 0.133.0 — 0.128.0 was incomplete, and case J2 paid for it on iteration 1
+
+**`BUDGET: cost ceiling reached: $4.3820 of $0`.** That sentence is self-contradictory on its
+face, and it ended case J2 before its first panel. 0.128.0 fixed `shouldContinue` and stopped —
+but the loop checks ceilings in **four places**, and the other three still read zero as "a ceiling
+of zero dollars": the mid-iteration `charge()` (which is what fired — `spent >= 0` is true from
+the first token), `ceilingReason()`, and the pre-loop `chargePreLoop()`. All four now carry the
+same `> 0 &&` guard.
+
+**The loop-level test is the part that matters**, because a unit test on `shouldContinue` already
+existed and already passed while the run died. The new test drives the *real* loop with a builder
+that reports real cost and both ceilings at zero, and asserts the run reaches its iteration cap
+rather than `BUDGET` — and specifically that no reason ever contains "of $0", the fingerprint of a
+disabled ceiling being read as a zero one.
+
+**The general lesson is the one this night keeps teaching in different clothes:** a semantic
+change to a value's *meaning* has to visit every reader of that value, and grep is the tool —
+`>= config.tokenCeiling` had four hits and I fixed one. Case J2 was relaunched within minutes and
+is running uncapped with the 45-minute clock.
 
 ### 0.132.0 — the secret scanner could not read JSON, which is the only thing it scans
 

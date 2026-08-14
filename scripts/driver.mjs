@@ -1712,7 +1712,15 @@ export function driveRun(options) {
       spentTokens: progress.spentTokens + result.tokens,
       spentUsd: progress.spentUsd + result.costUsd,
     };
-    return progress.spentTokens >= config.tokenCeiling || progress.spentUsd >= config.costCeiling;
+    // Zero means no ceiling (0.128.0), **and this line is where forgetting that cost a run.**
+    // `shouldContinue` was fixed and this mid-iteration check was not, so with both ceilings at
+    // zero the first charged child satisfied `spent >= 0` and case J2 died on iteration 1 with
+    // "cost ceiling reached: $4.38 of $0" — the exact self-contradictory sentence a fail-closed
+    // comparison produces when zero stops meaning what it says. Same rule in both places now.
+    return (
+      (config.tokenCeiling > 0 && progress.spentTokens >= config.tokenCeiling) ||
+      (config.costCeiling > 0 && progress.spentUsd >= config.costCeiling)
+    );
   };
 
   /**
@@ -1721,7 +1729,7 @@ export function driveRun(options) {
    * change the wrong number.
    */
   const ceilingReason = () =>
-    progress.spentUsd >= config.costCeiling
+    config.costCeiling > 0 && progress.spentUsd >= config.costCeiling
       ? `cost ceiling reached: $${progress.spentUsd.toFixed(4)} of $${config.costCeiling}`
       : `token ceiling reached: ${progress.spentTokens} of ${config.tokenCeiling}`;
 
@@ -4548,7 +4556,7 @@ export function main(argv, io = {}) {
   const chargePreLoop = (result) => {
     preLoop.tokens += result.tokens;
     preLoop.costUsd += result.costUsd;
-    return preLoop.tokens >= config.tokenCeiling;
+    return config.tokenCeiling > 0 && preLoop.tokens >= config.tokenCeiling;
   };
 
   /** @param {string} phase */
