@@ -225,7 +225,18 @@ describe('resolveToolchain', () => {
     const resolved = resolveToolchain(makeProject({ 'PRD.md': '# thing\n' }));
     assert.equal(resolved.toolchain.name, 'node');
     assert.equal(resolved.detected, false);
-    assert.equal(resolved.evidence.includes('defaulted'), true);
+    assert.equal(resolved.evidence.includes('nothing detected'), true);
+  });
+
+  it('says the fallback is provisional, because case C read it as an instruction', () => {
+    // An operator asked for a service "in C#". The empty repository defaulted to node, the brief
+    // told the builder its gates were npm, and the builder wrote TypeScript — a default that
+    // became the answer. Detection re-runs every iteration, so the sentence has to say that the
+    // choice is a placeholder rather than a decision.
+    const resolved = resolveToolchain(makeProject({ 'PRD.md': '# thing\n' }));
+    assert.equal(resolved.evidence.includes('provisionally'), true, resolved.evidence);
+    assert.equal(resolved.evidence.includes('re-detected every iteration'), true, resolved.evidence);
+    assert.equal(resolved.evidence.includes('not an instruction'), true, resolved.evidence);
   });
 
   it('says nothing was detected rather than dressing the default up as evidence', () => {

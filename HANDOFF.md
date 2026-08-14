@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.122.0`. Measured at 0.122.0: `npm test` **1832 pass**,
+**State:** `main` at `0.123.0`. Measured at 0.123.0: `npm test` **1833 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -23,6 +23,29 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.123.0 — the toolchain fallback said "defaulted to node", which read as an instruction
+
+**The companion half of 0.122.0, and the half that made a dropped constraint into a wrong-language
+build.** On a greenfield tree holding only a PRD there is nothing to detect, so `resolveToolchain`
+falls back — correctly, since refusing would abort every greenfield run. What it *said* was
+`nothing detected; defaulted to node`, and the brief carried that to the builder as the toolchain
+its gates would use. A builder reading "the toolchain is node" writes Node.
+
+**Detection re-runs every iteration**, so the fallback was only ever a placeholder until project
+files exist. It now says so, and says what to do: *"Build what the specification asks for and
+create its project files first — the toolchain is re-detected every iteration and the gates will
+follow it, so this default is not an instruction."*
+
+**Confirmed working end to end.** Case C relaunched with 0.122.0's template fix and Phase 0
+produced, unprompted:
+
+```
+### 0. Platform
+PRD-0.1  The service is implemented in C#, exposed as an HTTP API, with a project file
+```
+
+Previously that PRD mentioned C#, .NET and dotnet **zero** times.
 
 ### 0.122.0 — case C: the operator said "in C#" and the loop built TypeScript
 

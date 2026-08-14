@@ -181,9 +181,18 @@ export function resolveToolchain(root) {
           'toolchain if this tree is not a node project';
     return { toolchain: found.toolchain, evidence, detected: true, alternatives: found.alternatives };
   }
+  // **The default is provisional and must say so.** On a greenfield tree holding only a PRD
+  // there is nothing to detect, and the bare words "defaulted to node" read as an instruction.
+  // Case C: an operator asked for a service "in C#", the empty repository defaulted here, the
+  // brief told the builder its gates were npm, and the builder wrote TypeScript — a default that
+  // became the answer. Detection re-runs every iteration, so this is a placeholder until project
+  // files exist, and the sentence now says which.
   return {
     toolchain: DEFAULT_TOOLCHAIN,
-    evidence: `nothing detected; defaulted to ${DEFAULT_TOOLCHAIN.name}`,
+    evidence:
+      `nothing detected; provisionally ${DEFAULT_TOOLCHAIN.name} until this tree has project files. ` +
+      'Build what the specification asks for and create its project files first - the toolchain is ' +
+      're-detected every iteration and the gates will follow it, so this default is not an instruction',
     detected: false,
     alternatives: [],
   };
