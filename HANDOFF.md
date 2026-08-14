@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.134.0`. Measured at 0.134.0: `npm test` **1880 pass**,
+**State:** `main` at `0.135.0`. Measured at 0.135.0: `npm test` **1883 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -58,6 +58,25 @@ Phase 6 sets it, so a fully green iteration happened and the old code would have
 **Early banking remains unconfirmed in the wild.**
 
 **Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
+
+### 0.135.0 — preflight refuses a repository that tracks its own run state
+
+**Case J3's trap, promoted from a documentation note to a blocking check.** A target with
+`.meeseeks/` committed defeats every protection quietly: the gitignore the driver writes cannot
+untrack a tracked file, every `git reset --hard` restores stale config and ratchet state, and
+every iteration's `git add -A` commits the run's own evidence. J3 launched with a freshly written
+uncapped config and *ran* with the old capped one — the reset had restored the committed copy, and
+the only visible symptom was the banner's iteration count.
+
+`checkStateNotTracked` runs `git ls-files .meeseeks` and **blocks** on any output, naming the
+first tracked file and the one-command fix (`git rm -r --cached .meeseeks && git commit` — the
+files stay on disk). When git itself cannot answer, it defers to the `git-repository` check rather
+than inventing a finding from a failed listing.
+
+Same failure family, now three members, all from hard resets restoring tracked-or-stale state:
+the run archive (0.105.0), the operator's `lastGoodCommit` work, and this. The first two got
+mechanism fixes; this one gets a refusal at the door, because unlike the others it is entirely
+detectable before any money is spent.
 
 ### 0.134.0 — one hallucinated capability word no longer costs the whole design phase
 

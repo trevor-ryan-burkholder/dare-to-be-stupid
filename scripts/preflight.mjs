@@ -304,6 +304,47 @@ export function checkConfig(meeseeksDir) {
 }
 
 /**
+ * Is the run's own state directory tracked by git?
+ *
+ * **Measured, and the symptom was almost invisible.** A dogfood target had `.meeseeks/` committed
+ * during staging. The operator then rewrote `config.json` — uncapped ceilings, more iterations —
+ * and relaunched after a `git reset --hard`. The reset silently restored the *committed* config,
+ * and the run executed with the old settings; the only visible sign was the iteration count in
+ * the banner. `.gitignore` cannot help a file that is already tracked, and the driver's own
+ * `ensureMeeseeksIgnored` was defeated the same way.
+ *
+ * Tracked state also means every iteration's `git add -A` commits the ratchet, the reports and
+ * the archived briefs — and every hard reset reverts them, which is the archive-destruction
+ * failure family (0.105.0) wearing new clothes.
+ *
+ * **Blocking, because every run in such a repository misbehaves**, and the fix is one command.
+ *
+ * @param {Probe} probe
+ * @returns {CheckResult}
+ */
+export function checkStateNotTracked(probe) {
+  const result = probe('git', ['ls-files', '.meeseeks']);
+  if (!result.ok) {
+    // No git or not a repository: `git-repository` reports that properly; this check has no
+    // opinion of its own about a tree git cannot describe.
+    return check('state-not-tracked', true, 'git could not list files here; see git-repository', 'Nothing to do.');
+  }
+  const tracked = result.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  return check(
+    'state-not-tracked',
+    tracked.length === 0,
+    tracked.length === 0
+      ? 'the run state directory is not tracked'
+      : `.meeseeks/ is tracked (${tracked.length} file(s), e.g. ${tracked[0]}). Every hard reset will revert ` +
+          'the ratchet and the configuration to stale copies, and every iteration will commit run state',
+    'Run: git rm -r --cached .meeseeks && git commit -m "untrack run state" - the files stay on disk.',
+  );
+}
+
+/**
  * Is another driver already running against this repository?
  *
  * Measured on 13 August 2026: two drivers on one tree, each able to `git reset --hard` it and
@@ -428,6 +469,7 @@ export function runPreflight(options) {
     checkNetwork(probe),
     checkConfig(meeseeksDir),
     checkNoConcurrentRun(meeseeksDir),
+    checkStateNotTracked(probe),
     checkSandboxAvailable(probe, options.sandbox ?? false),
     checkAgentSurface(cwd),
     checkDangerAcknowledged({ yes: options.yes ?? false, interactive: options.interactive ?? false }),

@@ -246,6 +246,7 @@ the run itself. `commands/meeseeks.md` runs preflight **before** shelling to the
 | Network reachable (npm registry) | impeccable + tooling install | abort |
 | `.meeseeks/config.json` exists | run config | auto-run `meeseeks init` (one-time scaffold) |
 | **No other driver holds this repository** | two drivers on one tree each `git reset --hard` it and commit over the other | abort, naming the pid and the lock file to delete |
+| **`.meeseeks/` is not tracked by git** | a tracked state dir defeats the gitignore: every hard reset restores stale config and ratchet, every iteration commits run state. Measured — a target ran with a stale, reset-restored config and the only symptom was the banner's iteration count | abort; `git rm -r --cached .meeseeks && git commit` |
 | **Agent-config security scan** clean | dangerous mode trusts the repo's own hooks/prompts/MCP/secrets | abort on findings (§3.6) |
 | `--dangerously-skip-permissions` acknowledged | the premise; guard hook is the safety | require `--yes` or an interactive confirm |
 

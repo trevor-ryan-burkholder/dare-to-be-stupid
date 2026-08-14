@@ -20,6 +20,7 @@ import {
   checkDangerAcknowledged,
   checkHasCommits,
   checkNoConcurrentRun,
+  checkStateNotTracked,
   checkNodeVersion,
   checkRemoteIsNotProduction,
   checkSandboxAvailable,
@@ -48,6 +49,7 @@ after(() => {
  * @type {Record<string, { ok: boolean, stdout?: string, stderr?: string }>}
  */
 const HEALTHY = {
+  'git ls-files .meeseeks': { ok: true, stdout: '' },
   'claude --version': { ok: true, stdout: '2.1.226 (Claude Code)\n' },
   'git rev-parse --is-inside-work-tree': { ok: true, stdout: 'true\n' },
   'git rev-parse HEAD': { ok: true, stdout: 'a1b2c3d4e5f67890abcdef1234567890abcdef12\n' },
@@ -115,6 +117,7 @@ describe('a healthy machine passes', () => {
         'network',
         'config',
         'no-concurrent-run',
+        'state-not-tracked',
         'sandbox',
         'agent-surface',
         'danger-acknowledged',
@@ -305,6 +308,33 @@ describe('formatPreflight', () => {
 // of them with the same `cwd`: run 14 had been sent SIGTERM and had not died, and run 15
 // launched into the same tree. Two drivers were then mutating one repository, each able to
 // `git reset --hard` it and commit over the other. Run 15's result is void.
+describe('checkStateNotTracked', () => {
+  it('passes when git tracks nothing under .meeseeks', () => {
+    const result = checkStateNotTracked(probeWith());
+    assert.equal(result.ok, true);
+  });
+
+  it('blocks when the state directory is tracked, and names the first file', () => {
+    // Measured: a dogfood target with .meeseeks committed ran with a stale config after a
+    // git reset --hard silently restored the committed copy. The only visible symptom was the
+    // iteration count in the banner. Gitignore cannot help a file that is already tracked.
+    const result = checkStateNotTracked(
+      probeWith({ 'git ls-files .meeseeks': { ok: true, stdout: '.meeseeks/config.json\n.meeseeks/state.json\n' } }),
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.blocking, true);
+    assert.equal(result.detail.includes('.meeseeks/config.json'), true, result.detail);
+    assert.equal(result.fix.includes('git rm -r --cached'), true, result.fix);
+  });
+
+  it('defers to the git-repository check when git cannot answer', () => {
+    // No opinion about a tree git cannot describe: reporting "tracked state" from a failed
+    // listing would be inventing a finding.
+    const result = checkStateNotTracked(probeWith({ 'git ls-files .meeseeks': { ok: false, stderr: 'not a repo' } }));
+    assert.equal(result.ok, true);
+  });
+});
+
 describe('checkNoConcurrentRun', () => {
   /** @returns {string} a fresh `.meeseeks` directory */
   function makeMeeseeksDir() {
