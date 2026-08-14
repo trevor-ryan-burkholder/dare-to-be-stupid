@@ -982,17 +982,22 @@ export function parseClaudeEnvelope(stdout) {
 
   const record = /** @type {Record<string, any>} */ (parsed);
   const usage = record.usage ?? {};
+  // Clamped at zero, each term and the cost below. A malformed envelope reporting a negative
+  // count would otherwise *reduce* the run's totals — `charge()` adds these to `spentTokens`
+  // and `spentUsd`, so a negative is not a smaller charge, it is a refund nothing earned.
+  // Nothing defaults to pass includes nothing decrements the bill.
+  const count = (/** @type {unknown} */ value) => Math.max(0, Number(value) || 0);
   const tokens =
-    (Number(usage.input_tokens) || 0) +
-    (Number(usage.output_tokens) || 0) +
-    (Number(usage.cache_creation_input_tokens) || 0) +
-    (Number(usage.cache_read_input_tokens) || 0);
+    count(usage.input_tokens) +
+    count(usage.output_tokens) +
+    count(usage.cache_creation_input_tokens) +
+    count(usage.cache_read_input_tokens);
 
   const ok = record.is_error === false && typeof record.result === 'string';
   return {
     ok,
     text: typeof record.result === 'string' ? record.result : '',
-    costUsd: Number(record.total_cost_usd) || 0,
+    costUsd: count(record.total_cost_usd),
     tokens,
     raw: stdout,
     exhausted: !ok && EXHAUSTION_PATTERN.test(stdout),

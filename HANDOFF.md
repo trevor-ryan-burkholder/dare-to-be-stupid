@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.135.0`. Measured at 0.135.0: `npm test` **1883 pass**,
+**State:** `main` at `0.136.0`. Measured at 0.136.0: `npm test` **1884 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -58,6 +58,19 @@ Phase 6 sets it, so a fully green iteration happened and the old code would have
 **Early banking remains unconfirmed in the wild.**
 
 **Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
+
+### 0.136.0 — an envelope cannot issue a refund
+
+**Found probing `parseClaudeEnvelope`'s edges.** The parser is fail-closed where it matters — a
+missing `is_error` fails, junk fails, an error subtype fails — but `Number(x) || 0` accepted
+**negative** costs and token counts. `charge()` *adds* envelope numbers to `spentTokens` and
+`spentUsd`, so a negative is not a smaller charge, it is a refund nothing earned: one malformed
+envelope could quietly extend a ceiling. Every count is now clamped at zero. Nothing defaults to
+pass includes nothing decrements the bill.
+
+Also probed and clean this round: the envelope's `ok` gate itself (keyed on `is_error === false`
+and a string result, both required), and `hasFrontend` (unambiguous extensions, build directories
+skipped — the design-slop skip stays honest).
 
 ### 0.135.0 — preflight refuses a repository that tracks its own run state
 

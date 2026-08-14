@@ -3069,7 +3069,23 @@ describe('driveRun', () => {
     assert.equal(outcome.spentTokens, 50);
   });
 
-  describe('zero ceilings inside the loop', () => {
+  describe('parseClaudeEnvelope refuses a refund', () => {
+  it('clamps a negative cost to zero rather than crediting the run', () => {
+    // charge() adds envelope costs to spentTokens and spentUsd, so a negative is not a smaller
+    // charge, it is a refund nothing earned -- a malformed envelope could quietly extend a
+    // ceiling. Nothing defaults to pass includes nothing decrements the bill.
+    const raw = JSON.stringify({
+      type: 'result', subtype: 'success', is_error: false, result: 'done',
+      total_cost_usd: -5, usage: { input_tokens: -100, output_tokens: 7 },
+    });
+    const parsed = parseClaudeEnvelope(raw);
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.costUsd, 0);
+    assert.equal(parsed.tokens, 7);
+  });
+});
+
+describe('zero ceilings inside the loop', () => {
   it('does not end BUDGET mid-iteration either, which is where the first fix missed', () => {
     // 0.128.0 fixed shouldContinue and not the mid-iteration charge, so with both ceilings at
     // zero the first charged child satisfied spent >= 0 and case J2 died on iteration 1 with
