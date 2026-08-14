@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.126.0`. Measured at 0.126.0: `npm test` **1845 pass**,
+**State:** `main` at `0.127.0`. Measured at 0.127.0: `npm test` **1851 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -23,6 +23,39 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.127.0 — the race can now win: strictly better than main, and nothing regressed
+
+**Three operator decisions taken on 14 August; this is the one that needed code.**
+
+**Item 17, the run-level wall clock: dropped.** *"Don't need time ceiling. Ceiling is completion or
+budget."* The proposal stays in `PLAN.md` as the record of something considered and refused.
+
+**Item 21, improve mode on this repository: deferred** until the code is mostly complete. The
+engineering prerequisites were met at 0.107.0; it is waiting on the codebase, not the loop.
+
+**The race win condition: mine to pick, and I picked "strictly better than main".** `selectWinner`
+required **every** gate to pass — a bar that could not be met in the only situation a race ever
+arms in. The race triggers on consecutive **stalls**, and a stall *is* the condition of gates
+failing, so a candidate had to repair everything at once on a line that had repaired nothing for
+several iterations. Case I measured it: two candidates, own worktrees, gated independently, **both
+discarded**, and `applyWinner` had still never fired in this project's history.
+
+**What did not change is the half that was load-bearing.** A candidate carrying a regression is
+still disqualified outright — merging it hands the main tree a regression the ratchet must then
+reset out of, *"a worse position than never having raced"*. Untouched.
+
+**What replaced the absolute bar:** a candidate must pass a strictly **larger share** of the gates
+that ran than the main tree does. Strictly, so churn without progress is not merged. Share rather
+than count for the reason 0.126.0 established — rosters change size and a count punishes a
+shrinking one. The baseline is threaded from the previous iteration's own gate results, so nothing
+is re-run to compute it.
+
+**A fully green candidate is always viable**, whatever main is doing. **A first draft omitted that
+clause and six existing tests caught it**: with the default baseline of 1, `share === 1` is not
+`> 1`, so a candidate passing every gate was refused — while the docblock claimed the default
+reproduced the old behaviour. It did not. That is twice in one night that an existing test caught
+me changing a rule I had reasoned about carefully.
 
 ### 0.126.0 — a fully green iteration was counted as a stall
 

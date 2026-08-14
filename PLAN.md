@@ -147,7 +147,7 @@ and silently disabled A4 (fixed, 0.103.0).
 saving is real but it is a cost argument, and the panel's dominant cost is wall clock, `3×` where
 it could be `max()`. **Item 10 is therefore unblocked with the panel kept.**
 
-### 9. Case I — racing with live builders — **RUN 14 Aug. Machinery works; the win condition may be unreachable**
+### 9. Case I — racing with live builders — **RUN 14 Aug; win condition fixed at 0.127.0**
 
 **The race executed end to end for the first time** — armed on two stalls, two candidates in their
 own worktrees at 6.03M and 5.29M tokens, gated independently, each with its own archived brief,
@@ -326,7 +326,12 @@ the recorded failure modes as requirements: the driver refuses any unsandboxed f
 builder's behalf, and sandbox *registration* gets a live check — the guard's own history is the
 reason.
 
-### 17. The run-level wall clock — PROPOSAL DRAFTED, **NEEDS OPERATOR**
+### 17. The run-level wall clock — **DROPPED 14 Aug, operator's decision**
+
+**Not wanted.** *"Don't need time ceiling. Ceiling is completion or budget."* The proposal below is
+kept as the record of what was considered and refused, not as pending work. A run ends when it
+ships, when the panel cannot be satisfied within `maxIterations`, or when tokens or dollars run
+out — and those are the only ceilings.
 Named open in `HANDOFF.md`. Decide it and write it into `DESIGN.md`: a wall-clock ceiling, or
 an explicit refusal with the `maxIterations`-is-the-honest-unit argument. Either closes it;
 undecided is the only wrong state.
@@ -391,7 +396,12 @@ during cloud-init. Both look exactly like a broken deploy and neither is one.
 Breadth, not risk: the link shortener, the persistence SPA, and the .NET API — the last being
 the first run to exercise TRX extraction and the dotnet adapter end to end in anger.
 
-### 21. Improve mode pointed at this repository — OPEN, **PREPARED; REFUSED HERE** (operator's call)
+### 21. Improve mode pointed at this repository — **DEFERRED 14 Aug, operator's decision**
+
+**Not until the code is mostly complete.** *"Probably shouldn't run improve in this repo until we
+are mostly code complete."* The engineering prerequisites are met (0.107.0 made `release-check`
+declarable as `operator:release-check` in protected config), so this is waiting on the codebase
+rather than on the loop. The `CLAUDE.md` scope note stays as written.
 Prerequisites named in `HANDOFF.md`: pin `hooks/guard.mjs` as a security element at run start
 (the positional rule does not cover it), `release-check` reachable as a gate (item 3 helps),
 and the `CLAUDE.md` scope note is the operator's call to suspend — nobody else's.

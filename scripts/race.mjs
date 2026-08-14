@@ -149,24 +149,61 @@ export function shouldRace(options) {
 /**
  * Pick the winner from raced candidates.
  *
- * Viability is absolute: every gate passing and nothing regressed. A candidate that
- * regressed a protected test is not a near miss to be ranked below the others, it is
- * disqualified — merging it would hand the main tree a regression the ratchet then has to
- * reset back out of, which is a worse position than never having raced.
+ * **Viability is "strictly better than main, and nothing regressed" — changed 14 August, and the
+ * change is the whole point of racing at all.** It used to require *every* gate to pass. That bar
+ * could not be met in the only situation a race ever arms in: the race is triggered by
+ * consecutive **stalls**, and a stall *is* the condition of gates failing, so a candidate had to
+ * repair everything at once on a line that had repaired nothing for several iterations. Case I
+ * measured the result — two candidates, their own worktrees, gated independently, **both
+ * discarded**, and `applyWinner` had still never fired in this project's history.
+ *
+ * **What did not change is the half that was load-bearing.** A candidate that regressed a
+ * protected test is not a near miss to be ranked below the others, it is disqualified — merging it
+ * would hand the main tree a regression the ratchet then has to reset back out of, which is a
+ * worse position than never having raced. That check is untouched.
+ *
+ * What replaced the absolute bar is a comparison against where the main tree already is: a
+ * candidate must pass a **larger share** of the gates that ran than main does. Strictly larger, so
+ * an equal candidate is not merged — churn without progress is not progress. The share rather than
+ * the count for the reason `recordProgress` uses one (0.126.0): rosters change size between
+ * iterations, and a count punishes a shrinking one.
+ *
+ * **A fully green candidate is always viable**, whatever main is doing. Demanding that it *beat* a
+ * main tree which is also green would refuse the one outcome the loop exists to produce. Anything
+ * short of green must be strictly better than main — strictly, so churn without progress is not
+ * merged.
+ *
+ * `baselineShare` defaults to 1, so a caller that does not say where main stands gets the old
+ * absolute behaviour: only a green candidate qualifies. **Defaulting to 0 would have been the
+ * dangerous direction** — every candidate would beat an unknown baseline.
+ *
+ * A first draft omitted the green clause and six existing tests caught it: with the default of 1,
+ * `share === 1` is not `> 1`, so a candidate passing every gate was refused. The docblock claimed
+ * the default reproduced the old behaviour and it did not.
  *
  * @param {Candidate[]} candidates
  * @returns {{ winner: Candidate | null, reason: string, viable: number }}
  */
-export function selectWinner(candidates) {
+export function selectWinner(candidates, baselineShare = 1) {
+  const share = (/** @type {Candidate} */ candidate) =>
+    candidate.gates.length === 0 ? 0 : candidate.gates.filter((gate) => gate.ok).length / candidate.gates.length;
+
+  // A fully green candidate is always mergeable — it is the outcome the whole loop is aiming at,
+  // and demanding it *beat* a main tree that is also fully green would refuse the ideal case.
+  // Anything short of green has to be strictly better than where main already stands.
   const viable = candidates.filter(
     (candidate) =>
-      candidate.commit !== null && candidate.regressions.length === 0 && candidate.gates.every((gate) => gate.ok),
+      candidate.commit !== null &&
+      candidate.regressions.length === 0 &&
+      (share(candidate) === 1 || share(candidate) > baselineShare),
   );
 
   if (viable.length === 0) {
     return {
       winner: null,
-      reason: 'no candidate passed every gate without a regression; all were discarded',
+      reason:
+        `no candidate beat the main tree (${Math.round(baselineShare * 100)}% of gates passing) without a ` +
+        'regression; all were discarded',
       viable: 0,
     };
   }

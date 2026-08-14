@@ -626,3 +626,52 @@ describe('stall hypotheses give race candidates something to actually differ abo
     assert.equal('hypothesis' in candidate(1, true), false, 'a hypothesis must never reach a race candidate record');
   });
 });
+
+describe('selectWinner compares against where main already stands', () => {
+  /** @param {number} ok @param {number} total @param {Partial<{ index: number, linesChanged: number }>} [extra] */
+  const candidate = (ok, total, extra = {}) => ({
+    index: extra.index ?? 1,
+    dir: '/tmp/c',
+    commit: 'abc123',
+    gates: Array.from({ length: total }, (_, i) => ({ name: `g${i}`, ok: i < ok, status: 0, detail: '' })),
+    regressions: [],
+    filesChanged: 1,
+    linesChanged: extra.linesChanged ?? 10,
+  });
+
+  it('merges a candidate that beats main without passing everything', () => {
+    // The whole point of the change. A race arms on consecutive stalls, and a stall *is* gates
+    // failing — so requiring every gate to pass demanded that a candidate repair everything at
+    // once on a line that had repaired nothing for several iterations. Case I measured the
+    // result: two candidates, both discarded, and applyWinner had still never fired.
+    const selection = selectWinner([candidate(3, 4)], 0.5);
+    assert.notEqual(selection.winner, null);
+    assert.equal(selection.viable, 1);
+  });
+
+  it('refuses a candidate that merely equals main, because churn is not progress', () => {
+    assert.equal(selectWinner([candidate(2, 4)], 0.5).winner, null);
+  });
+
+  it('refuses a candidate that is worse than main', () => {
+    assert.equal(selectWinner([candidate(1, 4)], 0.5).winner, null);
+  });
+
+  it('always merges a fully green candidate, whatever main is doing', () => {
+    // Demanding that green *beat* a green main would refuse the one outcome the loop exists to
+    // produce. A first draft omitted this and six existing tests caught it.
+    assert.notEqual(selectWinner([candidate(4, 4)], 1).winner, null);
+  });
+
+  it('still disqualifies a regression, which is the half that did not change', () => {
+    // Merging a regressing candidate hands the main tree a regression the ratchet must then
+    // reset out of — a worse position than never having raced.
+    const regressing = { ...candidate(4, 4), regressions: ['test/a.test.js::works'] };
+    assert.equal(selectWinner([regressing], 0).winner, null);
+  });
+
+  it('names the bar it applied, so a discarded race says what it wanted', () => {
+    const selection = selectWinner([candidate(1, 4)], 0.5);
+    assert.equal(selection.reason.includes('50%'), true, selection.reason);
+  });
+});

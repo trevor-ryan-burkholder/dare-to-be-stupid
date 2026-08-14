@@ -1347,7 +1347,7 @@ export function repeatedRegressionNote(counts, regressions) {
  *   review: (reviewer: string, ids: string[]) => ClaudeResult,
  *   realityCheck: () => ClaudeResult,
  *   extractLesson?: (evidence: string) => ClaudeResult,
- *   race?: (objective: import('./brief.mjs').Objective, iteration: number) => RaceOutcome,
+ *   race?: (objective: import('./brief.mjs').Objective, iteration: number, baselineShare?: number) => RaceOutcome,
  *   history?: (findings: string[]) => import('./brief.mjs').HistoryNote[],
  *   capabilities?: () => string[],
  *   toolchainGuidance?: () => { name: string, guidance: string } | undefined,
@@ -1620,6 +1620,9 @@ export function driveRun(options) {
    */
   let lastGateTotal = 0;
 
+  /** The share of gates the main tree passed last iteration, for the race's viability bar. */
+  let lastGateShare = 0;
+
   /**
    * Close out an iteration: record what failed, consider a lesson, and score progress.
    *
@@ -1722,7 +1725,7 @@ export function driveRun(options) {
     });
     let raced = false;
     if (raceDecision.race && effects.race !== undefined) {
-      const outcome = effects.race(objective, iterationNumber);
+      const outcome = effects.race(objective, iterationNumber, lastGateShare);
       const exhausted = charge(outcome);
       effects.log(`race: ${outcome.detail}`);
       raced = outcome.applied;
@@ -1794,6 +1797,7 @@ export function driveRun(options) {
     const gateOutcome = effects.gates();
     const score = gateScore(gateOutcome.results);
     lastGateTotal = gateOutcome.results.length;
+    lastGateShare = lastGateTotal === 0 ? 0 : score / lastGateTotal;
     const failedGates = gateOutcome.results.filter((result) => !result.ok);
 
     // Reported the moment they are known, not only in the gate-failure branch far below, because
@@ -4866,7 +4870,7 @@ export function main(argv, io = {}) {
    * @param {number} iteration
    * @returns {RaceOutcome}
    */
-  const runRace = (objective, iteration) => {
+  const runRace = (objective, iteration, baselineShare = 1) => {
     const base = shell('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim();
     const parentDir = path.join(os.tmpdir(), `meeseeks-race-${process.pid}-${iteration}`);
     mkdirSync(parentDir, { recursive: true });
@@ -4944,7 +4948,7 @@ export function main(argv, io = {}) {
         });
       }
 
-      const selection = selectWinner(candidates);
+      const selection = selectWinner(candidates, baselineShare);
       if (selection.winner === null || selection.winner.commit === null) {
         return { applied: false, detail: selection.reason, tokens, costUsd };
       }
