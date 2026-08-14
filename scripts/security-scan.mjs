@@ -64,8 +64,30 @@ const SECRET_PATTERNS = [
   },
   {
     rule: 'secret-assigned-credential',
+    // **This scanner's entire scope is JSON — `.mcp.json`, `.claude/settings*`, `hooks.json` —
+    // and the previous pattern could not match JSON.** It required the key name to be followed
+    // immediately by `:` or `=`, but in JSON the key carries its own closing quote first, so
+    // `"api_key": "abcdefghijklmnop1234"` was invisible. Verified against the real
+    // `scanAgentSurface`: an MCP server declaring `"API_KEY": "<26 chars>"` in its `env` produced
+    // no secret finding at all. Unquoted `.env`, YAML and shell assignments were missed for the
+    // same reason.
+    //
+    // Quotes are now optional on both sides, and two details in the value are load-bearing —
+    // both found by existing tests when a first draft widened this too far:
+    //
+    //   - **No `$`, `{` or `}`**, so `"API_KEY": "${MY_KEY}"` does not match. Referencing an
+    //     environment variable is the *correct* pattern, and flagging it would train an operator
+    //     to ignore this rule.
+    //   - **No `.`**, so `const apiKey = process.env.API_KEY` does not match. Reading a key from
+    //     the environment is the thing this rule wants people to do. A real secret rarely needs a
+    //     dot inside a sixteen-character run; a JWT segment has none.
+    //
+    // And the separator is `[ \t]*` rather than `\s*` **because `\s` crosses newlines**: with
+    // `\s*`, an empty `API_KEY=` on one line swallowed the *next* line as its value, which is
+    // how `.env.example` — a file of deliberately empty placeholders — reported a hard-coded
+    // credential.
     pattern:
-      /\b(?:api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|password)\b\s*[:=]\s*["'][^"'\s]{16,}["']/gi,
+      /["']?\b(?:api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|password)\b["']?[ \t]*[:=][ \t]*["']?[A-Za-z0-9_\-/+=]{16,}["']?/gi,
     what: 'a hard-coded credential assignment',
   },
 ];

@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.131.0`. Measured at 0.131.0: `npm test` **1875 pass**,
+**State:** `main` at `0.132.0`. Measured at 0.132.0: `npm test` **1878 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -58,6 +58,37 @@ Phase 6 sets it, so a fully green iteration happened and the old code would have
 **Early banking remains unconfirmed in the wild.**
 
 **Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
+
+### 0.132.0 — the secret scanner could not read JSON, which is the only thing it scans
+
+**Found by auditing the last unexamined detector, and it is the worst-placed one yet.**
+`scanAgentSurface` reads exactly four kinds of file — `.mcp.json`, `mcp.json`,
+`.claude/settings*`, `.claude/hooks.json` — **all JSON**. Its credential rule required the key name
+to be followed immediately by `:` or `=`, but in JSON the key carries its own closing quote first,
+so `"api_key": "…"` never matched.
+
+**Verified through the real function, not the regex:** a `.mcp.json` declaring
+`"API_KEY": "abcdefghijklmnop1234567890"` in an MCP server's `env` produced **no secret finding
+at all**. A hard-coded credential on the agent surface, in a scanner whose entire job is the agent
+surface. Unquoted `.env`, YAML and shell assignments were missed for the same reason.
+
+**Two details in the fix are load-bearing, and existing tests found both** when a first draft
+widened it too far:
+
+- **The value charset excludes `$ { }`** — `"API_KEY": "${MY_KEY}"` must not match. Referencing an
+  environment variable is the *correct* pattern, and flagging it trains an operator to ignore the
+  rule.
+- **It also excludes `.`**, because `const apiKey = process.env.API_KEY` was matching. Reading a
+  key from the environment is the thing this rule exists to encourage.
+
+**And the separator is `[ \t]*`, not `\s*`, because `\s` crosses newlines.** With `\s*`, an empty
+`API_KEY=` on one line swallowed the **next line** as its value — which is how `.env.example`, a
+file of deliberately empty placeholders, reported a hard-coded credential. That one would have
+been a genuinely annoying false positive on a very common file.
+
+**Third time tonight an existing test caught me widening a rule I had reasoned about carefully**
+— after the `ci` runner patterns and the race viability bar. The pattern is consistent enough to
+name: **confidence from a correct diagnosis is what makes the next edit dangerous.**
 
 ### 0.131.0 — a guard denial inside a child is no longer invisible to the run
 

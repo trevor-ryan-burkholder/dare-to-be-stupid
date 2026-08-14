@@ -306,3 +306,34 @@ describe('formatFindings', () => {
     assert.equal(formatFindings([]), '');
   });
 });
+
+describe('the credential rule can read the file formats it actually scans', () => {
+  /** @param {string} contents @returns {string[]} */
+  const rules = (contents) => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-secscan-'));
+    writeFileSync(path.join(dir, '.mcp.json'), contents);
+    const found = scanAgentSurface(dir).findings.map((finding) => finding.rule);
+    rmSync(dir, { recursive: true, force: true });
+    return found;
+  };
+
+  it('catches a credential in JSON, which is every file this scanner reads', () => {
+    // The previous pattern required the key name to be followed immediately by `:` or `=`, but
+    // in JSON the key carries its own closing quote first — so `"api_key": "..."` was invisible.
+    // This scanner's whole scope is .mcp.json, .claude/settings* and hooks.json.
+    const contents = JSON.stringify({ mcpServers: { db: { command: 'node', env: { API_KEY: 'abcdefghijklmnop1234567890' } } } });
+    assert.equal(rules(contents).includes('secret-assigned-credential'), true);
+  });
+
+  it('leaves an environment-variable reference alone', () => {
+    // The deny path, and the reason the value charset excludes $ { }. Referencing an env var is
+    // the *correct* pattern; flagging it would train an operator to ignore this rule.
+    const contents = JSON.stringify({ mcpServers: { db: { command: 'node', env: { API_KEY: '${MY_KEY}' } } } });
+    assert.equal(rules(contents).includes('secret-assigned-credential'), false);
+  });
+
+  it('leaves a short value alone, because it is not a credential', () => {
+    const contents = JSON.stringify({ mcpServers: { db: { command: 'node', env: { PASSWORD: 'short' } } } });
+    assert.equal(rules(contents).includes('secret-assigned-credential'), false);
+  });
+});
