@@ -15,7 +15,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { DEFAULT_MAX_PROMPT_CHARACTERS, checkContextBudget, measurePrompt } from '../scripts/context-budget.mjs';
+import {
+  DEFAULT_MAX_PROMPT_CHARACTERS,
+  checkContextBudget,
+  measurePrompt,
+  promptGrowthNote,
+} from '../scripts/context-budget.mjs';
 
 describe('measurePrompt', () => {
   it('totals every part and reports each one', () => {
@@ -143,5 +148,49 @@ describe('checkContextBudget', () => {
     // it, and refusing that would make the default unreachable.
     const verdict = checkContextBudget({ phase: 'builder', parts: { prompt: 'x' }, limit: undefined });
     assert.equal(verdict.limit, DEFAULT_MAX_PROMPT_CHARACTERS);
+  });
+});
+
+describe('promptGrowthNote', () => {
+  const BASE = { first: 18496, current: 41412, iteration: 2, limit: 400000, maxIterations: 25 };
+
+  it('says nothing about ship1 real growth, because the trajectory clears the run', () => {
+    // The measured case: 18,496 -> 41,412 in one iteration is 2.2x and looks alarming, but at
+    // that rate the budget is 17 iterations away and the run is capped at 12. Reporting it
+    // would be noise, and a warning that fires on ordinary growth is a warning nobody reads.
+    assert.equal(promptGrowthNote({ ...BASE, maxIterations: 12 }), '');
+  });
+
+  it('speaks when the budget arrives inside the run', () => {
+    const note = promptGrowthNote({ first: 100000, current: 200000, iteration: 2, limit: 400000, maxIterations: 25 });
+    assert.equal(note.includes('at iteration 4'), true, note);
+    assert.equal(note.includes('capped at 25'), true, note);
+    assert.equal(note.includes('100000 per iteration'), true, note);
+  });
+
+  it('is silent on one data point, because that is an opinion and not a trend', () => {
+    assert.equal(promptGrowthNote({ ...BASE, iteration: 1 }), '');
+  });
+
+  it('is silent when the prompt is shrinking or flat', () => {
+    assert.equal(promptGrowthNote({ ...BASE, current: 18496 }), '');
+    assert.equal(promptGrowthNote({ ...BASE, current: 9000 }), '');
+  });
+
+  it('is silent when the prompt is already over budget, which is a different problem', () => {
+    // `checkContextBudget` refuses that prompt outright. A projection toward a line already
+    // crossed would be a second, quieter report of a failure that already spoke.
+    assert.equal(promptGrowthNote({ ...BASE, current: 400000 }), '');
+    assert.equal(promptGrowthNote({ ...BASE, current: 500000 }), '');
+  });
+
+  it('refuses to project from a first measurement of zero', () => {
+    assert.equal(promptGrowthNote({ ...BASE, first: 0 }), '');
+  });
+
+  it('rounds the projected iteration up, so the warning never arrives late', () => {
+    // 1 character per iteration short of the budget must not round down into "next iteration".
+    const note = promptGrowthNote({ first: 1000, current: 2000, iteration: 2, limit: 3500, maxIterations: 10 });
+    assert.equal(note.includes('at iteration 4'), true, note);
   });
 });

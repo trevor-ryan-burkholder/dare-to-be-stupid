@@ -116,3 +116,44 @@ export function checkContextBudget(options) {
       '.meeseeks/config.json if this input is genuinely this large, or find what grew.',
   };
 }
+
+/**
+ * Whether the builder's prompt is on course to hit the budget before the run ends.
+ *
+ * **The gap this fills, measured.** `checkContextBudget` refuses a prompt over the limit, and
+ * between "fine" and "refused" the loop says nothing at all. In `ship1` the builder prompt went
+ * from 18,496 to 41,412 characters **in one iteration** — 2.2x — as findings and history
+ * accumulated. Nothing reported it, because nothing was wrong yet. That is exactly the shape
+ * `DESIGN.md` §3.9 names as one of the two degradations this project is worst at seeing: the
+ * builder gets quietly worse and no check ever fires.
+ *
+ * **Growth alone is not the signal, and reporting it would be noise.** A prompt doubling on
+ * iteration 2 of 25 is ordinary — the brief gains a findings list it did not have. What matters
+ * is the *trajectory*: at the observed rate, does the prompt reach the budget **within this
+ * run's own iteration cap**? If it does, an operator can raise `contextBudget.maxCharacters` or
+ * shorten what the brief carries before a child is refused mid-run. If it does not, there is
+ * nothing to say and this says nothing.
+ *
+ * Silent by construction in every case where a projection would be dishonest: one data point is
+ * not a trend, a shrinking prompt has no horizon, and a run already over its cap is a different
+ * problem.
+ *
+ * @param {{ first: number, current: number, iteration: number, limit: number, maxIterations: number }} options
+ * @returns {string} empty when the trajectory does not reach the budget inside this run
+ */
+export function promptGrowthNote(options) {
+  const { first, current, iteration, limit, maxIterations } = options;
+  // Two points make a line; one makes an opinion.
+  if (iteration <= 1 || first <= 0 || current <= first) return '';
+  if (current >= limit) return '';
+  const perIteration = (current - first) / (iteration - 1);
+  if (perIteration <= 0) return '';
+  const hitAt = iteration + Math.ceil((limit - current) / perIteration);
+  if (hitAt > maxIterations) return '';
+  return (
+    `builder prompt has grown from ${first} to ${current} characters by iteration ${iteration} ` +
+    `(${Math.round(perIteration)} per iteration). At this rate it reaches the ${limit} character budget ` +
+    `at iteration ${hitAt}, and this run is capped at ${maxIterations}. Raise contextBudget.maxCharacters ` +
+    'or shorten what the brief carries; a child refused mid-run costs an iteration to discover'
+  );
+}

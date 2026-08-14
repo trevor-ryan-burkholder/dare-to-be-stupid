@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.112.0`. Measured at 0.112.0: `npm test` **1768 pass**,
+**State:** `main` at `0.113.0`. Measured at 0.113.0: `npm test` **1775 pass**,
 `npm run test:integration` **33 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -23,6 +23,37 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.113.0 — the builder's prompt now says when it is on course to hit the wall
+
+**The gap, and it is §3.9's named silent degradation.** `checkContextBudget` refuses a prompt over
+the limit. Between "fine" and "refused" the loop said **nothing at all**. In `ship1` the builder
+prompt went **18,496 → 41,412 characters in one iteration** — 2.2× — as findings and history
+accumulated, and nothing reported it because nothing was wrong *yet*. A degradation that only
+speaks once it is fatal is the failure this project is worst at seeing.
+
+**Growth alone is not the signal, and reporting it would have been noise.** A prompt doubling on
+iteration 2 is ordinary: the brief gains a findings list it did not have. `promptGrowthNote`
+reports the **trajectory** instead — at the observed per-iteration rate, does the prompt reach the
+budget **inside this run's own iteration cap**? If yes, an operator can raise
+`contextBudget.maxCharacters` or shorten what the brief carries *before* a child is refused
+mid-run. If no, it says nothing.
+
+**The first test asserts silence on the real `ship1` numbers**, which is the point: 2.2× looks
+alarming and is 17 iterations from the budget on a run capped at 12. A warning that fires on
+ordinary growth is a warning nobody reads.
+
+**Silent by construction wherever a projection would be dishonest:** one data point is an opinion
+rather than a trend, a shrinking prompt has no horizon, a prompt already over budget is a
+different problem that `checkContextBudget` already reports, and a zero baseline cannot be
+projected from. Each of those is a test.
+
+**Not verified:** that `driveRun` calls it. Seven unit tests cover the function including every
+deny path; the loop-level assertion is not written, because forcing a controlled brief size
+through the harness is fragile and a flaky test is worse than a named gap. **Third instance
+tonight of the same gap** — `quality:`, `gateTree`'s overlay, and now this. They share one cause:
+the loop harness injects the effects that would exercise them. That is worth someone's next
+session as a single fix rather than three.
 
 ### 0.112.0 — the partitioned ratchet: scope the reset, then prove the scope was right
 

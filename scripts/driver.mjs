@@ -36,7 +36,7 @@ import {
   writeCapabilityManifest,
 } from './capabilities.mjs';
 import { DEFAULT_OWNERSHIP, loadConfig } from './config.mjs';
-import { checkContextBudget, measurePrompt } from './context-budget.mjs';
+import { checkContextBudget, promptGrowthNote, measurePrompt } from './context-budget.mjs';
 import { applicableGates, gateApplies } from './gate-policy.mjs';
 import { hasMeaningfulHistory, historyContext } from './history.mjs';
 import { integrityGate } from './integrity.mjs';
@@ -1325,6 +1325,12 @@ export function driveRun(options) {
    */
   const regressionCounts = new Map();
 
+  /**
+   * The first iteration's brief length in characters, the baseline for §3.9's growth check.
+   * Zero until an iteration sets it: a run that never built a brief has nothing to compare.
+   */
+  let firstBriefChars = 0;
+
   /** @type {import('./brief.mjs').Objective} */
   let objective = {
     kind: 'initial',
@@ -1582,6 +1588,19 @@ export function driveRun(options) {
       raced = outcome.applied;
       if (exhausted) return finish('BUDGET', ceilingReason());
     }
+
+    // §3.9's silent degradation, given a voice. The brief is the part of a builder's prompt that
+    // grows — the system prompt is near constant — so it is what a trajectory is drawn through.
+    // Measured before the child is spawned so a warning arrives on the iteration that earned it.
+    if (firstBriefChars === 0) firstBriefChars = brief.length;
+    const growth = promptGrowthNote({
+      first: firstBriefChars,
+      current: brief.length,
+      iteration: iterationNumber,
+      limit: config.contextBudget.maxCharacters,
+      maxIterations: config.maxIterations,
+    });
+    if (growth !== '') effects.log(growth);
 
     if (!raced) {
       const built = effects.build(brief);
