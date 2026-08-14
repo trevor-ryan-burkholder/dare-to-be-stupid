@@ -4757,9 +4757,44 @@ export function main(argv, io = {}) {
   try {
     declaredCapabilities = parseCapabilityDeclaration(designed.text);
   } catch (error) {
-    write(verbatim(`design phase did not say what this project is: ${/** @type {Error} */ (error).message}`));
-    write(stamp('ABORTED', { mode }));
-    return 1;
+    // **One focused retry before the abort, and the arithmetic is the reason.** The run has
+    // already paid for the PRD and the whole design phase — measured at several million tokens —
+    // and what failed is one json block at the very end of it, most plausibly a capability name
+    // the vocabulary does not contain. Regenerating the entire design to repair a word would
+    // spend the phase again; a read-only child that looks at the documents just written and
+    // answers with only the block costs a fraction of that.
+    //
+    // The retry child is `reality-check`-shaped on purpose: `Read`/`Glob`/`Grep` and nothing
+    // else, because the declaration is supposed to *describe the design*, and a child that could
+    // edit the documents while re-declaring would be repairing the evidence to fit its answer.
+    // The parse error travels in the prompt so the child knows exactly what was wrong. A second
+    // failure aborts exactly as before — this widens nothing about what is accepted.
+    const parseError = /** @type {Error} */ (error).message;
+    write(verbatim(`design declaration unreadable, asking once more: ${parseError}`));
+    const redeclared = runChild({
+      prompt:
+        'The design phase for this repository just completed, but its closing capability declaration ' +
+        `could not be parsed: ${parseError}\n\n` +
+        'Read the design documents under docs/ and PRD.md, and answer with ONLY a fenced json block ' +
+        'declaring what this project is - no prose before or after it.',
+      model: config.designModel,
+      phase: 'reality-check',
+      effort: config.effort['reality-check'],
+      cwd,
+      env,
+    });
+    chargePreLoop(redeclared);
+    try {
+      declaredCapabilities = parseCapabilityDeclaration(redeclared.ok ? redeclared.text : '');
+    } catch (secondError) {
+      write(
+        verbatim(
+          `design phase did not say what this project is: ${/** @type {Error} */ (secondError).message}`,
+        ),
+      );
+      write(stamp('ABORTED', { mode }));
+      return 1;
+    }
   }
 
   /**

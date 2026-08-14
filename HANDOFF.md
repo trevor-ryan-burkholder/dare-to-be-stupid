@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.133.0`. Measured at 0.133.0: `npm test` **1879 pass**,
+**State:** `main` at `0.134.0`. Measured at 0.134.0: `npm test` **1880 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -58,6 +58,28 @@ Phase 6 sets it, so a fully green iteration happened and the old code would have
 **Early banking remains unconfirmed in the wild.**
 
 **Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
+
+### 0.134.0 — one hallucinated capability word no longer costs the whole design phase
+
+**The exposure:** the design declaration had no retry. One word outside the vocabulary —
+"database" for `persistent-storage`, "command-line" misspelled — aborted the run *after* it had
+paid for the PRD and the entire design phase, several million tokens, because of one json block at
+the very end of it.
+
+**The fix is a focused re-ask, not a regeneration.** A `reality-check`-shaped child —
+`Read`/`Glob`/`Grep` only — reads the design documents just written and answers with only the
+block. Read-only is load-bearing: the declaration is supposed to *describe the design*, and a
+child that could edit the documents while re-declaring would repair the evidence to fit its
+answer. The parse error travels in the prompt. A second failure aborts exactly as before —
+**nothing about what is accepted has widened.**
+
+**The wiring is asserted continuously, at no extra cost.** The tier-2 harness's canned design
+child now deliberately declares `"comand-line"`, so every run through it exercises the retry path
+end to end — misdeclaration, recovery child, correct declaration, run proceeds. Four for four.
+
+Also audited this round, both clean: the reviewer-report parser (every edge fails closed — empty
+input, bare verdicts, duplicate ids resolving worst-status-wins, unknown statuses becoming fail)
+and the capability parser (last block wins, unknown throws, empty throws).
 
 ### 0.133.0 — 0.128.0 was incomplete, and case J2 paid for it on iteration 1
 
