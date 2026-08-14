@@ -918,6 +918,20 @@ Kafka; distributed orchestration; generic workflow engines; MCP dependencies for
 execution; more agent personas beyond A3; a consensus parliament; agent swarms by default;
 another framework layered over Dare.
 
+**"More agent personas" is the conditional item on that list, and this line exists because the
+condition kept getting lost.** The governing rule is the one at the top of this brief: *do not add
+reviewers, memory systems, planning agents, or orchestration frameworks **unless an item
+explicitly calls for one***. It has an escape and the escape has been used correctly three times —
+`security-escalation` came from A4, `lesson-extractor` from F4, `oracle-author` from A3. Every
+child role beyond the original set arrived through an item, which is the rule working rather than
+being bent.
+
+Stated flat here and conditional there, the strict form wins by accident of where a reader lands,
+and a reader who mistakes a discipline for a wall will build on it — the failure `CLAUDE.md` names
+under *"say which of the two you mean"*. **This one is a discipline: a new child role is available,
+and the price is writing the item first.** What stays absolutely refused is the rest of the list —
+swarms, parliaments, and roles that arrive because a theme suggested them.
+
 **Explicitly rejected:** self-improving gate thresholds that adapt from historical performance.
 Thresholds that learn can drift downward, which makes gates negotiable by the thing they
 constrain — the same category of error as letting the builder edit `state.json`.
