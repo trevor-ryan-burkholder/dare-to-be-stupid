@@ -224,6 +224,18 @@ export const nodeToolchain = {
     { operation: 'build', pattern: /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?build\b/ },
     { operation: 'lint', pattern: /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?lint\b|\beslint\b/ },
     { operation: 'types', pattern: /\btypecheck\b|\btype-check\b|\btsc\b/ },
+    // **These two are narrow on purpose and must stay narrow.** `npm test` is not accepted, and
+    // that is not the observability detector's accident repeating (0.118.0) — it is a measured
+    // decision: CI inspection once accepted `node --test` and `jest` while the unit gate ran
+    // `npx vitest run --reporter=json`, and two live runs on 10 August 2026 wrote correct
+    // `node:test` suites from which the gate collected **nothing**. A package script can invoke
+    // any runner, so naming the runner is the only way the workflow can promise the gate
+    // something it can actually read.
+    //
+    // **This was nearly widened on 14 August**, on the reasoning that `npm test` is the ecosystem
+    // default. It is, and it is still ambiguous, and the ambiguity is the whole problem. What was
+    // wrong was never the pattern — it was the failure message, which said only *"never run:
+    // unit"* and left a builder to guess. `staticGates` now explains it.
     { operation: 'unit', pattern: /\bvitest\b/ },
     { operation: 'e2e', pattern: /\bplaywright\b/ },
   ],

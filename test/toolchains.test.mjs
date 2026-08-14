@@ -622,3 +622,41 @@ describe('every toolchain declares the reports it writes', () => {
     assert.deepEqual(dotnetToolchain.reports, ['unit.trx']);
   });
 });
+
+describe('the node CI detectors, and why two of them stay narrow', () => {
+  /** @param {string} step @returns {string[]} */
+  const operations = (step) =>
+    nodeToolchain.ci.filter((entry) => entry.pattern.test(step)).map((entry) => entry.operation);
+
+  /** @type {[string, string[]][]} */
+  const steps = [
+    ['- run: npx vitest run', ['unit']],
+    ['- run: npx playwright test', ['e2e']],
+    ['- run: npm run build', ['build']],
+    ['- run: npm run lint', ['lint']],
+    ['- run: npx eslint .', ['lint']],
+    ['- run: npx tsc --noEmit', ['types']],
+    ['- run: npm run typecheck', ['types']],
+  ];
+  for (const [step, expected] of steps) {
+    it(`reads ${step.replace('- run: ', '')} as ${expected.join(', ')}`, () => {
+      assert.deepEqual(operations(step), expected);
+    });
+  }
+
+  it('refuses `npm test`, and refusing it is the point', () => {
+    // Nearly widened on 14 August because `npm test` is the ecosystem default. It is, and it is
+    // ambiguous: a package script can invoke any runner, and when CI ran `node --test` while the
+    // unit gate ran `npx vitest run --reporter=json`, two live runs produced correct suites the
+    // gate collected nothing from. Naming the runner is the only promise the workflow can make
+    // that the gate can read. What was actually wrong was the failure message.
+    assert.deepEqual(operations('- run: npm test'), []);
+    assert.deepEqual(operations('- run: node --test'), []);
+    assert.deepEqual(operations('- run: npx jest'), []);
+  });
+
+  it('refuses a step this toolchain knows nothing about', () => {
+    assert.deepEqual(operations('- run: make lint'), []);
+    assert.deepEqual(operations('- uses: actions/checkout@v4'), []);
+  });
+});

@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.118.0`. Measured at 0.118.0: `npm test` **1807 pass**,
+**State:** `main` at `0.119.0`. Measured at 0.119.0: `npm test` **1818 pass**,
 `npm run test:integration` **35 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -23,6 +23,37 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.119.0 — I nearly reopened a measured hole by pattern-matching the previous bug onto it
+
+**The near-miss is the finding here, more than the change.** Straight after fixing the
+observability detector (0.118.0) I audited the other static gates for the same shape, found that
+the `ci` gate matches `unit` with `/\bvitest\b/` and therefore rejects **`npm test`** — the
+ecosystem's default idiom — and concluded it was the same accident. **It is not.** The existing
+test says why, and it was there all along:
+
+> *The bug: CI inspection accepted `node --test` and `jest` while the unit gate ran
+> `npx vitest run --reporter=json`. Both live runs on 10 August 2026 wrote correct `node:test`
+> suites and the gate collected nothing from them.*
+
+**A package script can invoke any runner.** Naming the runner is the only promise a workflow can
+make that the gate is able to read. I had already written and tested a widening before the
+existing test failed and stopped me — **the suite caught me, which is the entire argument for
+writing the reason into a test rather than a comment.**
+
+**Observability was narrow by accident; `ci` is narrow on purpose.** Same silhouette, opposite
+diagnosis. Finding one wrong-in-the-failing-direction detector made the next narrow detector look
+guilty, and confidence from a real fix is exactly what makes the following change dangerous.
+
+**What was actually wrong is the message, and that is what shipped.** The failure read only
+*"workflows exist but never run: unit"*, which a builder looking at a workflow containing
+`npm test` reads as simply false — and the obvious repair, adding another test step, fails
+identically. `runnerHint` now appends the reason at the point of failure: *"a workflow step like
+`npm test` does not count, because a package script can invoke any runner and the gate would
+collect nothing from a different one."* **A rule with a reason should state the reason where it
+fails, not in a comment nothing in the loop can read.**
+
+The narrowness is now defended by a test that says *why* it is narrow, not merely that it is.
 
 ### 0.118.0 — the observability gate was wrong, and being wrong cost an entire run
 

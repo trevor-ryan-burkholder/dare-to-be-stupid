@@ -2806,6 +2806,34 @@ export function startCommand(cwd) {
 /** Where the health probe lives, resolved against this file so it works from any cwd. */
 const HEALTH_PROBE = fileURLToPath(new URL('./health-probe.mjs', import.meta.url));
 
+/**
+ * The sentence a builder needs when CI "never runs" a step its workflow plainly runs.
+ *
+ * **This is the fix the CI detectors actually needed.** `unit` and `e2e` are matched by runner
+ * name — `vitest`, `playwright` — and not by `npm test`, deliberately: a package script can
+ * invoke any runner, and when CI ran `node --test` while the unit gate ran
+ * `npx vitest run --reporter=json`, two live runs on 10 August 2026 produced correct suites the
+ * gate collected **nothing** from. The narrowness is a measured decision and must stay.
+ *
+ * What was wrong is that the failure said only *"never run: unit"*. A builder whose workflow
+ * contains `npm test` reads that as false, and the obvious repair — adding another test step —
+ * fails identically. **On 14 August this nearly caused the pattern to be widened**, which would
+ * have reopened the hole those two runs paid for. A rule with a reason should say the reason
+ * where it fails, not in a comment nobody in the loop can read.
+ *
+ * @param {string[]} missing
+ * @returns {string}
+ */
+function runnerHint(missing) {
+  const named = missing.filter((operation) => operation === 'unit' || operation === 'e2e');
+  if (named.length === 0) return '';
+  return (
+    `. Name the runner explicitly for ${named.join(' and ')} — a workflow step like \`npm test\` does not ` +
+    'count, because a package script can invoke any runner and the gate would collect nothing from a ' +
+    'different one'
+  );
+}
+
 /** Named logging libraries, across the ecosystems the toolchains cover. */
 const LOGGING_LIBRARIES = /\b(pino|winston|bunyan|roarr|log4js|structlog|Serilog|ILogger|logging\.getLogger)\b/;
 
@@ -3021,7 +3049,7 @@ export function staticGates(cwd, options = {}) {
         ? `${ci.workflows.length} workflow(s) running ${ci.covered.join(', ')}${notRequired}`
         : ci.workflows.length === 0
           ? 'no workflow under .github/workflows'
-          : `workflows exist but never run: ${ci.missing.join(', ')}${notRequired}`,
+          : `workflows exist but never run: ${ci.missing.join(', ')}${notRequired}${runnerHint(ci.missing)}`,
     },
     (() => {
       const missing = [

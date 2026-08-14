@@ -4730,3 +4730,36 @@ describe('hasStructuredLogging', () => {
     assert.equal(hasStructuredLogging(source), true);
   });
 });
+
+describe('the ci gate explains why a runner must be named', () => {
+  it('adds the hint when unit is missing, because "never run: unit" reads as false', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-ci-'));
+    mkdirSync(path.join(dir, '.github', 'workflows'), { recursive: true });
+    // A workflow that plainly runs the tests, by the ecosystem's default idiom. The gate is
+    // right to refuse it and was wrong to refuse it silently.
+    writeFileSync(
+      path.join(dir, '.github', 'workflows', 'ci.yml'),
+      'jobs:\n  t:\n    steps:\n      - run: npm run build\n      - run: npm run lint\n      - run: npx tsc\n      - run: npm test\n',
+    );
+    const ci = staticGates(dir).find((gate) => gate.name === 'ci');
+    rmSync(dir, { recursive: true, force: true });
+    assert.equal(ci?.ok, false);
+    assert.equal(ci?.detail.includes('Name the runner explicitly'), true, ci?.detail);
+    assert.equal(ci?.detail.includes('`npm test` does not count'), true, ci?.detail);
+  });
+
+  it('says nothing extra when the missing steps are not runner-matched', () => {
+    // The deny path for the hint itself. `build` and `lint` match `npm run <op>`, so a builder
+    // told they are missing needs no explanation about runners.
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-ci-'));
+    mkdirSync(path.join(dir, '.github', 'workflows'), { recursive: true });
+    writeFileSync(
+      path.join(dir, '.github', 'workflows', 'ci.yml'),
+      'jobs:\n  t:\n    steps:\n      - run: npx vitest run\n      - run: npx playwright test\n      - run: npx tsc\n',
+    );
+    const ci = staticGates(dir).find((gate) => gate.name === 'ci');
+    rmSync(dir, { recursive: true, force: true });
+    assert.equal(ci?.ok, false);
+    assert.equal(ci?.detail.includes('Name the runner explicitly'), false, ci?.detail);
+  });
+});
