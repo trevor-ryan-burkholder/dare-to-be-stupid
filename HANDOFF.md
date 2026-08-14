@@ -59,6 +59,31 @@ Phase 6 sets it, so a fully green iteration happened and the old code would have
 
 **Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
 
+### Case J concluded: every control verified live, and no builder will press the button
+
+**J5 final: `BUDGET: wall-clock deadline reached: 4415s of 3600s`** — the deadline's first live
+firing, overshooting by exactly one iteration as documented (the clock checks between iterations
+and iteration 3 ran long). 27M tokens, \$24.05, ratchet holding 64 ids through the cutoff, lock
+removed, worktree clean, the `BUDGET` lead-in and stamp both printed.
+
+**The verdict on nesting, after five attempts across three runs: every piece of machinery is
+verified and the event itself never happens.** The banner prints verbatim; the depth cap and box
+permission hold at both enforcement points; the wall clock arms, announces, and fires; denials
+would be visible (0.131.0) and carried into the next brief (0.138.0); same-tree nesting is refused
+by the run lock regardless of the box. What never occurred is the thing itself: **no builder, in
+any iteration of any attempt, ever ran the nested driver** — not when the PRD asked politely, not
+when it carried the exact command with an absolute path, not when two consecutive panels failed
+`PRD-1.2` by name with forensic detail. The builders built everything around the requirement and
+would not touch it.
+
+**That is a finding about builders, not about the box.** A requirement to launch an autonomous
+loop inside an autonomous loop is one the builder model consistently declines by omission — it
+never argues, never records an assumption about it, simply does everything else first and runs out
+of iterations or clock. Five attempts is enough to call the pattern. `--give-them-the-box` is
+fully armed, fully bounded, honestly documented, and waiting for an operator who wants to press
+the button by hand: `MEESEEKS_GIVE_THEM_THE_BOX=1 MEESEEKS_RUNNING=1 node scripts/driver.mjs …`
+from inside a run directory would do it directly, with no builder in the way.
+
 ### Item 18 answered, and two mechanisms fired live on the way
 
 **`STALLED` at 5 iterations, 19.3M tokens, \$21.41, ratchet 83.** The item-18 question — does the
