@@ -30,6 +30,9 @@ import {
   DriverError,
   PHASE_PERMISSIONS,
   REENTRANCY_ENV,
+  BOX_ENV,
+  DEPTH_ENV,
+  MAX_BOX_DEPTH,
   airtimeRemaining,
   childEnvironment,
   permissionsFor,
@@ -2905,6 +2908,7 @@ describe('parseDriverArgs', () => {
       yes: false,
       confirmPrd: false,
       improve: false,
+      giveThemTheBox: false,
     });
   });
 
@@ -2935,6 +2939,7 @@ describe('parseDriverArgs', () => {
       yes: true,
       confirmPrd: true,
       improve: false,
+      giveThemTheBox: false,
     });
   });
 });
@@ -4573,5 +4578,63 @@ describe('the per-run archive is ignored, or archiving destroys what it preserve
     const updated = meeseeksIgnoreUpdate(older);
     assert.notEqual(updated, null, 'an older stanza was left incomplete');
     assert.equal(String(updated).includes(`.meeseeks/${RUN_ARCHIVE_DIR}/`), true);
+  });
+});
+
+describe('--give-them-the-box: the refusal, and the one way past it', () => {
+  it('refuses a nested run when the flag is absent, which is every ordinary run', () => {
+    // The deny path, and the one that matters most. Nothing about this changed.
+    assert.throws(() => assertNotNested({ [REENTRANCY_ENV]: '1' }), DriverError);
+  });
+
+  it('still allows a top-level run, boxed or not', () => {
+    assert.doesNotThrow(() => assertNotNested({}));
+    assert.doesNotThrow(() => assertNotNested({ [BOX_ENV]: '1' }));
+  });
+
+  it('permits nesting only when the box is armed', () => {
+    assert.doesNotThrow(() => assertNotNested({ [REENTRANCY_ENV]: '1', [BOX_ENV]: '1' }));
+  });
+
+  it('stops at MAX_BOX_DEPTH, because a joke that keeps spawning is not one to the machine', () => {
+    const boxed = { [REENTRANCY_ENV]: '1', [BOX_ENV]: '1' };
+    assert.doesNotThrow(() => assertNotNested({ ...boxed, [DEPTH_ENV]: String(MAX_BOX_DEPTH - 1) }));
+    assert.throws(() => assertNotNested({ ...boxed, [DEPTH_ENV]: String(MAX_BOX_DEPTH) }), DriverError);
+    assert.throws(() => assertNotNested({ ...boxed, [DEPTH_ENV]: '99' }), DriverError);
+  });
+
+  it('treats an unreadable depth as the top, rather than as permission', () => {
+    // Fail-closed on a malformed marker: a garbled depth must not read as "plenty of room".
+    const boxed = { [REENTRANCY_ENV]: '1', [BOX_ENV]: '1' };
+    assert.doesNotThrow(() => assertNotNested({ ...boxed, [DEPTH_ENV]: 'banana' }));
+    assert.throws(() => assertNotNested({ [REENTRANCY_ENV]: '1', [DEPTH_ENV]: 'banana' }), DriverError);
+  });
+
+  it('says which limit stopped it, so the message is not the ordinary refusal', () => {
+    assert.throws(
+      () => assertNotNested({ [REENTRANCY_ENV]: '1', [BOX_ENV]: '1', [DEPTH_ENV]: '2' }),
+      (error) => error instanceof DriverError && error.message.includes('Even the box has a bottom'),
+    );
+  });
+
+  it('adds nothing to a child environment when the box is not armed', () => {
+    // The whole cost of this feature to an ordinary run must be zero, including the shape of
+    // the environment its children receive.
+    const child = childEnvironment({ PATH: '/usr/bin' });
+    assert.deepEqual(child, { PATH: '/usr/bin', [REENTRANCY_ENV]: '1' });
+  });
+
+  it('counts depth into the child environment when it is armed', () => {
+    // A child's environment is exactly what a nested driver inherits, so the count belongs here.
+    assert.equal(childEnvironment({ [BOX_ENV]: '1' })[DEPTH_ENV], '1');
+    assert.equal(childEnvironment({ [BOX_ENV]: '1', [DEPTH_ENV]: '1' })[DEPTH_ENV], '2');
+    assert.equal(childEnvironment({ [BOX_ENV]: '1', [DEPTH_ENV]: 'banana' })[DEPTH_ENV], '1');
+  });
+
+  it('is a flag and never a config key, so nothing can inherit it quietly', () => {
+    assert.equal(parseDriverArgs(['PRD.md', '--give-them-the-box']).giveThemTheBox, true);
+    assert.equal(parseDriverArgs(['PRD.md']).giveThemTheBox, false);
+    // The config half is covered where config strictness lives: `validateConfig` rejects any
+    // unknown key, so there is no spelling of this that a config file could smuggle in.
   });
 });

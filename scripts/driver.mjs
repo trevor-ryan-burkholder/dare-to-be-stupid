@@ -117,6 +117,29 @@ import { CONDITIONAL_GATE_OPERATIONS, gatesFor, resolveToolchain } from './toolc
 /** Environment marker used to refuse nested runs (DESIGN.md §13.6). */
 export const REENTRANCY_ENV = 'MEESEEKS_RUNNING';
 
+/**
+ * How deep the current run is nested. Absent or `0` at the top.
+ *
+ * Separate from {@link REENTRANCY_ENV} on purpose: that marker answers *"is a run in progress"*
+ * and every child carries it. This answers *"how many boxes deep are we"*, which only matters
+ * when the operator has explicitly asked for the thing that should not exist.
+ */
+export const DEPTH_ENV = 'MEESEEKS_RUN_DEPTH';
+
+/** Set only by `--give-them-the-box`. Its presence is the whole of the permission. */
+export const BOX_ENV = 'MEESEEKS_GIVE_THEM_THE_BOX';
+
+/**
+ * How many boxes deep nesting is allowed to go when it is allowed at all.
+ *
+ * **Two, and the number is doing real work.** Depth 1 is one nested run, which is the joke.
+ * Depth 2 is a nested run that itself nests, which is the joke landing. Past that it stops being
+ * comedy and becomes a fork bomb on somebody's laptop: every level multiplies the level above,
+ * and each builder is a `claude -p` process holding a token budget. The mountain of Meeseeks is
+ * funny because it is animated and nobody's machine is on fire.
+ */
+export const MAX_BOX_DEPTH = 2;
+
 /** Thrown when a run must not start or must not continue. */
 export class DriverError extends Error {
   /** @param {string} message */
@@ -139,12 +162,28 @@ export class DriverError extends Error {
  * @throws {DriverError}
  */
 export function assertNotNested(env) {
-  if (env[REENTRANCY_ENV] !== undefined && env[REENTRANCY_ENV] !== '') {
+  if (env[REENTRANCY_ENV] === undefined || env[REENTRANCY_ENV] === '') return;
+
+  // `--give-them-the-box`: the operator has asked for the thing this architecture refuses, by
+  // name, on a command line, in a session they are watching. Nothing else is relaxed — the guard
+  // still owns `.meeseeks/`, review is still cold, nothing still defaults to pass — and it is
+  // still refused past `MAX_BOX_DEPTH`, because a joke that keeps spawning stops being one to
+  // the machine running it.
+  const permitted = env[BOX_ENV] !== undefined && env[BOX_ENV] !== '';
+  const parsed = Number.parseInt(env[DEPTH_ENV] ?? '0', 10);
+  const depth = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  if (permitted && depth < MAX_BOX_DEPTH) return;
+
+  if (permitted) {
     throw new DriverError(
-      'a meeseeks run is already in progress in this process tree. Nested runs are refused at the driver and at the ' +
-        'guard hook (DESIGN.md §13.6): they re-enter and exhaust memory long before they finish anything.',
+      `--give-them-the-box permits nesting to depth ${MAX_BOX_DEPTH}, and this would be ${depth + 1}. ` +
+        'Even the box has a bottom.',
     );
   }
+  throw new DriverError(
+    'a meeseeks run is already in progress in this process tree. Nested runs are refused at the driver and at the ' +
+      'guard hook (DESIGN.md §13.6): they re-enter and exhaust memory long before they finish anything.',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1081,7 +1120,17 @@ export function isColdPhase(phase) {
  * @returns {Record<string, string | undefined>}
  */
 export function childEnvironment(env) {
-  return { ...env, [REENTRANCY_ENV]: '1' };
+  /** @type {Record<string, string | undefined>} */
+  const marked = { ...env, [REENTRANCY_ENV]: '1' };
+  // The depth a *nested* driver would see, and it is counted here because a child's environment
+  // is exactly what such a driver would inherit. Only when the box is armed: with the flag
+  // absent the key never appears, so an ordinary run's children carry nothing new at all.
+  if (marked[BOX_ENV] !== undefined && marked[BOX_ENV] !== '') {
+    const parsed = Number.parseInt(marked[DEPTH_ENV] ?? '0', 10);
+    const depth = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    marked[DEPTH_ENV] = String(depth + 1);
+  }
+  return marked;
 }
 
 /**
@@ -3335,7 +3384,7 @@ export function unprovenIds(options) {
 
 /**
  * @param {string[]} argv
- * @returns {{ input: string, yes: boolean, confirmPrd: boolean, improve: boolean }}
+ * @returns {{ input: string, yes: boolean, confirmPrd: boolean, improve: boolean, giveThemTheBox: boolean }}
  */
 export function parseDriverArgs(argv) {
   const flags = new Set(argv.filter((argument) => argument.startsWith('--')));
@@ -3349,6 +3398,15 @@ export function parseDriverArgs(argv) {
     // repository already exists, find what is wrong with it". In improve mode the positional
     // argument is not a PRD path and not an idea: it is an optional area to focus on.
     improve: flags.has('--improve'),
+    // **Deliberately unsupported, and deliberately real.** It permits the one thing every other
+    // part of this system refuses: a run inside a run. It exists because the canon's whole moral
+    // is that a Meeseeks who cannot finish summons another — and a joke that only ever prints a
+    // refusal is a joke nobody gets to see happen.
+    //
+    // **A flag and never config.** A flag is typed, once, by somebody watching the terminal.
+    // Config is read quietly by a machine at three in the morning, and this must never be
+    // something a run inherits without a human having said it out loud.
+    giveThemTheBox: flags.has('--give-them-the-box'),
   };
 }
 
@@ -4019,7 +4077,13 @@ export function childEndLine(phase, result, seconds) {
  */
 export function main(argv, io = {}) {
   const cwd = io.cwd ?? process.cwd();
-  const env = io.env ?? process.env;
+  // Read straight from argv rather than from `parseDriverArgs`, because `assertNotNested` runs
+  // before the arguments are parsed and this is the one flag that has to be visible to it.
+  // Armed into the environment so the guard hook and every descendant see the same fact from
+  // the same place — a permission that lived only in this function would be invisible to the
+  // hook that also enforces the rule.
+  const boxed = argv.includes('--give-them-the-box');
+  const env = boxed ? { ...(io.env ?? process.env), [BOX_ENV]: '1' } : (io.env ?? process.env);
   const write = io.log ?? ((/** @type {string} */ line) => process.stdout.write(`${line}\n`));
   const spawn = io.spawn ?? spawnClaude;
   const mode = styleMode(env);
@@ -4076,6 +4140,14 @@ export function main(argv, io = {}) {
     write(verbatim(childEndLine(options.phase, result, Math.round((Date.now() - startedAt) / 1000))));
     return result;
   };
+
+  if (boxed) {
+    // Verbatim and unmissable. Any artifact produced under this flag was produced by a mode
+    // nothing else in this system supports, and a reader who does not know that will draw
+    // conclusions from it that are not available.
+    write(verbatim('--give-them-the-box: nested runs are PERMITTED to depth 2. This is unsupported.'));
+    write(verbatim('Everything else still holds: .meeseeks/ is guarded, review is cold, nothing defaults to pass.'));
+  }
 
   try {
     assertNotNested(env);

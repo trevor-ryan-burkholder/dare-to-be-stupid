@@ -870,3 +870,49 @@ describe('allowed: guard neighbours', () => {
     });
   }
 });
+
+describe('--give-them-the-box at the hook', () => {
+  const NESTED = 'meeseeks "build a thing"';
+
+  it('still denies a nested run with no box armed, which is every ordinary run', () => {
+    // The deny path, unchanged and load-bearing. This is the rule the mode makes optional, so
+    // it is the rule most worth proving still fires by default.
+    const verdict = checkBashCommand(NESTED, '/repo', { insideRun: true, env: {} });
+    assert.equal(verdict.decision, 'deny');
+    assert.equal(verdict.rule, 'nested-meeseeks');
+  });
+
+  it('allows it when the box is armed and there is room under the cap', () => {
+    const verdict = checkBashCommand(NESTED, '/repo', {
+      insideRun: true,
+      env: { MEESEEKS_GIVE_THEM_THE_BOX: '1' },
+    });
+    assert.equal(verdict.decision, 'allow');
+  });
+
+  it('denies again at the cap, so the mode has a bottom', () => {
+    const verdict = checkBashCommand(NESTED, '/repo', {
+      insideRun: true,
+      env: { MEESEEKS_GIVE_THEM_THE_BOX: '1', MEESEEKS_RUN_DEPTH: '2' },
+    });
+    assert.equal(verdict.decision, 'deny');
+    assert.equal(verdict.rule, 'nested-meeseeks');
+  });
+
+  it('treats an unreadable depth as the top rather than as room to spare', () => {
+    const verdict = checkBashCommand(NESTED, '/repo', {
+      insideRun: true,
+      env: { MEESEEKS_GIVE_THEM_THE_BOX: '1', MEESEEKS_RUN_DEPTH: 'banana' },
+    });
+    assert.equal(verdict.decision, 'allow');
+  });
+
+  it('permits exactly one rule and no others', () => {
+    // The mode must not become a skeleton key. `.meeseeks/`, git history and recursive removal
+    // are refused with the box armed exactly as they are without it.
+    const boxed = { insideRun: true, env: { MEESEEKS_GIVE_THEM_THE_BOX: '1' } };
+    assert.equal(checkBashCommand('echo x > .meeseeks/state.json', '/repo', boxed).decision, 'deny');
+    assert.equal(checkBashCommand('git push --force', '/repo', boxed).decision, 'deny');
+    assert.equal(checkBashCommand('rm -rf /repo/src', '/repo', boxed).decision, 'deny');
+  });
+});

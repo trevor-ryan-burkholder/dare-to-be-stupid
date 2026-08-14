@@ -368,6 +368,18 @@ export function isProtectedGuardPath(candidate, cwd) {
 const RUN_MARKER_ENV = 'MEESEEKS_RUNNING';
 
 /**
+ * The `--give-them-the-box` markers, restated here rather than imported.
+ *
+ * This hook has no imports from `scripts/` on purpose — it must load in a fresh process with
+ * nothing resolved but `node:` builtins — so the names are duplicated. They are duplicated
+ * *knowingly*: if `driver.mjs` ever renames them, `test/guard.test.mjs` fails, which is the
+ * cheapest available alarm for a constant that has to agree across a process boundary.
+ */
+const BOX_MARKER_ENV = 'MEESEEKS_GIVE_THEM_THE_BOX';
+const DEPTH_MARKER_ENV = 'MEESEEKS_RUN_DEPTH';
+const MAX_BOX_DEPTH = 2;
+
+/**
  * Is this tool call happening inside a run?
  *
  * The protected files are protected *from a run*, not from the person who owns the
@@ -578,7 +590,47 @@ const SHELL_INVOKERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
  * @param {Token[][]} segments
  * @returns {Decision}
  */
-function checkNestedRun(segments) {
+/**
+ * Has the operator armed `--give-them-the-box`, and is there room left under the cap?
+ *
+ * **This is the only rule on this page that a human can switch off, and it is switched off by a
+ * flag they typed rather than by anything a builder can reach.** The driver arms `BOX_MARKER_ENV`
+ * into the environment it hands every child, so this hook sees the same fact from the same place
+ * the driver's own `assertNotNested` sees it. A permission that lived in only one of the two
+ * enforcement points would be the worst of both: a rule that looks absolute and is not.
+ *
+ * Everything else on this page is untouched by it. `.meeseeks/` stays protected, git history
+ * stays protected, recursive removal stays refused. **The mode permits one thing.**
+ *
+ * Fail-closed on a malformed depth: an unreadable marker counts as the top of the stack rather
+ * than as room to spare.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @returns {boolean}
+ */
+function boxPermitted(env) {
+  const armed = env[BOX_MARKER_ENV];
+  if (armed === undefined || armed === '') return false;
+  const parsed = Number.parseInt(env[DEPTH_MARKER_ENV] ?? '0', 10);
+  const depth = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  return depth < MAX_BOX_DEPTH;
+}
+
+/**
+ * @param {Token[][]} segments
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {Decision}
+ */
+function checkNestedRun(segments, env = process.env) {
+  if (boxPermitted(env)) return ALLOW;
+  return checkNestedRunStrict(segments);
+}
+
+/**
+ * @param {Token[][]} segments
+ * @returns {Decision}
+ */
+function checkNestedRunStrict(segments) {
   for (const raw of segments) {
     const segment = stripPrefixes(raw);
     if (segment.length === 0) continue;
@@ -665,24 +717,35 @@ function checkProtectedGuard(command, segments, cwd) {
 /**
  * Run every Bash rule over one command string, recursing into command substitutions.
  *
- * Only `protected-state` is conditional on being inside a run. The other three rules —
- * history destruction, recursive removal, nested runs — are refused to everyone, because
- * none of them becomes reasonable merely because a human asked for it in this session.
+ * `protected-state` is conditional on being inside a run. History destruction and recursive
+ * removal are refused to everyone, because neither becomes reasonable merely because a human
+ * asked for it in this session.
+ *
+ * **`nested-meeseeks` used to be in that second group and no longer is.** It is refused to
+ * everyone *by default*, and permitted — to a depth of two — when the operator has passed
+ * `--give-them-the-box`, which the driver arms into the environment every child inherits. That
+ * mode is unsupported, loud, and exists because the canon's whole moral is a Meeseeks who cannot
+ * finish summoning another; a joke that only ever prints a refusal is one nobody sees happen.
+ * It relaxes **that rule and nothing else**.
  *
  * @param {string} command
  * @param {string} cwd
- * @param {{ insideRun?: boolean }} [options] defaults to inside a run, which is the deny side
+ * @param {{ insideRun?: boolean, env?: Record<string, string | undefined> }} [options] defaults
+ *   to inside a run and to the real environment, both of which are the deny side
  * @returns {Decision}
  */
 export function checkBashCommand(command, cwd, options = {}) {
   // Defaults to "inside a run", which is the deny-side default. A caller that forgets to
   // say where it is gets the stricter answer, not the looser one.
   const running = options.insideRun ?? true;
+  // Defaults to the real environment, so production behaviour is unchanged and only a test has
+  // to say which environment it means.
+  const env = options.env ?? process.env;
   const { segments, substitutions } = tokenizeCommand(command);
   const checks = [
     running ? checkProtectedState(command, segments) : ALLOW,
     running ? checkProtectedGuard(command, segments, cwd) : ALLOW,
-    checkNestedRun(segments),
+    checkNestedRun(segments, env),
     checkGitHistory(segments),
     checkRecursiveRemove(segments, cwd),
   ];
@@ -690,7 +753,9 @@ export function checkBashCommand(command, cwd, options = {}) {
     if (result.decision === 'deny') return result;
   }
   for (const inner of [...substitutions, ...wrappedCommands(segments)]) {
-    const result = checkBashCommand(inner, cwd, { insideRun: running });
+    // The environment travels into nested commands too. A permission that evaporated one level
+    // down would deny a command the top level had just allowed, for no reason a reader could see.
+    const result = checkBashCommand(inner, cwd, { insideRun: running, env });
     if (result.decision === 'deny') return result;
   }
   return ALLOW;

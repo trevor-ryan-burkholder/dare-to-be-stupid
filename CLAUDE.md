@@ -71,7 +71,15 @@ These are the load-bearing properties. A change that breaks one is wrong even if
 - **Style never touches logic.** The Meeseeks layer renders at output only. It may not
   inform gate results, ratchet state, or reviewer JSON. `MEESEEKS_STYLE=plain` must fully
   bypass it.
-- **No nesting.** `meeseeks` never spawns `meeseeks`. Enforced at the driver *and* the guard hook.
+- **No nesting, unless the operator typed the words.** `meeseeks` never spawns `meeseeks`,
+  enforced at the driver *and* the guard hook — **except** under `--give-them-the-box`, which
+  permits it to a depth of **two** and is unsupported, loud, and deliberately absurd. The flag
+  arms `MEESEEKS_GIVE_THEM_THE_BOX` into the environment, which is how both enforcement points
+  see the same fact from the same place; a permission living in only one of them would be worse
+  than no permission at all. **It relaxes that one rule.** `.meeseeks/` stays guarded, review
+  stays cold, nothing still defaults to pass, and the depth cap is fail-closed on a malformed
+  marker. It is a **flag and never a config key**, because a flag is typed once by somebody
+  watching and config is read quietly by a machine at three in the morning.
 - **Monotonic means three properties now, not one.** Test ids (the ratchet), security elements
   and cold-passed requirements (`scripts/pins.mjs`, `DESIGN.md` §4.3). Each has a different
   escape from a false pin, and **the escape is the load-bearing half**: a security pin escalates

@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.114.0`. Measured at 0.114.0: `npm test` **1775 pass**,
+**State:** `main` at `0.115.0`. Measured at 0.115.0: `npm test` **1789 pass**,
 `npm run test:integration` **34 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -23,6 +23,46 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.115.0 — `--give-them-the-box`: nesting, permitted, capped, and loud
+
+**Deliberately unsupported, and deliberately real.** The operator's ask was explicit: a flag that
+*actually* nests, knowing it breaks, because the canon's whole moral is a Meeseeks who cannot
+finish summoning another — and a joke that only ever prints a refusal is one nobody sees happen.
+That is a legitimate thing to want in pre-production, throwaway-repo software, and the engineering
+answer is to build it so it cannot be mistaken for a supported mode or fired by accident.
+
+**Both enforcement points, from one fact.** The refusal lives at the driver (`assertNotNested`)
+*and* at the guard hook, and a permission that relaxed only one would be the worst of both worlds:
+a rule that reads absolute and is not. So the flag arms `MEESEEKS_GIVE_THEM_THE_BOX` into the
+environment every child inherits, and both sites read it from there. The hook restates the
+constant names rather than importing them — it must load with nothing resolved but `node:`
+builtins — and `test/guard.test.mjs` is the alarm if the two ever disagree.
+
+**Capped at depth two, and the number is doing work.** Depth 1 is the joke; depth 2 is the joke
+landing; past that it is a fork bomb on somebody's laptop, because each level multiplies the level
+above and every builder is a `claude -p` holding a budget. The mountain of Meeseeks is funny
+because it is animated and nobody's machine is on fire.
+
+**It relaxes exactly one rule, and a test proves that.** With the box armed, `.meeseeks/` writes,
+`git push --force` and recursive removal are refused **exactly as without it**. The mode is not a
+skeleton key.
+
+**Fail-closed on a malformed depth**, at both sites: an unreadable marker counts as the top of the
+stack, never as room to spare. **A flag and never a config key** — a flag is typed once by someone
+watching a terminal; config is read quietly by a machine at three in the morning, and this must
+never be something a run inherits without a human having said it out loud.
+
+**Two documents were corrected rather than left standing.** `CLAUDE.md`'s "No nesting" invariant
+and the guard's own header both stated the refusal as absolute — the guard's header was the
+passage quoted at the operator earlier that same evening as proof this could not be built. Both
+now say which of the two they are.
+
+**Not verified:** that a nested run *works*, only that it is permitted. Nothing has yet driven a
+builder into invoking `/meeseeks` under the flag, so what actually happens to two drivers sharing
+one git repository is exactly as unknown as the analysis said it would be — and that analysis
+still stands. **This ships the permission and the blast-radius controls, not a claim that the
+result is sane.** It will not be. That is the point.
 
 ### 0.114.0 — `main` takes a spawner, and the gap named three times in one evening is closed
 
