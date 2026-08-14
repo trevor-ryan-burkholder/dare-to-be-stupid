@@ -381,6 +381,17 @@ export function sourceSiblings(testPath) {
     const candidate = testPath.replace(pattern, replace);
     if (candidate !== testPath) found.push(candidate);
   }
+  // **The cross-tree convention, measured missing on 14 August.** The first live scoped restore
+  // regressed `test/parse.test.ts`, whose colocated sibling `test/parse.ts` does not exist — the
+  // source lives at `src/parse.ts`, because that repository (like most) splits `test/` from
+  // `src/`. The guess restored only the test file, verification correctly said the ids did not
+  // come back, and the full reset ran. The fallback made the miss cheap; this makes the guess
+  // hit. Wrong extra candidates stay cheap for the same two reasons they always were: the caller
+  // intersects with the files the iteration actually changed, and then verifies by re-running.
+  for (const candidate of [...found]) {
+    const crossTree = candidate.replace(/^tests?\//, 'src/');
+    if (crossTree !== candidate) found.push(crossTree);
+  }
   return found;
 }
 

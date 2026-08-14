@@ -540,8 +540,8 @@ describe('scoping a restore to what a regression implicates', () => {
     ['src/csv.test.ts', ['src/csv.ts']],
     ['src/app.spec.tsx', ['src/app.tsx']],
     ['pkg/util.test.mjs', ['pkg/util.mjs']],
-    ['tests/test_parser.py', ['tests/parser.py']],
-    ['tests/parser_test.py', ['tests/parser.py']],
+    ['tests/test_parser.py', ['tests/parser.py', 'src/parser.py']],
+    ['tests/parser_test.py', ['tests/parser.py', 'src/parser.py']],
     ['internal/csv_test.go', ['internal/csv.go']],
     ['src/PathsTests.cs', ['src/Paths.cs']],
     ['src/PathsTest.cs', ['src/Paths.cs']],
@@ -551,6 +551,19 @@ describe('scoping a restore to what a regression implicates', () => {
       assert.deepEqual(sourceSiblings(testPath), expected);
     });
   }
+
+  it('maps a test in a parallel test tree to its src counterpart', () => {
+    // Measured by the first live scoped restore: test/parse.test.ts regressed, its colocated
+    // sibling test/parse.ts does not exist, and the source lives at src/parse.ts. The guess
+    // restored only the test, verification said the ids did not come back, and the full reset
+    // ran. Cross-tree is the convention most repositories actually use.
+    assert.deepEqual(sourceSiblings('test/parse.test.ts'), ['test/parse.ts', 'src/parse.ts']);
+    assert.deepEqual(sourceSiblings('tests/summarise.test.ts'), ['tests/summarise.ts', 'src/summarise.ts']);
+  });
+
+  it('does not cross trees for an already-colocated test', () => {
+    assert.deepEqual(sourceSiblings('src/csv.test.ts'), ['src/csv.ts']);
+  });
 
   it('claims nothing for a file that matches no convention', () => {
     // The deny path. A guess with no convention behind it is the shape that would restore an

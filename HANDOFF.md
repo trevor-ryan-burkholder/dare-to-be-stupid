@@ -1,6 +1,6 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.138.0`. Measured at 0.138.0: `npm test` **1887 pass**,
+**State:** `main` at `0.139.0`. Measured at 0.139.0: `npm test` **1889 pass**,
 `npm run test:integration` **36 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -58,6 +58,23 @@ Phase 6 sets it, so a fully green iteration happened and the old code would have
 **Early banking remains unconfirmed in the wild.**
 
 **Next time:** 40M+, and capture the child's stderr so a guard denial is visible.
+
+### 0.139.0 — the scoped restore fired live, fell back correctly, and taught the guess a convention
+
+**First live firing of 0.112.0's mechanism, in the item-18 improve run.** Two ratcheted tests
+regressed; the driver attempted the narrow restore, re-ran the suite, found the ids had **not**
+come back, and fell back to the full reset — logging exactly that. **The fail-closed half worked
+on its first real outing**: a wrong guess cost one deterministic gate pass and nothing else.
+
+**And the miss had a reason worth fixing.** The regressed ids lived in `test/parse.test.ts` and
+`test/summarise.test.ts`, whose colocated siblings (`test/parse.ts`) do not exist — csvstat2, like
+most repositories, splits `test/` from `src/`, and the real causes lived at `src/parse.ts` and
+`src/summarise.ts`. The guess restored only the test files, so verification rightly refused it.
+
+`sourceSiblings` now also maps `test(s)/X.test.ext → src/X.ext`. Extra candidates stay cheap for
+the same two reasons the design always had: the caller intersects with the files the iteration
+actually changed, and then **verifies by re-running**. The convention was added because a live run
+measured it missing, which is the only way this list should ever grow.
 
 ### 0.138.0 — a denied builder finds out, one iteration late
 
