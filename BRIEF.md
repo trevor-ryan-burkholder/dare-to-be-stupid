@@ -824,7 +824,17 @@ One defect found by its own tests: `options.limit ?? DEFAULT` accepted `null` as
 say" and silently applied the default. Now `=== undefined`, so `null` reaches validation and
 throws.
 
-## C5. Differentiated race candidates — **OPEN**
+## C5. Differentiated race candidates — **DONE (0.93.0)**, and exercised live 14 Aug
+
+**Landed at 0.93.0** with a precondition disagreement recorded in `PLAN.md` item 13, and
+**exercised for the first time in case I on 14 August**: two candidates, distinct stall
+hypotheses, their own worktrees, their own archived briefs (`iter-005-candidate-01.md`, `-02.md`),
+gated independently. Both were discarded — `selectWinner` requires every gate to pass while the
+race only arms on stalls, so a candidate must repair everything at once. **The differentiation
+works; the win condition is the open question**, and it is a design decision rather than a defect.
+
+The paragraph below is the original statement of the problem, kept because it explains what the
+field was for.
 
 From `BORROWED.md` R9. The race already compiles a brief per candidate, and that brief already
 tells each one *"Another candidate is trying a different one"* (`brief.mjs:182–184`). Nothing
