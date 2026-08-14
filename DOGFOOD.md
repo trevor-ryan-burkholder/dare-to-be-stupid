@@ -596,6 +596,25 @@ Collect, in this order:
 **Do this on a throwaway repository and check `git worktree list` afterwards even if the run
 looks clean.**
 
+**Two findings from an aborted first attempt, both worth more than the attempt.**
+
+**The race armed, and `SIGTERM` leaked both of its worktrees.** A first launch was stopped
+part-way; afterwards `git worktree list` showed `/tmp/meeseeks-race-<pid>-5/meeseeks-race-01` and
+`-02` still registered, detached, with the driver long dead. **The driver does not remove race
+worktrees when it is signalled** — only, presumably, on its own orderly finish. This page already
+warned that one abandoned worktree breaks *every later race*, because `git worktree add` refuses a
+directory it already knows; that warning is now a measurement. Clean up with
+`git worktree remove --force <path>` for each, then `git worktree prune`. **Check this after any
+interrupted run, not only after a race you meant to run.**
+
+**A killed run leaves its lock behind too.** `.meeseeks/lock.json` held the dead pid, and
+preflight's `no-concurrent-run` reads it. Delete it before relaunching.
+
+**And the staging predated the rename.** The target had been prepared with `.dare/config.json`,
+which the driver no longer reads — it would have launched on defaults with **no race at all**, and
+the run would have looked fine while testing nothing. Any target staged before 0.111.0 needs its
+state directory moved to `.meeseeks/` and its config re-validated.
+
 **Staged and validated 13 August, launch only.** `~/meeseeks-dogfood/caseI`: fresh repository on
 `main`, the **real** rejection PRD copied from `~/meeseeks-dogfood/rejection` — the one carrying
 `PRD-4.1`, sub-millisecond HTTP on a freshly started process, which is impossible by construction
