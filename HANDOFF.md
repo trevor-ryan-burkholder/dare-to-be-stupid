@@ -1,7 +1,7 @@
 # START HERE — handoff, 13 August 2026
 
-**State:** `main` at `0.113.0`. Measured at 0.113.0: `npm test` **1775 pass**,
-`npm run test:integration` **33 pass**, `npm run lint` and `npm run typecheck` clean,
+**State:** `main` at `0.114.0`. Measured at 0.114.0: `npm test` **1775 pass**,
+`npm run test:integration` **34 pass**, `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
 **`npm run test:live` at 0.110.0: 27 of 27 across 11 files, 0 failures.** The suite has now been
@@ -23,6 +23,35 @@ line in the same commit.
 
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
+
+### 0.114.0 — `main` takes a spawner, and the gap named three times in one evening is closed
+
+**One seam, three gaps.** `quality:` gates reaching the roster, the operator overlay reaching it,
+the scoped restore firing — all three were correct code that nothing proved was ever *called*,
+and all three failed for the same reason: the composition sites live inside `main`, and every
+tier 1 test injects the effects that would exercise them. Three separate apologies with one
+cause.
+
+`main` now accepts `io.spawn`, defaulting to the real `spawnClaude`. **Production behaviour is
+untouched** — it is a default injection — but a test can now drive the *real* loop with canned
+child envelopes: real config, real toolchain detection, real `gateTree`, real git, real
+`.meeseeks/`, and not one paid child.
+
+**`test/integration/operator-gate.integration.test.mjs` asserts the pair that must never
+disagree:** a deliberately failing operator gate **fails the iteration by name**, and **the same
+name reaches the builder's brief.** This project has now shipped that defect in both directions —
+0.99.0 described-and-not-run, 0.107.0 run-and-not-described, caught before release — and a test
+that checked only one side would have missed the one that actually escaped.
+
+**The canned child had to be made phase-aware, and that is a finding rather than a chore.** A
+generic `done` aborts the run at the design phase, which demands a parseable capability
+declaration. Each branch in that stub is a phase's *minimum acceptable answer*, written by hand,
+which makes the stub itself a readable statement of the output contracts.
+
+**Still open, and now genuinely smaller:** the prompt-growth note (0.113.0) has the same shape of
+gap and the same seam is available to close it. It was not done here because this commit already
+carries a rename of `main`'s signature and a new integration file, and one more assertion is not
+worth widening it.
 
 ### 0.113.0 — the builder's prompt now says when it is on course to hit the wall
 

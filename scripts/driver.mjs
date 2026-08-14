@@ -4004,13 +4004,24 @@ export function childEndLine(phase, result, seconds) {
 
 /**
  * @param {string[]} argv
- * @param {{ cwd?: string, env?: Record<string, string | undefined>, log?: (line: string) => void }} [io]
+ * @param {{
+ *   cwd?: string,
+ *   env?: Record<string, string | undefined>,
+ *   log?: (line: string) => void,
+ *   spawn?: typeof spawnClaude,
+ * }} [io] `spawn` exists so a test can drive the **real** loop -- real gates, real git, real
+ *   `gateTree` -- with canned child envelopes instead of paid ones. Three composition sites
+ *   inside this function were unassertable without it (`quality:` and `operator:` gates reaching
+ *   the roster, the scoped restore firing, the prompt-growth note), each carrying the shape of
+ *   the guard defect: correct code that nothing proved was ever called. Defaults to the real
+ *   spawner, so production behaviour is untouched.
  * @returns {number} process exit code
  */
 export function main(argv, io = {}) {
   const cwd = io.cwd ?? process.cwd();
   const env = io.env ?? process.env;
   const write = io.log ?? ((/** @type {string} */ line) => process.stdout.write(`${line}\n`));
+  const spawn = io.spawn ?? spawnClaude;
   const mode = styleMode(env);
 
   /**
@@ -4046,7 +4057,7 @@ export function main(argv, io = {}) {
     write(verbatim(childStartLine(options.phase, options.model, measured.characters, config.childTimeoutMs)));
     const startedAt = Date.now();
     const allowance = childBudget(config, handedOutUsd);
-    const result = spawnClaude({
+    const result = spawn({
       ...options,
       contextLimit: config.contextBudget.maxCharacters,
       // Supplied here rather than at each call site, for the same reason the context budget
