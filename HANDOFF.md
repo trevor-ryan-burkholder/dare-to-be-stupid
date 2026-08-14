@@ -24,6 +24,40 @@ line in the same commit.
 Newest first within this section. `PLAN.md` carries the statuses; this carries what happened,
 **including what was not verified**.
 
+### Case I — final: `BUDGET` at 8 of 8, **40M tokens spent without the ratchet ever advancing once**
+
+**Outcome:** `BUDGET`, *"iteration limit reached: 8 of 8"*, **40,000,137 tokens** (50% of an 80M
+ceiling), **\$20.45** (20% of \$100), **worktrees clean**, one race run. And the number that
+matters: **`passing: 0`, with no `state.json` written at all.** In eight iterations the ratchet
+never recorded a single passing test.
+
+**Every iteration failed on the same static gate.** Eight of eight on `observability` — *"missing:
+structured logging"* — plus `gate-integrity` twice. Nothing else failed: build, lint, types and
+unit are absent from every failure list.
+
+**I checked whether this was 0.99.0's defect again and it is not.** The declared capabilities are
+`cli`, `api`, `persistent-storage`, so `observability` is correctly armed and a health endpoint is
+a legitimate ask of an `api`. The gate was right. **The builder simply never added structured
+logging, eight times, at ~5M tokens a go.**
+
+**Which sharpens the race finding rather than replacing it.** The race armed on a stall caused by
+`observability`, and its candidates were then required to pass **every** gate — including the one
+the whole run had been failing since iteration 1. They were racing to fix a thing neither of them
+addressed. This is the structural tension in its most concrete form: **the race inherits the
+unsatisfiable condition that summoned it.**
+
+**Open question, not a claim:** how `passing: 0` coexists with a `unit` gate that never appears in
+a failure list. Either the suite collected zero tests without failing, or the ratchet was never
+reached on these paths. `state.json` being absent entirely — rather than present and empty — is
+the thread to pull. **Nobody should assume the ratchet is fine on greenfield runs until that is
+understood.**
+
+**The cheerful reading:** an 8-iteration, 40M-token run cost \$20.45 and produced a clean tree, no
+leaked worktrees, a working race, and three findings. **The unhappy reading: it spent all of that
+without once satisfying a single-line requirement**, and no mechanism noticed that eight
+consecutive iterations had failed on the identical gate. The repeated-regression note (0.109.0)
+watches for a repeating *test*; nothing watches for a repeating *gate*.
+
 ### Case I — the race ran end to end for the first time, and the win condition may be unreachable by construction
 
 **Every step of the race worked except the one that has never worked.** Iteration 5 armed it after
