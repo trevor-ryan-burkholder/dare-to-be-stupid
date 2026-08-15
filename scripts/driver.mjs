@@ -49,6 +49,14 @@ import {
 } from './components.mjs';
 import { DEFAULT_OWNERSHIP, loadConfig } from './config.mjs';
 import { checkContextBudget, promptGrowthNote, measurePrompt } from './context-budget.mjs';
+import {
+  GATE_SKIP_FILE,
+  loadGateCache,
+  planGateRun,
+  saveGateCache,
+  updateGateCache,
+  workspaceHash,
+} from './gate-cache.mjs';
 import { applicableGates, gateApplies } from './gate-policy.mjs';
 import { hasMeaningfulHistory, historyContext } from './history.mjs';
 import { blankComments, integrityGate } from './integrity.mjs';
@@ -2527,6 +2535,10 @@ export const MEESEEKS_IGNORED_PATHS = [
   // reading. `?? .meeseeks/run.json` sat in the target's `git status` one `git add -A` from being
   // committed into the repository the run is supposed to be shipping.
   `.meeseeks/${RUN_MANIFEST}`,
+  // The gate-skip cache (R35). Driver-owned per-iteration state read back as a decision — whether
+  // to carry a gate's prior failure — so it belongs with the others: tracked, a hard reset would
+  // restore an older copy and its stale hash could authorise a skip against a tree it never saw.
+  `.meeseeks/${GATE_SKIP_FILE}`,
   // Not `.meeseeks/` state, and here for a reason measured in dogfood run 4. The operator redirects
   // the run's output into the repository — `DOGFOOD.md` said to — so `git add -A` tracked it, and
   // the hard reset in iteration 2 **reverted the log to its state at `lastGoodCommit`**. That
@@ -5463,7 +5475,67 @@ export async function main(argv, io = {}) {
     for (const skip of applicable.skipped) write(verbatim(`gate ${skip.name} does not apply: ${skip.reason}`));
     const browsers = await ensurePlaywrightBrowsers({ cwd: dir, meeseeksDir: treeStateDir, run: shell, capabilities });
     if (browsers.installed) write(verbatim(browsers.detail));
-    const commandResults = await runGates(applicable.gates, { cwd: dir, run: shell, timeoutMs: config.gateTimeoutMs });
+
+    // ---- gate-skip on an unchanged workspace (R35, DESIGN.md §4) --------
+    // A deterministic gate that failed last iteration on a byte-identical source tree will fail
+    // again identically, so re-running it spends tokens and minutes to re-learn a known fact. The
+    // hash is git's own view of the working tree, and it is `null` on any uncertainty — a failed
+    // `git ls-files`, an unreadable file — in which case nothing is skipped and every gate runs.
+    // A skip only ever carries a prior FAILURE, so a skipped iteration is red by construction and
+    // can never be a ship candidate. See `gate-cache.mjs` for the four safety rules.
+    const currentHash = await workspaceHash({ cwd: dir, run: shell });
+    const gateCache = loadGateCache(treeStateDir);
+    const plan = planGateRun({ gates: applicable.gates, cache: gateCache, currentHash });
+    for (const carried of plan.skipped) {
+      // Visible, per §3.8: a gate that vanished from the run reads exactly like one that was never
+      // there. The attempt count and the reason travel with the line so a transcript reader sees
+      // both why it was skipped and that the failure is still counting against the run.
+      write(
+        verbatim(
+          `gate ${carried.name} skipped: workspace byte-identical since its last failure; carrying that ` +
+            `failure forward without re-running (attempt ${carried.attempts})`,
+        ),
+      );
+    }
+    const ran = await runGates(plan.toRun, { cwd: dir, run: shell, timeoutMs: config.gateTimeoutMs });
+    // Persist the cache from the first pass only: failures recorded, passes cleared, carries
+    // incremented. The second pass's gates are not skippable, so they never enter the cache.
+    saveGateCache(treeStateDir, updateGateCache({ cache: gateCache, currentHash, ranResults: ran.results, skipped: plan.skipped }));
+    // The carried failures rejoin the run as failed results, so downstream sees no difference
+    // between a freshly-failed gate and a carried one except the annotation — and the run stays
+    // red on them exactly as it would have.
+    const carriedResults = plan.skipped.map((carried) => ({
+      name: carried.name,
+      ok: false,
+      status: carried.status,
+      detail:
+        `${carried.detail}\n\n(carried unchanged from the previous iteration: the source tree is byte-identical, so ` +
+        `this gate was not re-run. Attempt ${carried.attempts}.)`,
+    }));
+    // Merged back into the original gate order, so the brief and the log read in the order the
+    // architect declared rather than run-then-skipped. A gate is run XOR carried, and gate names
+    // are unique, so no name may appear twice here. If one does — a future un-prefixed operator
+    // gate colliding with a toolchain gate, or a gate both run and carried — a name-keyed
+    // last-wins merge could silently drop a *failure* and turn "still failing" into "passed". That
+    // is the one silent pass this optimisation could open, so it is refused rather than collapsed.
+    /** @type {Map<string, GateResult>} */
+    const resultByName = new Map();
+    for (const result of /** @type {GateResult[]} */ ([...ran.results, ...carriedResults])) {
+      if (resultByName.has(result.name)) {
+        throw new Error(
+          `gate ${result.name} produced two results in one iteration (run and carried, or a duplicate gate ` +
+            'name); refusing to merge, because a name-keyed merge could hide a failing gate.',
+        );
+      }
+      resultByName.set(result.name, result);
+    }
+    /** @type {GateResult[]} */
+    const mergedResults = [];
+    for (const gate of applicable.gates) {
+      const result = resultByName.get(gate.name);
+      if (result !== undefined) mergedResults.push(result);
+    }
+    const commandResults = { ok: mergedResults.every((result) => result.ok), results: mergedResults };
 
     // ---- the conditional second pass (DESIGN.md §4.4) -------------------
     // Only when every gate in the first pass passed. A failure above costs nothing extra,

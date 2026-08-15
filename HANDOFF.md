@@ -1,7 +1,7 @@
 # START HERE — handoff, last swept 14 August 2026
 
-**State:** `main` at `0.148.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.148.0: `npm test` **2219 pass**,
-`npm run test:integration` **46 pass**, `npm run test:live` **31 pass** (0 fail), `npm run lint` and `npm run typecheck` clean,
+**State:** `main` at `0.149.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.149.0: `npm test` **2247 pass**,
+`npm run test:integration` **51 pass**, `npm run test:live` **31 pass** (0 fail), `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
@@ -101,6 +101,27 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.149.0 — gate-skip on an unchanged workspace (PLAN item 43, R35)
+
+`scripts/gate-cache.mjs`: a deterministic gate that failed last iteration on a byte-identical
+first-party source tree is not re-run — its failure is carried forward with an attempt counter,
+saving the token/minute thrash a stuck builder pays re-learning a known failure. The safety
+argument is one sentence: the cache stores **failures only**, so a skip can only ever carry a
+*failure*, keeping the run red — a wrongly-skipped gate can never turn a run falsely green. Every
+uncertainty (null hash, git error, no prior failure, unreadable file) re-runs; the hash is content
+(not mtime/status); the cache is in `MEESEEKS_IGNORED_PATHS` so a hard reset cannot restore a stale
+one; a skipped iteration is red so it cannot reach the ship path.
+
+**This one was built by a workflow that crashed on a harness formatting error before its review
+phase ran** — so it landed with NO independent review, which for a *gate-skip* (a silent-pass risk)
+is unacceptable. A standalone hostile reviewer was run before landing: verdict, no HIGH findings,
+no silent-pass path (2247 tier 1, 51 tier 2). Three LOW findings fixed on the way in: the
+name-keyed result merge is now fail-closed (a duplicate gate name throws rather than silently
+dropping a failure — the one latent silent-pass, unreachable today but closed anyway); the
+`node_modules`-outside-the-hash gap is documented as a liveness-not-safety cost; and an unnecessary
+`.trim()` on `ls-files -z` paths was dropped. Process note: a workflow crash can leave unreviewed
+code in the tree — never land it without running the review the crash skipped.
 
 ### 0.148.0 — corrupt-state quarantine (PLAN item 38, R26), and a quarantine that almost added a fail-open
 

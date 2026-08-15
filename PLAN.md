@@ -818,7 +818,7 @@ Read impeccable's machine-parseable finding stream (advisory/primary partition, 
 fixtures. Surface: the design-slop gate in `scripts/gate-policy.mjs`/`scripts/toolchains`.
 **Campaign C** — pairs with the web-ui smoke's design-slop exercise.
 
-### 43. Gate-skip on an unchanged workspace (R35) — OPEN
+### 43. Gate-skip on an unchanged workspace (R35) — **DONE (0.149.0)**
 Content-hash "nothing changed since the last gate run → don't re-pay for the gate"; increment the
 attempt counter instead. Attacks the ship1 token-thrash class. Surface: `scripts/driver.mjs` gate
 loop. **Campaign C**.

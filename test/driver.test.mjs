@@ -26,6 +26,7 @@ import { MUTATION_CONFIG_CONTENTS } from '../scripts/toolchains/node.mjs';
 import { pinSecurityElement, quarantinePin, readPins, writePins } from '../scripts/pins.mjs';
 import { RUN_LOCK_FILE } from '../scripts/run-lock.mjs';
 import { RUN_ARCHIVE_DIR, RUN_MANIFEST } from '../scripts/run-manifest.mjs';
+import { GATE_SKIP_FILE } from '../scripts/gate-cache.mjs';
 import { DEFAULT_OWNERSHIP, defaultConfig } from '../scripts/config.mjs';
 import {
   DriverError,
@@ -4720,7 +4721,7 @@ describe('every .meeseeks artifact the driver writes is ignored by git', () => {
     // RUN_ARCHIVE_DIR is the fifth, and it is a *directory* rather than a file — which is how it
     // slipped past a list of filenames. Measured in caseH: eight archived files were committed
     // by `git add -A` and then destroyed by a hard reset to a commit that predated them.
-    for (const name of [OUTCOME_FILE, REVIEW_RECORD, RUN_LOCK_FILE, RUN_MANIFEST, `${RUN_ARCHIVE_DIR}/`]) {
+    for (const name of [OUTCOME_FILE, REVIEW_RECORD, RUN_LOCK_FILE, RUN_MANIFEST, GATE_SKIP_FILE, `${RUN_ARCHIVE_DIR}/`]) {
       assert.equal(
         MEESEEKS_IGNORED_PATHS.includes(`.meeseeks/${name}`),
         true,
