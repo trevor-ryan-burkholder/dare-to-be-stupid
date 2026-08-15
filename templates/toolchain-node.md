@@ -16,6 +16,14 @@ it they are CommonJS and `import` statements fail at runtime rather than at buil
 two inside one package is the source of most `Cannot use import statement outside a module`
 and `require is not defined` failures here.
 
+**Nobody is watching this terminal, so nothing may ever prompt.** A scaffolder or installer
+that stops to ask a question hangs until the iteration's ceiling kills you — a real greenfield
+run lost its whole first builder to exactly this. Run every scaffolding and install command
+non-interactively: pass the tool's own defaults flags (`--yes`, `--no-input`, explicit answers
+as flags), and prefix commands that might prompt with `CI=1` in **your own shell invocation**
+(for example `CI=1 npx create-next-app@latest . --ts --app --no-interactive`). Writing the
+project files yourself is always an acceptable substitute for a scaffolder.
+
 **Layout.** Source under `src/`, unit tests as `*.test.js` beside the code or under `test/`,
 Playwright specs under `tests/` or `e2e/` with a `playwright.config.*` at the root. Keep
 `node_modules` out of git.

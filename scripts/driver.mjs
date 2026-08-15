@@ -1271,6 +1271,17 @@ export function isColdPhase(phase) {
  * @returns {Record<string, string | undefined>}
  */
 export function childEnvironment(env) {
+  // **`CI=1` was added here once and reverted the same hour, and the record matters more than
+  // the feature.** Ateliers attempt 1's builder hung its whole 30-minute ceiling on what looked
+  // like an interactive scaffolder prompt, and forcing the industry-wide `CI=1` "nobody is
+  // watching" signal into every child seemed like the positional fix. Tier 3 failed on it —
+  // the improve-author child returned zero requirements — and a direct probe confirmed
+  // causality: `CI=1 claude -p` returns `"is_error":true` with `duration_api_ms:0` before any
+  // API call. The claude CLI itself refuses under CI, so the env route poisons the one process
+  // the environment is actually built for. The unattended-scaffolding instruction lives in the
+  // node toolchain guidance instead, where the builder can apply it to ITS OWN shell commands
+  // without the driver's child inheriting it. This is the argv-defect lesson again: the
+  // contract was owned by a different binary, and only the live tier could see it.
   /** @type {Record<string, string | undefined>} */
   const marked = { ...env, [REENTRANCY_ENV]: '1' };
   // The depth a *nested* driver would see, and it is counted here because a child's environment

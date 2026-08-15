@@ -1,11 +1,12 @@
 # START HERE — handoff, last swept 15 August 2026
 
-**State:** `main` at `0.160.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.160.0: `npm test` **2306 pass**
-(0 fail), `npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Tier 2 carries from 0.157.0
-(**`test:integration` 51**; nothing since touches a tier-2 trigger — the mutation config and hint are tier-1 code, and the
-Stryker behaviour itself was reproduced live against the Tallyho target both ways, pass and crash) and tier 3 from 0.153.0
-(**`test:live` 31**; no spawn-contract surface touched since). **`git push`ed through 0.159.0; 0.160.0 lands in this
-commit.**
+**State:** `main` at `0.161.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.161.0: `npm test` **2307 pass**
+(0 fail), `npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Tier 3: an intermediate `CI=1`
+version of this commit **failed the live tier (30/31) and was reverted before landing** — see the 0.161.0 entry; the
+shipped `childEnvironment` is byte-equivalent to the behaviour tier 3 last passed 31/31, and the remaining change is
+toolchain-guidance prose (builder input, tier 1). Tier 2 carries from 0.157.0 (**`test:integration` 51**). **`git push`ed
+through 0.160.0; 0.161.0 lands in this commit. Tallyho SHIPPED at attempt 6 (see DOGFOOD.md); the Ateliers capstone
+campaign is underway.**
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
 gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
@@ -104,6 +105,31 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.161.0 — the unattended-scaffolding lesson, and the CI=1 route tier 3 killed in the same hour (Ateliers finding #1)
+
+The capstone's first attempt `ABORTED` at \$2.17: the greenfield builder consumed its entire 30-minute
+`childTimeoutMs` at ~300k tokens — Tallyho's builder did 9.5M in ten — the signature of a tool waiting on
+an interactive prompt no one would ever answer (a greenfield Next scaffold reaches for `create-next-app`,
+which asks questions). The ceiling did its job bounding the hang.
+
+**The first fix was wrong, and the record of HOW it was caught is the valuable half.** Forcing `CI=1` into
+`childEnvironment` — the industry "nobody is watching" signal every scaffolder honors — looked like the
+positional fix. Tier 3, run because this file's own precedent demands it for any `childEnvironment`
+change, came back **30/31**: the improve-author child returned zero requirements. A direct probe confirmed
+causality in one command: `CI=1 claude -p` answers `"is_error":true` with `duration_api_ms:0` — **the
+claude CLI itself refuses to run under CI**, before any API call. The env route would have broken every
+child of every run, silently, at the next release. Reverted within the hour; the argv-defect doctrine
+verbatim: *anything whose contract is owned by a different binary needs one live check, not more
+assertions* — no unit test of `childEnvironment` could ever have seen this.
+
+**What shipped instead:** the instruction moved to `templates/toolchain-node.md`, where the builder applies
+it to ITS OWN shell commands without the driver's child inheriting it — *"Nobody is watching this
+terminal, so nothing may ever prompt"*: defaults flags, `CI=1` prefixed per-command, and writing project
+files by hand named as an always-acceptable substitute for a scaffolder. Plus a negative test pinning the
+lesson (`childEnvironment` does NOT set `CI`, with the measurement cited), and the operator-side
+companion: the Ateliers config sets `childTimeoutMs: 3_600_000` for capstone-scale first iterations.
+Tier 1 **2306 → 2307**.
 
 ### 0.160.0 — the mutation gate explains a zero-coverage dry run (Tallyho finding #6)
 

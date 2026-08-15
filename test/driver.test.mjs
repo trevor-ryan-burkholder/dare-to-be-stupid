@@ -1164,6 +1164,15 @@ describe('childEnvironment', () => {
     assert.equal(childEnvironment({})[REENTRANCY_ENV], '1');
   });
 
+  it('does NOT set CI, because a claude child under CI=1 refuses to run at all', () => {
+    // Measured, 16 Aug: `CI=1 claude -p` returns is_error:true with duration_api_ms:0 — the
+    // CLI refuses before any API call. Forcing the "unattended" signal into the child
+    // environment poisons the one process the environment is built for; the instruction lives
+    // in the toolchain guidance instead, applied by the builder to its own shell commands.
+    // Tier 3 caught the original mistake within the hour it was made.
+    assert.equal('CI' in childEnvironment({}), false);
+  });
+
   it('keeps the rest of the environment, so children still find their tools', () => {
     assert.equal(childEnvironment({ PATH: '/usr/bin', HOME: '/home/x' }).PATH, '/usr/bin');
   });
