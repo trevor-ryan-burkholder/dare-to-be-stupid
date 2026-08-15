@@ -1,10 +1,10 @@
 # START HERE — handoff, last swept 15 August 2026
 
-**State:** `main` at `0.155.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.155.0: `npm test` **2291 pass**
-(0 fail), `npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Tier 3 carries from 0.153.0
-(**`test:live` 31 pass**, run against the fixed item-37 guard; 0.154.0/0.155.0 touch only the health-path detectors, pure
-tier-1 surfaces). Tier 2 carries unchanged from 0.149.0 (**`test:integration` 51**). **`git push`ed through 0.154.0;
-0.155.0 lands in this commit.**
+**State:** `main` at `0.156.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.156.0: `npm test` **2294 pass**
+(0 fail), `npm run test:integration` **51 pass** (0 fail — re-run because 0.156.0 touches `health-probe.mjs`, which
+`CLAUDE.md` names as a tier-2 trigger), `npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Tier 3
+carries from 0.153.0 (**`test:live` 31 pass**; 0.154.0–0.156.0 touch no spawn-contract surface). **`git push`ed through
+0.155.0; 0.156.0 lands in this commit.**
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
 gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
@@ -103,6 +103,24 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.156.0 — the health probe's PORT contract, stated instead of assumed (the smoke's third machine finding)
+
+Tallyho attempt 1b died at `BUDGET` with iterations 5–6 spent on a contract that existed but was never
+*told to the builder*: the probe has always started the app with `PORT` set to a free port and polled that
+port, and the builder — never told — hardcoded `next start -p 3210`. The app bound 3210, the probe polled
+34803, and the failure named only the symptom ("did not answer"). The builder guessed heroically (a
+`fuser -k` prestart against a leaked server, then `-p ${PORT:-3210}`) and the budget died first. A
+contract the builder cannot read is indistinguishable from a broken gate.
+
+Two fixes, both at the teaching layer: the observability gate's description now states the contract up
+front ("the probe starts the app with PORT set to a free port and polls that port, so the start command
+must honor the PORT environment variable"), and `portContractHint` in `health-probe.mjs` detects, from the
+app's own output, the port it actually bound — when that disagrees with the probed port, the failure names
+both ports and the fix by example. The match is deliberately narrow (an explicit `host:port` in output)
+because a wrong hint is worse than none. +3 tests; tier 1 **2291 → 2294**; tier 2 **51/51 re-run**
+(`health-probe.mjs` is a named tier-2 trigger). Full run read-out in `DOGFOOD.md` ("Web-ui smoke —
+Tallyho"); PLAN 31a updated; attempt 2 queued from a 0.156.0 snapshot.
 
 ### 0.155.0 — source detectors stop reading generated framework output (the smoke's second machine finding)
 

@@ -146,6 +146,37 @@ export function judgeHealthResponse(response) {
   return { ok: true, detail: `health endpoint answered ${response.status}` };
 }
 
+/**
+ * When the application's own output names a different port than the probe polled, say the
+ * contract out loud.
+ *
+ * The Tallyho smoke (DOGFOOD.md, 15 Aug) is why: the probe has always started the app with
+ * `PORT` set to a free port and polled that port, but nothing ever *told the builder*, so it
+ * hardcoded `next start -p 3210`, the app bound 3210 while the probe polled its own choice, and
+ * the failure said only "did not answer" — naming the symptom while the contract stayed
+ * invisible. The builder then spent two iterations guessing (it invented a `fuser -k` prestart
+ * before the run's budget died). A failure message that teaches the fix is the difference
+ * between one repair iteration and a stall.
+ *
+ * The match is deliberately narrow — an explicit `host:port` in the output — because a wrong
+ * hint is worse than none. No match, or a match agreeing with the probed port, adds nothing.
+ *
+ * @param {string} output everything the application printed
+ * @param {number} probedPort the port the probe set as PORT and polled
+ * @returns {string} a sentence ending in a space, or the empty string
+ */
+export function portContractHint(output, probedPort) {
+  const bound = output.match(/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})/);
+  if (bound === null) return '';
+  const boundPort = Number(bound[1]);
+  if (!Number.isInteger(boundPort) || boundPort === probedPort) return '';
+  return (
+    `The application bound port ${boundPort} while the probe set PORT=${probedPort} in its environment ` +
+    'and polled that port: the start command must honor the PORT environment variable ' +
+    '(for example `next start -p ${PORT:-3000}`). '
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Remote smoke mode (DESIGN.md §10.1)
 // ---------------------------------------------------------------------------
@@ -411,6 +442,7 @@ export async function probeHealth(options) {
       ok: false,
       detail:
         `${options.path} did not answer on port ${port} within ${options.timeout}ms (last error: ${last.error}). ` +
+        portContractHint(output.join(''), port) +
         `Output: ${output.join('').trim().slice(-500) || '(none)'}`,
     };
   } finally {

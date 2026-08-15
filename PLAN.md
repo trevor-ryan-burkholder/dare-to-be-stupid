@@ -887,7 +887,13 @@ Two parts, both required, and they bound an otherwise-asymptotic backlog:
 Item 21 (the mirror — improve mode on this repo) remains the final act, un-deferrable once part 1
 is code-complete.
 
-### 31a. Web-ui smoke — the penultimate test, run BEFORE the capstone — OPEN, **STAGED**
+### 31a. Web-ui smoke — the penultimate test, run BEFORE the capstone — **RUN 15 Aug (attempt 1b: BUDGET 6/6); three machine fixes shipped (0.154.0–0.156.0); attempt 2 queued**
+
+**Read-out in `DOGFOOD.md` ("Web-ui smoke — Tallyho").** The smoke did its exact job: found
+`findHealthPath` blind to filesystem routes, detectors reading `.next/` output, and the health probe's
+untold PORT contract — each fixed the same day. Chromium/Playwright provisioning proven live; the parallel
+panel's first web outing failed `DoD-6` with a real duplicate-id bug and a repro payload. Attempt 2 runs
+from a 0.156.0 snapshot and is expected to ship.
 
 **Ordering, operator's call 14 Aug:** no web-ui target has ever run through this machine, so the
 frontend-direction template, the design-slop gate, Playwright-as-ratchet-evidence and the

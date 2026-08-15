@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
-import { judgeHealthResponse, judgeSmokeResponse, parseProbeArgs, parseSmokeArgs, probeHealth } from '../scripts/health-probe.mjs';
+import { judgeHealthResponse, judgeSmokeResponse, parseProbeArgs, parseSmokeArgs, portContractHint, probeHealth } from '../scripts/health-probe.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -52,6 +52,26 @@ function serverThat(handler) {
   );
   return { cwd, command: 'node server.mjs' };
 }
+
+describe('portContractHint teaches the PORT contract when the app ignored it', () => {
+  // The Tallyho smoke: the probe set PORT=34803 and polled it; the builder's hardcoded
+  // `next start -p 3210` bound 3210; the failure named only the symptom, and the builder spent
+  // two iterations guessing at the invisible contract before the budget died.
+  it('names both ports and the contract when the output shows a different port', () => {
+    const hint = portContractHint('▲ Next.js 16.3.1\n- Local: http://localhost:3210\n✓ Ready', 34803);
+    assert.equal(hint.includes('bound port 3210'), true);
+    assert.equal(hint.includes('PORT=34803'), true);
+    assert.equal(hint.includes('must honor the PORT environment variable'), true);
+  });
+
+  it('says nothing when the app bound the probed port, because agreement needs no hint', () => {
+    assert.equal(portContractHint('- Local: http://127.0.0.1:34803\nready', 34803), '');
+  });
+
+  it('says nothing when the output names no port, because a wrong hint is worse than none', () => {
+    assert.equal(portContractHint('server starting...\nready', 34803), '');
+  });
+});
 
 describe('judgeHealthResponse', () => {
   it('accepts a 2xx with a body', () => {

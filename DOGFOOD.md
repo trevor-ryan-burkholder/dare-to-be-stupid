@@ -1,9 +1,61 @@
-# Dogfood runs — D, E, F, G, H and I exercised; E and F passed; run 8 SHIPPED. A and B remain; C is parked
+# Dogfood runs — D, E, F, G, H, I and the Tallyho web-ui smoke exercised; E and F passed; run 8 SHIPPED. A and B remain; C is parked
 
 > **The operator queue for `PLAN.md` items 6–9, 18–21 is at the bottom of this file** (13 August
 > 2026, prepared at 0.96.0). Each entry is a complete run: exact commands, exact config, the
 > states it may legitimately end in, and the evidence to keep. They spend real money over hours
 > and want a human watching, which is why they were prepared rather than performed.
+
+## Web-ui smoke — Tallyho (PLAN 31a), 15 August 2026: BUDGET at 6/6, and three machine fixes shipped before it ended
+
+**The first web-ui target ever run through this machine**, staged exactly to find broken web plumbing
+cheaply before Ateliers. It did — three times — and the fixes landed as 0.154.0–0.156.0 while the run was
+still going.
+
+**Attempt 1 (from the LIVE dev tree): `ABORTED` at iteration 2, my fault, and fail-closed working.** The
+driver re-reads `hooks/hooks.json` at every child spawn; editing this repo mid-run (item 37's chain) made
+the old in-memory validation meet the new on-disk command, and `childSettings` refused to spawn an
+unverifiable child. Iteration 1 still delivered: chromium **auto-provisioned for the e2e gate**, and
+`gate-integrity` caught **`not.toBeNull()` in generated test code** — the assertion-polarity law, firing
+live on a real Next.js tree. **Standing rule from this: dogfood runs launch from a snapshot worktree
+(`git worktree add ~/meeseeks-run-snapshot <commit>`), never the live tree.**
+
+**Attempt 1b (from the 0.152.0 snapshot): `BUDGET`, 6 of 6 iterations, 27,681,928 tokens, \$18.67
+reported, ratchet holding 34 ids.** The arc:
+
+- **Iterations 1–3 stalled on `observability: missing: health endpoint` while the builder was RIGHT** —
+  it had written `src/app/api/health/route.ts`, the idiomatic App Router endpoint, and `findHealthPath`
+  only matched literals beginning `/health|/healthz|/_health`. A filesystem-routed framework never writes
+  the path as a string. `repeatedGateNote` (case I's fix) fired on schedule and named the stall. **Machine
+  fix #1 → 0.154.0** (App/Pages Router route-file detection + `/api` literal prefix).
+- **The autopsy of the iteration-4 escape found #2**: the builder aliased `/health → /api/health` in
+  `next.config.ts` (legitimate), but the same replication showed the literal scan also matched **`.next/`
+  build artifacts** — a stale compiled route table could keep the gate green after the real route was
+  deleted, a gate wrong in the *passing* direction. **Machine fix #2 → 0.155.0** (generated framework
+  output excluded by class, one shared skip list).
+- **Iteration 4 reached the cold panel — the parallel panel's first live web outing — and it was
+  forensic.** Verdict `fail` on `DoD-6-adversarial-input`, with a REAL bug: `toggleTask`/`removeTask`
+  apply to every `id` match while id uniqueness is asserted, never enforced (`docs/data-model.md:42` cited
+  by the panel itself); duplicate ids in `localStorage` make one user action mutate several records and
+  leave stale React rows contradicting the counter — complete with the exact `localStorage` payload to
+  reproduce. Cold review of a web app: **working as designed.**
+- **Iterations 5–6 died on the health probe's port contract, which existed but was never TOLD to the
+  builder.** The probe starts the app with `PORT` set to a free port and polls it; the builder had
+  hardcoded `next start -p 3210`, so the app bound 3210 while the probe polled 34803, and the failure
+  named only the symptom. The builder guessed heroically (a `fuser -k` prestart against a zombie server
+  from an earlier gate, then `-p ${PORT:-3210}`) and the budget died first. **Machine fix #3 → 0.156.0**:
+  the gate description now states the PORT contract up front, and the probe's failure detects the port the
+  app actually bound and teaches the fix by name.
+
+**Subsystem scorecard (the four unproven pieces this smoke existed to prove):** frontend-direction
+delivered a styled app — exercised; **Playwright/chromium provisioning — proven live** (installed by the
+run itself); design-slop gate — ran without blocking (never the failing gate); **health-probe boot —
+broken as shipped, now fixed and awaiting attempt 2's live proof.** Residual worth watching: a leaked
+listening server from an earlier iteration (the `EADDRINUSE` the builder fought) — the item-2 grandchild
+sweep may not cover a server the *e2e* gate boots; if attempt 2 shows it again, it becomes an item.
+
+**Next: attempt 2 from a fresh 0.156.0 snapshot**, same target tree (the archived run's WIP carries the
+route, the alias, and the PORT-honoring start script; the DoD-6 duplicate-id bug is still unfixed and is
+exactly what the panel should force). Expected: a `SHIPPED` that proves all four subsystems end to end.
 
 `BRIEF.md` D2 and `HANDOFF.md` item 9.
 

@@ -5542,7 +5542,14 @@ export async function main(argv, io = {}) {
     { name: 'docs', text: 'docs: README.md and docs/api-contract.md, neither a stub' },
     {
       name: 'observability',
-      text: 'observability: structured logging in source, and a health endpoint that answers when the app is started',
+      // The PORT sentence is the Tallyho smoke's third machine finding: the probe always set PORT
+      // and polled its own free port, but nothing ever TOLD the builder, so it hardcoded a port and
+      // spent two iterations guessing at an invisible contract. A contract the builder cannot read
+      // is indistinguishable from a broken gate.
+      text:
+        'observability: structured logging in source, and a health endpoint that answers when the app is ' +
+        'started. The probe starts the app with PORT set to a free port and polls that port, so the start ' +
+        'command must honor the PORT environment variable',
     },
     { name: 'red-evidence', text: 'red-evidence: every newly passing test must have been seen failing first' },
   ];
