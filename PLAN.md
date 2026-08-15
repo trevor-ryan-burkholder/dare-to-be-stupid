@@ -1149,6 +1149,48 @@ existing reporter path with no parser change; the citation resolver passes on a 
 a misquote, and **fails closed** on a source it cannot fetch; a job whose check cannot be stated is
 refused with that reason; and one live artifact run ships end to end.
 
+### 50. The blocked-question artifact — a question as OUTPUT, never as interrupt — OPEN (Phase-6 class, post-DoD)
+
+**Origin:** operator, 15 Aug 2026 — *"what about meeseeks surfacing a question when unable to proceed? A
+meeseeks would do that."* Canon-accurate, and it names a real gap. Half of it is already answered and the
+answer stands: `scripts/assumptions.mjs` (§8.3) records that asking for clarification is **incompatible
+with an unattended loop** — *"there is nobody to ask, and a builder that stalls waiting for an answer
+burns the stall limit"* — so a builder may not silently pick an interpretation; it **records a cited
+assumption** and the cold panel checks it. That covers *"I was unsure, so I chose and said so."*
+
+**The gap it does not cover: "I cannot choose at all."** That ends today as `STALLED` — *"6 iterations
+with no gate improvement"* — a **diagnosis, not a question**. The genuinely useful sentence the run knows
+and currently discards is: *"PRD-3.2 requires sending email; no provider credential exists here and I may
+not invent one. (a) stub transport, (b) credential in config, or (c) drop the requirement?"*
+
+**Design, with the tensions resolved:**
+- **It never blocks. Ever.** Unattended operation is the product; a run waiting on a human at three in the
+  morning is strictly worse than `STALLED`, which at least terminates and reports. **A question is an
+  output of a terminal state, never a pause inside one.**
+- **On any non-`SHIPPED` ending, emit a structured question artifact** (driver-owned, under `.meeseeks/`,
+  and in the final report): the blocking fact, what was already tried, and the specific decision needed —
+  enumerated options wherever they exist, because an option list is answerable and a paragraph is not.
+- **The operator answers by editing `PRD.md` / `DOD.md` / config and re-running** — the existing resume
+  path, and the better one: **an answer typed at a prompt evaporates; an answer written into the spec is
+  durable, versioned, and reusable.** The question improves the *specification*, not merely this run.
+- **The builder never gets an "ask" verb — only the driver, at a terminal state, may emit a question.** If
+  a builder can end an iteration by asking, it will: models offload difficulty (case J — builders decline
+  hard things whenever a decline is available). This also keeps "the builder cannot judge its own work"
+  and §6.1's driver-owned boundary intact.
+- **A question citing nothing is discarded**, exactly as `validateLesson` and the assumptions citation bar
+  already require. It must name the PRD id, gate, or finding that blocks it, or it is confident vapour
+  reaching the operator at the moment they are least able to check it.
+- **Push questions earlier, not into the loop.** The right moment to ask is *authoring*, with a human
+  present — which is what items 48/49 became (an unfalsifiable or unobservable criterion refused **by
+  name** at authoring), and `--confirm-prd` is already that boundary. **A question arriving from inside
+  the loop means one escaped the authoring gate**, so each one is also evidence about the authors.
+
+**Done when:** a non-`SHIPPED` ending emits a question artifact naming the blocking fact, what was tried,
+and an answerable decision; an uncited question is discarded and the discard is counted and reported (never
+dropped quietly); a test proves **no code path lets a builder emit a question or block on one**; the
+artifact is driver-owned and refused to a process inside the run by the positional guard; and a `SHIPPED`
+run emits none (the benign neighbour — a machine that always has a question has stopped meaning anything by it).
+
 ### Phase 6 non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:
 - **Persistent kernel / REPL as the builder's environment** — breaks builder starvation; state
