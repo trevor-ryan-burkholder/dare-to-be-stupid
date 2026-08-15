@@ -1047,3 +1047,41 @@ worse." The *score bonus* half is rejected below.
 
 Footnote worth imitating: their `on-session-end.sh` hook — async, one appended line, `|| exit 0`
 everywhere, never fails the session.
+
+---
+
+# Round ten — daly2211/autoretrieval, 16 August 2026 (MIT; 91 stars, dormant ~4 weeks; showcase, no tests)
+
+**What it is:** a metric-driven autonomous optimization loop for a RAG pipeline — structurally a cousin
+of meeseeks at ~1/50th the rigor. One agent-editable file, a fixed character-overlap scorer, a
+"change one variable → commit → eval → keep or reset → repeat forever" prompt, and a TSV ledger.
+A Ralph-loop for retrieval tuning.
+
+## R47. Commit-hash-keyed one-row-per-iteration ledger — **the one cheap take**
+
+From its `program.md` logging contract: `commit, metrics…, keep/discard/crash, description` — the whole
+run history in one greppable file where "revert" means "reset to the hash on the last keep row." Maps to
+an operator-facing scannable run summary the driver appends per iteration (guard-compatible,
+driver-owned). Nice-to-have, not load-bearing.
+
+## Noted, not taken
+
+Its harness *shape* (fixed scorer + agent-edited artifact + scored ledger + revert-on-regression) is the
+template-tuning rig idea — already captured better as **R41** (SkillOpt's gated version, with a held-out
+split and strict acceptance, which this repo lacks).
+
+## Round ten, not taken — a cautionary fixture, which is its real value
+
+A clean, popular, MIT example of the exact failure modes the invariants were written against:
+- **Prompt-plea file protection** ("untouchable files:" *in the prompt*) — "not supplied" discipline
+  dressed as a driver-owned guarantee; nothing stops the optimizer editing its own scorer. The defect
+  the positional guard exists to kill (§6.1).
+- **Self-judged keep/discard, agent-written ledger** — the builder judging its own work and writing its
+  own `.meeseeks/`. A deterministic metric softens it; it does not excuse it.
+- **A scalar metric as the entire definition of done** — Goodhart bait; the cold panel exists because a
+  single number cannot say "shipped."
+- **"Crashes: log and move on" + "never stop"** — a gate that cannot run is a failure, and unbounded
+  loops violate termination by design.
+
+**Verdict: near-nothing worth stealing, recorded anyway** — every load-bearing mechanism is a weaker
+sibling of something meeseeks already hardened, which makes it useful evidence rather than useful code.
