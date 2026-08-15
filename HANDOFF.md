@@ -5,7 +5,7 @@
 0.149.0 — **`test:integration` 51, `test:live` 31** — because items 45, 46 and 42's Slice A touch no surface either tier
 owns: no `spawnClaude`/`claudeArgs`/envelope/child-template-output-contract change, only the CLI arg parse, the
 output-style prose, the command frontmatter, the builder-brief assembly, and a new pure parser fixture-tested against
-committed impeccable output — all tier-1 surfaces. **`git push`ed through 0.151.0; 0.152.0 is committed, unpushed.**
+committed impeccable output — all tier-1 surfaces. **`git push`ed through 0.152.0.**
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
 gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
