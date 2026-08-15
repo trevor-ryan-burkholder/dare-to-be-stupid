@@ -3816,6 +3816,51 @@ describe('red-evidence', () => {
     assert.deepStrictEqual([...loadRedEvidence(dir).seenFailing], []);
   });
 
+  it('quarantines corrupt evidence aside, keeping the "no evidence" interpretation (R26)', () => {
+    const dir = makeTempDir();
+    writeFileSync(path.join(dir, 'red-evidence.json'), '{ not json', 'utf8');
+    /** @type {string[]} */
+    const logged = [];
+    const evidence = loadRedEvidence(dir, { now: 1700000000000, log: (line) => logged.push(line) });
+    // The interpretation is unchanged: no evidence, so every newly passing test stays unproven.
+    assert.deepStrictEqual([...evidence.seenFailing], []);
+    assert.equal(evidence.established, false);
+    // The corrupt bytes are preserved beside the file, not left to be overwritten in place.
+    assert.deepStrictEqual(readdirSync(dir).sort(), ['red-evidence.json.corrupt-1700000000000']);
+    assert.equal(readFileSync(path.join(dir, 'red-evidence.json.corrupt-1700000000000'), 'utf8'), '{ not json');
+    assert.equal(logged.length, 1);
+    assert.match(logged[0], /red-evidence\.json/);
+  });
+
+  it('preserves the corrupt bytes that recordRedEvidence would otherwise overwrite (R26)', () => {
+    // Without the quarantine, the next recordRedEvidence rewrites red-evidence.json in place and
+    // the corruption vanishes unrecorded. With it, the corrupt file survives as a sibling AND a
+    // fresh, readable evidence file is established.
+    const dir = makeTempDir();
+    writeFileSync(path.join(dir, 'red-evidence.json'), '{ corrupt', 'utf8');
+    recordRedEvidence(dir, ['b::2']);
+    const names = readdirSync(dir).sort();
+    assert.equal(names.includes('red-evidence.json'), true);
+    assert.equal(
+      names.some((name) => /^red-evidence\.json\.corrupt-\d+$/.test(name)),
+      true,
+      'the corrupt bytes were not preserved',
+    );
+    assert.deepStrictEqual([...loadRedEvidence(dir).seenFailing], ['b::2']);
+  });
+
+  it('does not quarantine a valid evidence file (benign neighbour)', () => {
+    const dir = makeTempDir();
+    recordRedEvidence(dir, ['b::2'], ['a::1']);
+    /** @type {string[]} */
+    const logged = [];
+    const evidence = loadRedEvidence(dir, { now: 1700000000000, log: (line) => logged.push(line) });
+    assert.deepStrictEqual([...evidence.seenFailing], ['b::2']);
+    assert.equal(evidence.established, true);
+    assert.deepStrictEqual(readdirSync(dir).sort(), ['red-evidence.json']);
+    assert.deepStrictEqual(logged, []);
+  });
+
   it('writes atomically, leaving no partial .tmp behind (R34)', () => {
     // red-evidence is decision-bearing and persists cross-run; a half-written file would, on
     // misparse, re-establish a baseline admitting unproven tests — the fail-open direction. The

@@ -789,7 +789,7 @@ own guard; denial dampening (full text for the first ~3, then a one-liner + ordi
 measured repetition-loop fix, a §3.9 specimen). Surface: `hooks/guard.mjs`, `hooks/hooks.json`,
 session state outside `.meeseeks/`. **Campaign A** — same surface as item 28.
 
-### 38. Corrupt-state quarantine (R26) — OPEN
+### 38. Corrupt-state quarantine (R26) — **DONE (0.148.0)**
 An unparseable decision file (`pins.json`, `state.json`, `red-evidence.json`) renames aside to
 `<name>.corrupt-<ts>` and reads as the strictest interpretation, loudly — never repaired in place,
 never silently defaulted. Surface: `scripts/pins.mjs`, `scripts/ratchet.mjs`, the red-evidence

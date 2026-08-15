@@ -332,6 +332,46 @@ describe('loadState', () => {
     }
     assert.equal(result, 'RatchetStateError');
   });
+
+  // R26: a corrupt ratchet is announced and LEFT IN PLACE. The strictest interpretation for the
+  // ratchet is a throw, and the throw is a persistent wall only while the file stays put and
+  // re-throws on *every* read. Moving it aside would let the next run see ENOENT and start from a
+  // clean slate — losing every earned id — which is the exact fail-open R26 exists to close. Both
+  // the unparseable-JSON case and the valid-JSON-wrong-shape case behave this way.
+  for (const [contents, label] of [
+    ['{ broken json', 'unparseable JSON'],
+    ['{"version":1,"iteration":0,"passing":[1,2],"lastGoodCommit":null}', 'valid JSON in a corrupt shape'],
+  ]) {
+    it(`announces the corrupt file, leaves it in place, and throws on every read on ${label}`, () => {
+      const dir = makeTempDir();
+      writeFileSync(path.join(dir, 'state.json'), contents, 'utf8');
+      /** @type {string[]} */
+      const logged = [];
+      const read = () => loadState(dir, { now: 1700000000000, log: (line) => logged.push(line) });
+      assert.throws(read, RatchetStateError);
+      // The wall persists: a SECOND read must ALSO throw, never return a clean slate. This is the
+      // exact property a move-aside would break, and the reason the file is kept in place.
+      assert.throws(read, RatchetStateError);
+      // The file stays exactly where it is, bytes untouched, and no sibling was created.
+      assert.deepStrictEqual(readdirSync(dir).sort(), ['state.json']);
+      assert.equal(readFileSync(path.join(dir, 'state.json'), 'utf8'), contents);
+      // The corruption is announced (not silent) and says the file was left in place.
+      assert.match(logged[0], /state\.json/);
+      assert.match(logged[0], /left in place/);
+    });
+  }
+
+  it('does not quarantine a valid state file (benign neighbour)', () => {
+    const dir = makeTempDir();
+    saveState(dir, stateWith({ iteration: 4, passing: ['a::1', 'b::2'], lastGoodCommit: 'c0ffee' }));
+    /** @type {string[]} */
+    const logged = [];
+    const state = loadState(dir, { now: 1700000000000, log: (line) => logged.push(line) });
+    assert.deepStrictEqual(state, { version: 1, iteration: 4, passing: ['a::1', 'b::2'], lastGoodCommit: 'c0ffee' });
+    // No sibling was written and nothing was announced: a readable ratchet is left untouched.
+    assert.deepStrictEqual(readdirSync(dir).sort(), ['state.json']);
+    assert.deepStrictEqual(logged, []);
+  });
 });
 
 describe('saveState', () => {

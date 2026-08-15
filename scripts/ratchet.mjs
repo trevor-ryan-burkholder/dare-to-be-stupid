@@ -24,6 +24,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { quarantineCorruptFile } from './quarantine.mjs';
 import { collapseByWorstStatus, parseReport } from './reporters/index.mjs';
 
 /** @typedef {import('./reporters/index.mjs').ReportFormatError} ReportFormatError */
@@ -146,11 +147,21 @@ function validateState(value, file) {
  * wrong throws: an unreadable or malformed ratchet must stop the run, because continuing
  * from an empty passing set would silently discard every ID ever earned.
  *
+ * **The throw is the strictest interpretation, and it is kept, not weakened (R26).** For the
+ * ratchet, "strictest" is *refuse to run* — returning an empty passing set would be reading a
+ * corrupt file as a clean slate, exactly the fail-open this stops. What R26 adds is quarantine:
+ * corrupt bytes are moved aside to `<name>.corrupt-<stamp>` and the event announced, so the
+ * corruption is preserved as evidence rather than left to be overwritten and so the operator is
+ * told, before the throw halts the run. A read that fails at the OS level (not ENOENT) is not a
+ * content corruption and is not quarantined — there may be nothing coherent to move.
+ *
  * @param {string} meeseeksDir the `.meeseeks` directory
+ * @param {{ now?: number, log?: (line: string) => void }} [quarantine] injected clock/log for the
+ *   corrupt-file quarantine; both default inside {@link quarantineCorruptFile}
  * @returns {RatchetState}
  * @throws {RatchetStateError}
  */
-export function loadState(meeseeksDir) {
+export function loadState(meeseeksDir, quarantine = {}) {
   const file = path.join(meeseeksDir, STATE_FILE);
   /** @type {string} */
   let raw;
@@ -165,9 +176,18 @@ export function loadState(meeseeksDir) {
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
+    quarantineCorruptFile(file, { ...quarantine, keepInPlace: true });
     throw new RatchetStateError(`${file} is not valid JSON: ${/** @type {Error} */ (error).message}`);
   }
-  return validateState(parsed, file);
+  try {
+    return validateState(parsed, file);
+  } catch (error) {
+    // Valid JSON in a shape this build cannot trust — a wrong version, a passing set that is not an
+    // array of strings. That is corruption of the decision, not a first run, so it quarantines and
+    // then re-throws the validator's own message unchanged.
+    quarantineCorruptFile(file, { ...quarantine, keepInPlace: true });
+    throw error;
+  }
 }
 
 /**

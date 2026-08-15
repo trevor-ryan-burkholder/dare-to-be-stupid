@@ -14,7 +14,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -303,6 +303,46 @@ describe('the pin store', () => {
       assert.throws(() => readPins(meeseeksDir), PinsError);
     });
   }
+
+  // R26: a corrupt pin store is announced and LEFT IN PLACE. The strictest interpretation for pins
+  // is a throw, and the throw is a persistent wall only while the file stays put. Moving it aside
+  // would let the next run see ENOENT and read an empty store — nothing pinned, protection lost —
+  // the fail-open R26 closes. Covers an unparseable file and a valid-JSON-wrong-shape file.
+  for (const [label, body] of [
+    ['unparseable JSON', '{ not json'],
+    ['a store with no requirements array', '{"version":1,"security":[]}'],
+  ]) {
+    it(`announces the corrupt store, leaves it in place, and throws on every read on ${label}`, () => {
+      const meeseeksDir = makeMeeseeksDir();
+      mkdirSync(meeseeksDir, { recursive: true });
+      writeFileSync(path.join(meeseeksDir, PINS_FILE), body, 'utf8');
+      /** @type {string[]} */
+      const logged = [];
+      const read = () => readPins(meeseeksDir, { now: 1700000000000, log: (line) => logged.push(line) });
+      assert.throws(read, PinsError);
+      // The wall persists on the second read, rather than returning an empty store.
+      assert.throws(read, PinsError);
+      assert.deepStrictEqual(readdirSync(meeseeksDir).sort(), [PINS_FILE]);
+      assert.equal(readFileSync(path.join(meeseeksDir, PINS_FILE), 'utf8'), body);
+      assert.match(logged[0], /pins\.json/);
+      assert.match(logged[0], /left in place/);
+    });
+  }
+
+  it('does not quarantine a valid pin store (benign neighbour)', () => {
+    const meeseeksDir = makeMeeseeksDir();
+    writePins(meeseeksDir, {
+      ...emptyPins(),
+      requirements: [pinRequirement({ id: 'PRD-1.1', evidence: 'src/a.ts:2', contents: 'x', iteration: 1 })],
+    });
+    /** @type {string[]} */
+    const logged = [];
+    const read = readPins(meeseeksDir, { now: 1700000000000, log: (line) => logged.push(line) });
+    assert.equal(read.requirements[0].id, 'PRD-1.1');
+    // A readable store is left exactly as it was: no sibling, no announcement.
+    assert.deepStrictEqual(readdirSync(meeseeksDir).sort(), ['pins.json']);
+    assert.deepStrictEqual(logged, []);
+  });
 });
 
 describe('parseSecurityEscalation', () => {

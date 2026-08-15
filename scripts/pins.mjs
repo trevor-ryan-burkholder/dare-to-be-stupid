@@ -65,12 +65,17 @@
  * become, and the distance between the two is that nothing here is written by a builder — the
  * store is driver-owned and the guard hook denies every write under `.meeseeks` positionally.
  *
- * This module reads no clock and runs no command. `pinnedAt` is an iteration number, passed in.
+ * This module reads no clock and runs no command: every pin decision is pure, `pinnedAt` is an
+ * iteration number passed in, and the one wall-clock read the corrupt-store quarantine needs for a
+ * filename stamp lives in `quarantine.mjs`, delegated on an error path and injectable under test —
+ * never a factor in what gets pinned.
  */
 
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+import { quarantineCorruptFile } from './quarantine.mjs';
 
 /** Driver-owned. Protected by the `.meeseeks/**` invariant (§6) with no rule of its own. */
 export const PINS_FILE = 'pins.json';
@@ -349,11 +354,19 @@ export function shippingBlockers(pins) {
  * silently discards every recorded guard and every carried pass, and the run would look
  * healthier for having lost them.
  *
+ * **The throw is the strictest interpretation and is kept (R26).** Returning `emptyPins()` on a
+ * corrupt store would be the "look healthier for having lost them" failure written into the reader.
+ * R26 adds quarantine: the corrupt bytes are moved aside to `<name>.corrupt-<stamp>` and the event
+ * announced before the throw, so a corruption is preserved as evidence and surfaced rather than
+ * left in place to be overwritten by the next {@link writePins}.
+ *
  * @param {string} meeseeksDir
+ * @param {{ now?: number, log?: (line: string) => void }} [quarantine] injected clock/log for the
+ *   corrupt-file quarantine; both default inside {@link quarantineCorruptFile}
  * @returns {PinStore}
  * @throws {PinsError}
  */
-export function readPins(meeseeksDir) {
+export function readPins(meeseeksDir, quarantine = {}) {
   const file = path.join(meeseeksDir, PINS_FILE);
   if (!existsSync(file)) return emptyPins();
   /** @type {unknown} */
@@ -361,16 +374,20 @@ export function readPins(meeseeksDir) {
   try {
     parsed = JSON.parse(readFileSync(file, 'utf8'));
   } catch (error) {
+    quarantineCorruptFile(file, { ...quarantine, keepInPlace: true });
     throw new PinsError(`${file} could not be parsed: ${/** @type {Error} */ (error).message}`);
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    quarantineCorruptFile(file, { ...quarantine, keepInPlace: true });
     throw new PinsError(`${file} is not an object.`);
   }
   const record = /** @type {Record<string, unknown>} */ (parsed);
   if (record.version !== PINS_VERSION) {
+    quarantineCorruptFile(file, { ...quarantine, keepInPlace: true });
     throw new PinsError(`${file} has version ${JSON.stringify(record.version)}; this build reads ${PINS_VERSION}.`);
   }
   if (!Array.isArray(record.security) || !Array.isArray(record.requirements)) {
+    quarantineCorruptFile(file, { ...quarantine, keepInPlace: true });
     throw new PinsError(`${file} must carry a security array and a requirements array.`);
   }
   return {

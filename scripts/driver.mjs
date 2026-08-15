@@ -101,6 +101,7 @@ import {
   verifySecurityPin,
   writePins,
 } from './pins.mjs';
+import { quarantineCorruptFile } from './quarantine.mjs';
 import { RUN_ARCHIVE_DIR, RUN_MANIFEST, archivePreviousRun, buildRunManifest, writeRunManifest } from './run-manifest.mjs';
 import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
 import { MUTATION_CONFIG, MUTATION_CONFIG_CONTENTS } from './toolchains/node.mjs';
@@ -3584,10 +3585,20 @@ export function suiteSensitivityEvidence(gateOutcome, redEvidence) {
 /**
  * Test ids that have been observed *not* passing at some point in this run.
  *
+ * The strictest interpretation of a corrupt evidence file is already the one this returns — "no
+ * evidence", so every newly passing id is unproven and {@link suiteSensitivityEvidence} withholds
+ * the ship — so R26's contribution here is only the quarantine, and the interpretation is
+ * deliberately unchanged. The quarantine matters even though the return is the same: without it
+ * the very next {@link recordRedEvidence} rewrites `red-evidence.json` in place, so a corruption
+ * that briefly existed would be **silently overwritten** rather than preserved. Moving the corrupt
+ * bytes aside to `<name>.corrupt-<stamp>` before that write is what keeps the evidence.
+ *
  * @param {string} meeseeksDir
+ * @param {{ now?: number, log?: (line: string) => void }} [quarantine] injected clock/log for the
+ *   corrupt-file quarantine; both default inside {@link quarantineCorruptFile}
  * @returns {{ seenFailing: Set<string>, baseline: Set<string>, established: boolean }}
  */
-export function loadRedEvidence(meeseeksDir) {
+export function loadRedEvidence(meeseeksDir, quarantine = {}) {
   const file = path.join(meeseeksDir, RED_EVIDENCE);
   const empty = { seenFailing: new Set(), baseline: new Set(), established: false };
   if (!existsSync(file)) return empty;
@@ -3605,7 +3616,9 @@ export function loadRedEvidence(meeseeksDir) {
     };
   } catch {
     // Unreadable evidence is no evidence. Every new test is then unproven, which fails
-    // the gate loudly rather than quietly crediting tests that were never red.
+    // the gate loudly rather than quietly crediting tests that were never red. The corrupt
+    // bytes are quarantined first, so they survive the next recordRedEvidence overwrite (R26).
+    quarantineCorruptFile(file, quarantine);
     return empty;
   }
 }

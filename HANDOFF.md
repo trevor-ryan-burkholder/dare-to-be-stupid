@@ -1,6 +1,6 @@
 # START HERE — handoff, last swept 14 August 2026
 
-**State:** `main` at `0.147.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.147.0: `npm test` **2205 pass**,
+**State:** `main` at `0.148.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.148.0: `npm test` **2219 pass**,
 `npm run test:integration` **46 pass**, `npm run test:live` **31 pass** (0 fail), `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
@@ -101,6 +101,27 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.148.0 — corrupt-state quarantine (PLAN item 38, R26), and a quarantine that almost added a fail-open
+
+When a decision file (`state.json`, `pins.json`, `red-evidence.json`) cannot be parsed, the corrupt
+bytes are now preserved and the event announced (`scripts/quarantine.mjs`) rather than silently
+swallowed. The audit found all three readers were already *fail-closed on the decision* (throw for
+ratchet/pins, empty-and-ship-withheld for red-evidence); what was missing was preserving the bytes
+and surfacing the corruption.
+
+**The instructive part is what the hostile review caught.** The first implementation *moved* every
+corrupt file aside — and for the ratchet and pins that **introduced a fail-open**: the strict throw
+was a persistent wall only because the file stayed in place and re-threw on every read; renaming it
+away meant the first read threw but the *next run* saw `ENOENT` → clean slate → every earned id
+silently unprotected. The 2218-test suite hid it because no test checked the *second* read (the
+reviewer's own second finding). Fixed with a `keepInPlace` mode: ratchet and pins announce and
+**leave the file** (the bytes are preserved by not touching them, the wall persists); only
+red-evidence *moves* the file aside (its strict value is a safe empty, and the original must go so
+the next write cannot overwrite it). Tests now assert a second read of a corrupt ratchet/pins still
+throws — the exact property the move would have broken. Doctrine: **quarantine must not weaken the
+strict interpretation it exists to preserve** — for a throw-file, "preserve the evidence" means
+leave it where it throws.
 
 ### 0.147.0 — the last non-atomic decision writer, closed (PLAN item 39, R34)
 
