@@ -970,3 +970,80 @@ laws are right:
 And a phrase worth citing, not building: prime-agent's *"a passed gate checks only what that gate
 verifies; reaching a limit does not imply task success"* is an independent restatement of
 "nothing defaults to pass" — useful when defending the invariant to a skeptic.
+
+---
+
+# Round nine — microsoft/SkillOpt, 16 August 2026 (MIT; 16k stars, active; arXiv 2605.23904)
+
+**What it is, measured not guessed:** a text-space optimizer treating a Markdown "skill document" as
+the trainable parameters of a frozen agent — rollout → reflect → aggregate → select → update → a
+**validation gate** that accepts a candidate only on strict improvement over a held-out split. Plus
+**SkillOpt-Sleep**: a nightly offline cycle for coding agents (harvest transcripts → mine tasks →
+replay → consolidate behind the same gate → stage → **human adopts**). The most on-topic repo yet
+reconned for the §3.9 prompt-drift problem.
+
+## R41. Gate template edits on a held-out replay corpus — **take; the big one**
+
+From `skillopt/evaluation/gate.py`: a pure decision function, strict `>` acceptance, reject returns
+the incumbent unchanged, best-so-far tracked with the step that earned it — the decision/effect split
+this repo already houses. The borrow: `templates/*.md` changes must beat the incumbent on a fixed
+corpus of replayed cases (runs 1–12 supply it) before landing. Turns "prompt drift is measured"
+(§3.9) into "prompt drift is GATED." Cost is honest: each comparison is live-tier money — a
+release-check-shaped optional gate for template commits, not per-commit CI.
+
+## R42. In-run rejected-attempt buffer with score deltas — **take; cheap**
+
+From `skillopt/engine/trainer.py` `_format_step_buffer`: each prior step feeds forward its failure
+patterns and, on rejection, the specific edits tried and the score drop, so the optimizer never
+retries them. Meeseeks' lesson memory records only earned successes; nothing tells a builder "this
+exact repair was tried in iteration N and made it worse." Driver-owned, `.meeseeks/`-guarded, a brief
+section + bookkeeping over data the driver already holds. **Must never reach the cold reviewer.**
+
+## R43. Four-way longitudinal categorization — **take; cheap**
+
+From `skillopt/optimizer/slow_update.py`: improved / regressed / **persistent_fail** / stable_success,
+regressions flagged highest priority. The ratchet makes right→wrong fatal, but wrong→wrong across k
+iterations is currently mere repetition — explicit persistent-fail tracking gives the driver an
+escalation trigger (re-plan, narrow, circuit-break §13.3) instead of re-prompting the same failure.
+
+## R44. The boundary function reports whether the boundary held — **take**
+
+From `skillopt_sleep/consolidate.py` `_split` (a `leaked` flag) + its holdout-integrity tests. §6.1's
+"held out means *not supplied*" is a stated discipline; the borrow makes prompt assembly RETURN a
+starvation report (containment-checked: oracle cases, build log, iteration history provably absent
+from the assembled reviewer prompt) with one tier-1 test per boundary. A discipline that keeps
+failing becomes a gate — applied one step early, before it fails.
+
+## R45. Protected machine-owned regions inside a document — **file away**
+
+`<!-- APPENDIX_START/END -->` regions ordinary edits cannot touch, enforced by one shared check.
+The guard's positional principle at intra-file grain — wanted the day any artifact is co-written by
+human and loop.
+
+## R46. Prompt-health diagnostics — **take as diagnostics only**
+
+Template token count and imperative-word density (MUST/NEVER/ALWAYS) per version, into the
+measurement ledger — a concrete instrument for "the prompt that grows until the builder is quietly
+worse." The *score bonus* half is rejected below.
+
+## Round nine, not taken — the negative controls, unusually validating
+
+- **Aggregate-score acceptance** (their default; per-task `gate_no_regression` shipped later,
+  opt-in, default OFF after their issue #174) — breaks the ratchet. Their patch history is external
+  evidence per-id monotonicity was right on day one.
+- **`use_gate: false`** — "validation recorded, candidates force-accepted": a config key that turns a
+  gate into a logger. Nothing defaults to pass; flags are typed, config is read at 3 a.m.
+- **Semantic-density score BONUS** (+0.05 × shouting) — a style heuristic contaminating an evidence
+  metric; style never touches logic, and it pays the optimizer to shout (Goodhart).
+- **`except: pass` silent fallback** in edit-ranking — `catch { return pass }`'s cousin.
+- **Self-reflection + self-judging economy** (Sleep's rubric-judge modes) — the builder cannot judge
+  its own work; the cold panel's expense IS the design.
+- **Dream rollouts as evidence** — synthetic variants on the acceptance side are fabricated evidence;
+  their real-tasks-only acceptance split is the load-bearing part if exploration-generation is ever
+  borrowed.
+- **Scheduled auto-adopt** of learned prompt changes — self-modification is typed by somebody
+  watching (`--give-them-the-box` philosophy); their stage-then-human-adopts default is the right
+  half.
+
+Footnote worth imitating: their `on-session-end.sh` hook — async, one appended line, `|| exit 0`
+everywhere, never fails the session.
