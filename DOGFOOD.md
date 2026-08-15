@@ -57,6 +57,30 @@ sweep may not cover a server the *e2e* gate boots; if attempt 2 shows it again, 
 route, the alias, and the PORT-honoring start script; the DoD-6 duplicate-id bug is still unfixed and is
 exactly what the panel should force). Expected: a `SHIPPED` that proves all four subsystems end to end.
 
+**Attempt 2 (0.156.0 snapshot): `BUDGET` again, 6/6, 24,017,468 tokens, \$25.55 — and it died ONE finding
+short of shipping.** The arc: observability failed on iterations 1, 3, 5 and passed on 2, 4, 6; the panel
+convened three times; **the A8 carry worked live** ("panel carry: skipped re-review of 4 requirement(s)
+whose evidence has not changed"); DoD-6 (the duplicate-id bug) was fixed and carried; the run ended with a
+single outstanding finding — `DoD-5-design`, a doc-vs-artifact drift the panel judged under the generated
+CLAUDE.md's own "if the code and the documents disagree, that is a defect" rule. `portContractHint`
+(0.156.0) fired **verbatim** in every observability failure, naming both ports and the fix.
+
+**Machine finding #4, read from the target's own git history: a two-masters oscillation.** The start
+script flip-flopped between `-p ${PORT:-3210}` and `-p 3210` FOUR times across the two attempts —
+`33bf6ab` hardcoded → `6fb6081` fixed → `8c6baa6` reverted → `8782262` fixed — because the health probe
+demanded "honor ephemeral PORT" while the Playwright `webServer` config wanted its fixed URL, and each
+builder satisfied whichever gate had screamed last. A structural §3.9-class oscillation no single
+iteration can see. **Fix → 0.157.0:** the probe still sets PORT (honoring apps keep the conflict-free
+ephemeral port) but now polls **the port the app's own output announces** when it disagrees — fixed-port
+apps pass where they actually listen, and only an app that announces nothing still fails, with the
+contract hint naming why. Proven behaviorally against a real PORT-ignoring server in
+`test/health-probe.test.mjs`.
+
+**Operator adjustment for attempt 3:** `maxIterations` 6 → 12 (edited outside the run, as the config
+rules permit). Six was staged on "a toy ships in 1–3"; measured reality is that a hostile panel forcing
+real fixes plus one flaky gate consumes six. Attempt 3 runs from a 0.157.0 snapshot, one `DoD-5` doc-drift
+finding from `SHIPPED`.
+
 `BRIEF.md` D2 and `HANDOFF.md` item 9.
 
 > **Case D was run on 11 August 2026 and ended `BUDGET` in iteration 1.** It found three

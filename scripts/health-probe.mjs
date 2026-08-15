@@ -147,6 +147,24 @@ export function judgeHealthResponse(response) {
 }
 
 /**
+ * The port the application's own output announces, or null when it announces none.
+ *
+ * The match is deliberately narrow — an explicit `host:port` in the output — because acting on
+ * a wrong port is worse than acting on none. Shared by the poll loop (which probes this port
+ * when it disagrees with the assigned one) and {@link portContractHint} (which explains the
+ * disagreement on failure): two copies of this regex would drift.
+ *
+ * @param {string} output everything the application printed
+ * @returns {number | null}
+ */
+export function detectBoundPort(output) {
+  const bound = output.match(/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})/);
+  if (bound === null) return null;
+  const port = Number(bound[1]);
+  return Number.isInteger(port) && port > 0 ? port : null;
+}
+
+/**
  * When the application's own output names a different port than the probe polled, say the
  * contract out loud.
  *
@@ -158,18 +176,17 @@ export function judgeHealthResponse(response) {
  * before the run's budget died). A failure message that teaches the fix is the difference
  * between one repair iteration and a stall.
  *
- * The match is deliberately narrow — an explicit `host:port` in the output — because a wrong
- * hint is worse than none. No match, or a match agreeing with the probed port, adds nothing.
+ * With the poll loop now probing the announced port directly, this hint survives for the
+ * remaining failure shape: the app announced a port and STILL did not answer on it (crashed
+ * after binding, or bound a port someone else holds).
  *
  * @param {string} output everything the application printed
- * @param {number} probedPort the port the probe set as PORT and polled
+ * @param {number} probedPort the port the probe set as PORT
  * @returns {string} a sentence ending in a space, or the empty string
  */
 export function portContractHint(output, probedPort) {
-  const bound = output.match(/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})/);
-  if (bound === null) return '';
-  const boundPort = Number(bound[1]);
-  if (!Number.isInteger(boundPort) || boundPort === probedPort) return '';
+  const boundPort = detectBoundPort(output);
+  if (boundPort === null || boundPort === probedPort) return '';
   return (
     `The application bound port ${boundPort} while the probe set PORT=${probedPort} in its environment ` +
     'and polled that port: the start command must honor the PORT environment variable ' +
@@ -433,8 +450,22 @@ export async function probeHealth(options) {
             `Output: ${output.join('').trim().slice(-500) || '(none)'}`,
         };
       }
-      last = await requestOnce({ port, path: options.path });
-      if (last.ok) return judgeHealthResponse(last);
+      // Probe the port the application actually bound when its own output announces one, and
+      // the assigned port otherwise. The Tallyho smoke's fourth machine finding is why: the
+      // probe demands "honor ephemeral PORT" while a Playwright webServer config wants a fixed
+      // URL, and the two masters had builders oscillating the start script between
+      // `-p ${PORT:-3210}` and `-p 3210` across six iterations, failing whichever gate ran
+      // next. An app that honors PORT keeps the conflict-free ephemeral port; an app that
+      // binds its own fixed port is now probed where it actually listens; only an app that
+      // says nothing still fails — with the contract hint below naming what happened.
+      const target = detectBoundPort(output.join('')) ?? port;
+      last = await requestOnce({ port: target, path: options.path });
+      if (last.ok) {
+        const judged = judgeHealthResponse(last);
+        return target === port
+          ? judged
+          : { ...judged, detail: `${judged.detail} (on port ${target}, announced by the application; PORT=${port} was set but not honored)` };
+      }
       await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
     }
 

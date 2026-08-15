@@ -1,10 +1,10 @@
 # START HERE — handoff, last swept 15 August 2026
 
-**State:** `main` at `0.156.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.156.0: `npm test` **2294 pass**
-(0 fail), `npm run test:integration` **51 pass** (0 fail — re-run because 0.156.0 touches `health-probe.mjs`, which
-`CLAUDE.md` names as a tier-2 trigger), `npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Tier 3
-carries from 0.153.0 (**`test:live` 31 pass**; 0.154.0–0.156.0 touch no spawn-contract surface). **`git push`ed through
-0.155.0; 0.156.0 lands in this commit.**
+**State:** `main` at `0.157.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.157.0: `npm test` **2297 pass**
+(0 fail), `npm run test:integration` **51 pass** (0 fail — re-run because 0.156.0 and 0.157.0 both touch
+`health-probe.mjs`, a named tier-2 trigger), `npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**.
+Tier 3 carries from 0.153.0 (**`test:live` 31 pass**; 0.154.0–0.157.0 touch no spawn-contract surface). **`git push`ed
+through 0.156.0; 0.157.0 lands in this commit.**
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
 gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
@@ -103,6 +103,28 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.157.0 — the probe polls the port the app announces (the smoke's fourth finding: a two-masters oscillation)
+
+Tallyho attempt 2 (0.156.0 snapshot) ended `BUDGET` at 6/6, **one finding short of shipping** — and its
+git history exposed a structural defect no single iteration can see: the start script flip-flopped between
+`-p ${PORT:-3210}` and `-p 3210` four times across two attempts, because the health probe demanded "honor
+ephemeral PORT" while the target's Playwright `webServer` config wanted its fixed URL, and each builder
+satisfied whichever gate screamed last. A §3.9-class oscillation: every individual iteration looked like
+progress. (Meanwhile the machine's good news: the A8 panel carry ran live — "skipped re-review of 4
+requirement(s)" — the panel convened three times, DoD-6 was fixed and carried, and `portContractHint`
+fired verbatim in every observability failure.)
+
+Fix: the poll loop now probes **the port the application's own output announces** (`detectBoundPort`,
+shared with the hint — two copies of that regex would drift) when it disagrees with the assigned one. An
+app that honors PORT keeps the conflict-free ephemeral port; an app that binds its fixed port is probed
+where it actually listens, with the pass detail noting "announced by the application; PORT was set but not
+honored"; only an app that announces nothing still fails, and the contract hint survives for the app that
+announces a port and *still* does not answer (crashed after binding, or the port is held). Proven
+behaviorally: a real PORT-ignoring server that binds an OS-assigned port and prints it Next-style passes
+through the fallback path. +3 tests; tier 1 **2294 → 2297**; tier 2 **51/51 re-run**. `DOGFOOD.md` carries
+attempt 2's full read-out; Tallyho attempt 3 is queued from a 0.157.0 snapshot with `maxIterations` raised
+6 → 12 by the operator path (outside the run), one `DoD-5` doc-drift finding from `SHIPPED`.
 
 ### 0.156.0 — the health probe's PORT contract, stated instead of assumed (the smoke's third machine finding)
 

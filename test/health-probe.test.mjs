@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
-import { judgeHealthResponse, judgeSmokeResponse, parseProbeArgs, parseSmokeArgs, portContractHint, probeHealth } from '../scripts/health-probe.mjs';
+import { detectBoundPort, judgeHealthResponse, judgeSmokeResponse, parseProbeArgs, parseSmokeArgs, portContractHint, probeHealth } from '../scripts/health-probe.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -52,6 +52,18 @@ function serverThat(handler) {
   );
   return { cwd, command: 'node server.mjs' };
 }
+
+describe('detectBoundPort reads the port the app announced', () => {
+  it('reads an explicit host:port from framework boot output', () => {
+    assert.equal(detectBoundPort('▲ Next.js 16.3.1\n- Local: http://localhost:3210\n✓ Ready'), 3210);
+    assert.equal(detectBoundPort('listening on 127.0.0.1:8080'), 8080);
+  });
+
+  it('returns null when nothing announces a port, because a guess is worse than none', () => {
+    assert.equal(detectBoundPort('server starting...\nready'), null);
+    assert.equal(detectBoundPort(''), null);
+  });
+});
 
 describe('portContractHint teaches the PORT contract when the app ignored it', () => {
   // The Tallyho smoke: the probe set PORT=34803 and polled it; the builder's hardcoded
@@ -128,6 +140,30 @@ describe('probeHealth', () => {
     const { cwd, command } = serverThat('response.writeHead(200); response.end("OK");');
     const outcome = await probeHealth({ command, path: '/health', timeout: 15_000, cwd });
     assert.equal(outcome.ok, true, outcome.detail);
+  });
+
+  it('passes when the app ignores PORT but announces the port it bound (the two-masters case)', async () => {
+    // The Tallyho smoke's fourth machine finding: the probe demanded "honor ephemeral PORT"
+    // while the target's Playwright webServer wanted a fixed URL, and builders oscillated the
+    // start script between the two across six iterations. The probe now polls the port the
+    // app's own output announces when it disagrees with the assigned one. This server binds an
+    // OS-assigned port of its own choosing and prints it Next-style; PORT is deliberately not
+    // consulted.
+    const cwd = makeTempDir();
+    writeFileSync(
+      path.join(cwd, 'server.mjs'),
+      [
+        "import http from 'node:http';",
+        'const server = http.createServer((request, response) => { response.writeHead(200); response.end("OK"); });',
+        'server.listen(0, "127.0.0.1", () => {',
+        '  console.log(`- Local: http://localhost:${server.address().port}`);',
+        '});',
+      ].join('\n'),
+      'utf8',
+    );
+    const outcome = await probeHealth({ command: 'node server.mjs', path: '/health', timeout: 15_000, cwd });
+    assert.equal(outcome.ok, true, outcome.detail);
+    assert.equal(outcome.detail.includes('announced by the application'), true, 'the fallback path was not the one that passed');
   });
 
   it('fails when the route exists in the source but answers 404', async () => {
