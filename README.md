@@ -259,8 +259,9 @@ Pre-1.0 and honest about it. `DESIGN.md` is the specification and the source of 
 useful half.
 
 Measured, not asserted: **twenty-plus dogfood runs** against real throwaway projects, two of
-which reached `SHIPPED`. Sequential cold review is **73% of a run's wall clock** (the one
-remaining planned feature — a parallel panel — exists to claw that back). Live-verified in real
+which reached `SHIPPED`. Cold review was **73% of a run's wall clock** while the panel ran
+sequentially; the parallel panel (0.143.0) now runs the reviewers concurrently, so the panel
+costs its slowest reviewer's wall clock rather than the sum. Live-verified in real
 runs, not just unit tests: the ratchet's hard reset and scoped restore, the stall and wall-clock
 endings, the repeated-regression and stuck-gate notices, the security-pin escalation, the race
 executing end to end, and the tracked-state refusal. The full audit of what has **never** been

@@ -1,4 +1,4 @@
-# Dogfood runs — D, E, F and G exercised; E and F passed; run 8 SHIPPED. A, B, C, H, I remain
+# Dogfood runs — D, E, F, G, H and I exercised; E and F passed; run 8 SHIPPED. A and B remain; C is parked
 
 > **The operator queue for `PLAN.md` items 6–9, 18–21 is at the bottom of this file** (13 August
 > 2026, prepared at 0.96.0). Each entry is a complete run: exact commands, exact config, the
@@ -678,9 +678,12 @@ that the tree will not survive.
 
 ## Case I — worktree racing with a live builder
 
-**The largest untested surface in the project.** `race.enabled` defaults to `false`; the git half
-is covered by tier 2 against real git, and the half that costs money has **never executed once**.
-C5 (differentiated race candidates) is blocked behind it.
+**Run on 14 August 2026** (`PLAN.md` item 9). `race.enabled` defaults to `false`; the git half
+is covered by tier 2 against real git, and the half that costs money has now **executed live**:
+real builder children raced in worktrees, each on its own brief, each gated independently, at
+roughly 77–81M tokens. The one piece that has still never fired live is `applyWinner` — that
+residue, not this recipe, is what remains, so do not schedule a fresh run of this scale to
+re-answer it. C5 (differentiated race candidates) landed at 0.93.0.
 
 ```json
 { "maxIterations": 8, "race": { "enabled": true, "n": 2, "after": 2 } }

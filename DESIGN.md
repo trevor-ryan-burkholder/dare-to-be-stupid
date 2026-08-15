@@ -315,10 +315,12 @@ here estimates.
 
 **Both are accounting, and neither is a watchdog. `childTimeoutMs` is the watchdog.** A ceiling
 read from an envelope is a ceiling on a child that *returned*; a child that never returns produces
-no envelope, spends no recorded tokens, and passes both checks forever. Children run under
-`execFileSync`, which blocks the event loop for the whole call, so nothing can tick while one is
-out and a hung child is pixel-identical to a working one — the operator's report on 13 August 2026
-was of runs sitting for hours before anyone noticed. The ceiling is 30 minutes by default against a
+no envelope, spends no recorded tokens, and passes both checks forever. Children run under an
+async `shell()` (0.141.0), so the event loop stays free while one is out, and the heartbeat
+(0.142.0) pulses roughly every sixty seconds while a child runs — a hung child and a working one
+no longer look alike. The operator's report on 13 August 2026, of runs sitting for hours before
+anyone noticed, is the report the heartbeat exists to end; the watchdog is still what acts.
+The ceiling is 30 minutes by default against a
 longest-ever-observed child of 651s, because killing a child that was working is the expensive
 wrong answer. On a timeout the child's output is **discarded unread**, including any partial
 envelope: a killed child has no verdict, and half of one is a different verdict rather than a
@@ -434,8 +436,9 @@ positionally. That matters here specifically: a builder able to edit this file c
 away the capability whose gate it cannot pass, and the run would ship having never checked it.
 
 The resolved set is handed to each iteration's Build Brief (§8.1) so the builder knows what it
-is building. It does not yet choose gates; that is the capability-to-gate table, which sits on
-top of §3.8 and is not built.
+is building. It also chooses gates: `scripts/gate-policy.mjs` (§4.2) is the capability-to-gate
+table, sitting on top of §3.8 — each gate is either universal or armed by the capabilities that
+give it something to test, and a skip is announced with its written reason, never silent.
 
 ---
 
@@ -751,12 +754,13 @@ every write under `.meeseeks` positionally.
 **A run with pins it cannot re-verify aborts.** Carrying them forward unchecked would report the
 same clean pass as a run that verified everything, which is §4's own rule about silent skips.
 
-> **Not yet built: carrying a pass to skip a reviewer call.** A8's saving — asking the panel
-> only about un-carried ids — is deliberately not wired. Its cost premise was found false
-> (Phase 5 sits behind `if (!gateOutcome.ok) continue`, so a failing iteration never pays for a
-> reviewer), no run has reached the panel twice, and there is therefore no baseline to measure
-> the saving against. The store, the invalidation and the fail-closed half are built; the
-> optimisation waits for a run that demonstrates review is the dominant cost.
+> **Built (0.92.0): carrying a pass to skip a reviewer call.** A8's saving — asking the panel
+> only about un-carried ids — is wired as `narrowedPanelPlan` plus a synthetic `carriedReport`,
+> and `panelCarry.enabled` defaults to on (§10). It is a pre-filter only: a narrowed panel that
+> returns `pass` triggers the full panel, which decides. The delta was measured in `panelB`:
+> carrying 9 of 16 requirements cut review tokens by **8.3%** (1,402,476 → 1,285,670) and wall
+> clock by 28.5% — small, because a cold reviewer's cost is the *read* rather than the id list,
+> so the saving does not scale with the number of ids carried.
 
 ### 4.6 The held-out oracle — the only check not downstream of the builder
 
@@ -809,14 +813,19 @@ Four properties, each load-bearing:
   `api` or a `library` would be a gate that cannot pass, which is §4.2's defect class.
 
 **It is off by default (`oracle.enabled`), and that contradicts §13's rejection of `enabled`
-flags — deliberately.** §13's argument is about disabling a check *known to work*. This one has
-never judged a real build, and its failure mode is the worst available here: **a case that invents
-a requirement the specification does not decide becomes a gate the builder cannot satisfy for the
-rest of the run, and the builder cannot tell an invention from a real requirement.** That class
-has bitten seven times. The flag is a staging device, not an escape hatch, and what justifies
-removing it is one case-G run with it armed whose oracle failures were all genuine defects.
-`templates/oracle-author.md` aims squarely at this: when the specification is silent, the author
-is told to leave the case out and say so.
+flags — deliberately.** §13's argument is about disabling a check *known to work*. This one was
+staged behind a flag because its feared failure mode is the worst available here: **a case that
+invents a requirement the specification does not decide becomes a gate the builder cannot satisfy
+for the rest of the run, and the builder cannot tell an invention from a real requirement.** That
+class has bitten seven times. It has since been armed against real builds, and the fear did not
+materialise: `oracle1` judged **19 of 19** on a case-G target at a false-failure rate of **0**,
+and `oracle2` (14 August) ran the metamorphic relations against real generated code, where they
+caught real numeric defects, drove a fix, and passed at ship with zero false failures. What
+`oracle1` also measured is why the default has not yet flipped: its exit-code-only cases could
+not see run 12's defect class even when that defect was planted back into the tree — the
+relations are the half that can, and they have one live run behind them. The flag remains a
+staging device, not an escape hatch. `templates/oracle-author.md` aims squarely at the invention
+class: when the specification is silent, the author is told to leave the case out and say so.
 
 ### 4.5 `DoD-6-adversarial-input` — the line that was bought with a ship
 
@@ -1886,11 +1895,12 @@ and each entry says outright that it was *carried from the cold pass at iteratio
 phrased as a fresh judgement. Invalidation is unchanged and fail-closed (`BRIEF.md` A8): any
 change to the evidenced file unpins, and a missing target is a **fail**, never a carried pass.
 
-**Unmeasured, and labelled so.** `BRIEF.md` A8's own correction notes that "review becomes the
-dominant cost on a long run" is a prediction rather than a measurement, and no run has yet
-reported a review-cost delta from carrying. The mechanism is safe by construction — it can only
-skip work on an iteration that was going to fail — but its *value* is owed a number from the
-first dogfood run that reaches the panel repeatedly.
+**Measured, in `panelB` — and the number is small.** Carrying 9 of 16 requirements — 56% of the
+ids — cut review tokens by **8.3%** (1,402,476 → 1,285,670) and wall clock by 28.5%. A cold
+reviewer's cost is the *read*, not the id list; the ids only change what it writes at the end,
+so the saving does not scale with the number of requirements carried. The mechanism is safe by
+construction — it can only skip work on an iteration that was going to fail — and its measured
+value is marginal: if review cost is to be reduced, the lever is the read.
 
 **Ship-time mutation: the driver runs the gate rather than asking for something impossible.**
 When the panel passes and nothing else has shown the suite can fail, the objective used to be
@@ -1983,9 +1993,9 @@ happens to an orphan after a kill is the operating system's contract and not our
 
 **Not covered, and named rather than implied:** a gate killed by the *operator* rather than by
 the ceiling. Ctrl-C reaches the whole group and so takes the leak with it, but `kill` sent to
-the driver alone does not, and the driver cannot run a handler while blocked inside
-`execFileSync`. Closing that is part of the async driver conversion, where a free event loop
-makes signal forwarding possible at all.
+the driver alone does not. The async conversion landed (0.141.0) and the free event loop now
+exists, but signal forwarding is still not wired — no handler forwards a `SIGTERM` to the gate's
+group, so an operator-kill can still leak it (`PLAN.md` item 2's residual).
 | `sandbox.enabled` | **false** | R19: an OS-level floor **under** the guard (bubblewrap on Linux/WSL2, seatbelt on macOS). Off by default because bubblewrap is a separate package and the driver **refuses an unsandboxed fallback** — defaulting it on would refuse every run on a host without it. Preflight checks the host before the run starts |
 | `panelCarry.enabled` | true | A8's carry: a requirement a cold reviewer already passed with `file:line` evidence, whose evidenced file has not changed, is not re-argued on an iteration that is going to fail anyway. **A pre-filter only** — a narrowed panel that passes triggers the full panel before any ship, so nothing carried ever reaches a ship decision |
 | `maxChildTurns` | **0** (off) | `--max-turns` on each child. Zero means the flag is not passed. **No default is offered because none can be derived**: there is no arithmetic from a token or dollar ceiling to a number of agentic turns, and a made-up number would wear the authority of a measured one |
