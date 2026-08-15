@@ -15,6 +15,41 @@ Statuses: `OPEN` → `IN PROGRESS` → `DONE (version)` / `CLOSED (reason)` — 
 
 ---
 
+## Build order — the efficient traversal of what remains (added 14 Aug)
+
+**The phases below are numbered by discovery order; this is the order to actually BUILD in.** The
+principle: batch by the file and test-tier each item touches, land correctness before long runs,
+and never let a ~2h measurement run block a build slice — kick every dogfood off in the background
+and build the next campaign while it runs. Phases 0–3 are complete; everything below is the
+remaining work, grouped by shared surface so the hostile reviewer warms on one area at a time and
+each tier-3 live check is paid once, not three times.
+
+**Campaign A — Guard & state integrity** (do first, while the guard context is warm; hardens the
+substrate every later run depends on). Item **28** (guard kill-switch + R23 realpath + R24
+tokenizer + R39 Factorio citation — *built & verified, waiting on oracle2 to land*) → **37** (guard
+ergonomics, R25) → **38** (corrupt-state quarantine, R26) → **39** (atomic red-evidence, R34 — the
+verified bug; land before any long run writes that file).
+
+**Campaign B — Reviewer/panel template** (one DESIGN §4 parser re-read, one tier-3 live check for
+the batch): item **40** (unverifiable channel, R27) → **41** (review packaging, R28) → **30c**
+(Trail-of-Bits differential-review mining).
+
+**Campaign C — Gates & efficiency** (cheap, independent, parallelisable; no shared surface): item
+**29** (gitleaks + pinning) → **42** (design-slop `--json`, R29) → **43** (gate-skip on unchanged
+workspace, R35) → **44** (prompt hygiene, R30) → **45** (small trims, R31/R32/R33) → **46**
+(gate-output + retry, R40) → **30a** (LSP) → **30b** (OSV) → **30d** (builder honesty).
+
+**Measurement — on the now-hardened substrate, overlapping the campaigns:** the boxed component
+dogfood (flips item **24** → DONE, and stress-tests the hardened guard for free) · oracle2
+(running) · cases A/B (item **20**, low information value — optional) · then the DoD tail: **31a**
+web-ui smoke → **31** capstone (Ateliers). A race that applies a winner (item 9's question) is
+reclassified as a bespoke hard-but-solvable scenario, not a run to schedule.
+
+**Then Phase 6** (items 32–36, post-DoD ambition) and **item 21** (the mirror — improve mode on this
+repo) as the final act, once part 1 is code-complete.
+
+---
+
 ## Phase 0 — deterministic hygiene. No design work, one commit each, land now.
 
 ### 1. Mutation gate's decline message lies about baselines — DONE (0.87.0, before this plan)
@@ -726,6 +761,71 @@ each, each owing a failed-iteration-rate comparison. Ecosystem notes worth keepi
 hook event fires in `-p` mode (a documented per-child bootstrap point); `/plugin` now shows
 per-plugin context-token cost; Anthropic's harness paper (Mar 2026) independently validates the
 cold hostile panel ("agents evaluating their own work are pathological optimists").
+
+---
+
+## Phase 3.5 — the borrowed intake as slices (`BORROWED.md` R25–R40)
+
+The pending "take" items from BORROWED rounds seven and eight, given numbers so the plan shows all
+of the remaining feature work, not just the accreted early items. R23/R24 fold into item 28; R36/R37
+into item 35; R38 into item 36; R39 into item 28's landing. The **Build order** section at the top
+sequences these by campaign, not by number.
+
+### 37. Guard ergonomics — sentinel, provenance, dampening (R25) — OPEN
+Registration sentinel banner when the guard cannot run (the eleven-version class, answered
+structurally); a provenance prefix on denials so an injection-hardened builder does not discard its
+own guard; denial dampening (full text for the first ~3, then a one-liner + ordinal — ecc's
+measured repetition-loop fix, a §3.9 specimen). Surface: `hooks/guard.mjs`, `hooks/hooks.json`,
+session state outside `.meeseeks/`. **Campaign A** — same surface as item 28.
+
+### 38. Corrupt-state quarantine (R26) — OPEN
+An unparseable decision file (`pins.json`, `state.json`, `red-evidence.json`) renames aside to
+`<name>.corrupt-<ts>` and reads as the strictest interpretation, loudly — never repaired in place,
+never silently defaulted. Surface: `scripts/pins.mjs`, `scripts/ratchet.mjs`, the red-evidence
+reader. **Campaign A** — hardens the substrate every later run reads.
+
+### 39. Atomic red-evidence write (R34) — OPEN, **a verified bug**
+`recordRedEvidence` (`driver.mjs:3611`) is the one decision writer still using a bare
+`writeFileSync`; a kill mid-write can re-establish a baseline that admits unproven tests — fail-OPEN.
+Fix: temp+rename, exactly as ratchet/pins/lessons already do. Surface: `scripts/driver.mjs`.
+**Campaign A** — land before any long dogfood run writes this file.
+
+### 40. Reviewer contract — an `unverifiable[]` channel + a mandatory attack account (R27) — OPEN
+Two parsed reviewer-JSON fields: `unverifiable[]` fails closed at the driver; a pass with no
+non-empty attack account is an unparseable pass (already a fail by law). Makes lazy charitable
+passes machine-detectable. Surface: `templates/reviewer-system.md` + the envelope parser + tests in
+one commit; **tier 3**. **Campaign B**.
+
+### 41. Review packaging — truncation honesty + the diff base (R28) — OPEN
+Per-file/total byte caps when assembling the panel's evidence, with an in-band marker so a starved
+reviewer is told; and the diff base is the recorded pre-iteration commit, never `HEAD~1`. Surface:
+the review-packaging path in `scripts/driver.mjs`. **Campaign B**.
+
+### 42. Design-slop gate drives impeccable's real `--json` interface (R29) — OPEN
+Read impeccable's machine-parseable finding stream (advisory/primary partition, `file://` targets,
+`--viewport`) instead of exit codes only; findings become reviewer evidence. Committed `--json`
+fixtures. Surface: the design-slop gate in `scripts/gate-policy.mjs`/`scripts/toolchains`.
+**Campaign C** — pairs with the web-ui smoke's design-slop exercise.
+
+### 43. Gate-skip on an unchanged workspace (R35) — OPEN
+Content-hash "nothing changed since the last gate run → don't re-pay for the gate"; increment the
+attempt counter instead. Attacks the ship1 token-thrash class. Surface: `scripts/driver.mjs` gate
+loop. **Campaign C**.
+
+### 44. Prompt hygiene at the untrusted-text frames (R30) — OPEN
+Additive-only envelope for repo-supplied guidance (may ADD checks, cannot suppress findings;
+byte/count-capped) + delimiter neutralisation at each untrusted frame (test names, requirement
+strings). Surface: prompt assembly in `scripts/driver.mjs`. **Campaign C**.
+
+### 45. Small trims — parse-time flag validation, `/meeseeks` frontmatter, break clause (R31/R32/R33) — OPEN
+One batched slice: `parseDriverArgs` + the wizard validate numeric/date flags at parse time and exit
+naming the flag; `allowed-tools` on `commands/meeseeks.md` pinned to the driver invocation; the
+style layer states its own break-character escape. Surfaces small and independent. **Campaign C**.
+
+### 46. Bounded gate-output → next-iteration repair context, with per-id retry counts (R40) — OPEN
+Formalise "bounded gate-failure output → the next iteration's repair context, with a per-id retry
+counter," generalising §1.2's within-run regression count beyond ratchet regressions to gate
+failures. Surface: `scripts/driver.mjs`. **Campaign C**.
 
 ---
 
