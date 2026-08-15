@@ -917,13 +917,17 @@ Two parts, both required, and they bound an otherwise-asymptotic backlog:
 Item 21 (the mirror — improve mode on this repo) remains the final act, un-deferrable once part 1
 is code-complete.
 
-### 31a. Web-ui smoke — the penultimate test, run BEFORE the capstone — **RUN 15 Aug (attempt 1b: BUDGET 6/6); three machine fixes shipped (0.154.0–0.156.0); attempt 2 queued**
+### 31a. Web-ui smoke — the penultimate test — **SHIPPED, 15 Aug, attempt 6: panel unanimous on 6 requirement(s)**
 
-**Read-out in `DOGFOOD.md` ("Web-ui smoke — Tallyho").** The smoke did its exact job: found
-`findHealthPath` blind to filesystem routes, detectors reading `.next/` output, and the health probe's
-untold PORT contract — each fixed the same day. Chromium/Playwright provisioning proven live; the parallel
-panel's first web outing failed `DoD-6` with a real duplicate-id bug and a repro payload. Attempt 2 runs
-from a 0.156.0 snapshot and is expected to ship.
+**The first web-ui `SHIPPED` in this machine's history, and operator-verified after the fact:**
+`npm start` boots in 94ms, `GET /` **200**, `GET /api/health` **200** `{"status":"ok",...}`. Six attempts,
+~$85 of runs, **six machine defects found and fixed the same day** (0.154.0–0.160.0: filesystem routes,
+`.next/` false-pass, PORT contract untold, two-masters port oscillation, Stryker sandbox poison spiral,
+zero-coverage crash misdirection), the parallel panel forensic across ~12 convenings (a real duplicate-id
+bug with repro payload; a real doc-invariant drift held to the line for four attempts until actually
+fixed), the A8 carry live, chromium auto-provisioning live, the announced-port probe fallback live on the
+ship itself. Full campaign read-out in `DOGFOOD.md`. **All four previously-unproven web subsystems are now
+proven. The capstone path is open.**
 
 **Ordering, operator's call 14 Aug:** no web-ui target has ever run through this machine, so the
 frontend-direction template, the design-slop gate, Playwright-as-ratchet-evidence and the
@@ -1318,6 +1322,21 @@ first ~3 denials, then a one-liner.
 the counter path and shows the guard refuses to follow it); dampening is per-rule (a test denies rule A
 three times then rule B once and sees B rendered in full); an operator denial outside a run is never
 dampened; and any counter failure renders full text.
+
+### 53. Styled milestone lines: gate summary, panel convening, carry/outstanding — OPEN (micro-item, cosmetic, quota-funded)
+
+**Origin:** operator question, 16 Aug — should the heartbeat or milestones speak Meeseeks? **Answer
+settled: milestones only, never the heartbeat, never the children.** The heartbeat is the anxious-operator
+scan channel and repetition kills both signal and joke (§9: a line carrying no information is noise);
+child output feeds parsers and archives, so style stays at the driver's render (style-never-touches-logic).
+The gap: three real milestones currently print plain. Extend `render()` with three `StyleEvent` kinds,
+each carrying its full payload: **gate-failure summary** ("OOOH. TWO GATES ARE NOT HAPPY: unit,
+observability." — details stay verbatim beneath, always), **panel convening** ("ALL GATES GREEN! THE
+JUDGES ARE COMING. I DIDN'T PICK THEM. I CAN'T TALK TO THEM." — the cold-panel invariant as canon), and
+**carry/outstanding** ("FOUR THINGS I ALREADY PROVED STAY PROVED." / "ONE FINDING STILL SAYS NO:
+DoD-5-design."). Plain-mode bypass + mapping-tightness tests per event, the existing pattern. One
+evening, on quota — `CLAUDE.md`'s warning stands: the style layer is the thing most likely to eat time
+that belongs to the ratchet.
 
 ### Phase 6 non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:

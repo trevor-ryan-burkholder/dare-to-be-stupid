@@ -112,6 +112,23 @@ does not count here") beneath the verbatim output. The gate still fails, because
 changed-code-with-zero-unit-coverage failing the mutation gate is the gate doing its job; what changed is
 that the failure now teaches its own repair. Attempt 5 runs from a 0.160.0 snapshot.
 
+**Attempt 5 (0.160.0): the teaching worked.** Mutation failed iterations 1–3 *with the new hint*, and by
+iteration 4 the builder had written the unit tests and cleared the gate — **ratchet 34 → 47** (+13, the
+new tests banked). Panels at 4–5 held the lone `DoD-5` doc-invariant drift. Ended `BUDGET` when the
+security-audit child reported its allowance exhausted mid-iteration 6 (the account's quota/credit
+boundary, not the machine — ceilings were off); the driver committed the tree for resume. 17,003,382
+tokens, \$14.60.
+
+**Attempt 6 (0.160.0): `SHIPPED` — panel unanimous on 6 requirement(s).** \$13.73, 12,953,750 tokens, 47
+ids. Gates went green on the first iteration (attempt 5's tests held), the builder repaired the `DoD-5`
+invariant (`isTask` now refuses what `createTask` refuses, and the doc and code agree), and the panel
+passed unanimously. **Operator verification after the fact:** `npm start` → `✓ Ready in 94ms`,
+`GET /` **200**, `GET /api/health` **200** `{"status":"ok","service":"tallyho","version":"1.0.0"}`. The
+shipped start script is `next start -p 3210` — a fixed port — and the ship is honest anyway because the
+0.157.0 announced-port fallback probed where the app actually listens; the run's own record notes PORT
+was set but not honored. **The first web-ui `SHIPPED` in this machine's history: six attempts, ~\$85,
+six same-day machine fixes, and all four previously-unproven web subsystems proven live.**
+
 `BRIEF.md` D2 and `HANDOFF.md` item 9.
 
 > **Case D was run on 11 August 2026 and ended `BUDGET` in iteration 1.** It found three
