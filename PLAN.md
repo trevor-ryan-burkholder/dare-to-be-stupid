@@ -812,11 +812,21 @@ Per-file/total byte caps when assembling the panel's evidence, with an in-band m
 reviewer is told; and the diff base is the recorded pre-iteration commit, never `HEAD~1`. Surface:
 the review-packaging path in `scripts/driver.mjs`. **Campaign B**.
 
-### 42. Design-slop gate drives impeccable's real `--json` interface (R29) — OPEN
+### 42. Design-slop gate drives impeccable's real `--json` interface (R29) — **IN PROGRESS (Slice A done, 0.152.0)**
 Read impeccable's machine-parseable finding stream (advisory/primary partition, `file://` targets,
 `--viewport`) instead of exit codes only; findings become reviewer evidence. Committed `--json`
 fixtures. Surface: the design-slop gate in `scripts/gate-policy.mjs`/`scripts/toolchains`.
 **Campaign C** — pairs with the web-ui smoke's design-slop exercise.
+
+**Slice A landed (0.152.0):** `scripts/design-slop.mjs` `parseImpeccableFindings` — the pure parser,
+partition on `advisory === true` (not severity; the fixture proved the trap), fail-closed, fixture-tested
+against real impeccable 4.0.4 output (`test/fixtures/impeccable/`). No runtime change yet.
+**Slice B (pending):** rewire the design-slop gate from `npx impeccable detect src/` (exit-code only,
+`scripts/plugins.mjs:68`) to `detect --json <target>` + `parseImpeccableFindings`, surface primary findings as
+reviewer evidence, add the `--viewport` mobile pass and `file://` artifact target. Held to land alongside the
+web-ui smoke (31a) so the gate rewire is validated on a real web run, not blind. Contract facts for Slice B:
+impeccable's runnable entry is `detector/detect-antipatterns.mjs` (`isMainModule` guard); a bare HTML path uses
+the static engine (no browser), a `file://` URL uses Puppeteer; exit 2 iff primary findings > 0.
 
 ### 43. Gate-skip on an unchanged workspace (R35) — **DONE (0.149.0)**
 Content-hash "nothing changed since the last gate run → don't re-pay for the gate"; increment the

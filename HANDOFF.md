@@ -1,10 +1,11 @@
 # START HERE — handoff, last swept 15 August 2026
 
-**State:** `main` at `0.151.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.151.0: `npm test` **2261 pass**
+**State:** `main` at `0.152.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.152.0: `npm test` **2271 pass**
 (0 fail), `npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Tiers 2 and 3 carry unchanged from
-0.149.0 — **`test:integration` 51, `test:live` 31** — because items 45 and 46 touch no surface either tier owns: no
-`spawnClaude`/`claudeArgs`/envelope/child-template-output-contract change, only the CLI arg parse, the output-style prose,
-the command frontmatter and the builder-brief assembly, all tier-1 surfaces.
+0.149.0 — **`test:integration` 51, `test:live` 31** — because items 45, 46 and 42's Slice A touch no surface either tier
+owns: no `spawnClaude`/`claudeArgs`/envelope/child-template-output-contract change, only the CLI arg parse, the
+output-style prose, the command frontmatter, the builder-brief assembly, and a new pure parser fixture-tested against
+committed impeccable output — all tier-1 surfaces. **`git push`ed through 0.151.0; 0.152.0 is committed, unpushed.**
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
 gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
@@ -103,6 +104,35 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.152.0 — impeccable `detect --json` parser + real fixture (PLAN item 42 Slice A, R29)
+
+`scripts/design-slop.mjs` (new): `parseImpeccableFindings(text)` reads impeccable 4.0.4's `detect --json`
+stream — one array of finding objects — into `{ primary, advisory }`. The design-slop gate today reads
+impeccable's *exit code only*; this is the capability the gate needs to turn findings into concrete
+reviewer evidence (file, line, rule, description) instead of one opaque bit. **This slice adds the parser
+only; nothing calls it yet, so runtime behaviour is unchanged and no run can regress.** The gate rewire is
+Slice B, held to pair with the web-ui smoke (31a) that first exercises the web toolchain.
+
+**The partition is on `advisory === true`, never on `severity` — and a real capture is what proved it.**
+The committed fixture (`test/fixtures/impeccable/slop-findings.json`, captured from impeccable 4.0.4 against a
+crafted HTML: `overused-font` + `bounce-easing` primary, `em-dash-overuse` advisory) shows `em-dash-overuse`
+carrying `severity: "warning"` **and** `advisory: true`. A parser splitting on severity would have misfiled
+it as gate-failing; the flag is the discriminator, matching impeccable's own `isAdvisory`. This is exactly
+the trap the fixture-over-mocks rule exists to catch, and a hand-written mock would have encoded the wrong
+guess. Provenance and the one normalisation (the absolute capture path → `slop.html`) are documented in
+`test/fixtures/impeccable/README.md`.
+
+**Fails closed.** Non-JSON, a non-array top level, or a finding missing its `antipattern`/`file` identity
+throws `SlopError` rather than yielding a partial or empty result — a gate that cannot read its tool's output
+has failed to check, not passed. In particular empty stdout (`''`) throws while `[]` is a clean empty result:
+"the tool produced no answer" is not "the tool found nothing." Advisory is read as strict `=== true`, so a
+truthy-but-not-`true` value counts primary (over-reporting is the safe direction).
+
+Tests: +10 in `test/design-slop.test.mjs` — the real-fixture partition and the severity trap, field
+extraction, and seven deny/benign paths (`[]` empty vs `''` throw, non-JSON, non-array, missing antipattern,
+missing file, strict-boolean advisory). Tier 1 **2261 → 2271**, 0 fail; lint, typecheck, release-check clean.
+No tier-2/3 surface (a pure parser; impeccable ran locally to capture the fixture, spending no API money).
 
 ### 0.151.0 — bound a gate's failure output on the brief path (PLAN item 46, R40)
 
