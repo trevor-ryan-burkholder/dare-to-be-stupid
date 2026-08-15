@@ -1022,7 +1022,16 @@ live schema, fails on an omission/contradiction, and fails closed on an un-intro
 with a test and a benign neighbour; the builder brief carries the ERD; one live data-backed run
 exercises it end to end.
 
-### 48. Accept a `DOD.md` alongside the PRD and ERD, as a reusable additive done-bar — OPEN (Phase-6 class, post-DoD)
+### 48. Accept a `DOD.md` alongside the PRD and ERD — the admission mechanism, and a reusable additive done-bar — OPEN (Phase-6 class, post-DoD)
+
+**Promoted 15 Aug (operator).** This began as "extra criteria an operator may add." It is more than that:
+**a job with a DoD is a meeseeks job, because the DoD is the check** (item 49's filter). `DOD.md` is
+therefore the mechanism that admits a job at all, not a garnish on one already admitted — which makes its
+*author* as load-bearing as the PRD author, and it inherits that author's hostility: **a criterion naming
+no falsifiable observation, or naming one that cannot be observed here, is refused at authoring time
+rather than accepted and handed to a builder who cannot satisfy it.** A `DOD.md` that launders vagueness
+into a checklist is worse than none, because it looks like rigour while failing nothing. The tier table
+and both conditions live in item 49; this item owns enforcing them at authoring.
 
 **Origin:** operator, 15 Aug 2026 — the third core input, sitting beside the PRD (what to build) and
 the ERD (item 47, what the data looks like): **`DOD.md`, what "done" means.** Today the done bar lives
@@ -1059,7 +1068,10 @@ PRD + ERD + DOD.md are the three legs an enterprise target stands on.
 PRD or that no reviewer owns; the criteria enter the panel as gating requirements and pin monotonically
 once passed; an additive-only test proves a `DOD.md` can only *add* to the bar (a `DOD.md` that "waives"
 a finding does not, and the finding still fails), with a benign neighbour; the builder brief carries it;
-an unparseable `DOD.md` refuses the run.
+an unparseable `DOD.md` refuses the run; **and the authoring-time refusal is tested both ways — an
+unfalsifiable criterion ("feels premium") and an unobservable-here one ("80% of 50 users recognise it")
+are each refused by name at authoring, while a deterministic criterion and a panel-judgeable one both
+pass** (the benign neighbours that prove the refusal is a filter and not a wall).
 
 ### 49. Artifact job-types: checks-as-tests, so the spine drives a book or a report — OPEN (Phase-6 class, post-DoD)
 
@@ -1101,15 +1113,35 @@ work is entirely at the toolchain layer; **no spine change, and a change that ne
   structurally sound, plus a cold panel's judgment** — still far better than an unverified writing agent,
   but not the same claim, and a run must never dress the second as the first.
 
-**The filter, which is the whole of the discipline — and the refusal that keeps this from becoming a
-general agent** (the Phase 6 north star: generality costs the spine):
+**The filter — and it gates the CRITERION, never the job type.** A first draft of this item gated by job
+type ("a report qualifies, a logo does not") and the operator refuted it on 15 Aug: **a job with a DoD is
+a meeseeks job, because the DoD is the check.** "Make me a logo" is unfalsifiable; *"SVG, ≤4 colors,
+legible at 16px and 512px, no gradients, AA contrast on light and dark, <20KB"* is six deterministic
+checks. The job type never decided anything — the criteria did. Job-type gating is both too coarse (it
+refuses work that a DoD makes checkable) and too generous (it admits a "report" whose criteria are all
+vapour).
 
-> **If you cannot write the check before the artifact exists, it is not a meeseeks job.**
+The correct filter is **already in `templates/prd-author.md`**, and this only points it at the DoD:
 
-- *"Research this and make a report"* → highly checkable. **Best fit** (item 34).
-- *"Write me a book about X"* → structure and citations checkable, "is it good" not. **Partial, and honest
-  about which half it proves.**
-- *"Make me a logo"* → no check statable. **Not a meeseeks job.** Refuse rather than widen.
+> *"A requirement is testable when a reader can say what observation would prove it false."*
+> *"Anything a determined auditor cannot check is decoration."*
+
+So: **every DoD criterion must name an observation that would prove it false, and that observation must be
+makeable here.** Two conditions, and the second is where *"anything doable in the CLI"* actually bites.
+
+| Tier | Example | Decided by | Standing |
+|---|---|---|---|
+| Deterministic | `<20KB`, AA contrast, citation resolves | a script → gate / ratcheted id | strongest |
+| Panel-judgeable | "the mark reads as one silhouette at 16px" | cold panel, on evidence | real — how code requirements already work |
+| Unfalsifiable | "feels premium" | nobody | **refused at authoring time** |
+
+*"80% of 50 users recognise it"* is perfectly falsifiable and **unexecutable here** — refused by the second
+condition, not the first. Both conditions, or no run.
+
+**The refusal moves with the filter, and this is the half that pays.** It stops being *"we do not do
+logos"* and becomes *"criterion 4 states no falsifiable observation; rewrite it or the run is refused"* —
+per-line, actionable, and raised at **authoring time** rather than discovered eight iterations and 40M
+tokens later, which is this project's most expensive defect class (the ungrounded requirement).
 
 **Done when:** an artifact toolchain detects (or is declared) and maps its operations; the code gates it
 cannot run decline visibly; a checks-as-tests suite over a real artifact feeds the ratchet through the
