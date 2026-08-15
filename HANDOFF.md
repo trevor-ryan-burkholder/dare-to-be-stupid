@@ -1,10 +1,10 @@
 # START HERE — handoff, last swept 15 August 2026
 
-**State:** `main` at `0.154.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.154.0: `npm test` **2289 pass**
+**State:** `main` at `0.155.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.155.0: `npm test` **2291 pass**
 (0 fail), `npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Tier 3 carries from 0.153.0
-(**`test:live` 31 pass**, run against the fixed item-37 guard; 0.154.0 touches only `findHealthPath`, a pure tier-1
-surface). Tier 2 carries unchanged from 0.149.0 (**`test:integration` 51**). **`git push`ed through 0.153.0; 0.154.0 lands
-in this commit.**
+(**`test:live` 31 pass**, run against the fixed item-37 guard; 0.154.0/0.155.0 touch only the health-path detectors, pure
+tier-1 surfaces). Tier 2 carries unchanged from 0.149.0 (**`test:integration` 51**). **`git push`ed through 0.154.0;
+0.155.0 lands in this commit.**
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
 gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
@@ -103,6 +103,24 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.155.0 — source detectors stop reading generated framework output (the smoke's second machine finding)
+
+The Tallyho autopsy of *how* iteration 4 finally passed observability found two things. The builder's
+escape was legitimate engineering — a `/health` literal in `next.config.ts` (a rewrite aliasing `/health`
+→ `/api/health`), which both satisfied the old regex and made the alias genuinely servable. But the same
+replication showed the old literal scan ALSO matched **`.next/` build artifacts**
+(`required-server-files.js`, `_buildManifest.js` — compiled route tables): the walker skipped
+`node_modules/dist/build/coverage` but not `.next`, so **one successful build could keep the observability
+gate green after the actual route was deleted** — a gate wrong in the *passing* direction, the dangerous
+orientation. The hour-old `findRouteFileHealthPath` had the same hole (Next writes
+`.next/types/app/…/route.ts` stubs it would have matched).
+
+Fix: one shared `SKIPPED_SOURCE_DIRS` set (two inline copies would drift — the `GUARD_TARGETS` lesson,
+same day) now excludes `.next`, `.nuxt`, and `.svelte-kit` — generated framework output excluded **by
+class** rather than caught one at a time, the enumeration lesson again. Both walkers use it. +2 tests
+(tier 1 **2289 → 2291**): a health literal living only in `.next/` build output finds nothing, and a
+route-file stub living only in `.next/types/` finds nothing.
 
 ### 0.154.0 — findHealthPath learns filesystem-declared routes (the Tallyho smoke's first machine finding)
 

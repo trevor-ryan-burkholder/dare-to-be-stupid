@@ -2886,6 +2886,27 @@ function isSubstantial(file, minimumBytes) {
 }
 
 /**
+ * Directories no source detector descends into: dependency trees, VCS internals, and **generated
+ * framework output**. The generated class is the Tallyho smoke's second machine finding: the old
+ * health-literal scan matched `.next/required-server-files.js` and `_buildManifest.js` — compiled
+ * route tables, not source — so one successful build could keep the observability gate green after
+ * the actual route was deleted. A gate wrong in the *passing* direction is the dangerous
+ * orientation. `.nuxt` and `.svelte-kit` are the same class for their frameworks, excluded by
+ * class rather than waiting to be caught one at a time (the enumeration lesson, again). One list,
+ * shared by {@link anySourceMatches} and {@link findRouteFileHealthPath} — two copies would drift.
+ */
+const SKIPPED_SOURCE_DIRS = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  'coverage',
+  '.next',
+  '.nuxt',
+  '.svelte-kit',
+]);
+
+/**
  * @param {string} dir
  * @param {number} depth
  * @param {(contents: string) => boolean} predicate
@@ -2903,7 +2924,7 @@ function anySourceMatches(dir, depth, predicate) {
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (['node_modules', '.git', 'dist', 'build', 'coverage'].includes(entry.name)) continue;
+      if (SKIPPED_SOURCE_DIRS.has(entry.name)) continue;
       if (anySourceMatches(full, depth + 1, predicate)) return true;
       continue;
     }
@@ -3031,7 +3052,7 @@ export function findRouteFileHealthPath(cwd) {
     for (const entry of entries) {
       if (found !== null) return;
       if (entry.isDirectory()) {
-        if (['node_modules', '.git', 'dist', 'build', 'coverage'].includes(entry.name)) continue;
+        if (SKIPPED_SOURCE_DIRS.has(entry.name)) continue;
         walk(path.join(dir, entry.name), depth + 1, [...rel, entry.name]);
         continue;
       }

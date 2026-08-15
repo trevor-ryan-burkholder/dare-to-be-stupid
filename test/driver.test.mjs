@@ -5265,4 +5265,23 @@ describe('findHealthPath sees filesystem-declared routes', () => {
     rmSync(dir, { recursive: true, force: true });
     assert.equal(found, '/healthz');
   });
+
+  // The Tallyho smoke's second machine finding: the literal scan matched `.next/` build output
+  // (compiled route tables), so one successful build could keep the gate green after the real
+  // route was deleted — a gate wrong in the PASSING direction. Generated framework output is not
+  // source, for either detector.
+  it('ignores a health literal that lives only in generated framework output', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-health-fs-'));
+    mkdirSync(path.join(dir, '.next'), { recursive: true });
+    writeFileSync(path.join(dir, '.next/required-server-files.js'), "const routes = ['/health'];\n");
+    const found = findHealthPath(dir);
+    rmSync(dir, { recursive: true, force: true });
+    assert.equal(found, null);
+  });
+
+  it('ignores a route-file stub that lives only in generated framework output', () => {
+    // Next writes `.next/types/app/.../route.ts` type stubs; a stale one must not stand in for
+    // the deleted source route.
+    assert.equal(detectTree(['.next/types/app/api/health/route.ts']), null);
+  });
 });
