@@ -787,3 +787,74 @@ the way the rejection PRD does). Expect many iterations and 100M+ tokens; uncapp
 **Done when:** the run produces a Next.js app that builds and serves, with the seeded core flow
 working end to end under Playwright — a full `SHIPPED` is the target, and a run that ends with a
 running-but-incomplete app is documented honestly as a partial, not dressed as a ship.
+
+## Phase 6 — the expansion. Post-DoD; ambition, not scope. Added 14 Aug by operator decision.
+
+**Nothing in this phase begins before the DoD is met — the features, then Tallyho, then Ateliers
+actually running.** A general-agent ambition on an unproven core is how projects die of scope;
+this phase is earned from proof, not hope, and is recorded here so the ambition is captured
+without moving the "done" line.
+
+**North star:** do NOT build a crazier general agent (that is the trap — generality costs the
+spine: no ratchet, no cold-panel verdict, no oracle, and meeseeks becomes a worse Prime Agent).
+Build **the trustworthy substrate any agent's output must pass through before anyone believes
+it** — across more models, more languages, and more verifiable job-types. The move is never
+"become general"; it is "widen the set of job-types that have a verifiable done-bar," and every
+item below extends meeseeks along an axis that does **not** cross an invariant. Growth of surface,
+never movement of the spine — which is only safe because the narrow rigid core was built first.
+
+Origin: the 14 Aug prime-agent recon + mine (`BORROWED.md` round eight). Prime Agent is a general,
+model-agnostic, self-improving coding harness that lacks all three meeseeks guarantees (ratchet,
+cold separate-process judge, positional guard). These items absorb its genuinely-good capabilities
+into the verification-first architecture; the non-goals below are the ones that would dilute it.
+
+### 32. Model-agnostic backends + a heterogeneous cold panel — OPEN
+Add backend adapters behind `spawnClaude`/`claudeArgs` (Codex, open models, others). The
+meeseeks-only twist that makes this a verification UPGRADE rather than parity: let the cold panel
+run on a **different model than the builder** — a reviewer that is not even the same model is more
+independent, not less. **Invariant:** the panel stays cold and separate-process; heterogeneity
+strengthens independence, never softens review. Touches the spawn contract → **tier 3 mandatory**.
+
+### 33. More language toolchains + reporters (Python, Go, Rust) — OPEN
+New `scripts/toolchains/*.mjs` + `scripts/reporters/*.mjs` behind the existing fixed toolchain
+contract (the same shape dotnet proved). Each: detect, map the gates, parse the framework's
+reporter output into ratchet ids. **Invariant:** fixture-tests-over-mocks against real committed
+reporter output; each new reporter owns a contract another binary defines → one **tier-2/3 live
+check** per toolchain. The core loop is already language-agnostic (the ratchet parses reporter
+JSON, not syntax) — this is surface, not spine.
+
+### 34. Verified research mode — OPEN
+The differentiated land-grab: do what their "research agent" does, but *verified*. New job-type
+whose gates are citations-resolve (the quoted text appears in the cited source), claims-are-sourced,
+no-contradictions, coverage-of-a-checklist — and the **held-out oracle repurposed as a
+fact-checker** authored before the research is written. **Invariant:** nothing-defaults-to-pass and
+the held-out principle carry over unchanged; the reporter emits deterministic pass/fail evidence
+(a citation resolver) exactly as a test reporter does. Offers the one thing a self-evaluating
+research agent structurally cannot: research trustworthy unwatched.
+
+### 35. Continual-memory discipline, operator-side (folds R36 + R37) — OPEN
+Adopt Prime Agent's Continual-Harness *discipline* on the DRIVER, never the builder: bound the
+lesson STORE (not just the view), add retraction/rollback with an append-only history, and a gated
+promotion so run-local candidate lessons enter the durable cross-run store only through a distinct
+gate (cold-reviewed or usage-thresholded). **Invariant:** driver-owned, never builder-editable
+(§13.8); design the escape before the enforcement; the builder stays starved. The Factorio study
+(R39) is the warning label: self-modifiable state under the builder's reach becomes the exploit.
+
+### 36. Durable, resumable, daemon-backed runs (folds R38) — OPEN
+A driver that survives the terminal closing, re-discovers in-flight worktrees on relaunch, and
+resumes — plus a driver-owned sub-run registry (sub-run-id → worktree → status) extending race.mjs'
+SIGKILL sweep-at-start. **Invariant:** the guard still owns `.meeseeks/` (registry is
+driver-written), the run-lock holds, results are read from artifacts never a child's return value,
+no nesting unless `--give-them-the-box`. Matches "long-running across sessions" with the spine
+intact.
+
+### Phase 6 non-goals — the refusals ARE the product
+Recorded so a future session does not "helpfully" add them:
+- **Persistent kernel / REPL as the builder's environment** — breaks builder starvation; state
+  leaks past `git reset --hard` and the ratchet's premise dies.
+- **Builder self-memory or self-grading** — breaks cold review; self-evaluation is the enemy the
+  whole design defeats.
+- **Open-ended "just keep working" mode with no DoD** — meeseeks requires a verifiable done-bar;
+  the answer to "handle more work" is more job-types with done-bars (32–34), never no done-bar.
+- **A warm interactive TUI as the primary surface** — unattended-trustworthy is the moat; an
+  attended mode, if ever built, is a separate surface and must not wag the verification dog.
