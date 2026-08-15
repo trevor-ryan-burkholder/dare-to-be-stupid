@@ -77,6 +77,40 @@ function capped(items, cap) {
   ];
 }
 
+/** How many lines of one gate's failure output ride into the builder's brief. */
+const DETAIL_LINE_CAP = 60;
+
+/** And a hard character backstop, because a lines-only cap is defeated by one very long line. */
+const DETAIL_CHAR_CAP = 4000;
+
+/**
+ * One gate's failure output, bounded for a prompt.
+ *
+ * The operator log already bounds a gate's detail to 60 lines (`formatGateFailure` in
+ * `driver.mjs`), but that bound never reached the *brief*: the `detail` string flowed into the
+ * builder's prompt verbatim, up to the 64 MB child-output buffer (R40). A gate that dumps
+ * thousands of lines — or one enormous minified line — then floods every later iteration's
+ * context, the token-thrash class item 43 also attacks. `LIST_CAP` bounds the *number* of gates,
+ * never the length of any single detail, so the length is bounded here, by BOTH lines and
+ * characters: a lines-only cap is defeated by a single very long line, and a chars-only cap would
+ * lose the readable whole-line truncation the line cap gives. R40's other half — a gate that
+ * keeps failing being named to the builder — already ships as `repeatedGateNote`; this closes the
+ * bounded-output half.
+ *
+ * @param {string} detail
+ * @returns {string}
+ */
+function boundedGateDetail(detail) {
+  const lines = String(detail ?? '').split('\n');
+  let body = lines.slice(0, DETAIL_LINE_CAP).join('\n');
+  let note = lines.length > DETAIL_LINE_CAP ? ` [+${lines.length - DETAIL_LINE_CAP} more line(s) not shown]` : '';
+  if (body.length > DETAIL_CHAR_CAP) {
+    body = body.slice(0, DETAIL_CHAR_CAP);
+    note = ` [truncated to ${DETAIL_CHAR_CAP} chars; run the gate to see the rest]`;
+  }
+  return `${body}${note}`;
+}
+
 /**
  * The scope budget, in the builder's own terms (DESIGN.md §13.4).
  *
@@ -107,7 +141,7 @@ function objectiveSection(objective) {
   const gateFailures = objective.gateFailures ?? [];
   if (gateFailures.length > 0) {
     lines.push('', '### Failing gates', '');
-    lines.push(...capped(gateFailures.map((gate) => `\`${gate.name}\`: ${gate.detail}`), LIST_CAP));
+    lines.push(...capped(gateFailures.map((gate) => `\`${gate.name}\`: ${boundedGateDetail(gate.detail)}`), LIST_CAP));
   }
 
   const regressions = objective.regressions ?? [];

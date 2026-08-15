@@ -842,10 +842,17 @@ different binary's contract, which the scope note forbids exercising here by run
 mode is benign (a one-time prompt, never unsafe); **owed:** confirm the pre-approval matches on the next
 real `/meeseeks`. See `HANDOFF.md` 0.150.0.
 
-### 46. Bounded gate-output → next-iteration repair context, with per-id retry counts (R40) — OPEN
+### 46. Bounded gate-output → next-iteration repair context, with per-id retry counts (R40) — **DONE (0.151.0)**
 Formalise "bounded gate-failure output → the next iteration's repair context, with a per-id retry
 counter," generalising §1.2's within-run regression count beyond ratchet regressions to gate
 failures. Surface: `scripts/driver.mjs`. **Campaign C**.
+
+**Landed.** The **retry-counter** half was already present — a gate that keeps failing is named to the
+builder via `repeatedGateNote` + `gateFailureStreaks` (consecutive-streak, threshold 3, folded into
+`objective.reason`), built for case I. The remaining **bounded-output** half is the actual net-new work and
+lives in `scripts/brief.mjs`: `boundedGateDetail` caps each gate's `detail` on the brief path by 60 lines
+and 4000 chars (the detail previously flowed into the builder prompt verbatim, up to the 64 MB child buffer;
+`LIST_CAP` bounds gate *count*, never *length*). +3 tests via `compileBrief`. See `HANDOFF.md` 0.151.0.
 
 ---
 

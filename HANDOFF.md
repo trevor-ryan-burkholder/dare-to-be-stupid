@@ -1,10 +1,10 @@
 # START HERE — handoff, last swept 15 August 2026
 
-**State:** `main` at `0.150.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.150.0: `npm test` **2258 pass**
+**State:** `main` at `0.151.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.151.0: `npm test` **2261 pass**
 (0 fail), `npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Tiers 2 and 3 carry unchanged from
-0.149.0 — **`test:integration` 51, `test:live` 31** — because item 45 touches no surface either tier owns: no
-`spawnClaude`/`claudeArgs`/envelope/child-template-contract change, only the CLI arg parse, the output-style prose and the
-command frontmatter, all tier-1 surfaces.
+0.149.0 — **`test:integration` 51, `test:live` 31** — because items 45 and 46 touch no surface either tier owns: no
+`spawnClaude`/`claudeArgs`/envelope/child-template-output-contract change, only the CLI arg parse, the output-style prose,
+the command frontmatter and the builder-brief assembly, all tier-1 surfaces.
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
 gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
@@ -103,6 +103,31 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.151.0 — bound a gate's failure output on the brief path (PLAN item 46, R40)
+
+`scripts/brief.mjs`: a failing gate's `detail` string flowed into the *next* iteration's builder brief
+verbatim — up to the 64 MB child-output buffer. `LIST_CAP=20` bounds the *number* of gates shown, never
+the *length* of any one, so a gate dumping thousands of lines (a `tsc` wall, a stack-trace flood) put its
+whole output into every subsequent iteration's context — the token-thrash class item 43 also attacks. The
+60-line cap that already existed (`formatGateFailure`, `driver.mjs`) only ever fed the operator log, never
+the brief. New `boundedGateDetail` in `brief.mjs` caps each gate's detail on the brief path by **both** 60
+lines and 4000 characters — lines for readable whole-line truncation with a `[+N more line(s)]` marker,
+characters as a backstop because a lines-only cap is defeated by one minified line — applied at the
+`objectiveSection` gate render. The internal keyword-match path (`objectiveText` in `driver.mjs`) is left
+unbounded on purpose: it feeds JS string-matching for lesson selection, not a model prompt, so it costs no
+tokens.
+
+**R40's other half was already shipped.** R40 asked for "bounded gate output **with a per-id retry
+counter**"; the retry-counter half — a gate that keeps failing being named to the builder — has existed
+since case I as `repeatedGateNote` + `gateFailureStreaks` (consecutive-streak, threshold 3, folded into
+`objective.reason`). This closes the remaining bounded-output half, so item 46 is complete.
+
+Tests: +3 in `test/brief.test.mjs`, all through the public `compileBrief` — a 100-line detail capped to 60
+with the hidden-count marker (the 61st line proven absent), a single 10k-char line truncated to 4000 with
+its tail proven absent (the long-line hole), and a short detail left whole and marker-free (the
+benign-neighbour half). Tier 1 **2258 → 2261**, 0 fail; lint, typecheck, release-check clean. No tier-2/3
+surface touched (brief assembly is builder input, not a parsed template output contract).
 
 ### 0.150.0 — small trims: unknown-flag rejection, break-character clause, least-privilege frontmatter (PLAN item 45, R31/R32/R33)
 

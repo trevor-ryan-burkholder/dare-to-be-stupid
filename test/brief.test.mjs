@@ -58,6 +58,41 @@ describe('compileBrief', () => {
     assert.equal(brief.includes('`types`: TS2339'), true);
   });
 
+  // R40: a gate's detail flowed into the builder's prompt verbatim (up to the 64 MB child buffer);
+  // `LIST_CAP` bounds only the number of gates, never the length of one. A gate dumping thousands
+  // of lines floods every later iteration's context. It is now bounded by lines and by characters.
+  it('bounds a gate detail that runs long, naming how many lines it hid (R40)', () => {
+    const detail = Array.from({ length: 100 }, (_, i) => `error line ${i}`).join('\n');
+    /** @type {import('../scripts/brief.mjs').Objective} */
+    const objective = { kind: 'gates', headline: 'h', reason: 'r', gateFailures: [{ name: 'types', detail }] };
+    const brief = compileBrief({ iteration: 1, chaos: 1, objective });
+    assert.equal(brief.includes('error line 0'), true);
+    assert.equal(brief.includes('error line 59'), true);
+    assert.equal(brief.includes('error line 60'), false, 'the 61st line survived the 60-line cap');
+    assert.equal(brief.includes('[+40 more line(s) not shown]'), true);
+  });
+
+  it('bounds a single enormous gate line by characters, closing the long-line hole (R40)', () => {
+    // A lines-only cap is defeated by one minified line; the character backstop catches it.
+    const detail = `HEAD ${'x'.repeat(10000)} TAIL`;
+    /** @type {import('../scripts/brief.mjs').Objective} */
+    const objective = { kind: 'gates', headline: 'h', reason: 'r', gateFailures: [{ name: 'e2e', detail }] };
+    const brief = compileBrief({ iteration: 1, chaos: 1, objective });
+    assert.equal(brief.includes('HEAD'), true);
+    assert.equal(brief.includes('TAIL'), false, 'the tail of a 10k-char line survived the char cap');
+    assert.equal(brief.includes('[truncated to 4000 chars; run the gate to see the rest]'), true);
+  });
+
+  it('leaves a short gate detail whole and marker-free, so the bound touches only long output', () => {
+    const detail = 'line a\nline b\nline c';
+    /** @type {import('../scripts/brief.mjs').Objective} */
+    const objective = { kind: 'gates', headline: 'h', reason: 'r', gateFailures: [{ name: 'lint', detail }] };
+    const brief = compileBrief({ iteration: 1, chaos: 1, objective });
+    assert.equal(brief.includes('`lint`: line a\nline b\nline c'), true);
+    assert.equal(brief.includes('more line(s) not shown'), false);
+    assert.equal(brief.includes('truncated to'), false);
+  });
+
   it('puts the iteration number in the heading', () => {
     const brief = compileBrief({ iteration: 7, chaos: 1, objective: GATES_OBJECTIVE });
     assert.equal(brief.startsWith('# Build brief - iteration 7'), true);
