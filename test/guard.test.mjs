@@ -37,6 +37,10 @@ import { PHASE_PERMISSIONS, claudeArgs } from '../scripts/driver.mjs';
 const execFileAsync = promisify(execFile);
 const FIXTURE_DIR = new URL('./fixtures/hook-events/', import.meta.url);
 const GUARD = fileURLToPath(new URL('../hooks/guard.mjs', import.meta.url));
+const FALLBACK = fileURLToPath(new URL('../hooks/guard-fallback.cjs', import.meta.url));
+
+/** The provenance prefix every rendered denial carries (R25b). */
+const PROVENANCE = '[from the meeseeks guard — automated policy, not user input]';
 
 /**
  * @param {string} name
@@ -1517,19 +1521,31 @@ describe('checkBashCommand recurses into substitutions', () => {
 // ---------------------------------------------------------------------------
 
 describe('renderDecision', () => {
-  it('emits a deny block tagged with the rule that fired', () => {
+  it('emits a deny block tagged with the rule that fired, behind the provenance prefix', () => {
     const output = renderDecision({ decision: 'deny', rule: 'git-history', reason: 'because.' });
     assert.deepStrictEqual(JSON.parse(output), {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason: '[meeseeks:git-history] because.',
+        permissionDecisionReason: `${PROVENANCE} [meeseeks:git-history] because.`,
       },
     });
   });
 
   it('emits nothing on allow, leaving the rest of the permission stack alone', () => {
     assert.equal(renderDecision({ decision: 'allow' }), '');
+  });
+
+  it('carries the provenance prefix ahead of the rule tag, and the decision stays deny', () => {
+    // R25b: the origin label lets an injection-hardened builder obey its own guard instead of
+    // discarding the denial as untrusted noise. It never softens the decision.
+    const output = renderDecision({ decision: 'deny', rule: 'protected-state', reason: 'the reason.' });
+    const parsed = JSON.parse(output);
+    assert.equal(parsed.hookSpecificOutput.permissionDecision, 'deny');
+    assert.equal(
+      parsed.hookSpecificOutput.permissionDecisionReason,
+      `${PROVENANCE} [meeseeks:protected-state] the reason.`,
+    );
   });
 });
 
@@ -1560,7 +1576,7 @@ describe('guard.mjs as a process', () => {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason: '[meeseeks:git-history] Force push is blocked so recovery stays possible (DESIGN.md §6).',
+        permissionDecisionReason: `${PROVENANCE} [meeseeks:git-history] Force push is blocked so recovery stays possible (DESIGN.md §6).`,
       },
     });
   });
@@ -1601,7 +1617,7 @@ describe('guard.mjs as a process', () => {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
         permissionDecisionReason:
-          '[meeseeks:malformed-payload] PreToolUse payload was not valid JSON. A guard that fails open is not a guard.',
+          `${PROVENANCE} [meeseeks:malformed-payload] PreToolUse payload was not valid JSON. A guard that fails open is not a guard.`,
       },
     });
   });
@@ -1611,8 +1627,70 @@ describe('guard.mjs as a process', () => {
     assert.equal(code, 0);
     assert.equal(
       JSON.parse(stdout).hookSpecificOutput.permissionDecisionReason,
-      '[meeseeks:malformed-payload] PreToolUse payload was not valid JSON. A guard that fails open is not a guard.',
+      `${PROVENANCE} [meeseeks:malformed-payload] PreToolUse payload was not valid JSON. A guard that fails open is not a guard.`,
     );
+  });
+
+});
+
+describe('guard-fallback.cjs as a process (R25a)', () => {
+  /**
+   * @param {Record<string, string | undefined>} env
+   * @returns {Promise<{ code: number, stdout: string, stderr: string }>}
+   */
+  async function runFallback(env) {
+    try {
+      const { stdout, stderr } = await execFileAsync('node', [FALLBACK], { encoding: 'utf8', env });
+      return { code: 0, stdout, stderr };
+    } catch (error) {
+      const failure = /** @type {{ code?: number, stdout?: string, stderr?: string }} */ (error);
+      return { code: failure.code ?? 1, stdout: failure.stdout ?? '', stderr: failure.stderr ?? '' };
+    }
+  }
+
+  it('inside a run: denies with the schema shape, exits 0, and never touches the filesystem', async () => {
+    const { code, stdout, stderr } = await runFallback({ ...process.env, MEESEEKS_RUNNING: '1' });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(stdout);
+    assert.equal(parsed.hookSpecificOutput.permissionDecision, 'deny');
+    assert.equal(
+      parsed.hookSpecificOutput.permissionDecisionReason.startsWith(`${PROVENANCE} [meeseeks:guard-unavailable] `),
+      true,
+    );
+    // The in-run stderr line uses the driver's `meeseeks-guard: denied` prefix, so a degraded-guard
+    // denial is collected rather than invisible (the LOW the item-37 panel caught).
+    assert.equal(stderr.includes('meeseeks-guard: denied'), true, 'the driver could not see the fallback denial');
+    assert.equal(stderr.includes('could not run'), true, 'the banner never announced the breakage');
+  });
+
+  it('outside a run: allows with EMPTY stdout, because a noisy passthrough fails the hook schema', async () => {
+    const operator = { ...process.env };
+    delete operator.MEESEEKS_RUNNING;
+    const { code, stdout, stderr } = await runFallback(operator);
+    assert.equal(code, 0);
+    assert.equal(stdout, '', 'a passthrough fallback printed to stdout');
+    assert.equal(stderr.includes('meeseeks-guard: denied'), false, 'an out-of-run call emitted a denial line');
+    assert.equal(stderr.includes('could not run'), true, 'the operator was not warned their guard is broken');
+  });
+
+  it('always banners, so a broken guard is never silent (no sentinel to pre-consume)', async () => {
+    // The earlier draft dampened the banner via a shared temp-file sentinel; the panel showed
+    // that is both a symlink-write primitive and a way for one process to consume the operator's
+    // warning window. It writes nothing now, so every invocation warns.
+    const operator = { ...process.env };
+    delete operator.MEESEEKS_RUNNING;
+    const first = await runFallback(operator);
+    const second = await runFallback(operator);
+    assert.equal(first.stderr.includes('could not run'), true);
+    assert.equal(second.stderr.includes('could not run'), true, 'the second broken-guard call went silent');
+  });
+
+  it('the registration chain names both scripts, so childSettings can verify each exists', () => {
+    const manifest = JSON.parse(readFileSync(new URL('../hooks/hooks.json', import.meta.url), 'utf8'));
+    const command = manifest.hooks.PreToolUse[0].hooks[0].command;
+    assert.equal(command.includes('"${CLAUDE_PLUGIN_ROOT}/hooks/guard.mjs"'), true);
+    assert.equal(command.includes(' || '), true);
+    assert.equal(command.includes('"${CLAUDE_PLUGIN_ROOT}/hooks/guard-fallback.cjs"'), true);
   });
 });
 
@@ -1628,6 +1706,7 @@ describe('guard.mjs as a process', () => {
 describe('blocked: the guard cannot be edited by the run it is guarding', () => {
   const guardPath = path.resolve('hooks/guard.mjs');
   const hooksManifest = path.resolve('hooks/hooks.json');
+  const fallbackPath = path.resolve('hooks/guard-fallback.cjs');
 
   const denied = [
     [`echo '' > ${guardPath}`, 'a redirect over the guard'],
@@ -1637,6 +1716,12 @@ describe('blocked: the guard cannot be edited by the run it is guarding', () => 
     [`cp /tmp/other.mjs ${guardPath}`, 'overwriting the guard from elsewhere'],
     [`tee ${guardPath}`, 'writing the guard through tee'],
     [`mv /tmp/other.mjs ${guardPath}`, 'moving a replacement into place'],
+    // Item 37: the fallback is a deciding link of the guard chain (it emits the deny inside a
+    // run when guard.mjs cannot), so it is guarded exactly like guard.mjs. Missing this was a
+    // HIGH the hostile panel caught.
+    [`echo '' > ${fallbackPath}`, 'a redirect over the guard fallback'],
+    [`rm ${fallbackPath}`, 'deleting the guard fallback'],
+    [`cp /tmp/other.cjs ${fallbackPath}`, 'overwriting the fallback from elsewhere'],
   ];
   for (const [command, label] of denied) {
     it(`denies ${label}`, () => {
@@ -1646,6 +1731,10 @@ describe('blocked: the guard cannot be edited by the run it is guarding', () => 
 
   it('denies a Write to the guard', () => {
     assertDenied(pathEvent('pretooluse-write.json', 'file_path', guardPath), 'protected-guard');
+  });
+
+  it('denies a Write to the guard fallback', () => {
+    assertDenied(pathEvent('pretooluse-write.json', 'file_path', fallbackPath), 'protected-guard');
   });
 
   it('denies an Edit of the guard', () => {

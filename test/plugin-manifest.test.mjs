@@ -97,9 +97,15 @@ describe('marketplace.json', () => {
 describe('the guard hook registration', () => {
   const entry = HOOKS.hooks.PreToolUse[0];
 
-  it('runs guard.mjs through node, from the plugin root', () => {
+  it('runs guard.mjs through node, with the crash-net fallback chained behind it (item 37)', () => {
+    // `guard.mjs` exits 0 on both allow and deny, so the fallback runs only when the guard
+    // itself could not — node too old, broken cache. Without the chain that failure class is
+    // a silent fail-open: an erroring hook is reported and the tool call proceeds.
     assert.equal(entry.hooks[0].type, 'command');
-    assert.equal(entry.hooks[0].command, 'node "${CLAUDE_PLUGIN_ROOT}/hooks/guard.mjs"');
+    assert.equal(
+      entry.hooks[0].command,
+      'node "${CLAUDE_PLUGIN_ROOT}/hooks/guard.mjs" || node "${CLAUDE_PLUGIN_ROOT}/hooks/guard-fallback.cjs"',
+    );
   });
 
   it('matches every tool that could write to the ratchet, not only Bash', () => {

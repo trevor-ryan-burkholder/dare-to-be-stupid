@@ -671,9 +671,31 @@ export function isProtectedStatePath(candidate, cwd) {
  */
 const GUARD_FILE = fileURLToPath(import.meta.url);
 const GUARD_MANIFEST = path.join(path.dirname(GUARD_FILE), 'hooks.json');
-/** The realpath side of the same two names, so a symlinked install cannot dodge the compare. */
+/**
+ * The crash-net fallback (PLAN item 37): `hooks.json` chains `guard.mjs || guard-fallback.cjs`,
+ * so the fallback is a **deciding** link of the guard — inside a run it emits the deny itself.
+ * A deciding file left writable is the exact hole `protected-guard` exists to close, so it joins
+ * the guarded set. Missing it was a real defect the item-37 hostile panel caught.
+ */
+const GUARD_FALLBACK = path.join(path.dirname(GUARD_FILE), 'guard-fallback.cjs');
+/** The realpath side of the same names, so a symlinked install cannot dodge the compare. */
 const GUARD_FILE_REAL = realpathForCompare(GUARD_FILE) ?? GUARD_FILE;
 const GUARD_MANIFEST_REAL = realpathForCompare(GUARD_MANIFEST) ?? GUARD_MANIFEST;
+const GUARD_FALLBACK_REAL = realpathForCompare(GUARD_FALLBACK) ?? GUARD_FALLBACK;
+
+/**
+ * Every path that is the guard, in both its as-named and realpath forms. Defined once and used by
+ * both {@link isProtectedGuardPath} and {@link matchProtectedText}: two copies of this list drifted
+ * apart is how the fallback would have been added to one check and not the other.
+ */
+const GUARD_TARGETS = [
+  GUARD_FILE,
+  GUARD_MANIFEST,
+  GUARD_FALLBACK,
+  GUARD_FILE_REAL,
+  GUARD_MANIFEST_REAL,
+  GUARD_FALLBACK_REAL,
+].map(fold);
 
 /**
  * Is this path the guard itself?
@@ -699,12 +721,11 @@ const GUARD_MANIFEST_REAL = realpathForCompare(GUARD_MANIFEST) ?? GUARD_MANIFEST
  */
 export function isProtectedGuardPath(candidate, cwd) {
   if (candidate.length === 0) return false;
-  const targets = [GUARD_FILE, GUARD_MANIFEST, GUARD_FILE_REAL, GUARD_MANIFEST_REAL].map(fold);
   const resolved = path.resolve(cwd, candidate);
-  if (targets.includes(fold(resolved))) return true;
+  if (GUARD_TARGETS.includes(fold(resolved))) return true;
   const real = realpathForCompare(resolved);
   if (real === null) return true;
-  return targets.includes(fold(real));
+  return GUARD_TARGETS.includes(fold(real));
 }
 
 /**
@@ -944,8 +965,7 @@ function matchProtectedText(text, cwd) {
     // Path-shaped substrings only, resolved and compared — never a realpath-failure deny
     // here, because a fragment of prose is not a path a write travels through.
     const resolved = path.resolve(cwd, candidate);
-    const targets = [GUARD_FILE, GUARD_MANIFEST, GUARD_FILE_REAL, GUARD_MANIFEST_REAL].map(fold);
-    if (targets.includes(fold(resolved))) return deny('protected-guard', protectedGuardReason(candidate));
+    if (GUARD_TARGETS.includes(fold(resolved))) return deny('protected-guard', protectedGuardReason(candidate));
   }
   return null;
 }
@@ -2106,7 +2126,25 @@ export function evaluate(payload, options = {}) {
 }
 
 /**
+ * The provenance prefix on every denial (R25b). An injection-hardened builder is told to treat
+ * text arriving in its transcript as untrusted; a denial with no stated origin reads exactly
+ * like the injected noise it has been hardened against, and gets discarded the same way. Naming
+ * the origin as automated policy is what lets the builder obey its own guard. The verbatim
+ * denial content rides unstyled beneath it.
+ */
+const PROVENANCE = '[from the meeseeks guard — automated policy, not user input]';
+
+/**
  * Render a decision as the hook's stdout. Allow prints nothing.
+ *
+ * **Denial dampening (R25c) was cut from this slice and is deliberately not here.** Counting
+ * denials across separate hook processes needs shared state on disk, and the item-37 hostile
+ * panel showed that giving the guard a filesystem-write primitive on its denial path opens a
+ * symlink confused-deputy write — the guard, which is not itself guarded, following a
+ * builder-planted symlink to corrupt protected state. Verbosity is not worth handing the guard
+ * that primitive. Dampening returns as its own item, storing state where the builder cannot
+ * reach it (`DESIGN.md`/`PLAN.md`).
+ *
  * @param {Decision} decision
  * @returns {string}
  */
@@ -2116,7 +2154,7 @@ export function renderDecision(decision) {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: `[meeseeks:${decision.rule}] ${decision.reason}`,
+      permissionDecisionReason: `${PROVENANCE} [meeseeks:${decision.rule}] ${decision.reason}`,
     },
   })}\n`;
 }

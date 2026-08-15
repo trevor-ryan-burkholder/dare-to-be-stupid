@@ -782,12 +782,21 @@ of the remaining feature work, not just the accreted early items. R23/R24 fold i
 into item 35; R38 into item 36; R39 into item 28's landing. The **Build order** section at the top
 sequences these by campaign, not by number.
 
-### 37. Guard ergonomics — sentinel, provenance, dampening (R25) — OPEN
+### 37. Guard ergonomics — crash-net fallback + provenance (R25) — **DONE (dampening split to item 52)**
 Registration sentinel banner when the guard cannot run (the eleven-version class, answered
 structurally); a provenance prefix on denials so an injection-hardened builder does not discard its
 own guard; denial dampening (full text for the first ~3, then a one-liner + ordinal — ecc's
 measured repetition-loop fix, a §3.9 specimen). Surface: `hooks/guard.mjs`, `hooks/hooks.json`,
 session state outside `.meeseeks/`. **Campaign A** — same surface as item 28.
+
+**Landed:** the answer to "the guard cannot run" is not a sentinel banner from `guard.mjs` (which by
+definition did not run) but a **chained crash-net** — `hooks.json` now registers
+`node "guard.mjs" || node "guard-fallback.cjs"`, and the new ES5 `guard-fallback.cjs` denies inside a run
+(nothing defaults to pass) and warns on stderr always. `childSettings` validates **every** quoted path in
+the chain. Provenance prefix (R25b) lands on every denial. The fallback is in the `protected-guard` set,
+so a deciding link cannot be edited by what it guards. **Dampening (R25c) was built, then cut on review** —
+the item-37 hostile panel found it gave the guard a symlink-exploitable write primitive and keyed by
+session not rule; it is re-filed as **item 52** with the safe design. See `HANDOFF.md`.
 
 ### 38. Corrupt-state quarantine (R26) — **DONE (0.148.0)**
 An unparseable decision file (`pins.json`, `state.json`, `red-evidence.json`) renames aside to
@@ -1238,6 +1247,41 @@ the text exists in exactly one place; a test asserts every `CONST-N` names an en
 and **fails on an unenforced one**; a staleness gate refuses a constitution that disagrees with its
 enforcement set (the `release-check` lesson — a discipline that keeps failing becomes a gate); and no
 reviewer prompt gains constitutional text as a side effect.
+
+### 52. Denial dampening (R25c), done without giving the guard a write primitive — OPEN (was part of item 37, cut on review)
+
+**Origin:** R25c, built into item 37's first cut and **removed before landing** when the item-37 hostile
+panel (three lenses, 15 Aug) found two real defects in it. Recorded here so the good idea is not lost and
+the two traps are not walked into again.
+
+**The idea (still good):** ecc's measured repetition-loop fix — a builder that has read the same
+three-sentence denial forty times is having its context spent on nothing (§3.9). Full explanation for the
+first ~3 denials, then a one-liner.
+
+**Why the first cut was pulled — both findings are the design telling you where the wall is:**
+- **A write primitive on the guard's hot path is not worth verbosity.** Counting denials across separate
+  hook processes needs shared state on disk. The first cut wrote a counter in `os.tmpdir()` at a
+  predictable name with plain `writeFileSync`. The guard is **not itself guarded**, so a builder (or any
+  local user) who plants a symlink at that path turns the guard's own write into an arbitrary-file
+  overwrite — including, at worst, the guard file itself. Handing the one component that survives
+  `--dangerously-skip-permissions` a filesystem-write side effect, to save some tokens, is a bad trade.
+- **Dampening must be keyed per (session, rule), never per session.** Per-session, denials 1–3 on rule A
+  followed by the first-ever denial on rule B renders B as "denied again" though B was never explained —
+  recreating the exact repetition loop it exists to fix, for a rule the builder was never told about.
+
+**The design for when it returns:**
+- **State the builder cannot reach.** Not `os.tmpdir()`. Either a per-run directory the *driver* creates
+  `mode 0700` and hands the guard by env (the guard writes only there, and only inside a run — dampening
+  is a builder concern, so out-of-run operator denials are never counted), or open with `O_NOFOLLOW` and
+  refuse a non-regular target. Fail-verbose on every uncertainty, as the first cut already did.
+- **Key by `(session_id, rule)`**, so the first ~3 denials *of each rule* are verbose.
+- **Verbosity only, never the decision** — a dampened denial is still a deny, still carries the provenance
+  prefix and the `[meeseeks:rule]` tag (the parts item 37 kept).
+
+**Done when:** the counter lives where a run process provably cannot redirect it (a test plants a symlink at
+the counter path and shows the guard refuses to follow it); dampening is per-rule (a test denies rule A
+three times then rule B once and sees B rendered in full); an operator denial outside a run is never
+dampened; and any counter failure renders full text.
 
 ### Phase 6 non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:

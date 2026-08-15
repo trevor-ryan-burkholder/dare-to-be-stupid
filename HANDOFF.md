@@ -1,11 +1,10 @@
 # START HERE — handoff, last swept 15 August 2026
 
-**State:** `main` at `0.152.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.152.0: `npm test` **2271 pass**
-(0 fail), `npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Tiers 2 and 3 carry unchanged from
-0.149.0 — **`test:integration` 51, `test:live` 31** — because items 45, 46 and 42's Slice A touch no surface either tier
-owns: no `spawnClaude`/`claudeArgs`/envelope/child-template-output-contract change, only the CLI arg parse, the
-output-style prose, the command frontmatter, the builder-brief assembly, and a new pure parser fixture-tested against
-committed impeccable output — all tier-1 surfaces. **`git push`ed through 0.152.0.**
+**State:** `main` at `0.153.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.153.0: `npm test` **2280 pass**
+(0 fail), `npm run test:live` **31 pass** (0 fail, re-run against the fixed item-37 guard the same hour it changed — the
+chain registers live, denies live, and survives the committed killswitch), `npm run lint` and `npm run typecheck` clean,
+`npm run release-check` **ok**. Tier 2 carries unchanged from 0.149.0 (**`test:integration` 51**) — nothing since touches a
+surface it owns. **`git push`ed through 0.152.0; 0.153.0 lands in this commit.**
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
 gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
@@ -104,6 +103,55 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.153.0 — the guard's crash-net fallback + denial provenance (PLAN item 37, R25a/R25b; R25c cut to item 52)
+
+**The eleven-version class, answered structurally.** A PreToolUse hook that ERRORS is reported and then the
+tool call PROCEEDS — so "the guard could not run" (node too old on the hook PATH, broken plugin cache) was a
+silent fail-open on the one mechanism that survives `--dangerously-skip-permissions`. `hooks.json` now
+registers a chain — `node "guard.mjs" || node "guard-fallback.cjs"` — and since `guard.mjs` exits 0 on both
+allow and deny, the fallback runs exactly when the guard itself could not. The new `guard-fallback.cjs`
+(ES5 CommonJS on purpose, so it parses on whatever node just choked on the modern guard): inside a run it
+emits the deny JSON itself — nothing defaults to pass, and this cannot lock an operator out because a live
+run proves node works (the driver IS node); outside a run it allows with EMPTY stdout (a noisy passthrough
+fails the hook schema — ecc's measured trap) and warns on stderr. Its in-run stderr line uses the driver's
+`meeseeks-guard: denied` prefix so a degraded-guard denial is collected, not invisible. **R25b:** every
+denial now carries `[from the meeseeks guard — automated policy, not user input]` ahead of the rule tag, so
+an injection-hardened builder obeys its own guard instead of discarding the denial as untrusted noise.
+`childSettings` validates **every** quoted path in the chain (the old first-quote-to-last-quote slice would
+have spanned the ` || ` and refused to spawn anything — caught before it cost a run… mostly; see the
+Tallyho attempt-1 abort below). The fallback joined the `protected-guard` set and both protected-path checks
+now share one `GUARD_TARGETS` list, so a deciding file cannot be missed by one check and caught by the other.
+
+**The hostile panel earned its keep — three lenses, six findings, all real, all addressed before landing:**
+(1) HIGH: the first cut's denial-dampening counter wrote `os.tmpdir()/meeseeks-guard-denials-<sid>.json`
+with plain `writeFileSync` — a builder-plantable symlink turns the guard's own write into an
+arbitrary-file overwrite, worst case over the guard itself. (2) HIGH: `guard-fallback.cjs` is a *deciding*
+link and was not in the `protected-guard` set. (3) MEDIUM: dampening keyed per-session, so a rule first
+denied at ordinal ≥4 never got its explanation — recreating the exact loop R25c exists to fix. (4) MEDIUM:
+the "ES5" fallback had ES2017 trailing commas. (5) LOW: the fallback's stderr didn't match the driver's
+denial-collector prefix. (6) LOW: a machine-global sentinel let one process silently consume the operator's
+warning window. **Resolution: dampening (R25c) was CUT** — a filesystem-write primitive on the guard's
+denial path is not worth verbosity; re-filed as PLAN item 52 with the safe design (driver-owned 0700 state
+dir or `O_NOFOLLOW`, keyed per (session, rule)). The sentinel went with it: the fallback now writes
+**nothing** to disk and banners every time — a broken guard is a rare catastrophe and shouting is the
+correct volume. (2), (4), (5) fixed directly.
+
+**Verified:** tier 1 **2271 → 2280** (guard suite 424, including: the fallback denies in-run with the schema
+shape / allows out-of-run with empty stdout / always banners; the fallback is denied to a run by
+`protected-guard` with benign neighbours; provenance on every rendered denial). **Tier 3 re-run twice**: 31/31
+on the chain before the fixes (proving `||` in a `--settings` blob registers live, reaches a real child, and
+survives a committed `disableAllHooks`) and **31/31 again on the fixed tree**. One earlier tier-3 invocation
+showed a single assertion failure that did not reproduce on either subsequent identical run — recorded as a
+flake, not dismissed silently.
+
+**Operational lesson, learned by killing a paid run:** the Tallyho smoke (31a, attempt 1) was launched from
+the LIVE dev tree; the driver re-reads `hooks/hooks.json` at every child spawn, so editing this repo mid-run
+made the old in-memory validation meet the new on-disk chain — `childSettings` refused (correctly,
+fail-closed) and the run ABORTED at iteration 2. **Dogfood runs now launch from a snapshot worktree**
+(`git worktree add ~/meeseeks-run-snapshot <commit>`), never the live tree. Attempt 1b (from the snapshot)
+also delivered the smoke's first machine finding: `findHealthPath` cannot see `/api/health` literals or
+Next.js filesystem-declared routes — see the run read-out and the follow-up fix.
 
 ### 0.152.0 — impeccable `detect --json` parser + real fixture (PLAN item 42 Slice A, R29)
 

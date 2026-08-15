@@ -1074,8 +1074,14 @@ describe('claudeArgs and the permission policy', () => {
       // a hook that cannot run does not deny — the failure is silent and opens the gate.
       const command = settingsFor('builder').hooks.PreToolUse[0].hooks[0].command;
       assert.equal(command.includes('${CLAUDE_PLUGIN_ROOT}'), false, `unexpanded placeholder: ${command}`);
-      const script = command.slice(command.indexOf('"') + 1, command.lastIndexOf('"'));
-      assert.equal(existsSync(script), true, `the guard the children are pointed at does not exist: ${script}`);
+      // The command is a chain since item 37 (guard, then its crash-net fallback), so every
+      // quoted path must resolve — a chain whose fallback is missing is as broken as one
+      // whose guard is.
+      const scripts = [...command.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+      assert.equal(scripts.length, 2, `expected the guard and its fallback in: ${command}`);
+      for (const script of scripts) {
+        assert.equal(existsSync(script), true, `the children are pointed at a file that does not exist: ${script}`);
+      }
     });
   });
 

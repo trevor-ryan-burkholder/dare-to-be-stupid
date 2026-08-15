@@ -1093,9 +1093,19 @@ function childSettings(sandbox = false) {
   for (const entry of entries) {
     for (const hook of entry.hooks ?? []) {
       const command = String(hook.command ?? '');
-      const script = command.slice(command.indexOf('"') + 1, command.lastIndexOf('"'));
-      if (script === '' || !existsSync(script)) {
+      // Every quoted path in the command must exist. The command is a chain since item 37 —
+      // `node "guard.mjs" || node "guard-fallback.cjs"` — so the old first-quote-to-last-quote
+      // slice would span the ` || node ` in the middle and name no file. Validating each quoted
+      // segment is also stricter than the single-span check was: a chain whose fallback is
+      // missing now refuses to spawn, exactly like a chain whose guard is.
+      const scripts = [...command.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+      if (scripts.length === 0) {
         throw new DriverError(`the guard hook command names no file on disk: ${command}`);
+      }
+      for (const script of scripts) {
+        if (!existsSync(script)) {
+          throw new DriverError(`the guard hook command names a file that is not on disk: ${script} (in: ${command})`);
+        }
       }
     }
   }
