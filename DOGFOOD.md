@@ -1173,3 +1173,31 @@ What the run **did** verify, all firsts:
 Per-child costs for the ledger: design 5.74M tokens / 529s; builder turns 1.1M–8.0M / 80s–748s;
 reviewer reads 1.0M–5.5M / 314s–1031s. An iteration of this loop remains a 5–9M-token object,
 exactly as measured at improve18.
+
+### Case I run 1b (14 Aug, loaded ratchet) — a second race null, and the structural reason applyWinner cannot fire on this scenario
+
+Relaunched on the ratchet run 1 loaded (171 ids), same config (`race after:2`, `maxIterations:8`,
+uncapped). Ended **BUDGET 8/8** at **77.5M tokens, $81.11, 361 passing** (run 1 left 171; this run
+nearly doubled it). **The race never armed again — zero stalls across all 8 iterations.**
+
+**Two nulls now say something the first could not.** The rejection PRD keeps the builder in
+monotonic gate improvement (171 → 361 passing here) because there is always more buildable surface
+in the satisfiable requirements; the impossible one (`PRD-4.1`, sub-ms latency) blocks *shipping*,
+not *improving*, and `maxIterations:8` hits before the buildable surface is exhausted. So no
+consecutive-no-improvement stall pair forms.
+
+**And the deeper structural finding — why `applyWinner` has never fired live in this project's
+history, now understood rather than just observed:** even if the race *armed*, `selectWinner`
+demands a candidate pass **every** gate, while the race only *arms* on a stall. If the stall is
+caused by an impossible requirement, no candidate can pass all gates, so `applyWinner` cannot fire
+**even when the race arms.** A live `applyWinner` therefore needs a different scenario entirely:
+the builder must **stall on something a differently-seeded race candidate can actually solve** —
+hard-but-race-solvable, not impossible. That is inherently non-deterministic and expensive to
+provoke, which is exactly why it has never happened by accident.
+
+**Consequence for the DoD:** "a race that applies a winner" is reclassified from *run it* to
+*needs a bespoke hard-but-solvable scenario*; the git/worktree/selection machinery is tier-2
+proven, and the live gap is specifically the winning merge on a real divergence. Recorded as a
+known-hard measurement rather than burning more ~$80 monotonic-null runs at it. The stuck-gate
+note, cross-tree scoped restore, async/heartbeat/parallel-panel behaviour and the panel carry were
+all verified live across runs 1 and 1b regardless.
