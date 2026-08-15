@@ -842,7 +842,15 @@ Content-hash "nothing changed since the last gate run → don't re-pay for the g
 attempt counter instead. Attacks the ship1 token-thrash class. Surface: `scripts/driver.mjs` gate
 loop. **Campaign C**.
 
-### 44. Prompt hygiene at the untrusted-text frames (R30) — OPEN, **SCOPED 15 Aug (Fable pass)**
+### 44. Prompt hygiene at the untrusted-text frames (R30) — **DONE (0.158.0; R30a recorded as no-live-channel)**
+
+**Landed (0.158.0):** `neutralizeLine` (visible `\n`, rendering-only, ratchet ids byte-exact) at every
+single-line untrusted slot in the brief, the gate detail inside a defended `~~~` fence, the driver's
+`parseError`/lesson-evidence inline frames — and, from the item's own hostile review (one surviving HIGH),
+`renderAssumptions`: builder-authored assumption fields were rendered raw into the **cold reviewer's**
+prompt inside driver-vouched framing, the highest-value injection slot in the system. All neutralised at
+render time; hostile + benign tests per slot. R30a (additive envelope) has **no live channel** — design
+recorded below for the day one opens.
 Additive-only envelope for repo-supplied guidance (may ADD checks, cannot suppress findings;
 byte/count-capped) + delimiter neutralisation at each untrusted frame (test names, requirement
 strings). Surface: prompt assembly in `scripts/driver.mjs`. **Campaign C**.

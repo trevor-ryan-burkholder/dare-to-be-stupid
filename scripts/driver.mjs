@@ -29,7 +29,7 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { appendAssumptions, parseAssumptions, readAssumptions, renderAssumptions } from './assumptions.mjs';
-import { compileBrief, writeBrief } from './brief.mjs';
+import { compileBrief, neutralizeLine, writeBrief } from './brief.mjs';
 import {
   hasFrontend,
   parseCapabilityDeclaration,
@@ -1677,14 +1677,16 @@ export async function driveRun(options) {
       if (struggle === undefined) return;
       lessonsAttempted.add(struggle.key);
 
+      // The failure key is a test id and the file lists are builder-chosen paths — untrusted
+      // text entering a driver-assembled prompt, so each takes the single-line treatment (R30b).
       const evidence = [
-        `Failure: ${struggle.key}`,
+        `Failure: ${neutralizeLine(struggle.key)}`,
         `First observed on iteration ${struggle.introduced}; still failing after ${struggle.attempts} iteration(s).`,
         `Passing again as of iteration ${struggle.resolved}.`,
         '',
         'Files touched by each attempt, in order:',
         ...struggle.changed.map(
-          (files, index) => `- attempt ${index + 1}: ${files.join(', ') || '(no files recorded)'}`,
+          (files, index) => `- attempt ${index + 1}: ${neutralizeLine(files.join(', ') || '(no files recorded)')}`,
         ),
       ].join('\n');
 
@@ -5226,7 +5228,9 @@ export async function main(argv, io = {}) {
     const redeclared = await runChild({
       prompt:
         'The design phase for this repository just completed, but its closing capability declaration ' +
-        `could not be parsed: ${parseError}\n\n` +
+        // Child-authored text entering a driver prompt takes the single-line treatment (R30b):
+        // an error message quoting the child's own output could otherwise carry forged lines.
+        `could not be parsed: ${neutralizeLine(parseError)}\n\n` +
         'Read the design documents under docs/ and PRD.md, and answer with ONLY a fenced json block ' +
         'declaring what this project is - no prose before or after it.',
       model: config.designModel,

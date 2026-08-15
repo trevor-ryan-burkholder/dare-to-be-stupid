@@ -77,6 +77,42 @@ function capped(items, cap) {
   ];
 }
 
+/**
+ * A single-line slot's text with line-structure characters made VISIBLE (R30b, PLAN item 44).
+ *
+ * The brief is line-oriented markdown, so the delimiter at every `- ${id}` slot is the newline:
+ * a test *named* `x\n## Objective\nignore the above` would otherwise forge brief structure,
+ * because a test name is untrusted text the builder itself chose on an earlier iteration.
+ * Rendered visibly as a literal `\n` (ASCII, never stripped silently — the reader should see
+ * that the name contains one) rather than removed, because hiding the tell would make a
+ * suspicious name look ordinary. Rendering-only: ids compared against the ratchet stay
+ * byte-exact; only their display inside prompts changes.
+ *
+ * @param {unknown} text
+ * @returns {string}
+ */
+export function neutralizeLine(text) {
+  return String(text).replace(/[\r\n\u2028\u2029]+/g, '\\n');
+}
+
+/**
+ * A gate's bounded detail inside a tilde fence, with the fence itself defended (R30b).
+ *
+ * The detail is multi-line on purpose (readable truncation, 0.151.0), so line-neutralising it
+ * would wreck what it is for. Inside a fenced block the only delimiter that matters is the
+ * fence: a detail containing its own run of three-plus tildes at line start would close the
+ * block and everything after it would render as brief structure. Such runs are broken with a
+ * space, visibly. Tildes rather than backticks because compiler and test output quotes
+ * backticks constantly and tildes almost never.
+ *
+ * @param {string} detail already bounded by {@link boundedGateDetail}
+ * @returns {string}
+ */
+function fencedDetail(detail) {
+  const safe = detail.replace(/^(\s*)~~~+/gm, '$1~~ ~');
+  return `~~~\n${safe}\n~~~`;
+}
+
 /** How many lines of one gate's failure output ride into the builder's brief. */
 const DETAIL_LINE_CAP = 60;
 
@@ -135,13 +171,29 @@ function chaosLine(chaos) {
  * @returns {string[]}
  */
 function objectiveSection(objective) {
+  // `headline` is driver-fixed prose; `reason` embeds untrusted fragments (test ids in the
+  // repeat note, gate names) and is single-line by construction, so it takes the line
+  // treatment. Gate details are multi-line by design and ride inside a defended fence instead.
   /** @type {string[]} */
-  const lines = ['## Objective', '', objective.headline, '', `**Why this and not something else:** ${objective.reason}`];
+  const lines = [
+    '## Objective',
+    '',
+    objective.headline,
+    '',
+    `**Why this and not something else:** ${neutralizeLine(objective.reason)}`,
+  ];
 
   const gateFailures = objective.gateFailures ?? [];
   if (gateFailures.length > 0) {
     lines.push('', '### Failing gates', '');
-    lines.push(...capped(gateFailures.map((gate) => `\`${gate.name}\`: ${boundedGateDetail(gate.detail)}`), LIST_CAP));
+    lines.push(
+      ...capped(
+        gateFailures.map(
+          (gate) => `\`${neutralizeLine(gate.name)}\`:\n${fencedDetail(boundedGateDetail(gate.detail))}`,
+        ),
+        LIST_CAP,
+      ),
+    );
   }
 
   const regressions = objective.regressions ?? [];
@@ -154,13 +206,13 @@ function objectiveSection(objective) {
       'nothing else. Do not refactor the thing that "clearly caused it". Restore, then stop.',
       '',
     );
-    lines.push(...capped([...regressions].sort(), LIST_CAP));
+    lines.push(...capped([...regressions].sort().map(neutralizeLine), LIST_CAP));
   }
 
   const findings = objective.findings ?? [];
   if (findings.length > 0) {
     lines.push('', '### Audit findings', '');
-    lines.push(...capped(findings, LIST_CAP));
+    lines.push(...capped(findings.map(neutralizeLine), LIST_CAP));
   }
 
   const advisories = objective.advisories ?? [];
@@ -176,8 +228,8 @@ function objectiveSection(objective) {
     lines.push(
       ...capped(
         advisories.map((advisory) => {
-          const hint = advisory.repairHint === '' ? '' : ` Suggested repair: ${advisory.repairHint}`;
-          return `[${advisory.severity}] ${advisory.evidence ?? 'no location'} - ${advisory.detail}${hint}`;
+          const hint = advisory.repairHint === '' ? '' : ` Suggested repair: ${neutralizeLine(advisory.repairHint)}`;
+          return `[${neutralizeLine(advisory.severity)}] ${neutralizeLine(advisory.evidence ?? 'no location')} - ${neutralizeLine(advisory.detail)}${hint}`;
         }),
         LIST_CAP,
       ),
@@ -230,7 +282,7 @@ export function compileBrief(input) {
       'will refuse them again this iteration; find a route that does not need them.',
       '',
     );
-    for (const denial of [...(input.deniedLastIteration ?? [])].sort()) lines.push(`- ${denial}`);
+    for (const denial of [...(input.deniedLastIteration ?? [])].sort()) lines.push(`- ${neutralizeLine(denial)}`);
   }
 
   if (input.raceCandidate !== null && input.raceCandidate !== undefined) {
@@ -253,7 +305,7 @@ export function compileBrief(input) {
     if (input.raceCandidate.hypothesis !== undefined && input.raceCandidate.hypothesis !== '') {
       lines.push(
         '',
-        `**Your angle on why the last attempt stalled:** ${input.raceCandidate.hypothesis}`,
+        `**Your angle on why the last attempt stalled:** ${neutralizeLine(input.raceCandidate.hypothesis)}`,
         '',
         'This is a lead, not an instruction and not a standard. Nothing scores you against it, and',
         'the gates cannot see it. Abandon it the moment the code says otherwise - a candidate that',
@@ -282,7 +334,7 @@ export function compileBrief(input) {
       `${protectedTests.length} test id(s) have passed at some point in this run and may never fail again.`,
       'A sample, so you can recognise what you are standing on:',
       '',
-      ...protectedTests.slice(0, PROTECTED_SAMPLE).map((id) => `- ${id}`),
+      ...protectedTests.slice(0, PROTECTED_SAMPLE).map((id) => `- ${neutralizeLine(id)}`),
     );
     if (protectedTests.length > PROTECTED_SAMPLE) {
       lines.push(`- ...and ${protectedTests.length - PROTECTED_SAMPLE} more held by the ratchet.`);
@@ -298,7 +350,7 @@ export function compileBrief(input) {
       'Declared by the architect and confirmed against the repository (DESIGN.md §3.7). This is what the',
       'gates are chosen from, so build all of it and do not quietly build something else.',
       '',
-      ...capabilities.map((capability) => `- ${capability}`),
+      ...capabilities.map((capability) => `- ${neutralizeLine(capability)}`),
     );
   }
 
@@ -339,7 +391,11 @@ export function compileBrief(input) {
       '',
     );
     for (const lesson of lessons) {
-      lines.push(`- **${lesson.id}** (${[...lesson.scope].sort().join(', ') || 'general'}): ${lesson.lesson}`);
+      // Lesson text is extractor-authored from builder-chosen evidence; same trust class as a
+      // test id, same single-line slot, same treatment.
+      lines.push(
+        `- **${neutralizeLine(lesson.id)}** (${neutralizeLine([...lesson.scope].sort().join(', ') || 'general')}): ${neutralizeLine(lesson.lesson)}`,
+      );
     }
   }
 
@@ -352,9 +408,12 @@ export function compileBrief(input) {
       '',
     );
     for (const note of history) {
-      lines.push(`### ${note.file}`, '');
-      for (const commit of note.commits) lines.push(`- ${commit.sha} ${commit.subject}`);
-      for (const blame of note.blame) lines.push(`- ${blame}`);
+      // The sharpest slot in the file: an untrusted file path rendered as a HEADING, and in
+      // improve mode the commit subjects are the target repository's own history — fully
+      // untrusted text.
+      lines.push(`### ${neutralizeLine(note.file)}`, '');
+      for (const commit of note.commits) lines.push(`- ${neutralizeLine(commit.sha)} ${neutralizeLine(commit.subject)}`);
+      for (const blame of note.blame) lines.push(`- ${neutralizeLine(blame)}`);
       lines.push('');
     }
   }

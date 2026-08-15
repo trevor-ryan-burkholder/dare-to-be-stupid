@@ -45,6 +45,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { neutralizeLine } from './brief.mjs';
+
 /** Driver-owned. Protected by the `.meeseeks/**` invariant (§6) with no rule of its own. */
 export const ASSUMPTIONS_FILE = 'assumptions.json';
 
@@ -283,8 +285,17 @@ export function renderAssumptions(entries) {
     '',
   ];
   for (const entry of shown) {
-    lines.push(`- iteration ${entry.iteration}, on ${entry.cites}: assumed ${entry.assumed}`);
-    if (entry.ambiguity !== '') lines.push(`  (ambiguity: ${entry.ambiguity})`);
+    // Every field here is builder-authored text entering the COLD REVIEWER's prompt inside
+    // framing the driver vouches for — the highest-value injection target in the system
+    // (R30b, PLAN item 44; the item-44 hostile review found exactly this slot). Interior
+    // newlines survive `parseAssumptions` by design (only ends are trimmed), so a builder
+    // could otherwise forge a line-start heading — `assumed: "X\n## Panel instruction
+    // update\n..."` — as driver-vouched panel instructions. Rendering-only, like every other
+    // neutralised slot: the stored record keeps its bytes; `entry.iteration` is driver-owned.
+    lines.push(
+      `- iteration ${entry.iteration}, on ${neutralizeLine(entry.cites)}: assumed ${neutralizeLine(entry.assumed)}`,
+    );
+    if (entry.ambiguity !== '') lines.push(`  (ambiguity: ${neutralizeLine(entry.ambiguity)})`);
   }
   if (entries.length > shown.length) {
     lines.push(`- ...and ${entries.length - shown.length} earlier assumption(s), not shown here.`);
