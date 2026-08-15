@@ -1155,9 +1155,31 @@ The builder runs with `--dangerously-skip-permissions`. That's the premise. PreT
 hooks fire **regardless** of permission mode, which makes them the only reliable place to
 put a limit when everything else is off.
 
-**Five deny categories:** `protected-state` (anything under `.meeseeks/`, positionally),
-`protected-guard` (the hook and its manifest), `git-history`, `rm-recursive` and `nested-meeseeks`.
-The README carries the table; what belongs here is why the second one exists.
+**Deny categories:** `protected-state` (anything under `.meeseeks/`, positionally),
+`protected-guard` (the hook and its manifest), `protected-settings` (the target's
+`.claude/settings.json`/`settings.local.json` — the kill switch, added 0.146.0), `git-history`,
+`git-clean` (a non-dry-run `git clean` can delete gitignored `.meeseeks/`, added 0.146.0),
+`rm-recursive`, `nested-meeseeks`, and `unresolvable-write` (a write whose destination cannot be
+statically resolved). The README carries the table; what belongs here is why the second one exists.
+
+**Bash judging is fail-closed by construction (0.146.0).** A Bash tool call naming any protected
+path in its text **defaults to deny**; a tokenizer then re-allows only the small, closed set of
+provably-safe reads (a `cat`/`grep`/`head` of the path, a mention inside an `echo` or a data
+heredoc). Anything the tokenizer cannot positively classify — a pipe-to-shell, a glued interpreter
+flag, an unrecognised writer — stays denied. This is "nothing defaults to pass" applied to the
+guard: an earlier position-only design failed open on every technique it had not enumerated, and
+three hostile passes reproduced the escapes (`echo '… > .meeseeks/x' | sh`, `git clean -fdx`,
+`python3 -c'open(".meeseeks/x","w")'`, `sed 'w …'`, `sort -o …`) before the floor closed them. The
+kill-switch defence is proven live: a `claude -p` child in a repo that *commits*
+`{"disableAllHooks": true}` still cannot write the ratchet (tier 3, 0.146.0).
+
+**External evidence for the positional stance.** Prime Intellect's Prime Agent (Aug 2026) shipped
+a self-improving coding harness whose only anti-cheat control was a heartbeat *prompt*. Their
+published Factorio case study documents that control being **empirically defeated**, after which
+the self-improvement loop optimised for *more efficient cheating skills*. That is an independent
+demonstration of exactly why this guard is positional and architectural rather than a prompt: a
+prompt-level boundary fails, and a loop that can rewrite its own operating memory then amplifies
+the exploit — which is also why §13.8's lesson memory stays driver-owned, under this hook.
 
 **`protected-guard`, added 0.88.0.** `CLAUDE.md`'s invariant reads *"the guard hook is not
 editable by what it guards"*. That was true of `.meeseeks/` and **false of the guard**: the

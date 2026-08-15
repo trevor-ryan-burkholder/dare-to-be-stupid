@@ -706,7 +706,7 @@ the cap was spent on `oracle-author`. Nothing from `BRIEF.md` section E's do-not
 Experiments write their result down whichever way they land: a surprising `CLOSED` is worth
 more than a flattering `DONE`.
 
-### 28. Guard the guard's kill switch — OPEN, **SPECIFIED** (from the 14 Aug ecosystem scan)
+### 28. Guard the guard's kill switch — **DONE (0.146.0)**, with R23 + R24 + R39 (from the 14 Aug ecosystem scan)
 
 **The finding:** the hooks system documents a `disableAllHooks` setting with layered precedence
 in which the target repo's own `.claude/settings.json` participates. The guard's deny
@@ -728,6 +728,17 @@ truth (the eleven-version lesson). **Build gate: not while a live run reads this
 children execute `hooks/guard.mjs` from disk per tool call, so this lands only between runs.
 
 **Done when:** both tests green, tier 3 re-run green, version + ledgers in the same commit.
+
+**Status (0.146.0):** DONE, and it carried R23 (realpath-both-sides on all three protected
+predicates) and R24 (a real bash tokenizer) with it. The fail-open concern was real and is now
+closed: the guard denies writes to the settings kill switch, `childSettings()` pins
+`disableAllHooks: false`, and **tier 3 proved it live** — a `claude -p` child in a repo committing
+`{"disableAllHooks": true}` still cannot write the ratchet (31/31 live, up from 27). The build took
+**three hostile passes**: a position-only tokenizer that failed open (3 reproduced bypasses) → a
+fail-closed textual floor with git-clean coverage (closed them, 1 new over-allow found) → a
+tightened pure-reader carve-out (closed the over-allow). Verified by 24 real-guard-process probes
+beyond the suite. R39's Factorio citation landed in DESIGN §6 as external evidence for the
+positional stance. Built entirely in an isolated worktree so no live run's hot guard was touched.
 
 ### 29. gitleaks as a detect-first quality plugin, and registry version pinning — OPEN, **SPECIFIED**
 

@@ -1,7 +1,7 @@
 # START HERE — handoff, last swept 14 August 2026
 
-**State:** `main` at `0.145.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.145.0: `npm test` **1998 pass**,
-`npm run test:integration` **46 pass** (unchanged at 0.145.0 — nothing tier 2 owns was touched), `npm run lint` and `npm run typecheck` clean,
+**State:** `main` at `0.146.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.146.0: `npm test` **2204 pass**,
+`npm run test:integration` **46 pass**, `npm run test:live` **31 pass** (0 fail; +4 for the guard kill-switch), `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
@@ -101,6 +101,35 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.146.0 — the guard's kill switch closed, and a security boundary that took three passes to trust
+
+PLAN item 28 + R23 + R24 + R39, built in an isolated worktree so no live run's hot guard was
+touched (children execute `hooks/guard.mjs` from disk per tool call). Three things landed on the
+guard: a **kill-switch deny** (`.claude/settings.json`/`settings.local.json`, so a builder cannot
+write `{"disableAllHooks": true}` to unguard every later child) with `childSettings()` pinning
+`disableAllHooks: false`; **R23 realpath-both-sides** on all three protected predicates (closes a
+symlink into `.meeseeks/` and case-variant paths); and **R24 a real bash tokenizer**.
+
+**The build is the lesson, and it is a three-act one.** Act 1: a position-only tokenizer that
+*replaced* the old any-mention rule — the hostile reviewer reproduced 3 HIGH bypasses
+(`echo '… > .meeseeks/state.json' | sh`, `git clean -fdx` deleting the ratchet, glued
+`python3 -c'…'`). Root cause: position-only judging of bash fails **open** on every technique it
+has not enumerated, against "nothing defaults to pass". Act 2: restore a fail-**closed** textual
+floor (any in-run command naming a protected path denies) and demote the tokenizer to an
+allow-carve-out for provably-safe reads, plus explicit `git-clean` coverage — closed all three, but
+the re-attack found 1 HIGH: the carve-out over-allowed `sed 'w'`, `sort -o`, `xxd -r`,
+`git config -f`, each verified to overwrite the ratchet canary. Act 3: shrink the carve-out to a
+closed pure-reader set with output-flag detection and a *positive* git read-allowlist — closed it.
+Verified by 24 real-guard-process probes beyond the 2204-test suite, and **tier 3 proved the
+kill-switch live**: a `claude -p` child in a repo committing `disableAllHooks: true` still cannot
+write the ratchet (31/31 live). R39's Factorio citation went into DESIGN §6 as external evidence
+that a prompt-level boundary fails and a self-improving loop amplifies the exploit.
+
+**The doctrine to carry forward:** a security boundary judging an unbounded grammar (bash) must be
+fail-closed-by-default with a *small* allow-list, never an enumerate-the-bad-cases deny-list. The
+green suite twice hid a canary-overwriting hole; only an adversary told to *land the write and
+check the canary* found it.
 
 ### 0.145.0 — the config wizard (PLAN item 25), and the loop that imprisoned the operator
 
