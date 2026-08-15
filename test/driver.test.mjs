@@ -3816,6 +3816,18 @@ describe('red-evidence', () => {
     assert.deepStrictEqual([...loadRedEvidence(dir).seenFailing], []);
   });
 
+  it('writes atomically, leaving no partial .tmp behind (R34)', () => {
+    // red-evidence is decision-bearing and persists cross-run; a half-written file would, on
+    // misparse, re-establish a baseline admitting unproven tests — the fail-open direction. The
+    // write is temp+rename like the ratchet/pins/lessons writers, so the target only ever appears
+    // whole and no leftover temp survives.
+    const dir = makeTempDir();
+    recordRedEvidence(dir, ['b::2'], ['a::1']);
+    assert.equal(existsSync(path.join(dir, 'red-evidence.json')), true);
+    assert.equal(existsSync(path.join(dir, 'red-evidence.json.tmp')), false, 'a temp file survived the write');
+    assert.deepStrictEqual([...loadRedEvidence(dir).seenFailing], ['b::2']);
+  });
+
   describe('the first gating is baselined, or the objective is unsatisfiable', () => {
     // Measured on 11 August 2026: a builder wrote a complete application whose 83 tests all
     // passed on the first gate run. Every one was "unproven", the gate failed, and the

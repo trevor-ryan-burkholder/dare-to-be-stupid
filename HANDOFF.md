@@ -1,7 +1,7 @@
 # START HERE — handoff, last swept 14 August 2026
 
-**State:** `main` at `0.146.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.146.0: `npm test` **2204 pass**,
-`npm run test:integration` **46 pass**, `npm run test:live` **31 pass** (0 fail; +4 for the guard kill-switch), `npm run lint` and `npm run typecheck` clean,
+**State:** `main` at `0.147.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.147.0: `npm test` **2205 pass**,
+`npm run test:integration` **46 pass**, `npm run test:live` **31 pass** (0 fail), `npm run lint` and `npm run typecheck` clean,
 `npm run release-check` **ok**.
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
@@ -101,6 +101,17 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.147.0 — the last non-atomic decision writer, closed (PLAN item 39, R34)
+
+`recordRedEvidence` (`driver.mjs`) wrote `red-evidence.json` with a bare `writeFileSync` while the
+ratchet, pins and lessons writers all use temp+rename. red-evidence is decision-bearing and
+persists cross-run, so a kill mid-write could leave a half-file that, on misparse, re-establishes a
+baseline admitting tests never seen failing — the fail-open direction, against "nothing defaults to
+pass". Fixed to temp+rename; a test asserts no `.tmp` survives. Found by the prime-agent mine
+comparing its atomic-write discipline against ours (`BORROWED.md` R34). Same commit also corrected a
+stale `config.mjs` comment ("this one has never judged a real build" → the oracle1/oracle2 record).
+Tier-1 only; no spawn/template/envelope surface touched.
 
 ### 0.146.0 — the guard's kill switch closed, and a security boundary that took three passes to trust
 

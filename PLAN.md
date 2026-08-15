@@ -795,7 +795,7 @@ An unparseable decision file (`pins.json`, `state.json`, `red-evidence.json`) re
 never silently defaulted. Surface: `scripts/pins.mjs`, `scripts/ratchet.mjs`, the red-evidence
 reader. **Campaign A** — hardens the substrate every later run reads.
 
-### 39. Atomic red-evidence write (R34) — OPEN, **a verified bug**
+### 39. Atomic red-evidence write (R34) — **DONE (0.147.0)**
 `recordRedEvidence` (`driver.mjs:3611`) is the one decision writer still using a bare
 `writeFileSync`; a kill mid-write can re-establish a baseline that admits unproven tests — fail-OPEN.
 Fix: temp+rename, exactly as ratchet/pins/lessons already do. Surface: `scripts/driver.mjs`.

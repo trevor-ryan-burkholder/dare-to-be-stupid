@@ -21,7 +21,7 @@
  */
 
 import { execFileSync, spawn as spawnProcess } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { clearInterval, clearTimeout, setInterval, setTimeout } from 'node:timers';
 import os from 'node:os';
 import path from 'node:path';
@@ -3626,11 +3626,18 @@ export function recordRedEvidence(meeseeksDir, nonPassing, passing = []) {
   const baseline = evidence.established ? evidence.baseline : new Set(passing);
 
   mkdirSync(meeseeksDir, { recursive: true });
+  // Atomic, the way the ratchet/pins/lessons writers already are (R34). red-evidence is
+  // decision-bearing and persists cross-run; a kill mid-write must never leave a half-file, because
+  // on misparse the baseline can re-establish and admit tests never seen failing — the fail-open
+  // direction, against "nothing defaults to pass".
+  const file = path.join(meeseeksDir, RED_EVIDENCE);
+  const temporary = `${file}.tmp`;
   writeFileSync(
-    path.join(meeseeksDir, RED_EVIDENCE),
+    temporary,
     `${JSON.stringify({ seenFailing: [...evidence.seenFailing].sort(), baseline: [...baseline].sort() }, null, 2)}\n`,
     'utf8',
   );
+  renameSync(temporary, file);
   return { seenFailing: evidence.seenFailing, baseline, established: true };
 }
 

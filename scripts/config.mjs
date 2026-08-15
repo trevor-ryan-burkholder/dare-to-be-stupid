@@ -213,14 +213,17 @@ export function defaultConfig() {
     //
     // §13 rejects an `enabled` flag on the context budget, arguing that switching a check off is
     // a way of not making a decision. That reasoning is about disabling a check already known to
-    // work. This one has never judged a real build, and its failure mode is the worst in this
-    // codebase: a case that invents a requirement the specification does not decide becomes a
-    // gate the builder cannot satisfy for the rest of the run, and it cannot tell an invention
-    // from a real requirement. That defect class has bitten seven times.
+    // work. Its failure mode is the worst in this codebase: a case that invents a requirement the
+    // specification does not decide becomes a gate the builder cannot satisfy for the rest of the
+    // run, and it cannot tell an invention from a real requirement. That defect class has bitten
+    // seven times.
     //
-    // So it stays off until a run has measured it, and the flag is a staging device rather than
-    // an escape hatch. What would justify flipping the default: one case-G run with it on, whose
-    // oracle failures were all genuine defects rather than inventions.
+    // It has since judged real builds (oracle1 19/19 at a false-failure rate of 0; oracle2, 14 Aug,
+    // SHIPPED with the metamorphic relations catching real numeric defects and zero false failures),
+    // and the default stays off for a narrower reason: oracle1 measured that exit-code-only cases
+    // could not see run 12's defect class even planted back into the tree — the relations are the
+    // half that can, with one live run behind them. The flag remains a staging device: what widens
+    // the default is more live runs whose oracle failures are all genuine defects, not inventions.
     oracle: { enabled: false },
     // Ten minutes, and the number matters less than the fact that one exists. The deploy
     // command was the only call in the driver with no ceiling on it: `tokenCeiling` and
