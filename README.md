@@ -273,7 +273,7 @@ This is an unofficial fan project. Its personas — "Mr. Meeseeks" and any other
 catchphrases, or references it uses — are **parody and homage** in a developer tool, protected as
 such, and are the property of their respective owners.
 
-meeseeks is **not affiliated with, endorsed by, sponsored by, or associated with** Cartoon Network,
-Adult Swim, Warner Bros. Discovery, the creators or rights holders of *Rick and Morty* or *Adventure
-Time*, or any other associated party. All referenced names, characters, and trademarks belong to
-their respective owners; no ownership of or affiliation with them is claimed or implied.
+meeseeks is **not affiliated with, endorsed by, sponsored by, or associated with** Adult Swim,
+Cartoon Network, Warner Bros. Discovery, the creators or rights holders of *Rick and Morty*, or any
+other associated party. All referenced names, characters, and trademarks belong to their respective
+owners; no ownership of or affiliation with them is claimed or implied.
