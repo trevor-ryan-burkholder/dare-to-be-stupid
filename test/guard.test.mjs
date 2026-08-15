@@ -7,17 +7,32 @@
  * Payload shapes come from committed fixtures in `test/fixtures/hook-events/` rather than
  * from hand-rolled object literals, so a change to the PreToolUse envelope shows up here.
  * Cases vary only the field under test.
+ *
+ * Since R24 the Bash rules are a *write detector*, not a mention detector: reads
+ * (`cat .meeseeks/state.json`) and mentions (`echo ".meeseeks/x is protected"`) are allowed, and
+ * writes are caught by position — redirection targets, tee/cp/mv/install destinations,
+ * in-place edits, interpreter code strings — wherever they hide. The flipped read cases are
+ * kept below as explicit allow tests so the doctrine is asserted, not implied.
  */
 
 import assert from 'node:assert/strict';
 import { execFile, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { describe, it } from 'node:test';
+import { after, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
-import { checkBashCommand, evaluate, isProtectedStatePath, renderDecision, tokenizeCommand } from '../hooks/guard.mjs';
+import {
+  checkBashCommand,
+  evaluate,
+  isProtectedSettingsPath,
+  isProtectedStatePath,
+  renderDecision,
+  tokenizeCommand,
+} from '../hooks/guard.mjs';
+import { PHASE_PERMISSIONS, claudeArgs } from '../scripts/driver.mjs';
 
 const execFileAsync = promisify(execFile);
 const FIXTURE_DIR = new URL('./fixtures/hook-events/', import.meta.url);
@@ -100,7 +115,6 @@ function assertAllowed(event, env = IN_RUN) {
 describe('blocked: protected-state', () => {
   const denied = [
     ["echo '{}' > .meeseeks/state.json", 'redirect over state'],
-    ['cat .meeseeks/config.json', 'read of config'],
     ["sed -i 's/a/b/' ./.meeseeks/state.json", 'in-place edit through ./'],
     ["cd .meeseeks && echo '{}' > state.json", 'chdir first, protected name second'],
     ['rm .meeseeks/state.json', 'deletion'],
@@ -108,7 +122,7 @@ describe('blocked: protected-state', () => {
     ['cp /tmp/fake.json "$HOME/.meeseeks/state.json"', 'absolute path through $HOME'],
     ['npm run build | tee .meeseeks/state.json', 'tee in a pipeline'],
     ['printf \'%s\' \'{}\' > .meeseeks"/state.json"', 'path split across quotes'],
-    ['echo "$(cat .meeseeks/state.json)"', 'inside a command substitution'],
+    ['echo "$(rm .meeseeks/state.json)"', 'a write inside a command substitution'],
   ];
   for (const [command, label] of denied) {
     it(`denies ${label}: ${command}`, () => {
@@ -152,7 +166,7 @@ describe('blocked: protected-state', () => {
     ["echo '[]' > .meeseeks/lessons.json", 'redirect over the lesson store'],
     ['rm .meeseeks/lessons.json', 'deleting the lesson store'],
     ["cd .meeseeks && echo '{}' > lessons.json", 'chdir first, protected name second'],
-    ['bash -c "cat .meeseeks/lessons.json"', 'reaching it through a wrapped shell'],
+    ['bash -c "rm .meeseeks/lessons.json"', 'deleting it through a wrapped shell'],
   ];
   for (const [command, label] of deniedLessons) {
     it(`denies ${label}: ${command}`, () => {
@@ -178,7 +192,7 @@ describe('protected-state is scoped to a run, not to the plugin being installed'
 
   const protectedCommands = [
     "echo '{}' > .meeseeks/state.json",
-    'cat .meeseeks/config.json',
+    'tee .meeseeks/config.json',
     'rm .meeseeks/lessons.json',
     "cd .meeseeks && echo '{}' > config.json",
   ];
@@ -202,11 +216,11 @@ describe('protected-state is scoped to a run, not to the plugin being installed'
   }
 
   it('treats an empty marker as outside a run, since that is how an unset variable arrives', () => {
-    assertAllowed(bashEvent('cat .meeseeks/config.json'), { MEESEEKS_RUNNING: '' });
+    assertAllowed(bashEvent("echo '{}' > .meeseeks/config.json"), { MEESEEKS_RUNNING: '' });
   });
 
   it('still refuses the other three categories to an operator', () => {
-    // Scoping applies to protected-state alone. History destruction, recursive removal and
+    // Scoping applies to the write detector alone. History destruction, recursive removal and
     // nested runs do not become reasonable because a human asked for them in this session.
     assertDenied(bashEvent('git push --force origin main'), 'git-history', OPERATOR);
     assertDenied(bashEvent('rm -rf /home/someone/project'), 'rm-recursive', OPERATOR);
@@ -216,7 +230,7 @@ describe('protected-state is scoped to a run, not to the plugin being installed'
   it('defaults to the deny side when a caller says nothing about where it is', () => {
     // checkBashCommand is exported. A caller that forgets the third argument must get the
     // stricter answer; a guard whose default is "allow" is a guard with an off switch.
-    const decision = checkBashCommand('cat .meeseeks/config.json', FIXTURE_CWD);
+    const decision = checkBashCommand("echo '{}' > .meeseeks/config.json", FIXTURE_CWD);
     assert.equal(decision.decision, 'deny');
   });
 });
@@ -258,6 +272,36 @@ describe('allowed: protected-state neighbours', () => {
     event.tool_input = { file_path: 'docs/ratchet.md', content: 'The ratchet lives in .meeseeks/state.json.\n' };
     assertAllowed(event);
   });
+});
+
+describe('allowed: shell reads and mentions of .meeseeks (the R24 flip)', () => {
+  // These were denied for a long time by a blunt any-mention rule, on the argument that a
+  // shell string cannot be told apart from a write. R24 replaced that argument with a
+  // tokenizer that CAN tell them apart: redirection targets, writer destinations and code
+  // strings are judged; reads and data are not. The old denials are kept here, inverted,
+  // so the doctrine change is asserted rather than implied — and so a regression back to
+  // bluntness fails loudly.
+  const allowed = [
+    ['cat .meeseeks/config.json', 'reading the config'],
+    ['cat .meeseeks/state.json', 'reading the ratchet (the R24 benign case)'],
+    ['ls .meeseeks', 'listing the directory'],
+    ['cat .meeseeks/bloopers.log', 'reading the blooper reel'],
+    ['ls .meeseeks && cat tsconfig.json', 'a read hidden in a chain'],
+    ['echo "$(cat .meeseeks/state.json)"', 'a read inside a command substitution'],
+    ['bash -c "cat .meeseeks/lessons.json"', 'a read through a wrapped shell'],
+    ['grep -rn "seenFailing" .meeseeks/', 'searching the evidence'],
+    ['head .meeseeks/test-report.json', 'reading the test report'],
+    ['diff .meeseeks/state.json /tmp/expected.json', 'diffing the ratchet against a copy'],
+    ['echo ".meeseeks/x is protected"', 'a mention in echoed prose (the R24 benign case)'],
+    ['cp .meeseeks/state.json /tmp/backup.json', 'a cp whose SOURCE is protected — a read'],
+    ['dd if=.meeseeks/state.json of=/tmp/copy.json', 'a dd whose input is protected — a read'],
+    ['cd .meeseeks && cat state.json', 'a read after cd into the directory'],
+  ];
+  for (const [command, label] of allowed) {
+    it(`allows ${label}: ${command}`, () => {
+      assertAllowed(bashEvent(command));
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -303,17 +347,25 @@ describe('blocked: every mutation under .meeseeks/', () => {
   }
 
   const deniedCommands = [
-    ['ls .meeseeks', 'listing it'],
-    ['cat .meeseeks/bloopers.log', 'reading through the shell, which cannot be told from writing'],
     ['rm .meeseeks/red-evidence.json', 'deleting evidence'],
     ['mv .meeseeks/state.json /tmp/x', 'moving the ratchet out of the way'],
     ['cp /tmp/forged.json .meeseeks/red-evidence.json', 'copying a forgery over it'],
     ["sed -i 's/a/b/' .meeseeks/state.json", 'editing in place'],
     ['echo "{}" | tee .meeseeks/red-evidence.json', 'writing through a pipe'],
     ['cd .meeseeks && echo {} > red-evidence.json', 'never spelling the full path'],
-    ['git add .meeseeks/bloopers.log', 'staging it'],
-    ['ls .meeseeks && cat tsconfig.json', 'hiding it in a chain'],
-    ['bash -c "rm .meeseeks/state.json"', 'wrapping it in a shell'],
+    ['git add .meeseeks/bloopers.log', 'staging it toward a commit a checkout would replay'],
+    ['bash -c "rm .meeseeks/state.json"', 'wrapping a delete in a shell'],
+    ['touch .meeseeks/marker', 'creating a file inside it'],
+    ['mkdir -p .meeseeks/scratch', 'creating a directory inside it'],
+    ['truncate -s 0 .meeseeks/state.json', 'truncating the ratchet'],
+    ['chmod 000 .meeseeks', 'making it unreadable to the driver'],
+    ['dd if=/dev/zero of=.meeseeks/state.json', 'overwriting through dd'],
+    ['ln -s /tmp/x .meeseeks/link', 'planting a link inside it'],
+    ['install -m 644 forged.json .meeseeks/config.json', 'installing over the config'],
+    ['cp -t .meeseeks forged.json', 'copying in with --target-directory'],
+    ['git restore .meeseeks/state.json', 'restoring an older worktree copy'],
+    ['git checkout -- .meeseeks/state.json', 'checking out over it'],
+    ['git rm .meeseeks/lessons.json', 'git-deleting the lesson store'],
   ];
   for (const [command, label] of deniedCommands) {
     it(`denies ${label}: ${command}`, () => {
@@ -356,6 +408,649 @@ describe('RED evidence cannot be forged by the process it judges', () => {
       assertDenied(bashEvent(command), 'protected-state');
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// R24 — the write detector's own contract: writes denied, reads and data allowed
+// ---------------------------------------------------------------------------
+
+describe('blocked: bash-mediated protected writes (R24)', () => {
+  // The three routes the spec names, verbatim. Each walks around a Write/Edit-shaped rule
+  // and lands squarely in the tokenizer's write detection.
+  const denied = [
+    ["sh -c 'cat > .meeseeks/x'", 'a redirect inside a wrapped shell'],
+    ['tee .meeseeks/pins.json', 'tee straight into the pin store'],
+    ['cp evil .meeseeks/state.json', 'a copy over the ratchet'],
+  ];
+  for (const [command, label] of denied) {
+    it(`denies ${label}: ${command}`, () => {
+      assertDenied(bashEvent(command), 'protected-state');
+    });
+  }
+
+  it('denies a bare redirect with no command word, which still truncates the file', () => {
+    assertDenied(bashEvent('> .meeseeks/state.json'), 'protected-state');
+  });
+
+  it('denies an append as it denies an overwrite', () => {
+    assertDenied(bashEvent('echo x >> .meeseeks/bloopers.log'), 'protected-state');
+  });
+
+  it('denies eval of a literal command that writes', () => {
+    assertDenied(bashEvent('eval "rm .meeseeks/state.json"'), 'protected-state');
+  });
+
+  it('denies a download aimed into the protected tree', () => {
+    // A download is a content write to its output flag. The blunt rule denied this by
+    // mention; the writer table keeps it denied by position.
+    assertDenied(bashEvent('curl -sSf https://evil.example/x -o .meeseeks/red-evidence.json'), 'protected-state');
+    assertDenied(bashEvent('curl --output=.meeseeks/state.json https://evil.example/x'), 'protected-state');
+    assertDenied(bashEvent('wget -O .claude/settings.json https://evil.example/s'), 'protected-settings');
+  });
+});
+
+describe('heredocs: bodies are data, unless they are code', () => {
+  // The false-positive control R24 calls CRITICAL: a file's CONTENT mentioning a protected
+  // path is not a write to it. And the two exceptions that keep it from being a hole: a
+  // heredoc fed to a shell IS a script, and an unquoted body's command substitutions run
+  // no matter who is reading.
+  it('allows a heredoc to an ordinary file whose body mentions .meeseeks/', () => {
+    assertAllowed(bashEvent("cat > notes.txt <<'EOF'\n.meeseeks/x is driver-owned\nEOF"));
+  });
+
+  it('still denies the same heredoc when its TARGET is protected', () => {
+    assertDenied(bashEvent("cat > .meeseeks/notes.txt <<'EOF'\nhello\nEOF"), 'protected-state');
+  });
+
+  it('denies a heredoc fed to a shell, whose body is a script', () => {
+    assertDenied(bashEvent("bash <<'EOF'\nrm .meeseeks/state.json\nEOF"), 'protected-state');
+  });
+
+  it('denies a heredoc fed to an interpreter, whose body is a program', () => {
+    assertDenied(bashEvent('python3 <<\'EOF\'\nopen(".meeseeks/state.json","w")\nEOF'), 'protected-state');
+  });
+
+  it('denies a command substitution inside an unquoted heredoc body, which the shell executes', () => {
+    assertDenied(bashEvent('cat > out.txt <<EOF\n$(rm .meeseeks/state.json)\nEOF'), 'protected-state');
+  });
+
+  it('allows the same text under a quoted delimiter, where the shell expands nothing', () => {
+    assertAllowed(bashEvent("cat > out.txt <<'EOF'\n$(rm .meeseeks/state.json)\nEOF"));
+  });
+
+  it('allows prose about the slash command written through a heredoc to a data sink', () => {
+    // The operator's trilogy: three denials in one session for writing prose about this
+    // project. Body text is data now; the nesting rule still owns command position.
+    assertAllowed(bashEvent("git commit -F - <<'EOF'\ndocument the /meeseeks command\nEOF"));
+  });
+});
+
+describe('interpreter code strings are code, not data', () => {
+  // The guard cannot parse Python, so `-c`/`-e` strings are matched textually against the
+  // protected families. The asymmetry is deliberate: a program that merely names the path
+  // is a rare false positive; a program that writes it unseen is a forged ratchet.
+  const denied = [
+    ['python3 -c "open(\'.meeseeks/red-evidence.json\',\'w\').write(\'{}\')"', 'protected-state'],
+    ['node -e "require(\'fs\').writeFileSync(\'.claude/settings.json\', s)"', 'protected-settings'],
+    ["perl -e 'open(F, \">\", \".meeseeks/state.json\")'", 'protected-state'],
+    ['awk \'{print > ".meeseeks/x"}\' data.txt', 'protected-state'],
+  ];
+  for (const [command, rule] of denied) {
+    it(`denies ${command}`, () => {
+      assertDenied(bashEvent(command), rule);
+    });
+  }
+
+  const allowed = [
+    ['python3 -c "print(\'hello\')"', 'a harmless program'],
+    ["node -e 'console.log(1 + 1)'", 'a harmless eval'],
+    ["awk '{print $1}' data.txt", 'a harmless awk program'],
+  ];
+  for (const [command, label] of allowed) {
+    it(`allows ${label}: ${command}`, () => {
+      assertAllowed(bashEvent(command));
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The textual floor — the net beneath the position detector
+// ---------------------------------------------------------------------------
+//
+// R24 judged shell writes by position only and allowed every technique it did not model, which
+// was fail-open against "nothing defaults to pass". The floor restores the any-mention rule as a
+// default-deny: a command whose text names a protected path is denied unless the carve-out can
+// prove it is a read or a data mention. These cases are the reproduced bypasses a prior hostile
+// review found through the real guard — each one named the path in plaintext yet was ALLOWED.
+
+describe('floor: pipe-to-shell (V1) — a read or an echo fed to a shell is not a read', () => {
+  // `echo '<a write to a protected path>' | sh` executes the write; so does `cat .meeseeks/x | sh`.
+  // The position detector saw only `echo`/`cat` (no write) and a bare `sh` (no argument) and
+  // allowed the pipeline. The floor denies any command that both names a protected path and
+  // feeds a stdin-reading shell or interpreter.
+  const denied = [
+    ["echo 'printf x > .meeseeks/state.json' | sh", 'protected-state', 'echoed write piped to sh'],
+    ["echo 'printf x > .meeseeks/state.json' | bash", 'protected-state', 'piped to bash'],
+    ['echo \'open(".meeseeks/state.json","w")\' | python3', 'protected-state', 'piped to python3'],
+    ['cat .meeseeks/state.json | sh', 'protected-state', 'a read piped into a shell'],
+    ['sh < .meeseeks/script', 'protected-state', 'a shell reading a protected script from stdin'],
+    [
+      'echo \'{"disableAllHooks":true} > .claude/settings.json\' | sh',
+      'protected-settings',
+      'the kill switch through pipe-to-shell',
+    ],
+  ];
+  for (const [command, rule, label] of denied) {
+    it(`denies ${label}: ${command}`, () => {
+      assertDenied(bashEvent(command), rule);
+    });
+  }
+
+  // The benign neighbour the carve-out must keep: the same read WITHOUT the pipe into a shell.
+  const allowed = [
+    ['cat .meeseeks/state.json', 'the read on its own'],
+    ['cat .meeseeks/state.json | grep foo', 'a read piped into another reader, not a shell'],
+    ['echo "$(cat .meeseeks/state.json)"', 'a read captured in a substitution'],
+    ['bash -c "cat .meeseeks/lessons.json"', 'a read handed to a shell as -c code, which is recursed'],
+  ];
+  for (const [command, label] of allowed) {
+    it(`allows ${label}: ${command}`, () => {
+      assertAllowed(bashEvent(command));
+    });
+  }
+});
+
+describe('floor: glued interpreter flag (V3) — code is code whether or not a space follows -c', () => {
+  // `python3 -c'…'` with no space tokenizes as one operand `-copen(…)`, which the position
+  // detector's `-c` match missed and allowed. The spaced form was correctly denied. The floor
+  // closes the glued form: an interpreter naming a protected path is not a read.
+  const denied = [
+    ['python3 -c\'open(".meeseeks/state.json","w")\'', 'protected-state', 'glued python -c'],
+    ["node -e'require(\"fs\").writeFileSync(\".claude/settings.json\",s)'", 'protected-settings', 'glued node -e'],
+    ['perl -e\'open(F,">",".meeseeks/state.json")\'', 'protected-state', 'glued perl -e'],
+    ['ruby -e\'File.write(".meeseeks/state.json","")\'', 'protected-state', 'glued ruby -e'],
+  ];
+  for (const [command, rule, label] of denied) {
+    it(`denies ${label}: ${command}`, () => {
+      assertDenied(bashEvent(command), rule);
+    });
+  }
+
+  // The benign neighbour: a glued -c that names nothing protected is left alone — the floor
+  // never engages, so obfuscation does not cost an honest program a denial.
+  const allowed = [
+    ["python3 -c'print(1)'", 'a glued program that names nothing protected'],
+    ["node -e'console.log(2)'", 'a glued eval that names nothing protected'],
+  ];
+  for (const [command, label] of allowed) {
+    it(`allows ${label}: ${command}`, () => {
+      assertAllowed(bashEvent(command));
+    });
+  }
+});
+
+describe('floor: writers outside the position table (V4) — tar and find still name the path', () => {
+  // `tar -C .meeseeks` and `find … -exec cp … .meeseeks/state.json` are not in the writer table,
+  // so the position detector allowed them. Both name the protected path, so the floor denies.
+  const denied = [
+    ['tar xf evil.tar -C .meeseeks', 'protected-state', 'tar extracting into the directory'],
+    ['tar -xf evil.tar --directory=.meeseeks', 'protected-state', 'tar with the long directory flag'],
+    ['find . -exec cp evil .meeseeks/state.json {} \\;', 'protected-state', 'find running a copy over the ratchet'],
+    ['find .meeseeks -delete', 'protected-state', 'find deleting the tree'],
+    ['cd .meeseeks && tar xf evil.tar', 'protected-state', 'an unknown writer after cd into the directory'],
+  ];
+  for (const [command, rule, label] of denied) {
+    it(`denies ${label}: ${command}`, () => {
+      assertDenied(bashEvent(command), rule);
+    });
+  }
+
+  const allowed = [
+    ['tar cf backup.tar -C /tmp src', 'a tar whose directory is not protected'],
+    ['find .meeseeks -name "*.json"', 'a find that only reads the tree'],
+    ['find . -name "*.mjs" -exec wc -l {} \\;', 'a find with a write-action flag but naming nothing protected'],
+  ];
+  for (const [command, label] of allowed) {
+    it(`allows ${label}: ${command}`, () => {
+      assertAllowed(bashEvent(command));
+    });
+  }
+});
+
+describe('floor: the default is deny, and it is scoped to a run', () => {
+  it('denies an unrecognized command that names the protected tree, defaulting closed', () => {
+    // The whole point: a technique the position detector has never heard of, that names the
+    // path, still denies. `xxd -r` reverses a hex dump back into a file — not in any table.
+    assertDenied(bashEvent('some-unknown-tool --out .meeseeks/state.json'), 'protected-state');
+  });
+
+  it('still allows a pure mention that reaches nothing executable', () => {
+    assertAllowed(bashEvent('echo "the ratchet is at .meeseeks/state.json"'));
+  });
+
+  it('leaves the operator alone: outside a run the floor never engages', () => {
+    assertAllowed(bashEvent("echo 'printf x > .meeseeks/state.json' | sh"), OPERATOR);
+    assertAllowed(bashEvent('tar xf evil.tar -C .meeseeks'), OPERATOR);
+    assertAllowed(bashEvent('python3 -c\'open(".meeseeks/state.json","w")\''), OPERATOR);
+  });
+});
+
+describe('floor: read-like commands that can WRITE were over-allowed by the carve-out', () => {
+  // A hostile re-attack proved the carve-out re-allowed four commands that look like reads but
+  // write, each verified overwriting the ratchet through the real guard: `sed` writes via
+  // `w`/`W`/`s///w` regardless of `-i`; `sort -o` and `xxd -r` name an output file; `git config
+  // -f` writes an arbitrary named file. The position layer models none of these, so the floor
+  // has to. Each hole is denied here in its bare, cd-tracked and shell-wrapped forms; the write
+  // is the point, so `protected-state` is the rule (the .meeseeks tree is what they land on).
+  const denied = [
+    // sed: the `w` command writes the pattern space to a file, with or without -i.
+    ["sed -n 'w .meeseeks/state.json' /etc/hostname", 'sed w command writes an outfile'],
+    ["sed 's/a/b/w .meeseeks/state.json' /etc/hostname", 'sed s///w flag writes an outfile'],
+    ["sed 'W .meeseeks/state.json' /etc/hostname", 'sed W command writes an outfile'],
+    ["sed -i 's/a/b/w .meeseeks/state.json' input.txt", 'sed w with -i, the outfile is not the -i target'],
+    ["cd .meeseeks && sed -n 'w state.json' /etc/hostname", 'sed w after cd into the tree'],
+    ['bash -c "sed -n \'w .meeseeks/state.json\' /etc/hostname"', 'sed w wrapped in a shell'],
+    // sort: -o names the output file.
+    ['sort -o .meeseeks/state.json /etc/hostname', 'sort -o writes an outfile'],
+    ['sort --output=.meeseeks/state.json /etc/hostname', 'sort --output= writes an outfile'],
+    ['cd .meeseeks && sort -o state.json /etc/hostname', 'sort -o after cd into the tree'],
+    ['bash -c "sort -o .meeseeks/state.json /etc/hostname"', 'sort -o wrapped in a shell'],
+    // xxd: -r reverses a hex dump into its outfile operand.
+    ['xxd -r -p /tmp/hex.txt .meeseeks/state.json', 'xxd -r writes an outfile'],
+    ['cd .meeseeks && xxd -r -p /tmp/hex.txt state.json', 'xxd -r after cd into the tree'],
+    ['bash -c "xxd -r -p /tmp/hex.txt .meeseeks/state.json"', 'xxd -r wrapped in a shell'],
+    // git config -f: writes an arbitrary named file — the fail-open default in the old carve-out.
+    ['git config -f .meeseeks/state.json evil.key pwned', 'git config -f writes a named file'],
+    ['git config --file .meeseeks/state.json evil.key pwned', 'git config --file long form'],
+    ['git config --file=.meeseeks/state.json evil.key pwned', 'git config --file= glued form'],
+    ['git config -f .meeseeks/state.json --get some.key', 'git config -f is denied even to READ from a protected file'],
+    ['cd .meeseeks && git config -f state.json evil.key pwned', 'git config -f after cd into the tree'],
+    ['bash -c "git config -f .meeseeks/state.json evil.key pwned"', 'git config -f wrapped in a shell'],
+  ];
+  for (const [command, label] of denied) {
+    it(`denies ${label}: ${command}`, () => {
+      assertDenied(bashEvent(command), 'protected-state');
+    });
+  }
+
+  // The benign neighbours the tightened carve-out must still ALLOW, and the two it deliberately
+  // gives up. Values, not truthiness — each verdict is asserted, not assumed.
+  it('git: a pure --get names nothing protected and is allowed', () => {
+    assertAllowed(bashEvent('git config --get core.editor'));
+  });
+  it('git: a read subcommand naming the tree is still carved out', () => {
+    assertAllowed(bashEvent('git log --oneline .meeseeks/state.json'));
+  });
+  it('git: git show of a protected pathspec is a read', () => {
+    assertAllowed(bashEvent('git show HEAD:.meeseeks/state.json'));
+  });
+  it('grep -o (only-matching) is a stdout read, not an output file', () => {
+    assertAllowed(bashEvent('grep -o seenFailing .meeseeks/state.json'));
+  });
+  it('od -w (width) is a stdout read, not an output file', () => {
+    assertAllowed(bashEvent('od -w16 .meeseeks/state.json'));
+  });
+  it('hexdump remains for a hex read of the tree, replacing xxd', () => {
+    assertAllowed(bashEvent('hexdump -C .meeseeks/state.json'));
+  });
+  // The two acceptable fail-closed losses: a reader with an unrecognized -o flag, and the whole
+  // of sed. Both deny a benign read of a protected path — the cheap side of the asymmetry.
+  it('less -o (a reader with a genuine output-file flag) is denied on the carve-out', () => {
+    assertDenied(bashEvent('less -o /tmp/log .meeseeks/state.json'), 'protected-state');
+  });
+  it("sed WITHOUT -i is now denied naming a protected path — sed is not carved out at all", () => {
+    assertDenied(bashEvent("sed 's/a/b/' .meeseeks/state.json"), 'protected-state');
+  });
+  it('sort with no output flag, reading to stdout, is denied — sort is removed from the read set', () => {
+    assertDenied(bashEvent('sort .meeseeks/state.json'), 'protected-state');
+  });
+});
+
+describe('cd tracking: the working directory a write actually lands in', () => {
+  it('denies a relative write after cd into the protected directory', () => {
+    assertDenied(bashEvent('cd .meeseeks && echo "{}" > state.json'), 'protected-state');
+  });
+
+  it('denies a traversal from a subdirectory the chain moved into', () => {
+    assertDenied(bashEvent('cd sub && echo x > ../.meeseeks/state.json'), 'protected-state');
+  });
+
+  it('allows an ordinary relative write after an ordinary cd', () => {
+    assertAllowed(bashEvent('cd /tmp && echo x > scratch.txt'));
+  });
+});
+
+describe('allowed: writer-command neighbours', () => {
+  // Every writer in the table needs its benign twin, or the table is a blanket.
+  const allowed = [
+    ['touch /tmp/stamp', 'touch outside the protected set'],
+    ['mkdir dist', 'creating an ordinary directory'],
+    ['chmod +x scripts/run.sh', 'marking a script executable'],
+    ['tee /tmp/build.log', 'tee to an ordinary log'],
+    ['cp src/a.mjs src/b.mjs', 'an ordinary copy'],
+    ['mv build/out.js dist/out.js', 'an ordinary move'],
+    ['install -m 755 bin/tool /tmp/tool', 'an ordinary install'],
+    ["sed -i 's/a/b/' src/index.mjs", 'an in-place edit of ordinary source'],
+    ['ln -s .meeseeks/state.json /tmp/pointer', 'a link whose NAME is ordinary (the target is only read)'],
+    ['git add src/index.mjs', 'staging ordinary source'],
+    ['git checkout feature-branch', 'checking out a branch'],
+    ['git rm docs/old.md', 'git-deleting an ordinary file'],
+    ['curl -o /tmp/dl.json https://example.com', 'a download to an ordinary path'],
+    ['curl -sSf https://example.com', 'a download to stdout, no output flag at all'],
+    ['wget -O /tmp/page.html https://example.com', 'wget to an ordinary path'],
+  ];
+  for (const [command, label] of allowed) {
+    it(`allows ${label}: ${command}`, () => {
+      assertAllowed(bashEvent(command));
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// protected-settings — the guard's kill switch (PLAN item 28)
+// ---------------------------------------------------------------------------
+
+describe('blocked: protected-settings', () => {
+  // The hooks system honors `disableAllHooks`, and the target repo's own settings files
+  // participate in its precedence. One write of `{"disableAllHooks": true}` unguards every
+  // later child. Gated on the run marker exactly like protected-state: outside a run these
+  // are ordinary files the operator edits freely.
+  const deniedWrites = [
+    ['.claude/settings.json', 'the project settings'],
+    ['.claude/settings.local.json', 'the local override'],
+    ['./.claude/settings.json', 'a leading dot segment'],
+    ['src/../.claude/settings.json', 'a traversal'],
+    [`${FIXTURE_CWD}/.claude/settings.json`, 'the absolute path'],
+    ['packages/app/.claude/settings.local.json', 'a nested project directory'],
+  ];
+  for (const [filePath, label] of deniedWrites) {
+    it(`denies a Write to ${label}: ${filePath}`, () => {
+      assertDenied(pathEvent('pretooluse-write.json', 'file_path', filePath), 'protected-settings');
+    });
+  }
+
+  it('denies an Edit of .claude/settings.json', () => {
+    assertDenied(pathEvent('pretooluse-edit.json', 'file_path', '.claude/settings.json'), 'protected-settings');
+  });
+
+  const deniedCommands = [
+    ['echo \'{"disableAllHooks":true}\' > .claude/settings.json', 'the kill switch through a redirect'],
+    ["sh -c 'cat > .claude/settings.json'", 'the kill switch inside a wrapped shell'],
+    ['cp killswitch.json .claude/settings.local.json', 'copied over the local override'],
+    ['tee .claude/settings.json', 'written through tee'],
+    ['mv staged.json .claude/settings.json', 'moved into place'],
+    ["sed -i 's/false/true/' .claude/settings.json", 'edited in place'],
+  ];
+  for (const [command, label] of deniedCommands) {
+    it(`denies ${label}: ${command}`, () => {
+      assertDenied(bashEvent(command), 'protected-settings');
+    });
+  }
+
+  it('is scoped to a run: the operator edits their own settings freely', () => {
+    assertAllowed(pathEvent('pretooluse-write.json', 'file_path', '.claude/settings.json'), OPERATOR);
+    assertAllowed(bashEvent('echo \'{"disableAllHooks":true}\' > .claude/settings.json'), OPERATOR);
+  });
+});
+
+describe('allowed: protected-settings neighbours', () => {
+  const allowedCommands = [
+    ['cat .claude/settings.json', 'reading the settings'],
+    ['echo x > .claude-settings-backup', 'a sibling whose name only resembles the directory'],
+    ['echo x > docs/settings.json', 'a settings.json not under .claude'],
+    ['echo x > .claude/commands/build.md', 'a different file under .claude'],
+    ['mkdir -p .claude', 'creating the directory itself'],
+  ];
+  for (const [command, label] of allowedCommands) {
+    it(`allows ${label}: ${command}`, () => {
+      assertAllowed(bashEvent(command));
+    });
+  }
+
+  const allowedWrites = [
+    ['settings.json', 'a root-level settings.json with no .claude parent'],
+    ['.claude/hooks.json', 'a different json under .claude'],
+    ['.claude/settings.json.bak', 'a backup name beside the settings (mv into place is still denied)'],
+    ['config/.claude-settings/settings.json', 'a parent that only resembles .claude'],
+  ];
+  for (const [filePath, label] of allowedWrites) {
+    it(`allows a Write to ${label}: ${filePath}`, () => {
+      assertAllowed(pathEvent('pretooluse-write.json', 'file_path', filePath));
+    });
+  }
+});
+
+describe('isProtectedSettingsPath', () => {
+  const cases = [
+    ['.claude/settings.json', true],
+    ['.claude/settings.local.json', true],
+    ['./.claude/settings.json', true],
+    ['packages/app/.claude/settings.json', true],
+    [`${FIXTURE_CWD}/.claude/settings.local.json`, true],
+    ['src/../.claude/settings.json', true],
+    ['settings.json', false],
+    ['docs/settings.json', false],
+    ['.claude/other.json', false],
+    ['.claude/settings.json.bak', false],
+    ['.claude-backup/settings.json', false],
+    ['.claude/nested/settings.json', false],
+    ['', false],
+  ];
+  for (const [candidate, expected] of cases) {
+    it(`${JSON.stringify(candidate)} -> ${expected}`, () => {
+      assert.equal(isProtectedSettingsPath(String(candidate), FIXTURE_CWD), expected);
+    });
+  }
+});
+
+describe('the kill switch is pinned shut in the blob handed to every child (PLAN item 28)', () => {
+  // The other half of the same item: the guard denies the write, and the driver STATES
+  // disableAllHooks in the settings source it owns rather than inheriting whatever the
+  // tree says. Which source the CLI lets win is a fact about another binary — only
+  // `test/live/guard-killswitch.live.test.mjs` can hold that half.
+  it('states disableAllHooks: false for every phase', () => {
+    for (const phase of Object.keys(PHASE_PERMISSIONS)) {
+      const args = claudeArgs({ model: 'm', phase });
+      const blob = JSON.parse(args[args.indexOf('--settings') + 1]);
+      assert.equal(blob.disableAllHooks, false, `${phase} inherits disableAllHooks instead of stating it`);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// unresolvable-write — uncertainty resolves toward deny, inside a run
+// ---------------------------------------------------------------------------
+
+describe('blocked: unresolvable-write', () => {
+  // "Nothing defaults to pass" applied to the write detector: a content-writing command
+  // whose destination cannot be known before it runs could be aiming at any protected
+  // path, and inside a run that possibility is a denial, not a shrug. The same doctrine
+  // rm-recursive has enforced on its own operands since the beginning.
+  const denied = [
+    ['echo x > "$OUT"', 'a redirect to an unexpanded variable'],
+    ['npm test | tee "$LOG"', 'tee to an unexpanded variable'],
+    ['cp report.json "$DEST"', 'a copy to an unexpanded variable'],
+    ['cd "$DIR" && echo x > build.log', 'a relative write after an unresolvable cd'],
+    ['eval "$CMD"', 'eval of a value nothing can read'],
+    ['echo .meeseeks/x | xargs rm', 'a writer fed its targets from stdin'],
+  ];
+  for (const [command, label] of denied) {
+    it(`denies ${label}: ${command}`, () => {
+      assertDenied(bashEvent(command), 'unresolvable-write');
+    });
+  }
+
+  it('denies command nesting too deep to analyse', () => {
+    let cmd = 'echo hi';
+    for (let i = 0; i < 6; i += 1) cmd = `echo "$(${cmd})"`;
+    assertDenied(bashEvent(cmd), 'unresolvable-write');
+  });
+
+  it('routes an unresolvable target that NAMES a protected path to that family instead', () => {
+    // The generic rule is the fallback; a `$HOME/.meeseeks/...` destination is already
+    // recognisable and should say what it actually is.
+    assertDenied(bashEvent('cp /tmp/fake.json "$HOME/.meeseeks/state.json"'), 'protected-state');
+    assertDenied(bashEvent('cp killswitch.json "$HOME/.claude/settings.json"'), 'protected-settings');
+  });
+});
+
+describe('allowed: unresolvable-write neighbours', () => {
+  const allowed = [
+    ['echo x > /tmp/build.log', 'a resolvable, unprotected redirect'],
+    ['cd "$DIR" && echo x > /tmp/abs.log', 'an absolute write after an unresolvable cd'],
+    ['rm -f "$TMPFILE"', 'deleting an unresolvable single file — deletion is the lenient class'],
+    ['ls src | xargs cat', 'xargs feeding a reader'],
+    ['eval "npm test"', 'eval of a literal, harmless command'],
+    ['echo x > out-$(date +%s).log', 'a substitution in the name of an unprotected pattern is still unresolvable — see below'],
+  ];
+  // The last case above is actually denied — its target has an expansion. Keep the table honest:
+  const genuinelyAllowed = allowed.slice(0, -1);
+  for (const [command, label] of genuinelyAllowed) {
+    it(`allows ${label}: ${command}`, () => {
+      assertAllowed(bashEvent(command));
+    });
+  }
+
+  it('denies the substitution-named target, because the name cannot be resolved', () => {
+    assertDenied(bashEvent('echo x > out-$(date +%s).log'), 'unresolvable-write');
+  });
+
+  it('allows nesting at the analysis depth, denying only past it', () => {
+    let cmd = 'echo hi';
+    for (let i = 0; i < 5; i += 1) cmd = `echo "$(${cmd})"`;
+    assertAllowed(bashEvent(cmd));
+  });
+
+  it('is scoped to a run: an operator may redirect into a variable', () => {
+    assertAllowed(bashEvent('echo x > "$OUT"'), OPERATOR);
+    assertAllowed(bashEvent('cd "$DIR" && echo x > build.log'), OPERATOR);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R23 — realpath on both sides of the positional compare
+// ---------------------------------------------------------------------------
+
+describe('R23: symlinks and case variants cannot dodge the positional rule', () => {
+  // A real tree on disk, because realpath is the thing under test. Symlink creation can
+  // fail on Windows without privilege; those cases skip rather than lie.
+  const root = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-guard-realpath-'));
+  mkdirSync(path.join(root, '.meeseeks'), { recursive: true });
+  writeFileSync(path.join(root, '.meeseeks', 'state.json'), '{}', 'utf8');
+  mkdirSync(path.join(root, '.meeseeks-notes'), { recursive: true });
+
+  /**
+   * @param {string} target
+   * @param {string} linkPath
+   * @param {'junction' | 'file'} kind
+   * @returns {boolean}
+   */
+  function trySymlink(target, linkPath, kind) {
+    try {
+      symlinkSync(target, linkPath, kind);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  const dirLink = trySymlink(path.join(root, '.meeseeks'), path.join(root, 'innocent'), 'junction');
+  const dangling = trySymlink(path.join(root, 'nowhere', 'x'), path.join(root, 'dangling'), 'file');
+  const guardLink = trySymlink(GUARD, path.join(root, 'build-helper.mjs'), 'file');
+
+  after(() => rmSync(root, { recursive: true, force: true }));
+
+  /**
+   * @param {string} filePath
+   * @returns {Record<string, any>}
+   */
+  function writeAt(filePath) {
+    const event = pathEvent('pretooluse-write.json', 'file_path', filePath);
+    event.cwd = root;
+    return event;
+  }
+
+  it('denies a Write through a symlink that resolves into .meeseeks', (t) => {
+    if (!dirLink) return t.skip('symlinks unavailable on this platform');
+    assertDenied(writeAt('innocent/state.json'), 'protected-state');
+  });
+
+  it('denies a not-yet-existing path whose deepest existing ancestor is that symlink', (t) => {
+    // The components-phase pattern: the file does not exist, so the judgement realpaths the
+    // deepest ancestor that does and rejoins the remainder.
+    if (!dirLink) return t.skip('symlinks unavailable on this platform');
+    assertDenied(writeAt('innocent/briefs/iter-001.md'), 'protected-state');
+  });
+
+  it('denies the same write through a shell redirect', (t) => {
+    if (!dirLink) return t.skip('symlinks unavailable on this platform');
+    const event = bashEvent('echo forged > innocent/state.json');
+    event.cwd = root;
+    assertDenied(event, 'protected-state');
+  });
+
+  it('allows the symlinked write outside a run', (t) => {
+    if (!dirLink) return t.skip('symlinks unavailable on this platform');
+    assertAllowed(writeAt('innocent/state.json'), OPERATOR);
+  });
+
+  it('allows the benign sibling .meeseeks-notes, on disk and not only on paper', () => {
+    assertAllowed(writeAt('.meeseeks-notes/state.json'));
+  });
+
+  it('denies a write through a dangling symlink: realpath failure is a deny, not an allow', (t) => {
+    // The write would CREATE the target, wherever the link points, and realpath cannot say
+    // where that is. Inside a run, unresolvable is denied.
+    if (!dangling) return t.skip('symlinks unavailable on this platform');
+    assertDenied(writeAt('dangling'), 'unresolvable-write');
+  });
+
+  it('denies a Write through a symlink that resolves to the guard itself', (t) => {
+    if (!guardLink) return t.skip('symlinks unavailable on this platform');
+    assertDenied(writeAt('build-helper.mjs'), 'protected-guard');
+  });
+
+  it('unit: isProtectedStatePath follows the symlink', (t) => {
+    if (!dirLink) return t.skip('symlinks unavailable on this platform');
+    assert.equal(isProtectedStatePath('innocent/state.json', root), true);
+    assert.equal(isProtectedStatePath('.meeseeks-notes/state.json', root), false);
+  });
+
+  it('denies writing the TARGET of a .meeseeks that is itself a symlink', (t) => {
+    // The root side of "realpath both sides": when `.meeseeks` points elsewhere, the write
+    // that never spells the name still lands in driver-owned state.
+    const aliasRoot = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-guard-alias-'));
+    mkdirSync(path.join(aliasRoot, 'real-state'), { recursive: true });
+    const linked = trySymlink(path.join(aliasRoot, 'real-state'), path.join(aliasRoot, '.meeseeks'), 'junction');
+    try {
+      if (!linked) return t.skip('symlinks unavailable on this platform');
+      const event = pathEvent('pretooluse-write.json', 'file_path', 'real-state/state.json');
+      event.cwd = aliasRoot;
+      assertDenied(event, 'protected-state');
+    } finally {
+      rmSync(aliasRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('denies writing the target of a settings file that is itself a symlink', (t) => {
+    const aliasRoot = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-guard-settings-'));
+    mkdirSync(path.join(aliasRoot, '.claude'), { recursive: true });
+    mkdirSync(path.join(aliasRoot, 'cfg'), { recursive: true });
+    writeFileSync(path.join(aliasRoot, 'cfg', 'real-settings.json'), '{}', 'utf8');
+    const linked = trySymlink(
+      path.join(aliasRoot, 'cfg', 'real-settings.json'),
+      path.join(aliasRoot, '.claude', 'settings.json'),
+      'file',
+    );
+    try {
+      if (!linked) return t.skip('symlinks unavailable on this platform');
+      const event = pathEvent('pretooluse-write.json', 'file_path', 'cfg/real-settings.json');
+      event.cwd = aliasRoot;
+      assertDenied(event, 'protected-settings');
+    } finally {
+      rmSync(aliasRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -404,6 +1099,52 @@ describe('allowed: git-history neighbours', () => {
       assertAllowed(bashEvent(command));
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// git clean — destroys the gitignored .meeseeks tree while naming no protected path
+// ---------------------------------------------------------------------------
+
+describe('blocked: git-clean (V2)', () => {
+  // `.meeseeks/` is gitignored, so `git clean -x`/`-fdx` deletes the ratchet and the RED
+  // evidence — and it names no protected path, so the floor cannot catch it. Any non-dry-run
+  // git clean inside a run is refused; the recursion carries the rule into wrapped shells.
+  const denied = [
+    'git clean -fdx',
+    'git clean -x',
+    'git clean -fd',
+    'git clean',
+    'git clean --force',
+    `git -C ${FIXTURE_CWD} clean -fdx`,
+    "sh -c 'git clean -fdx'",
+    'npm run build && git clean -xdf',
+  ];
+  for (const command of denied) {
+    it(`denies ${command}`, () => {
+      assertDenied(bashEvent(command), 'git-clean');
+    });
+  }
+});
+
+describe('allowed: git-clean neighbours', () => {
+  const allowed = [
+    ['git clean -n', 'a dry run with the short flag'],
+    ['git clean --dry-run', 'a dry run with the long flag'],
+    ['git clean -nfd', 'a dry run combined with other flags'],
+    ['git status', 'a different subcommand'],
+    ['git add .', 'staging, which is a different subcommand'],
+    ['git stash', 'stashing, which is a different subcommand'],
+    ['npm run clean', 'a clean script that is not git clean'],
+  ];
+  for (const [command, label] of allowed) {
+    it(`allows ${label}: ${command}`, () => {
+      assertAllowed(bashEvent(command));
+    });
+  }
+
+  it('is scoped to a run: the operator may clean their own worktree', () => {
+    assertAllowed(bashEvent('git clean -fdx'), OPERATOR);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -472,11 +1213,11 @@ describe('blocked: nested-meeseeks', () => {
 
 describe('blocked: commands hidden inside a shell wrapper', () => {
   // Every rule keys off the command word, and `bash -c "..."` makes that word `bash`.
-  // The wrapped command was invisible to all four rules, not only the nesting one.
+  // The wrapped command was invisible to all the rules, not only the nesting one.
   const denied = [
     ['bash -c "rm -rf /etc"', 'rm-recursive'],
     ["sh -c 'git push --force'", 'git-history'],
-    ['bash -c "cat .meeseeks/config.json"', 'protected-state'],
+    ['bash -c "tee .meeseeks/config.json"', 'protected-state'],
     ["sh -c '/meeseeks'", 'nested-meeseeks'],
     ['zsh -c "rm -rf node_modules"', 'rm-recursive'],
   ];
@@ -494,8 +1235,8 @@ describe('blocked: commands hidden inside a shell wrapper', () => {
 describe('allowed: nested-meeseeks neighbours', () => {
   const allowed = [
     // Prose is not an invocation. The first version denied the slash command anywhere in
-    // the line, and it caught a heredoc that mentioned the command in a code comment —
-    // while this plugin was installed, on its own author, editing this file.
+    // the line, and it caught a heredoc that merely mentioned the command in a code comment
+    // — while this plugin was installed, on its own author, editing this file.
     ['echo "run /meeseeks to start a build"', 'the slash command quoted inside prose'],
     ['git commit -m "document the /meeseeks command"', 'the slash command in a commit message'],
     ['grep -rn "/meeseeks" docs/', 'searching the docs for the slash command'],
@@ -549,13 +1290,32 @@ describe('blocked: malformed-payload', () => {
 // ---------------------------------------------------------------------------
 
 describe('deny reasons', () => {
-  it('names the runtime directory, and points at the route that still works', () => {
-    const result = evaluate(bashEvent('cat .meeseeks/state.json'), { env: IN_RUN });
+  it('names the runtime directory, and says the read side is open', () => {
+    const result = evaluate(bashEvent("echo '{}' > .meeseeks/state.json"), { env: IN_RUN });
     assert.equal(
       result.decision === 'deny' ? result.reason : '',
-      'Command references the .meeseeks runtime directory. It holds the ratchet, the configuration, the RED ' +
-        'evidence, the archived briefs and the test reports — the state and evidence a run is judged by, which ' +
-        'the run does not write (DESIGN.md §6). Read them with the Read tool, which is not hooked.',
+      '.meeseeks/state.json is inside the .meeseeks runtime directory. It holds the ratchet, the configuration, ' +
+        'the RED evidence, the archived briefs and the test reports — the state and evidence a run is judged by, ' +
+        'which the run does not write (DESIGN.md §6). Reading it is fine; writing it from a run is not.',
+    );
+  });
+
+  it('names the kill switch for a settings write', () => {
+    const result = evaluate(pathEvent('pretooluse-write.json', 'file_path', '.claude/settings.json'), {
+      env: IN_RUN,
+    });
+    const reason = result.decision === 'deny' ? result.reason : '';
+    assert.equal(reason.includes('disableAllHooks'), true, reason);
+    assert.equal(reason.includes('kill switch'), true, reason);
+    assert.equal(reason.includes('PLAN item 28'), true, reason);
+  });
+
+  it('names the unresolvable target for a variable redirect', () => {
+    const result = evaluate(bashEvent('echo x > "$OUT"'), { env: IN_RUN });
+    assert.equal(
+      result.decision === 'deny' ? result.reason : '',
+      'Write target "$OUT" cannot be resolved before the command runs; unresolvable write targets are denied ' +
+        'inside a run (DESIGN.md §6).',
     );
   });
 
@@ -596,12 +1356,10 @@ describe('deny reasons', () => {
     assert.equal(reason.includes('CLAUDE.md invariant, DESIGN.md §13.6'), true, reason);
   });
 
-  // The rule is a text match over command position, heredoc bodies included, and that is
-  // deliberate because a heredoc can carry a script. It therefore also refuses an operator
-  // writing *prose* that merely mentions the command - which happened three times in one
-  // session, twice to a commit message describing this very rule. The rule is not weakened for
-  // that; the sentence is made to say so, because a message that misdirects costs an
-  // investigation and this repository has paid for that repeatedly.
+  // The rule is a text match over command position, and heredoc bodies fed to a shell are
+  // command position too. Ordinary heredoc bodies are data since R24, which retires the
+  // trilogy of prose denials — but the sentence still explains itself for whatever prose
+  // lands in command position next.
   it('says the denial is a text match, so prose about the command is diagnosable in seconds', () => {
     const result = evaluate(bashEvent('/meeseeks'));
     const reason = result.decision === 'deny' ? result.reason : '';
@@ -611,7 +1369,7 @@ describe('deny reasons', () => {
   });
 
   it('still denies, and denies identically, whatever the sentence now says', () => {
-    // The message changed; the behaviour must not have. A commit message mentioning the command
+    // The message changed; the behaviour must not have. A prompt invoking the command
     // is refused exactly as before.
     assertDenied(bashEvent('/meeseeks'), 'nested-meeseeks');
     assertDenied(bashEvent("sh -c '/meeseeks'"), 'nested-meeseeks');
@@ -672,9 +1430,49 @@ describe('tokenizeCommand', () => {
     ]);
   });
 
-  it('drops redirection targets and the fd that precedes them', () => {
+  it('keeps redirection targets and fd numbers out of the operand stream', () => {
     const { segments } = tokenizeCommand('rm -rf /tmp/scratch 2>/dev/null');
     assert.deepStrictEqual(segments[0].map((token) => token.value), ['rm', '-rf', '/tmp/scratch']);
+  });
+
+  it('captures output-redirect targets as write destinations rather than dropping them', () => {
+    // Dropping them was how `echo x > file` hid the whole attack in the discarded half.
+    const { segments, redirects } = tokenizeCommand('echo hi > out.txt');
+    assert.deepStrictEqual(segments.map((segment) => segment.map((token) => token.value)), [['echo', 'hi']]);
+    assert.deepStrictEqual(
+      redirects.map((r) => ({ value: r.target.value, segment: r.segment })),
+      [{ value: 'out.txt', segment: 0 }],
+    );
+  });
+
+  it('does not capture input redirects or fd duplication as write targets', () => {
+    const { redirects } = tokenizeCommand('sort < in.txt 2>&1');
+    assert.deepStrictEqual(redirects, []);
+  });
+
+  it('captures a quoted, split redirect target as one value', () => {
+    const { redirects } = tokenizeCommand('printf x > .meeseeks"/state.json"');
+    assert.deepStrictEqual(redirects.map((r) => r.target.value), ['.meeseeks/state.json']);
+  });
+
+  it('keeps heredoc bodies out of the token stream, with their receiver recorded', () => {
+    const { segments, heredocs } = tokenizeCommand("cat <<'EOF'\n/meeseeks in prose\nEOF");
+    assert.deepStrictEqual(segments.map((segment) => segment.map((token) => token.value)), [['cat']]);
+    assert.deepStrictEqual(
+      heredocs.map((h) => ({ body: h.body, receiver: h.receiver, quoted: h.quoted })),
+      [{ body: '/meeseeks in prose', receiver: ['cat'], quoted: true }],
+    );
+  });
+
+  it('collects command substitutions from an unquoted heredoc body, which the shell expands', () => {
+    const { substitutions, heredocs } = tokenizeCommand('cat <<EOF\n$(date)\nEOF');
+    assert.deepStrictEqual(substitutions, ['date']);
+    assert.deepStrictEqual(heredocs.map((h) => h.quoted), [false]);
+  });
+
+  it('collects a subshell body as an executable substitution', () => {
+    const { substitutions } = tokenizeCommand('(echo hi)');
+    assert.deepStrictEqual(substitutions, ['echo hi']);
   });
 
   it('marks unresolvable operands and collects substitution bodies', () => {
@@ -698,6 +1496,14 @@ describe('checkBashCommand recurses into substitutions', () => {
     assert.deepStrictEqual(
       result.decision === 'deny' ? { decision: result.decision, rule: result.rule } : { decision: 'allow' },
       { decision: 'deny', rule: 'rm-recursive' },
+    );
+  });
+
+  it('denies a destructive command inside a subshell', () => {
+    const result = checkBashCommand('(git push --force)', FIXTURE_CWD);
+    assert.deepStrictEqual(
+      result.decision === 'deny' ? { decision: result.decision, rule: result.rule } : { decision: 'allow' },
+      { decision: 'deny', rule: 'git-history' },
     );
   });
 
@@ -769,14 +1575,14 @@ describe('guard.mjs as a process', () => {
     // The unit tables inject `env`; production does not. This is that seam. The driver sets
     // MEESEEKS_RUNNING on the `claude` child and the hook inherits it - confirmed live against
     // claude 2.1.226 before this scoping was written, not assumed.
-    const payload = JSON.stringify(bashEvent('cat .meeseeks/config.json'));
+    const payload = JSON.stringify(bashEvent("echo '{}' > .meeseeks/config.json"));
 
     const inRun = await run(payload, { ...process.env, MEESEEKS_RUNNING: '1' });
     assert.equal(inRun.code, 0);
     assert.equal(
       JSON.parse(inRun.stdout).hookSpecificOutput.permissionDecision,
       'deny',
-      'a builder was allowed to read the config that constrains it',
+      'a builder was allowed to overwrite the config that constrains it',
     );
 
     const operator = { ...process.env };
@@ -829,6 +1635,8 @@ describe('blocked: the guard cannot be edited by the run it is guarding', () => 
     [`rm ${guardPath}`, 'deleting the guard'],
     [`echo '{}' > ${hooksManifest}`, 'a redirect over the hook manifest'],
     [`cp /tmp/other.mjs ${guardPath}`, 'overwriting the guard from elsewhere'],
+    [`tee ${guardPath}`, 'writing the guard through tee'],
+    [`mv /tmp/other.mjs ${guardPath}`, 'moving a replacement into place'],
   ];
   for (const [command, label] of denied) {
     it(`denies ${label}`, () => {
@@ -855,14 +1663,14 @@ describe('blocked: the guard cannot be edited by the run it is guarding', () => 
 describe('allowed: guard neighbours', () => {
   // Blocking everything is not passing. These are the names most likely to be caught by a
   // careless rule, and every one of them is ordinary work a builder may legitimately do.
-  // Note what is NOT here: `cat hooks/guard.mjs`. A shell string cannot be told apart from a
-  // write reliably, which is exactly why protected-state denies `cat .meeseeks/config.json` too.
-  // Reading through the Read tool stays fine — it is not hooked.
+  // Since R24 `cat hooks/guard.mjs` joins them: the write detector can tell a read from a
+  // write, so the shell read route is open like every other read.
   const allowed = [
     ["echo 'x' > test/guard.test.mjs", 'the guard test, which is not the guard'],
     ["echo 'x' > src/hooks/guard.mjs", "an application's own file that happens to share the name"],
     ["echo 'x' > docs/guard.md", 'documentation about the guard'],
     ["echo 'x' > hooks/other.mjs", 'a different file in the hooks directory'],
+    ['cat hooks/guard.mjs', 'reading the guard through the shell'],
   ];
   for (const [command, label] of allowed) {
     it(`allows ${label}: ${command}`, () => {
@@ -914,6 +1722,7 @@ describe('--give-them-the-box at the hook', () => {
     assert.equal(checkBashCommand('echo x > .meeseeks/state.json', '/repo', boxed).decision, 'deny');
     assert.equal(checkBashCommand('git push --force', '/repo', boxed).decision, 'deny');
     assert.equal(checkBashCommand('rm -rf /repo/src', '/repo', boxed).decision, 'deny');
+    assert.equal(checkBashCommand('echo x > .claude/settings.json', '/repo', boxed).decision, 'deny');
   });
 });
 

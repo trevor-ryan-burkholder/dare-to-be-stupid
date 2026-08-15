@@ -1104,8 +1104,16 @@ function childSettings(sandbox = false) {
   // checks the host can sandbox at all and **refuses the run** rather than letting a child
   // proceed unsandboxed: a sandbox that can be declined is not a sandbox, and one that
   // evaporates quietly is worse than none because it is believed.
+  // The hooks system honors a `disableAllHooks` setting whose precedence the target repo's
+  // own `.claude/settings.json` and `.claude/settings.local.json` participate in — so a
+  // builder that wrote `{"disableAllHooks": true}` there would unguard every later child
+  // (PLAN item 28). The guard's `protected-settings` rule denies that write; this line is
+  // the other half: the driver STATES the fact in the blob it owns rather than inheriting
+  // whatever the tree says. Only the live tier can prove which source the CLI lets win —
+  // `test/live/guard-killswitch.live.test.mjs` is that assertion.
   return JSON.stringify({
     outputStyle: CHILD_OUTPUT_STYLE,
+    disableAllHooks: false,
     hooks,
     ...(sandbox ? { sandbox: { enabled: true } } : {}),
   });
