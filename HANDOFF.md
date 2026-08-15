@@ -1,8 +1,10 @@
-# START HERE — handoff, last swept 14 August 2026
+# START HERE — handoff, last swept 15 August 2026
 
-**State:** `main` at `0.149.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.149.0: `npm test` **2247 pass**,
-`npm run test:integration` **51 pass**, `npm run test:live` **31 pass** (0 fail), `npm run lint` and `npm run typecheck` clean,
-`npm run release-check` **ok**.
+**State:** `main` at `0.150.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.150.0: `npm test` **2258 pass**
+(0 fail), `npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Tiers 2 and 3 carry unchanged from
+0.149.0 — **`test:integration` 51, `test:live` 31** — because item 45 touches no surface either tier owns: no
+`spawnClaude`/`claudeArgs`/envelope/child-template-contract change, only the CLI arg parse, the output-style prose and the
+command frontmatter, all tier-1 surfaces.
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
 gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
@@ -101,6 +103,36 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.150.0 — small trims: unknown-flag rejection, break-character clause, least-privilege frontmatter (PLAN item 45, R31/R32/R33)
+
+Three independent trims, one slice. **R31 (`scripts/driver.mjs` `parseDriverArgs`):** an unknown `--flag` is now
+refused by name at parse time — `--deadlin=90`, `--give-the-box`, `--improv` throw a `DriverError` naming the flag
+and the accepted set, rather than being silently dropped. A dropped flag is the same fail-open shape as a NaN that
+survives a numeric parse: the ceiling or mode the operator asked for never arms and nothing says so. The configure
+wizard already refused an unknown argv argument (`configure.mjs` `main`); the driver — the surface that then runs
+unattended with permissions disabled — was the more forgiving of the two, and no longer is. `--deadline`'s *value*
+validation stays `parseDeadlineFlag`'s job; the new guard only checks the name. **R33 (`output-styles/meeseeks.md`):**
+the style prose now states its own break-character escape — when a critical warning (data loss, a destructive command,
+a leaked secret) would be softened or buried by the Meeseeks register, drop the voice for that sentence, say the danger
+plainly, then resume — rather than leaning on the driver's "failure output is verbatim" discipline alone, because the
+danger can surface in a line the driver never marks as failure output. **R32 (`commands/meeseeks.md` frontmatter):**
+`allowed-tools` pinned to exactly the two invocations the command body makes —
+`Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/init.mjs:*)` and `.../driver.mjs:*)` — dropping the over-broad `Bash(node:*)`
+(which pre-approved every node command the launcher might reach for) and the vestigial `git` grants the body never uses.
+
+Tests: +7 for R31 (five typo refusals, a named-flag assertion, and the benign-neighbour half proving all five real flags
+still pass), +3 for R33 (break-clause present, danger named, plain-bypass still documented), +1 for R32 (exact
+least-privilege patterns pinned, broad grant forbidden). Tier 1 **2247 → 2258**, 0 fail; lint, typecheck, release-check clean.
+
+**R32 is not verified against the live permission matcher, and that is recorded honestly.** Its contract is owned by a
+different binary — Claude Code's Bash-permission matcher — which the project's own doctrine says needs a live check, not
+more assertions, and the scope note forbids running `/meeseeks` against this repo to obtain one. The pattern is modeled on
+the shipping `ralph-loop` command (`allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/scripts/setup-ralph-loop.sh:*)"]`), whose
+unquoted pattern matches a quoted invocation — evidence the matcher normalizes quotes, so the `node`-prefixed form should
+match the `node "..."` invocation the command makes. **Failure mode if that inference is wrong is benign:** a one-time
+permission prompt on `/meeseeks`, never a safety regression, and never worse than the over-broad grant it replaced.
+**Owed:** confirm on the next real `/meeseeks` that the pre-approval matches and no prompt appears.
 
 ### 0.149.0 — gate-skip on an unchanged workspace (PLAN item 43, R35)
 

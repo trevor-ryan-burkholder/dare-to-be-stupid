@@ -828,10 +828,19 @@ Additive-only envelope for repo-supplied guidance (may ADD checks, cannot suppre
 byte/count-capped) + delimiter neutralisation at each untrusted frame (test names, requirement
 strings). Surface: prompt assembly in `scripts/driver.mjs`. **Campaign C**.
 
-### 45. Small trims — parse-time flag validation, `/meeseeks` frontmatter, break clause (R31/R32/R33) — OPEN
+### 45. Small trims — parse-time flag validation, `/meeseeks` frontmatter, break clause (R31/R32/R33) — **DONE (0.150.0)**
 One batched slice: `parseDriverArgs` + the wizard validate numeric/date flags at parse time and exit
 naming the flag; `allowed-tools` on `commands/meeseeks.md` pinned to the driver invocation; the
 style layer states its own break-character escape. Surfaces small and independent. **Campaign C**.
+
+**Landed.** R31 (`parseDriverArgs` now refuses an unknown flag by name — the wizard's argv guard and
+`parseDeadlineFlag`'s value check were already fail-closed, so the driver's silent-drop was the one
+remaining fail-open) and R33 (the break-character clause in `output-styles/meeseeks.md`) are unit-tested,
+tier 1. R32 (least-privilege frontmatter, modeled on the shipping `ralph-loop` pattern) is landed with a
+content-presence test but **is not verified against the live Claude Code permission matcher** — a
+different binary's contract, which the scope note forbids exercising here by running `/meeseeks`. Failure
+mode is benign (a one-time prompt, never unsafe); **owed:** confirm the pre-approval matches on the next
+real `/meeseeks`. See `HANDOFF.md` 0.150.0.
 
 ### 46. Bounded gate-output → next-iteration repair context, with per-id retry counts (R40) — OPEN
 Formalise "bounded gate-failure output → the next iteration's repair context, with a per-id retry

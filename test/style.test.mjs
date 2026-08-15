@@ -12,9 +12,12 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import { banner, render, stamp, styleMode, verbatim } from '../scripts/style.mjs';
+
+const STYLE_MARKDOWN = readFileSync(new URL('../output-styles/meeseeks.md', import.meta.url), 'utf8');
 
 const MEESEEKS = { mode: /** @type {const} */ ('meeseeks') };
 const PLAIN = { mode: /** @type {const} */ ('plain') };
@@ -168,6 +171,25 @@ describe('failure output', () => {
     ]) {
       assert.equal(verbatim(text), text);
     }
+  });
+});
+
+describe('the style prose carries its own escapes', () => {
+  // R33: the style layer states its own break-character clause rather than leaning on the
+  // driver's "failure output is verbatim" discipline alone, because a critical warning can
+  // surface in a line the driver never marks as failure output.
+  it('states the break-character escape for a critical warning', () => {
+    assert.equal(STYLE_MARKDOWN.includes('drop the voice for that sentence'), true);
+  });
+
+  it('names the escape as covering danger beyond the fixed verbatim list', () => {
+    // The clause is about lines that are NOT on the verbatim list — data loss, a destructive
+    // command, a leaked secret — so it must say so, or it is just the verbatim rule restated.
+    assert.equal(STYLE_MARKDOWN.includes('dangerous'), true);
+  });
+
+  it('still documents the plain-mode bypass, unchanged', () => {
+    assert.equal(STYLE_MARKDOWN.includes('MEESEEKS_STYLE=plain'), true);
   });
 });
 

@@ -3270,6 +3270,27 @@ describe('parseDriverArgs', () => {
       deadlineMinutes: null,
     });
   });
+
+  // R31: an unknown flag is the same fail-open shape as a NaN that survives a numeric parse —
+  // the ceiling or mode the operator asked for never arms and nothing says so. It is refused by
+  // name rather than dropped, matching the configure wizard's argv guard.
+  for (const flag of ['--frobnicate', '--deadlin=90', '--give-the-box', '--improv', '--yse']) {
+    it(`refuses the unknown flag ${flag} rather than dropping it`, () => {
+      assert.throws(() => parseDriverArgs(['PRD.md', flag]), DriverError);
+    });
+  }
+
+  it('names the offending flag in the refusal', () => {
+    assert.throws(() => parseDriverArgs(['PRD.md', '--deadlin=90']), /unknown flag: --deadlin=90/);
+  });
+
+  it('accepts every known flag, so the guard blocks only the unknown', () => {
+    // The benign-neighbour half of the deny-path rule: refusing typos is only half a test
+    // unless the real flags still pass. `--deadline` carries its own value validation.
+    assert.doesNotThrow(() =>
+      parseDriverArgs(['PRD.md', '--yes', '--confirm-prd', '--improve', '--give-them-the-box', '--deadline=90']),
+    );
+  });
 });
 
 describe('requiredIdsFor', () => {

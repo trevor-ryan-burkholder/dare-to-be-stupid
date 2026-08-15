@@ -1,7 +1,7 @@
 ---
 description: Hand a PRD, an idea, an existing repository, or nothing at all to an autonomous build loop. Pre-production only.
 argument-hint: [path-to-PRD.md | "an idea in quotes" | --improve ["area"] | (nothing)] [--deadline=<min>]
-allowed-tools: Bash(node:*), Bash(git status:*), Bash(git rev-parse:*)
+allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/init.mjs:*), Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/driver.mjs:*)
 ---
 
 # /meeseeks

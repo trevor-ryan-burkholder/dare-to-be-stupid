@@ -3791,6 +3791,23 @@ function parseDeadlineFlag(argv) {
 export function parseDriverArgs(argv) {
   const flags = new Set(argv.filter((argument) => argument.startsWith('--')));
   const positional = argv.filter((argument) => !argument.startsWith('--'));
+  // Reject an unknown flag by name rather than dropping it in silence. A mistyped flag —
+  // `--deadlin=90`, `--give-the-box`, `--improv` — is the same fail-open shape as a NaN that
+  // survives a numeric parse (R31): the ceiling or mode the operator asked for never arms, and
+  // nothing says so. The configure wizard already refuses an unknown argv argument by name
+  // (`configure.mjs` `main`); the driver did not, so the launch surface that then runs unattended
+  // with permissions disabled was the more forgiving of the two. The value carried by `--deadline`
+  // stays `parseDeadlineFlag`'s job; this only guards the *name*.
+  const known = new Set(['--yes', '--confirm-prd', '--improve', '--give-them-the-box', '--deadline']);
+  for (const flag of flags) {
+    const name = flag.includes('=') ? flag.slice(0, flag.indexOf('=')) : flag;
+    if (!known.has(name)) {
+      throw new DriverError(
+        `unknown flag: ${flag}. The accepted flags are --yes, --confirm-prd, --improve, ` +
+          '--give-them-the-box, and --deadline=<minutes>.',
+      );
+    }
+  }
   return {
     input: positional.join(' ').trim(),
     yes: flags.has('--yes'),

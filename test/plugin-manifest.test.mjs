@@ -135,6 +135,18 @@ describe('the /meeseeks command', () => {
     assert.equal(frontmatter.includes('argument-hint:'), true);
   });
 
+  it('pins allowed-tools to exactly the two scripts it runs, not a broad node grant', () => {
+    // R32: least-privilege. The command surface may pre-approve its own preflight and driver and
+    // nothing else. The old `Bash(node:*)` pre-approved every node command the launcher might
+    // reach for, and the `git` grants were vestigial — the body runs no git directly. Failure
+    // mode of getting the pattern wrong is benign (a one-time permission prompt), never unsafe.
+    const frontmatter = COMMAND.slice(4, COMMAND.indexOf('\n---', 4));
+    assert.equal(frontmatter.includes('Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/init.mjs:*)'), true);
+    assert.equal(frontmatter.includes('Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/driver.mjs:*)'), true);
+    assert.equal(frontmatter.includes('Bash(node:*)'), false, 'broad node grant survived');
+    assert.equal(frontmatter.includes('git '), false, 'vestigial git grant survived');
+  });
+
   it('runs preflight before it runs the driver', () => {
     const preflightAt = COMMAND.indexOf('scripts/init.mjs');
     const driverAt = COMMAND.indexOf('scripts/driver.mjs');
