@@ -741,6 +741,26 @@ Two parts, both required, and they bound an otherwise-asymptotic backlog:
 Item 21 (the mirror — improve mode on this repo) remains the final act, un-deferrable once part 1
 is code-complete.
 
+### 31a. Web-ui smoke — the penultimate test, run BEFORE the capstone — OPEN, **STAGED**
+
+**Ordering, operator's call 14 Aug:** no web-ui target has ever run through this machine, so the
+frontend-direction template, the design-slop gate, Playwright-as-ratchet-evidence and the
+health-probe booting a dev server are all unproven plumbing. Prove them on the smallest real web
+app first — one iteration on a toy, not eight hours into Ateliers — then run the capstone. This is
+information value first, the same discipline as the whole Phase 1.
+
+**Target:** `~/dare-dogfood/webui-smoke` — "Tallyho", a single-page Next.js task list:
+add/toggle/remove, a live incomplete-count, `localStorage` persistence, a coherent visual system,
+`/api/health`, and Playwright e2e over the flows. Five requirements, no auth, no database — the
+smallest thing that exercises the full web toolchain. Config: uncapped, `maxIterations: 6` (it
+should ship in 1–3). **Same toolchain as the capstone**, so a green run here de-risks the identical
+gate path Ateliers depends on.
+
+**Done when:** the run ships a Next.js app that builds and serves `/` 200, with the Playwright
+flows passing — and the run is read for what it teaches about the web gates (design-slop timing,
+Playwright boot, health-probe) before the capstone launches. A failure here is the cheap place to
+find a broken web gate.
+
 ### 31. Capstone — build a chunky enterprise Next.js app, unattended, that RUNS — OPEN, **STAGED**
 
 **DoD part 2.** The largest dogfood attempted and the first serious **web-ui** target, so it is
