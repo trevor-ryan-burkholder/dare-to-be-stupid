@@ -21,7 +21,7 @@
  */
 
 import { execFileSync, spawn as spawnProcess } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { clearInterval, clearTimeout, setInterval, setTimeout } from 'node:timers';
 import os from 'node:os';
 import path from 'node:path';
@@ -2754,13 +2754,28 @@ export async function changedSince(options) {
  * all because Stryker has no `--thresholds.*` flag: `thresholds.break` defaults to null, and a
  * run with surviving mutants then exits 0. Measured, not assumed — see `node.mjs`.
  *
+ * **The sandbox lives OUTSIDE the target tree** (`tempDirName`), and Tallyho attempt 3 is why
+ * (DOGFOOD.md, machine finding #5): Stryker's default `.stryker-tmp` sits in the repository, and
+ * when a mutation run crashed mid-flight it left the sandbox behind — full of `@ts-nocheck`
+ * headers Stryker injects by design — where the target's own `eslint .` swept it on the next two
+ * iterations. The lint gate billed the builder for machine droppings it never wrote, and the
+ * stall counter killed the run. Positional fix, not cleanup: a sandbox that never enters the tree
+ * cannot poison a gate, crashed or not. `mkdtemp` (fresh per write) rather than a fixed temp
+ * name, for the same reason the guard's counter design was refused — a predictable name in a
+ * shared temp dir is a symlink pre-plant target. Leftovers after a crash sit in the OS temp dir,
+ * which is janitorial, not correctness.
+ *
  * @param {string} meeseeksDir
  * @returns {string} the path written
  */
 export function writeMutationConfig(meeseeksDir) {
   mkdirSync(meeseeksDir, { recursive: true });
   const file = path.join(meeseeksDir, MUTATION_CONFIG);
-  writeFileSync(file, `${JSON.stringify(MUTATION_CONFIG_CONTENTS, null, 2)}\n`, 'utf8');
+  const contents = {
+    ...MUTATION_CONFIG_CONTENTS,
+    tempDirName: mkdtempSync(path.join(os.tmpdir(), 'meeseeks-stryker-')),
+  };
+  writeFileSync(file, `${JSON.stringify(contents, null, 2)}\n`, 'utf8');
   return file;
 }
 

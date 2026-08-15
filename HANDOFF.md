@@ -1,9 +1,10 @@
 # START HERE — handoff, last swept 15 August 2026
 
-**State:** `main` at `0.158.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.158.0: `npm test` **2302 pass**
+**State:** `main` at `0.159.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.159.0: `npm test` **2303 pass**
 (0 fail), `npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Tier 2 carries from 0.157.0
-(**`test:integration` 51**; 0.158.0 touches no tier-2 trigger) and tier 3 from 0.153.0 (**`test:live` 31**;
-0.154.0–0.158.0 touch no spawn-contract surface). **`git push`ed through 0.157.0; 0.158.0 lands in this commit.**
+(**`test:integration` 51**; 0.158.0–0.159.0 touch no tier-2 trigger — the mutation config is written by tier-1 code and
+consumed by Stryker, whose invocation is unchanged) and tier 3 from 0.153.0 (**`test:live` 31**; no spawn-contract surface
+touched since). **`git push`ed through 0.158.0; 0.159.0 lands in this commit.**
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
 gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
@@ -102,6 +103,22 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.159.0 — the Stryker sandbox leaves the target tree (Tallyho finding #5: the poison spiral)
+
+Tallyho attempt 3 `STALLED` at iteration 5, and the anatomy is in `DOGFOOD.md`: the mutation gate crashed
+(Stryker `ConfigError`) and left `.stryker-tmp` — full of the `@ts-nocheck` headers Stryker injects into
+its sandbox by design — inside the repository, where the target's own `eslint .` swept it on iterations 4
+and 5. **The lint gate billed the builder for machine droppings it never wrote**, and the stall counter
+killed the run. `writeMutationConfig` now sets `tempDirName` to a fresh `mkdtemp` directory under the OS
+temp dir: the sandbox never enters the target tree, so a crashed mutation run cannot poison any later
+gate. Positional rather than cleanup (a cleanup path can be missed on a crash; a sandbox that never
+arrives cannot), and `mkdtemp` rather than a fixed temp name — a predictable name in a shared temp dir is
+a symlink pre-plant target, the same refusal as the guard's counter design earlier today. Leftovers after
+a crash sit in OS temp, which is janitorial, not correctness. **Residual, named:** the Stryker crash
+itself (`No tests were executed` on a vitest+Next tree) is a separate mutation-reliability question; the
+gate failing loudly on it was fail-closed working. +1 test (absolute, under `os.tmpdir()`, exists, fresh
+per write; thresholds preserved). Tier 1 **2302 → 2303**.
 
 ### 0.158.0 — delimiter hygiene at every untrusted prompt frame (PLAN item 44, R30b)
 

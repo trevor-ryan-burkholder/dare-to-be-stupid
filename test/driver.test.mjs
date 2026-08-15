@@ -1796,6 +1796,23 @@ describe('writeMutationConfig', () => {
     const written = JSON.parse(readFileSync(writeMutationConfig(meeseeksDir), 'utf8'));
     assert.equal(written.tsconfigFile, '', 'the preprocessor is armed again and the gate can crash on a TS tree');
   });
+
+  it('points the Stryker sandbox OUTSIDE the target tree, so a crash cannot poison the lint gate', () => {
+    // Tallyho attempt 3, machine finding #5: a crashed mutation run left `.stryker-tmp` — full
+    // of the `@ts-nocheck` headers Stryker injects by design — inside the repository, where the
+    // target's own `eslint .` swept it for two straight iterations and the stall counter killed
+    // the run. The sandbox now lives in a fresh OS-temp directory: positional, not cleanup.
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    const written = JSON.parse(readFileSync(writeMutationConfig(meeseeksDir), 'utf8'));
+    assert.equal(typeof written.tempDirName, 'string');
+    assert.equal(path.isAbsolute(written.tempDirName), true, 'a relative sandbox lands back inside the target tree');
+    assert.equal(written.tempDirName.startsWith(os.tmpdir()), true, 'the sandbox is not under the OS temp dir');
+    assert.equal(existsSync(written.tempDirName), true, 'mkdtemp did not create the sandbox dir');
+    // Fresh per write — a fixed temp name is a symlink pre-plant target (the same reason the
+    // guard's counter design was refused the same day).
+    const second = JSON.parse(readFileSync(writeMutationConfig(path.join(makeTempDir(), '.meeseeks')), 'utf8'));
+    assert.notEqual(second.tempDirName, written.tempDirName);
+  });
 });
 
 describe('driveRun', () => {

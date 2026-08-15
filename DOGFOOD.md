@@ -81,6 +81,21 @@ rules permit). Six was staged on "a toy ships in 1–3"; measured reality is tha
 real fixes plus one flaky gate consumes six. Attempt 3 runs from a 0.157.0 snapshot, one `DoD-5` doc-drift
 finding from `SHIPPED`.
 
+**Attempt 3 (0.157.0 snapshot): `STALLED` at iteration 5 (limit 4 without improvement), 9,386,283 tokens,
+\$8.69 — killed by machine finding #5, a poison spiral the builder could not have caused or cured.** The
+anatomy: iteration 1 gates green → panel (the carried `DoD-5` finding, panel carry at 4 requirements);
+iteration 2 a real e2e failure (an accessibility spec); **iteration 3 the mutation gate crashed**
+(Stryker `ConfigError: No tests were executed`) **and left `.stryker-tmp` in the tree** — full of the
+`@ts-nocheck` headers Stryker injects into its sandbox by design; **iterations 4 and 5 the target's own
+`eslint .` swept the abandoned sandbox and failed**, billing the builder for machine droppings it never
+wrote, and the stall counter fired. **Fix → 0.159.0:** the driver-owned Stryker config now sets
+`tempDirName` to a fresh `mkdtemp` directory in the OS temp dir — the sandbox never enters the target
+tree, so a crash cannot poison any gate (positional, not cleanup; and `mkdtemp` rather than a fixed name,
+the same symlink-pre-plant refusal as the guard counter, same day). **Residual, named:** the Stryker
+crash itself (`No tests were executed` against this vitest+Next project) is a mutation-gate reliability
+question that deserves its own investigation; the gate failing loudly on the crash was fail-closed
+working. Attempt 4 runs from a 0.159.0 snapshot.
+
 `BRIEF.md` D2 and `HANDOFF.md` item 9.
 
 > **Case D was run on 11 August 2026 and ended `BUDGET` in iteration 1.** It found three
