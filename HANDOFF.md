@@ -1,10 +1,10 @@
 # START HERE — handoff, last swept 15 August 2026
 
-**State:** `main` at `0.153.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.153.0: `npm test` **2280 pass**
-(0 fail), `npm run test:live` **31 pass** (0 fail, re-run against the fixed item-37 guard the same hour it changed — the
-chain registers live, denies live, and survives the committed killswitch), `npm run lint` and `npm run typecheck` clean,
-`npm run release-check` **ok**. Tier 2 carries unchanged from 0.149.0 (**`test:integration` 51**) — nothing since touches a
-surface it owns. **`git push`ed through 0.152.0; 0.153.0 lands in this commit.**
+**State:** `main` at `0.154.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.154.0: `npm test` **2289 pass**
+(0 fail), `npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Tier 3 carries from 0.153.0
+(**`test:live` 31 pass**, run against the fixed item-37 guard; 0.154.0 touches only `findHealthPath`, a pure tier-1
+surface). Tier 2 carries unchanged from 0.149.0 (**`test:integration` 51**). **`git push`ed through 0.153.0; 0.154.0 lands
+in this commit.**
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
 gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
@@ -103,6 +103,25 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.154.0 — findHealthPath learns filesystem-declared routes (the Tallyho smoke's first machine finding)
+
+The web-ui smoke's purpose was to find broken web plumbing cheaply, and it did, on iteration 1: the builder
+wrote `src/app/api/health/route.ts` — the idiomatic Next.js App Router endpoint, exactly what the PRD asked
+for — and the observability gate reported *"missing: health endpoint"* for **three straight iterations**,
+because `findHealthPath` only matched a string literal beginning exactly `/health|/healthz|/_health`. Two
+structural gaps: `/api/health` (the single most common spelling; this repo's own PRDs ask for it by name)
+could not match at all, and a filesystem-routed framework never writes the path as a literal anywhere — the
+file location IS the declaration. The stuck-gate notice (`repeatedGateNote`, case I's fix) fired live and
+correctly named the stall, which is how the log read at a glance.
+
+Fix: the literal pattern gains an optional `/api` prefix, and a new `findRouteFileHealthPath` recognises
+App Router (`…/app/<segments>/<health>/route.{js,jsx,ts,tsx}`, route groups dropped, dynamic `[param]`
+segments rejected as not deterministically probeable) and Pages Router (`…/pages/<segments>/<health>.{js,ts}`).
+The final URL segment must still be exactly `health|healthz|_health` — same set as the literal — so
+`healthcheck/` stays a non-match. Literal keeps precedence when both exist. +9 tests (tier 1 **2280 → 2289**):
+the App/Pages/route-group/root cases, the dynamic-segment and lookalike refusals, the no-`app`-ancestor
+refusal, and the precedence case. Tier-1-only surface; no spawn contract touched.
 
 ### 0.153.0 — the guard's crash-net fallback + denial provenance (PLAN item 37, R25a/R25b; R25c cut to item 52)
 

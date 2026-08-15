@@ -5200,7 +5200,69 @@ describe('findHealthPath ignores prose', () => {
     assert.equal(detect('router.get("/healthz", h);\n'), '/healthz');
   });
 
+  it('counts an /api/health literal, which the Tallyho smoke proved real code writes', () => {
+    assert.equal(detect("fetch('/api/health').then(check);\n"), '/api/health');
+  });
+
   it('finds nothing when nothing mentions it at all', () => {
     assert.equal(detect('export const status = 200;\n'), null);
+  });
+});
+
+describe('findHealthPath sees filesystem-declared routes', () => {
+  // The Tallyho web-ui smoke, run 1b: the builder wrote src/app/api/health/route.ts — the
+  // idiomatic Next.js App Router endpoint, exactly what the PRD asked for — and the literal
+  // detector failed the observability gate three straight iterations, because in a
+  // filesystem-routed framework the path never appears as a string in source.
+  /** @param {string[]} files @returns {string | null} */
+  const detectTree = (files) => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-health-fs-'));
+    for (const file of files) {
+      mkdirSync(path.join(dir, path.dirname(file)), { recursive: true });
+      writeFileSync(path.join(dir, file), 'export function GET() { return new Response("ok"); }\n');
+    }
+    const found = findHealthPath(dir);
+    rmSync(dir, { recursive: true, force: true });
+    return found;
+  };
+
+  it('finds a Next.js App Router health route from its file location', () => {
+    assert.equal(detectTree(['src/app/api/health/route.ts']), '/api/health');
+  });
+
+  it('drops route groups from the derived URL, because they never appear in it', () => {
+    assert.equal(detectTree(['app/(internal)/api/health/route.ts']), '/api/health');
+  });
+
+  it('finds a root-level health route', () => {
+    assert.equal(detectTree(['app/healthz/route.ts']), '/healthz');
+  });
+
+  it('finds a Pages Router health file', () => {
+    assert.equal(detectTree(['pages/api/health.ts']), '/api/health');
+  });
+
+  it('rejects a dynamic segment, which is not deterministically probeable', () => {
+    assert.equal(detectTree(['app/api/[tenant]/health/route.ts']), null);
+  });
+
+  it('leaves lookalike segments alone, so a near-name is not a lucky match', () => {
+    // The benign-neighbour half: only health/healthz/_health count, same set as the literal.
+    assert.equal(detectTree(['src/app/api/healthcheck/route.ts']), null);
+    assert.equal(detectTree(['src/app/health-utils/route.ts']), null);
+  });
+
+  it('ignores a route file with no app ancestor, which no framework routes', () => {
+    assert.equal(detectTree(['src/server/health/route.ts']), null);
+  });
+
+  it('prefers the literal when both declarations exist, keeping the old precedence', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-health-fs-'));
+    mkdirSync(path.join(dir, 'src/app/api/health'), { recursive: true });
+    writeFileSync(path.join(dir, 'src/app/api/health/route.ts'), 'export function GET() {}\n');
+    writeFileSync(path.join(dir, 'src/server.ts'), "app.get('/healthz', h);\n");
+    const found = findHealthPath(dir);
+    rmSync(dir, { recursive: true, force: true });
+    assert.equal(found, '/healthz');
   });
 });

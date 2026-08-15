@@ -2988,8 +2988,79 @@ export function inspectCiWorkflows(cwd, capabilities = null) {
   return { workflows, covered, missing, excluded };
 }
 
+/** The URL segments this gate accepts as naming a health endpoint, shared by both detectors. */
+const HEALTH_SEGMENTS = new Set(['health', 'healthz', '_health']);
+
 /**
- * The health endpoint's path, as it appears in the source, or null.
+ * A health path declared by file location, for frameworks that route by filesystem.
+ *
+ * The Tallyho web-ui smoke (DOGFOOD.md, 15 Aug) is why this exists: the builder wrote exactly the
+ * endpoint the PRD asked for — `src/app/api/health/route.ts`, the idiomatic Next.js App Router
+ * shape — and the literal detector could not see it, because in a filesystem-routed framework the
+ * path never appears as a string in source. The observability gate then failed three straight
+ * iterations against work that was correct, which is this project's most expensive defect class
+ * wearing a gate's clothes.
+ *
+ * Two conventions, conservatively:
+ *   - **App Router:** `…/app/<segments>/<health>/route.{js,jsx,ts,tsx}` — the URL is the segments
+ *     after the innermost `app`, with parenthesised route groups dropped (they never appear in
+ *     the URL). A dynamic `[param]` segment anywhere in the chain rejects the candidate: a health
+ *     endpoint behind a parameter is not deterministically probeable.
+ *   - **Pages Router:** `…/pages/<segments>/<health>.{js,ts}` — the URL is the segments after
+ *     `pages` with the extension stripped.
+ *
+ * The final URL segment must be exactly one of {@link HEALTH_SEGMENTS} — the same set the literal
+ * detector accepts — so `healthcheck/route.ts` stays a non-match rather than a lucky one.
+ *
+ * @param {string} cwd
+ * @returns {string | null}
+ */
+export function findRouteFileHealthPath(cwd) {
+  /** @type {string | null} */
+  let found = null;
+  /** @param {string} dir @param {number} depth @param {string[]} rel */
+  const walk = (dir, depth, rel) => {
+    if (found !== null || depth > 8 || !existsSync(dir)) return;
+    /** @type {import('node:fs').Dirent[]} */
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (found !== null) return;
+      if (entry.isDirectory()) {
+        if (['node_modules', '.git', 'dist', 'build', 'coverage'].includes(entry.name)) continue;
+        walk(path.join(dir, entry.name), depth + 1, [...rel, entry.name]);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const appAt = rel.lastIndexOf('app');
+      if (appAt !== -1 && /^route\.(m?js|jsx|ts|tsx)$/.test(entry.name)) {
+        const segments = rel.slice(appAt + 1).filter((seg) => !/^\(.*\)$/.test(seg));
+        if (segments.length === 0) continue;
+        if (segments.some((seg) => seg.includes('['))) continue;
+        if (!HEALTH_SEGMENTS.has(segments[segments.length - 1])) continue;
+        found = `/${segments.join('/')}`;
+        return;
+      }
+      const pagesAt = rel.lastIndexOf('pages');
+      const pageMatch = entry.name.match(/^(health|healthz|_health)\.(m?js|ts)$/);
+      if (pagesAt !== -1 && pageMatch !== null) {
+        const segments = [...rel.slice(pagesAt + 1), pageMatch[1]];
+        if (segments.some((seg) => seg.includes('['))) continue;
+        found = `/${segments.join('/')}`;
+        return;
+      }
+    }
+  };
+  walk(cwd, 0, []);
+  return found;
+}
+
+/**
+ * The health endpoint's path, as the source declares it, or null.
  *
  * @param {string} cwd
  * @returns {string | null}
@@ -3006,12 +3077,19 @@ export function findHealthPath(cwd) {
     //
     // The behavioural probe below is still the real check when a start command exists; this
     // static match only ever claimed a *declaration*, and a declaration in prose is not one.
-    const match = blankComments(contents).match(/['"`](\/(?:health|healthz|_health))\b/);
+    //
+    // The optional `/api` prefix is the Tallyho smoke's other lesson: `/api/health` is the single
+    // most common spelling — this repository's own PRDs ask for it by name — and the original
+    // pattern could not match it.
+    const match = blankComments(contents).match(/['"`]((?:\/api)?\/(?:health|healthz|_health))\b/);
     if (match === null) return false;
     found = match[1];
     return true;
   });
-  return found;
+  // A repository can declare the endpoint without ever writing its path down: filesystem-routed
+  // frameworks put it in a file location instead. Checked second so the literal, when both
+  // exist, keeps its long-standing precedence.
+  return found ?? findRouteFileHealthPath(cwd);
 }
 
 /**
