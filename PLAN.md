@@ -1022,6 +1022,45 @@ live schema, fails on an omission/contradiction, and fails closed on an un-intro
 with a test and a benign neighbour; the builder brief carries the ERD; one live data-backed run
 exercises it end to end.
 
+### 48. Accept a `DOD.md` alongside the PRD and ERD, as a reusable additive done-bar — OPEN (Phase-6 class, post-DoD)
+
+**Origin:** operator, 15 Aug 2026 — the third core input, sitting beside the PRD (what to build) and
+the ERD (item 47, what the data looks like): **`DOD.md`, what "done" means.** Today the done bar lives
+*inside* the PRD as `DoD-N` requirement lines; factoring it into its own file makes an enterprise
+done-bar (builds-and-runs, auth integrity, a11y, perf budgets, coverage floors, security posture)
+authorable once and reused across targets, and loaded into a run with the PRD and diagram MD.
+
+**Design, with the tensions resolved:**
+- **Input:** an optional `DOD.md` beside `PRD.md` (convention) or a config key (`dod`), parsed with a
+  small in-repo parser (no dependency) into a list of done-criteria, each ideally id'd (`DoD-N`) so it
+  slots straight into the existing panel requirement contract.
+- **Additive-only — the load-bearing invariant, the same law as R30 and "nothing defaults to pass."**
+  `DOD.md` criteria are **added** to the done bar; they can make a ship *harder*, never easier. A
+  `DOD.md` may not suppress a finding, relax a gate, waive a security pin, or soften
+  quarantine-is-not-a-pass. It rides in the **reviewer/panel** contract as gating requirements the cold
+  panel must clear — never as a builder instruction the builder could self-certify (the builder cannot
+  judge its own work). Byte/count-capped like the R30 envelope so a large file cannot flood the panel
+  prompt. **This is what stops it becoming a lever a hostile or lazy target pulls toward looser.**
+- **It refines the PRD, never competes with it** (same rule as the ERD). Preflight consistency: a
+  `DOD.md` criterion that contradicts the PRD refuses the run; every criterion must be **owned by an
+  active panel member** (the existing `no reviewer owns X` refusal, `driver.mjs`), because a done-criterion
+  nobody reviews is a hole. Once cold-passed, a `DOD.md` criterion is a monotonic pin like any other
+  cold-passed requirement (§4.3) — it cannot silently regress.
+- **The builder gets `DOD.md` in its brief** so it builds toward the bar rather than guessing at it —
+  but the *verdict* stays with the cold panel, in a separate process, exactly as for `DoD-N` today.
+- **Fail-closed:** an unparseable `DOD.md` refuses the run. A done-bar that cannot be read is not a
+  done-bar (the `--deadline`/gate-skip shape); it never defaults to "no extra criteria."
+
+**Why post-DoD:** like item 47 it changes what meeseeks *accepts* — a Phase-6-class expansion of inputs,
+not a fix — and it must not move the "done" line for building meeseeks itself. Pairs naturally with 47:
+PRD + ERD + DOD.md are the three legs an enterprise target stands on.
+
+**Done when:** a `DOD.md` parses to owned, id'd criteria; a preflight refuses one that contradicts the
+PRD or that no reviewer owns; the criteria enter the panel as gating requirements and pin monotonically
+once passed; an additive-only test proves a `DOD.md` can only *add* to the bar (a `DOD.md` that "waives"
+a finding does not, and the finding still fails), with a benign neighbour; the builder brief carries it;
+an unparseable `DOD.md` refuses the run.
+
 ### Phase 6 non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:
 - **Persistent kernel / REPL as the builder's environment** — breaks builder starvation; state
