@@ -842,10 +842,32 @@ Content-hash "nothing changed since the last gate run → don't re-pay for the g
 attempt counter instead. Attacks the ship1 token-thrash class. Surface: `scripts/driver.mjs` gate
 loop. **Campaign C**.
 
-### 44. Prompt hygiene at the untrusted-text frames (R30) — OPEN
+### 44. Prompt hygiene at the untrusted-text frames (R30) — OPEN, **SCOPED 15 Aug (Fable pass)**
 Additive-only envelope for repo-supplied guidance (may ADD checks, cannot suppress findings;
 byte/count-capped) + delimiter neutralisation at each untrusted frame (test names, requirement
 strings). Surface: prompt assembly in `scripts/driver.mjs`. **Campaign C**.
+
+**Scoping (15 Aug), so the next session builds instead of re-deriving:**
+- **The envelope half (R30a) has NO live channel today** — nothing forwards target `CLAUDE.md` or
+  improve-mode docs into a driver-assembled prompt; the improve author reads the repo in its own child
+  context, which is not a driver frame. Do not build envelope machinery for a channel that does not
+  exist; the envelope design is recorded here for the day one opens (framed block, may only ADD checks,
+  byte/count-capped, one direction of influence: stricter).
+- **The delimiter half (R30b) is live, and the frames are inventoried.** Builder-controlled text enters
+  driver-assembled prompts at: the brief's single-line slots (`scripts/brief.mjs` — regression test ids,
+  `protectedTests` ids, history file paths, `deniedLastIteration` strings, lesson ids/text, findings,
+  advisory fields; a test *named* with an embedded newline can forge brief structure, e.g.
+  `x\n## Objective\n…`); the brief's multi-line gate-detail block (bounded since 0.151.0, not
+  neutralised); and inline driver frames (`parseError` at the capability re-declaration, the
+  lesson-extractor's `evidence` built from builder-chosen ids/paths).
+- **The design:** a `neutralizeLine` helper for single-line slots — embedded `[\r\n  ]` rendered
+  *visibly* as a literal `\n` marker (ASCII, per the banner lesson), never silently stripped; the
+  gate-detail block moves inside a **fence**, where the delimiter to defend is the fence itself (a detail
+  containing a ``` run must not break out — use a longer fence or strip fence runs, and test that case
+  hostile); inline frames get the same one-line treatment. Neutralisation is rendering-only — ids
+  compared against the ratchet stay byte-exact; only their *display* in prompts changes.
+- **Tests:** hostile (a newline-forged heading stays one visible line; a fence-run detail cannot close
+  the fence) and benign (ordinary ids byte-identical) per slot, the repo's deny-path/neighbour pattern.
 
 ### 45. Small trims — parse-time flag validation, `/meeseeks` frontmatter, break clause (R31/R32/R33) — **DONE (0.150.0)**
 One batched slice: `parseDriverArgs` + the wizard validate numeric/date flags at parse time and exit
