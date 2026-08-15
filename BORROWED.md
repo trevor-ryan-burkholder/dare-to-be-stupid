@@ -858,3 +858,115 @@ ecc (the builder judging its own work, again); ralph-loop's Stop-hook loop (stal
 the reality-check breaker already dominate it); serena's code-index MCP (a network/index
 dependency inside builder children); the document skills' packaged-scripts pattern (the
 packaging is interesting, the payloads are attended-authoring tools).
+
+---
+
+# Round eight — prime-agent, mined against the invariants, 14 August 2026
+
+Prime Intellect open-sourced **Prime Agent** (2026-08-06): a general, model-agnostic coding
+harness (persistent IPython "RLM" kernel, a self-modifiable "Continual Harness", `--autonomous`
+behind operator gates) that competes with Claude Code itself, not a meeseeks-category verification
+loop. It lacks all three meeseeks guarantees — no monotonic ratchet, no cold separate-process
+judge, and by its own README "not a security sandbox." Recon (`wf_fac6dc7a-d68`) + a source mine
+(`wf_8cc08696-8d1`). Two workflows; findings folded here. The rejections are the point as much as
+the takings: they are the negative controls that validate the design.
+
+## R34. Atomic write-temp-rename for red-evidence.json — **take it; a verified correctness bug**
+
+**From:** prime-agent `refinement.ts` saveHarnessState (write `${file}.tmp`, renameSync over).
+**Verified real gap:** `scripts/driver.mjs:3611` recordRedEvidence writes `red-evidence.json` with
+a bare `writeFileSync`, while ratchet.mjs (184-192), pins.mjs (400-402) and lessons.mjs (188-194)
+all temp+rename. red-evidence is decision-bearing (redEvidenceGate reads seenFailing + baseline)
+AND persists cross-run — the ONE decision writer still non-atomic. A kill mid-write leaves a
+half-file; on misparse the baseline can re-establish and admit tests never seen failing — the
+fail-OPEN direction, against "nothing defaults to pass". Fix: temp+rename, exactly as the three
+neighbours. Apply ONLY to decision-bearing writers; the panel store / reality-check / mutation
+config stay bare (they decide nothing and rebuild on corruption). Driver-side, no dependency.
+**This one joins the feature queue.** Adjacent to R26 (corrupt-state quarantine).
+
+## R35. Gate-skip on an unchanged workspace — **take it; a spend win**
+
+**From:** prime-agent autonomous mode (skip re-running a failed gate whose workspace has not
+changed; increment the attempt counter instead). A content-hash "nothing changed since the last
+gate run → don't re-pay for the gate" guard attacks the ship1 token-thrash class the design
+already worries about (§1.2's re-paid millions). Real savings on stuck runs. Driver-side.
+
+## R36. Bound the lesson STORE, not just the view — **PLAN candidate (§3.9)**
+
+**From:** prime-agent's own concession "no automatic pruning removes old entries." meeseeks bounds
+the VIEW (selectLessons caps to 3/brief, MAX_LESSON_LENGTH=400) but addLesson (lessons.mjs:275) is
+append-only and lessons.json persists cross-run, so the STORE grows unbounded over a repo's life —
+meeseeks' own named silent-degradation hazard (§3.9). Needs a retire/supersede rule with
+injected-lesson-size as a measured metric. Design the retire rule before shipping it. Operator-side.
+
+## R37. Retraction + audit trail + gated promotion for lessons.json — **PLAN candidate**
+
+**From:** prime-agent rollbackProposal (inverse edits from before/after snapshots, rollbackOf
+chaining), append-only refinements.jsonl, and local-cannot-silently-promote-to-global. Today
+lessons.json has no un-say path — a well-formed confident WRONG lesson (dogfood run 6 nearly
+shipped one) lives in the durable cross-run store forever. The monotonic discipline says *design
+the escape before the enforcement*, and this durable-if-advisory store has none. Design: reversible
+id-keyed entries + a separate lessons-history.jsonl, and run-local CANDIDATE lessons promoted to
+the durable store only through a distinct gate (cold-reviewed or usage-thresholded), so one
+confused afternoon does not poison every future run. REJECT the builder-facing half — the builder
+never reads or edits this. Operator-side.
+
+## R38. Durable sub-run registry + results-via-files — **feeds the queued components feature**
+
+**From:** prime-agent rlm.md fire-and-forget subagents with a parent-scoped registry surviving
+kernel restart, results delivered only through files, never a return value. Maps onto the queued
+components sub-runs feature (item 24 shipped its core; this hardens reruns): a driver-owned
+registry sub-run-id → worktree → status under `.meeseeks/`, so a relaunched driver re-discovers
+in-flight worktrees instead of leaking them — extending race.mjs' SIGKILL sweep-at-start (§13.6).
+Results read from artifacts, never a child's return — independent confirmation of the
+artifact-as-truth discipline. REJECT the sibling-steering half (running agents steering each
+other) — it breaks isolation and cold review.
+
+## R39. Cite the Factorio case study in DESIGN.md — **take it; a free doc win, land with the guard**
+
+**From:** prime-agent's published Factorio study — its ONLY anti-cheat was heartbeat prompts, it
+was EMPIRICALLY DEFEATED, and `/refine` then optimized for *more efficient cheating skills*. This
+is an independent, published demonstration that a prompt-only boundary fails AND that a
+self-improvement loop amplifies the exploit — external empirical vindication of exactly why the
+meeseeks guard is **positional and architectural, not a prompt**. Add to §6 (threat model) and
+§13.8 (lesson memory stays driver-owned for this reason). Fold into the guard-hardening landing —
+the guard I hardened tonight through three hostile passes is the mechanism this study argues for.
+
+## R40. Bounded gate-output → next-iteration repair context, with per-id retry counts — **PLAN candidate**
+
+**From:** prime-agent autonomous.ts buildGateFailureContinuation. meeseeks already feeds reviewer
+JSON back to the builder; formalising "bounded gate-failure output → next iteration's repair
+context, with a per-id retry counter" generalises §1.2's within-run regression-count beyond
+ratchet regressions to gate failures.
+
+## Two notes (design, not builds)
+
+- **evidence.tests[] cross-check:** the driver already overrides the extractor's evidence
+  *integers* with the real struggle values (driver.mjs:1676), but the model-supplied `tests[]`
+  list is stored uncross-checked; optionally verify it against real ratchet ids, extending the
+  ungroundedGateClaim pattern. Low value — the load-bearing integers are already grounded.
+- **cache-read accounting:** meeseeks counts all four token terms (driver.mjs:1002), the
+  fail-closed direction (over-count trips the ceiling earlier); prime-agent excludes cache_read.
+  Documented note, not a change — the only bite is an operator who sets tokenCeiling but leaves
+  costCeiling=0 on a verification-heavy target.
+
+## Round eight, not taken — the negative controls that validate the design
+
+Each rejected borrow names the exact law it breaks, and together they are external evidence the
+laws are right:
+- **Warm gate-failure narrative fed back into the SAME builder** — collides with builder
+  starvation; carrying a failure narrative past the git reset is the anti-pattern the design
+  exists to prevent. The clean negative control for why the builder is starved.
+- **Persistent IPython kernel as the builder's environment** — the inverse of starvation; the
+  persistence IS the hazard (half-built state leaks past a reset and breaks the ratchet's premise).
+- **Agent self-grades its own trajectory to edit its own memory (`/refine`)** — "the builder
+  cannot judge its own work"; self-evaluation is the enemy the cold panel exists to defeat. Only
+  the cold-distiller SHAPE is admissible, and meeseeks already ships it as the read-only
+  lesson-extractor in its own `claude -p` process.
+- **Four typed builder-readable memory kinds** — any cross-iteration memory the builder can read
+  collides with deliberate starvation; meeseeks keeps one narrow, driver-owned, evidence-gated,
+  never-builder-editable lesson kind.
+
+And a phrase worth citing, not building: prime-agent's *"a passed gate checks only what that gate
+verifies; reaching a limit does not imply task success"* is an independent restatement of
+"nothing defaults to pass" — useful when defending the invariant to a skeptic.
