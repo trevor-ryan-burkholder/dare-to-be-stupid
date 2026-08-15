@@ -960,7 +960,7 @@ reporter output; each new reporter owns a contract another binary defines → on
 check** per toolchain. The core loop is already language-agnostic (the ratchet parses reporter
 JSON, not syntax) — this is surface, not spine.
 
-### 34. Verified research mode — OPEN
+### 34. Verified research mode — OPEN (the first instance of item 49's substrate)
 The differentiated land-grab: do what their "research agent" does, but *verified*. New job-type
 whose gates are citations-resolve (the quoted text appears in the cited source), claims-are-sourced,
 no-contradictions, coverage-of-a-checklist — and the **held-out oracle repurposed as a
@@ -1060,6 +1060,62 @@ PRD or that no reviewer owns; the criteria enter the panel as gating requirement
 once passed; an additive-only test proves a `DOD.md` can only *add* to the bar (a `DOD.md` that "waives"
 a finding does not, and the finding still fails), with a benign neighbour; the builder brief carries it;
 an unparseable `DOD.md` refuses the run.
+
+### 49. Artifact job-types: checks-as-tests, so the spine drives a book or a report — OPEN (Phase-6 class, post-DoD)
+
+**Origin:** operator, 15 Aug 2026 — *"tasks like 'write me a book about…' or 'research this and make a
+report…'"*. This is the **generalization** of which item 34 (verified research mode) is the first
+instance: 34 is one job-type, 49 is the substrate that makes any artifact job-type possible. Pairs with
+48 (`DOD.md` carries an artifact's done-bar) and 47 (a diagram as a second structured input).
+
+**The unlock, and the reason this is smaller than it sounds: the spine never touches source code.** The
+ratchet parses **reporter JSON** into ids and holds those ids monotonic — it has no concept of a "test",
+only of ids that passed. A gate is any command with an exit code. The cold panel judges `PRD-N.M`
+requirements against evidence. **So an artifact whose deterministic checks emit reporter JSON drives the
+existing machine unchanged** — ratchet, hard reset, pins, panel, nothing-defaults-to-pass, all of it. The
+work is entirely at the toolchain layer; **no spine change, and a change that needs one is wrong.**
+
+**Design, with the tensions resolved:**
+- **Checks are a real test suite over the artifact.** "Chapter 3 exists and is ≥2000 words", "every
+  citation resolves to text that appears in the cited source", "every bolded term is in the glossary",
+  "no two chapters contradict on a stated fact" — these are **test ids**. Written as an ordinary node
+  test file over `manuscript/`, they emit JSON `extractTestIds` already parses: **zero parser work**, and
+  the ratchet then guarantees a chapter that once passed may never silently regress. That is the identical
+  guarantee, pointed at prose.
+- **A prose/artifact toolchain** (`scripts/toolchains/prose.mjs`) on the existing fixed contract (detect,
+  map operations, name a reporter — the shape dotnet proved). **Dependency to resolve first:** detection
+  here is weak (a manuscript directory is not a `package.json`), so this likely needs the
+  **architect-declared toolchain** path, which `toolchains/index.mjs` notes is *not built*. Build that or
+  gate 49 behind an explicit config key; do not sniff.
+- **Prose gates**, flagship first: a **citation resolver** (the quoted text actually appears in the cited
+  source — deterministic, and exactly the "reporter emits pass/fail evidence" shape 34 names), plus
+  link-check, style (vale), word-count floors, contradiction check. The code operations (`build`, `types`,
+  `e2e`, `security-audit`) must **decline honestly and visibly** (§3.8): a gate list that silently shrinks
+  reads as a job that never needed them.
+- **The held-out oracle becomes the fact-checker** (34's core): authored **before** the content and never
+  shown to the writer. A writing agent structurally cannot fact-check itself; this can, and that is the
+  differentiated claim.
+- **The honest boundary, stated in the product, not just here.** For code, "does it pass" is objective.
+  For prose, *structure* is objective (citations resolve, sections exist, no contradictions) while
+  *quality* is contested. The guarantee therefore weakens from **provably correct** to **provably
+  structurally sound, plus a cold panel's judgment** — still far better than an unverified writing agent,
+  but not the same claim, and a run must never dress the second as the first.
+
+**The filter, which is the whole of the discipline — and the refusal that keeps this from becoming a
+general agent** (the Phase 6 north star: generality costs the spine):
+
+> **If you cannot write the check before the artifact exists, it is not a meeseeks job.**
+
+- *"Research this and make a report"* → highly checkable. **Best fit** (item 34).
+- *"Write me a book about X"* → structure and citations checkable, "is it good" not. **Partial, and honest
+  about which half it proves.**
+- *"Make me a logo"* → no check statable. **Not a meeseeks job.** Refuse rather than widen.
+
+**Done when:** an artifact toolchain detects (or is declared) and maps its operations; the code gates it
+cannot run decline visibly; a checks-as-tests suite over a real artifact feeds the ratchet through the
+existing reporter path with no parser change; the citation resolver passes on a resolving quote, fails on
+a misquote, and **fails closed** on a source it cannot fetch; a job whose check cannot be stated is
+refused with that reason; and one live artifact run ships end to end.
 
 ### Phase 6 non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:
