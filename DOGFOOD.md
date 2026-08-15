@@ -96,6 +96,22 @@ crash itself (`No tests were executed` against this vitest+Next project) is a mu
 question that deserves its own investigation; the gate failing loudly on the crash was fail-closed
 working. Attempt 4 runs from a 0.159.0 snapshot.
 
+**Attempt 4 (0.159.0 snapshot): `STALLED` at iteration 5, 5,221,927 tokens, \$3.97 — the sandbox exile
+worked (zero lint poisoning) and the run instead exposed the Stryker crash's true cause, finding #6.** The
+mutation gate failed all five iterations with the same `ConfigError: No tests were executed`, and the
+otherwise-green tree made it the sole blocker. **Reproduced both ways outside the run:** `--mutate
+src/lib/tasks.ts` (a file with unit tests) → clean pass, 94.81% score, 73 mutants killed, the exiled
+sandbox working perfectly; `--mutate src/components/TaskApp.tsx` (a component covered only by Playwright)
+→ the exact ConfigError. The vitest runner scopes its dry run to tests RELATED to the mutated files, so an
+iteration whose changed source has **no unit coverage** executes zero tests and Stryker aborts with a
+message that blames *configuration*. The builder, told to "check your configuration", reinstalled Stryker
+locally and burned five iterations on a misdirection. **Fix → 0.160.0:** `mutationCoverageHint` — the
+`runnerHint` move applied to mutation: the gate detail now states the true fact ("none of your changed
+source files are exercised by any unit test; the repair is unit tests covering the changed code — e2e
+does not count here") beneath the verbatim output. The gate still fails, because
+changed-code-with-zero-unit-coverage failing the mutation gate is the gate doing its job; what changed is
+that the failure now teaches its own repair. Attempt 5 runs from a 0.160.0 snapshot.
+
 `BRIEF.md` D2 and `HANDOFF.md` item 9.
 
 > **Case D was run on 11 August 2026 and ended `BUDGET` in iteration 1.** It found three

@@ -385,6 +385,38 @@ describe('runGates', () => {
     return { ok, status: ok ? 0 : 1, stdout: '', stderr: ok ? '' : 'boom' };
   };
 
+  describe('the mutation gate explains a zero-coverage dry run (Tallyho attempts 3-4)', () => {
+    const STRYKER_CRASH = 'ConfigError: No tests were executed. Stryker will exit prematurely. Please check your configuration.';
+
+    it('appends the true reason when Stryker aborts with no related tests', async () => {
+      const { results } = await runGates([{ name: 'mutation', command: ['npx', 'stryker'], required: true }], {
+        cwd: '/repo',
+        run: () => ({ ok: false, status: 1, stdout: '', stderr: STRYKER_CRASH }),
+      });
+      assert.equal(results[0].detail.includes('none of your changed source files are exercised by any unit test'), true);
+      assert.equal(results[0].detail.includes(STRYKER_CRASH), true, 'the verbatim output was replaced instead of explained');
+      assert.equal(results[0].ok, false, 'an explained failure is still a failure');
+    });
+
+    it('adds nothing to a mutation failure with a different cause', async () => {
+      const { results } = await runGates([{ name: 'mutation', command: ['npx', 'stryker'], required: true }], {
+        cwd: '/repo',
+        run: () => ({ ok: false, status: 1, stdout: '', stderr: 'final mutation score 12 was below the break threshold 60' }),
+      });
+      assert.equal(results[0].detail.includes('exercised by any unit test'), false);
+    });
+
+    it('adds nothing to another gate that happens to print the same words', async () => {
+      // The benign neighbour: the hint is keyed to the mutation gate, not to a phrase any
+      // test runner might emit.
+      const { results } = await runGates([{ name: 'unit', command: ['npx', 'vitest'], required: true }], {
+        cwd: '/repo',
+        run: () => ({ ok: false, status: 1, stdout: '', stderr: STRYKER_CRASH }),
+      });
+      assert.equal(results[0].detail.includes('exercised by any unit test'), false);
+    });
+  });
+
   // The other half of the operator's stall report. A child is not the only thing in an
   // iteration that can stop returning: a test suite holding an open handle, a dev server a
   // gate started and never reaped, a playwright run waiting on a selector that will not

@@ -729,10 +729,37 @@ export async function runGates(gates, options) {
       name: gate.name,
       ok: outcome.ok,
       status: outcome.status,
-      detail: outcome.ok ? 'passed' : detail,
+      detail: outcome.ok ? 'passed' : detail + mutationCoverageHint(gate.name, detail),
     });
   }
   return { ok: results.every((result) => result.ok), results };
+}
+
+/**
+ * The sentence a builder needs when Stryker says "No tests were executed" — the `runnerHint`
+ * move, applied to the mutation gate.
+ *
+ * Reproduced against the Tallyho target (attempts 3 and 4, DOGFOOD.md): the vitest runner scopes
+ * the dry run to tests RELATED to the mutated files, so when an iteration's changed source is
+ * exercised by no unit test at all — a React component covered only by Playwright — vitest
+ * executes zero tests and Stryker throws `ConfigError: No tests were executed. … check your
+ * configuration.` The configuration is fine; the true fact is *your changed code has no unit
+ * coverage*, and a builder sent to "check configuration" burns iterations reinstalling Stryker
+ * (attempt 4 stalled on exactly that misdirection, five iterations running). A rule with a
+ * reason must say the reason where it fails.
+ *
+ * @param {string} gateName
+ * @param {string} detail
+ * @returns {string} a teaching suffix, or the empty string
+ */
+function mutationCoverageHint(gateName, detail) {
+  if (gateName !== 'mutation' || !detail.includes('No tests were executed')) return '';
+  return (
+    '\n\nWhat this actually means: the mutation runner scopes its dry run to unit tests RELATED to ' +
+    "the files this iteration changed, and none of your changed source files are exercised by any unit " +
+    'test — so zero tests ran and Stryker aborted. The configuration is fine; the repair is unit tests ' +
+    'covering the changed code (an e2e test does not count here: mutation runs the unit runner only).'
+  );
 }
 
 /**

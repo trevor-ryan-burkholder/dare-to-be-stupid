@@ -1,10 +1,11 @@
 # START HERE — handoff, last swept 15 August 2026
 
-**State:** `main` at `0.159.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.159.0: `npm test` **2303 pass**
+**State:** `main` at `0.160.0`, in the repository's new home `~/dev/meeseeks`. Measured at 0.160.0: `npm test` **2306 pass**
 (0 fail), `npm run lint` and `npm run typecheck` clean, `npm run release-check` **ok**. Tier 2 carries from 0.157.0
-(**`test:integration` 51**; 0.158.0–0.159.0 touch no tier-2 trigger — the mutation config is written by tier-1 code and
-consumed by Stryker, whose invocation is unchanged) and tier 3 from 0.153.0 (**`test:live` 31**; no spawn-contract surface
-touched since). **`git push`ed through 0.158.0; 0.159.0 lands in this commit.**
+(**`test:integration` 51**; nothing since touches a tier-2 trigger — the mutation config and hint are tier-1 code, and the
+Stryker behaviour itself was reproduced live against the Tallyho target both ways, pass and crash) and tier 3 from 0.153.0
+(**`test:live` 31**; no spawn-contract surface touched since). **`git push`ed through 0.159.0; 0.160.0 lands in this
+commit.**
 
 **`npm run test:live` at 0.141.0: 27 of 27, 0 failures** — run against the async spawn path the same hour it was converted — re-run because 0.138.0 modified `spawnClaude` (denial collection), which `CLAUDE.md` requires tier 3 for; the header had been carrying a 0.136.0 result across that change. Re-run after `main`
 gained `io.spawn` (0.114.0) and `childEnvironment` gained the depth marker (0.115.0), both of
@@ -103,6 +104,22 @@ its job; nothing hung.
 **And the ratchet held 83 ids through a stalled run** — a run that never shipped and never went
 fully green kept every proven id banked, which is 0.121.0's early banking doing exactly what case
 I could not.
+
+### 0.160.0 — the mutation gate explains a zero-coverage dry run (Tallyho finding #6)
+
+Attempt 4 `STALLED` with the mutation gate failing all five iterations on `ConfigError: No tests were
+executed` — and the diagnosis was completed **outside the run, both directions**: `--mutate` a file with
+unit tests → clean pass (94.81%, 73 killed, the 0.159.0 exiled sandbox working exactly as designed);
+`--mutate` a React component covered only by Playwright → the precise crash. The vitest runner scopes its
+dry run to tests RELATED to the mutated files, so an iteration whose changed source has **no unit
+coverage** executes zero tests and Stryker aborts blaming *configuration* — and the builder, obediently
+"checking its configuration", reinstalled Stryker and burned the run on a misdirection. The `runnerHint`
+lesson verbatim: a rule with a reason must say the reason where it fails. `mutationCoverageHint` appends
+the true fact beneath the verbatim output — none of the changed files are exercised by any unit test; the
+repair is unit tests over the changed code; e2e does not count here — keyed to the mutation gate AND the
+crash signature, with the benign neighbours tested (a different mutation failure gains nothing; another
+gate printing the same words gains nothing; the explained failure is still a failure). Tier 1
+**2303 → 2306**.
 
 ### 0.159.0 — the Stryker sandbox leaves the target tree (Tallyho finding #5: the poison spiral)
 
