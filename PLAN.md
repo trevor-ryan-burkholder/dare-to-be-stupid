@@ -330,7 +330,7 @@ here by reading the record instead of the summary.
 a stash and tier 2 covers it against real git, but the two halves have never run together. That
 is item 9's remaining content.
 
-### 14. R17 — metamorphic relations in the oracle — DONE (0.100.0); **the live half is owed to the next oracle-armed run** (no run has yet had a relation judge real code — unverified and previously unowned)
+### 14. R17 — metamorphic relations in the oracle — DONE (0.100.0); **live half PAID by oracle2, 14 Aug** (relations judged real generated code, caught real numeric bugs, drove a fix, passed at ship; zero false failures — `DOGFOOD.md`)
 **Item 7's interim finding promotes this from a prediction to a measured requirement.** The first
 armed oracle authored 19 cases and **all 19 assert exit codes only** — correctly, because
 `oracle-author.md` instructs exit-only whenever the spec does not fix byte-for-byte output, which

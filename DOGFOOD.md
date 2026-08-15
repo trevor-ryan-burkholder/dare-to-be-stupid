@@ -1201,3 +1201,30 @@ proven, and the live gap is specifically the winning merge on a real divergence.
 known-hard measurement rather than burning more ~$80 monotonic-null runs at it. The stuck-gate
 note, cross-tree scoped restore, async/heartbeat/parallel-panel behaviour and the panel carry were
 all verified live across runs 1 and 1b regardless.
+
+### oracle2 (14 Aug, 0.145.0) — the first oracle-armed SHIP, and item 14's live half paid AND vindicated
+
+Case-G csvstat target, `oracle.enabled`, uncapped, `maxIterations:6`. Ended **SHIPPED — panel
+unanimous on 16 requirement(s)** in **5 iterations, 44.07M tokens, $52.82, 50 passing**. oracle1
+hit BUDGET; **this is the first oracle-armed run to actually ship.**
+
+**The headline — item 14's live half (metamorphic relations judging real code), owed since 0.100.0,
+is now paid and it worked exactly as designed:** early in the run the held-out relations failed
+**3 of 20 cases** on a same-stdout-under-row-permutation relation, catching **real numeric-robustness
+bugs the builder's own tests passed**: O-2, mean `0.200000` vs `0.199999` (floating-point
+non-associativity — the sum accumulates in input order); O-3, mean `NaN` vs a finite number under
+`±1e308` inputs (overflow-order dependence — one permutation overflows the running sum, another
+does not). The builder then made the summary permutation-stable, and by ship the oracle **passed**.
+
+**Zero disputes, zero quarantines, zero retractions across the whole run** — every oracle failure
+was a genuine defect, not a false failure. That is the strongest result the run could produce: the
+held-out principle catching real bugs the self-authored tests missed, driving a fix, and clearing
+cleanly, with a false-failure rate of zero on this target. The dispute/quarantine/never-was paths
+remain unobserved because nothing provoked them — they are fail-safes for a wrong oracle case, and
+no oracle case here was wrong.
+
+**Verified live at 0.145.0 alongside:** the async driver + heartbeat + parallel panel (again, clean
+against real rate limits), and the full spec→design→build→gate→cold-panel→ship pipeline reaching
+SHIPPED on a real target. The DOGFOOD recipe's "hand-adjudicate every oracle failure" rule is
+satisfied: all three failures were hand-checked as correct (real permutation-instability), so this
+is NOT a case of "the oracle worked" papering over a false pin.
