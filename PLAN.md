@@ -1191,6 +1191,54 @@ dropped quietly); a test proves **no code path lets a builder emit a question or
 artifact is driver-owned and refused to a process inside the run by the positional guard; and a `SHIPPED`
 run emits none (the benign neighbour — a machine that always has a question has stopped meaning anything by it).
 
+### 51. `CONSTITUTION.md` — the invariants, extracted, numbered and enforced — OPEN (Phase-6 class, post-DoD)
+
+**Origin:** operator, 15 Aug 2026 — *"should we have a constitution.md"*. **One already exists**: the
+`CLAUDE.md` section *"Invariants — do not violate these"*, 13 bullets, carrying the constitutional test
+in its own words — *"a change that breaks one is wrong even if tests pass."* Audit on the day: `DESIGN.md`
+has **no** invariants section (no duplication there), and of the runtime templates **only
+`builder-system.md`** echoes any invariant language. So the law lives in three places — contributor prose,
+enforcement in code, one partial template echo — and **there is no single citable source.**
+
+**This item is a refactor with a gate, not a new document, and the distinction decides whether it is worth
+doing at all.** The argument against is written in this repo's own scars: the `HANDOFF.md` header went
+stale by **fourteen** versions, then by three more *directly beneath the warning about it*, and the fix
+was not discipline but a **gate** (`release-check`). A fourth ungated ledger is rot with a better name. If
+this ships as "prose moved to a new file", it is churn — **do not build it.**
+
+**The three conditions that make it earn its keep — all three, or none:**
+1. **Single source.** It *replaces* `CLAUDE.md`'s invariants section, which becomes a pointer — the
+   established "`DESIGN.md` wins, fix this file" pattern. Three copies of a law is worse than one, because
+   the divergent copy is indistinguishable from the true one.
+2. **Numbered and citable — `CONST-1`…`CONST-13`.** This is the value, and it is `PRD-N.M`'s insight
+   reapplied: **numbering is load-bearing because it makes a thing checkable.** Today an invariant cannot
+   be cited in a commit, a review, or a plan item — items 48, 49 and 50 each lean on *"nothing defaults to
+   pass"* and *"the builder cannot judge its own work"* by **paraphrase**, where a citation belonged.
+3. **Enforced, or it is decoration** (`prd-author.md`'s own word for what an auditor cannot check). A test
+   asserts every `CONST-N` names at least one enforcing test or code site. **An invariant with no
+   enforcement is a wish** — and this test is a real net, not ceremony: it is the shape of check that would
+   have caught the guard-registration hole, where the guard's *logic* was tested and green for eleven
+   versions while nothing asserted its *invocation*.
+
+**What it completes: three layers of law**, which is the structure items 47–50 have been circling.
+`CONSTITUTION.md` = true of **every** run, meeseeks-owned, **never** overridable · `DOD.md` (item 48) =
+this job's done-bar, operator-supplied, **additive only** · `PRD.md` = what to build. And the payoff is a
+derivation rather than a decree: **item 48's additive-only rule is not an arbitrary safety choice — it
+follows from constitutional supremacy.** A `DOD.md` may only add because it sits *beneath* the
+constitution. Writing the law down is what turns that from folklore into something a reader can derive.
+
+**One hazard, named so it is not discovered later:** handing the constitution to runtime children is a
+benefit (standing law, stated once, versioned with the plugin) **but the cold reviewer's starvation is
+itself constitutional.** A constitution piped into the panel would be the exact backdoor §6.1 refuses. Any
+runtime handoff is per-persona and deliberate — the builder may receive it; the reviewer's diet is decided
+by `reviewer-system.md` and nothing else.
+
+**Done when:** `CONSTITUTION.md` holds the invariants as `CONST-N`; `CLAUDE.md`'s section is a pointer and
+the text exists in exactly one place; a test asserts every `CONST-N` names an enforcing test or code site
+and **fails on an unenforced one**; a staleness gate refuses a constitution that disagrees with its
+enforcement set (the `release-check` lesson — a discipline that keeps failing becomes a gate); and no
+reviewer prompt gains constitutional text as a side effect.
+
 ### Phase 6 non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:
 - **Persistent kernel / REPL as the builder's environment** — breaks builder starvation; state
