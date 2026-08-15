@@ -959,6 +959,43 @@ driver-written), the run-lock holds, results are read from artifacts never a chi
 no nesting unless `--give-them-the-box`. Matches "long-running across sessions" with the spine
 intact.
 
+### 47. Accept an ERD alongside the PRD, and gate the schema against it — OPEN (Phase-6 class, post-DoD)
+
+**Origin:** operator, 15 Aug 2026, after an ERD of the Ateliers capstone made its schema's two
+integrity rules checkable at a glance. The data model is where prose is most ambiguous and builder
+hallucination most expensive; an ERD is machine-parseable text (Mermaid `erDiagram`, no runtime
+deps to parse), so it enables a **new deterministic, capability-gated gate** — meeseeks' favourite
+kind of check. The schema stops being inferred and becomes *checked against*.
+
+**Design, with the tensions resolved (a half-specified version rots):**
+- **Input:** an optional ERD file (Mermaid `erDiagram`) alongside the PRD — a convention
+  (`ERD.md` beside `PRD.md`) or a config key (`erd`). Parsed with a small in-repo parser, no
+  dependency.
+- **The ERD refines the PRD, never competes with it.** The PRD stays source-of-truth for
+  *behaviour*; the ERD constrains *schema shape*. Preflight consistency: a contradiction between
+  them **refuses the run** (you do not build against an inconsistent spec), and the ERD may not
+  introduce an entity the PRD never mentions (inventing requirements is the oracle's named defect).
+- **A new gate, `schema-conformance`, capability-gated** — applies only when an ERD is supplied
+  AND the target has a persistence capability (as `e2e` applies only to web-ui). After the build's
+  migrations/seed run, **introspect the LIVE schema** (SQLite `PRAGMA table_info`/`foreign_key_list`,
+  Prisma introspect, etc. — a per-toolchain concern like reporters) and assert every ERD-declared
+  entity, key and relationship EXISTS. **Superset match:** extra columns (a sensible `createdAt`)
+  pass; omission or contradiction fails. **Fail-closed:** a schema that cannot be introspected —
+  no DB, migration failed, introspection errored — FAILS the gate, never defaults to pass.
+- **The builder gets the ERD in its brief**, so it builds to the declared schema rather than
+  guessing; the design auditor can use the ERD as structural ground truth.
+
+**Why post-DoD:** it changes what meeseeks *accepts* and adds a gate — a Phase-6-class expansion of
+inputs/job-types, not a fix. It would materially strengthen the data-backed-app class (the capstone
+is exactly that), but the capstone must run on the *current* machine to prove the DoD, so this does
+not gate it. Prioritise it for the *next* data-backed target after the DoD.
+
+**Done when:** an ERD parses to entities/keys/relationships; a preflight refuses an ERD that
+contradicts or over-reaches the PRD; the `schema-conformance` gate passes on a superset-matching
+live schema, fails on an omission/contradiction, and fails closed on an un-introspectable one, each
+with a test and a benign neighbour; the builder brief carries the ERD; one live data-backed run
+exercises it end to end.
+
 ### Phase 6 non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:
 - **Persistent kernel / REPL as the builder's environment** — breaks builder starvation; state
