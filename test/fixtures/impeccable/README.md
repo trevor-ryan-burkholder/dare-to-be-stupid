@@ -26,3 +26,30 @@ normalising it fakes nothing the parser depends on.
 `"advisory": true`. A parser that partitioned on `severity` would misfile it as a gate-failing
 finding. The real discriminator — the one impeccable's own `isAdvisory` uses — is
 `advisory === true`, and only a real capture makes that visible.
+
+## Attribution
+
+`slop-findings.json` is output produced by **impeccable** and includes impeccable's own
+anti-pattern description text. impeccable is distributed under the **MIT License**:
+
+> Copyright (c) Paul Bakaus — impeccable (<https://github.com/pbakaus/impeccable>)
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+> and associated documentation files (the "Software"), to deal in the Software without
+> restriction, including without limitation the rights to use, copy, modify, merge, publish,
+> distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+> Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or
+> substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+> BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+> NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+> DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+The canonical, authoritative licence text (including its copyright year) lives with the source at
+the repository above; this notice reproduces it here because MIT asks that it travel with copies
+of the covered material. impeccable's plugin manifest (`.claude-plugin/plugin.json`) declares
+`"license": "MIT"`. No other file in this repository redistributes impeccable content.
