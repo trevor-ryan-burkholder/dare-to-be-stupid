@@ -1,6 +1,6 @@
 ---
 description: Hand a PRD, an idea, an existing repository, or nothing at all to an autonomous build loop. Pre-production only.
-argument-hint: [path-to-PRD.md | "an idea in quotes" | --improve ["area"] | (nothing)] [--deadline=<min>]
+argument-hint: [path-to-PRD.md | "an idea in quotes" | --improve ["area"] | (nothing)] [--deadline=<min>] [--give-them-the-box]
 allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/init.mjs:*), Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/driver.mjs:*)
 ---
 
@@ -66,8 +66,9 @@ holds the ratchet, and ends in one of four states: `SHIPPED`, `STALLED`, `BUDGET
   it constrains. Before and after a run they are ordinary files: if the user wants a
   different `maxIterations` or a cleared lesson store, edit it here rather than handing them
   a command to run themselves.
-- **Do not start a run inside a run.** Nested runs are refused at the driver and at the
-  guard hook.
+- **Do not invent a nested run.** Nested runs are refused at the driver and guard hook unless
+  the operator explicitly supplied `--give-them-the-box`. That flag is the only exception; the
+  launcher may pass it through but may never add it on the operator's behalf.
 
 ## Before the first run
 

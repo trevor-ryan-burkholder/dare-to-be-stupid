@@ -5,11 +5,14 @@
 > repair and the relevant verification has passed.
 
 **Reviewed tree:** `main` at `65a14cc` (`pre-codex`), version `0.161.0`
+**Code continuity:** no executable script, hook, or template changed. The 0.162.0 documentation
+release aligns the launcher contract with existing `--give-them-the-box` behavior; F1–F4 code
+remains byte-identical and finding status is authoritative only here.
 **Verdict:** **CHANGES REQUESTED** — three high-priority safety defects and one medium-priority
 timeout defect are open.
 
-This was a read-only review of the current Claude-native implementation. No runtime behavior,
-Claude Code integration, or plugin architecture was changed.
+This remains a read-only review of the Claude-native implementation. The documentation cleanup
+does not implement or close any finding.
 
 ## Open findings
 
@@ -165,7 +168,7 @@ All existing non-paid gates were green on the reviewed tree:
 - `npm run typecheck`
 - `npm test` — **2,307 passed, 0 failed**
 - `npm run test:integration` — **51 passed, 0 failed**
-- `npm run release-check` — version `0.161.0` and shipped-file baseline clean
+- `npm run release-check` — version `0.162.0` and shipped-file baseline clean
 
 The paid live tier was not run. The worktree was clean after review. Existing green tests do not
 cover the four failure shapes above.

@@ -4,6 +4,9 @@ Conventions for working **on this repo** (the plugin itself). `DESIGN.md` is the
 the source of truth; when this file and `DESIGN.md` disagree, `DESIGN.md` wins — fix this
 file.
 
+Read `docs/INDEX.md` before traversing project-management documents. Historical ledgers are
+evidence, not instructions; `PLAN.md` and `REVIEW.md` own current work and review status.
+
 > **Scope note.** This repo *builds* an autonomous loop. It is not itself run by that loop.
 > Do not run `/meeseeks` against this repository.
 
@@ -169,10 +172,11 @@ Rules:
 
 ## Slice rules
 
-Build in the order given in `DESIGN.md` §12. Each slice lands complete — code plus its
-tests plus its docs — before the next one starts.
+`PLAN.md` owns the order of remaining work. `DESIGN.md` §12 records the dependency order of
+the foundational build; preserve that dependency whenever those foundations are reconstructed.
+Each slice lands complete — code plus its tests plus its docs — before the next one starts.
 
-- `guard.mjs` → `extractTestIds` → ratchet → `plugins.mjs`/`init.js` → `driver.mjs` →
+- `guard.mjs` → `extractTestIds` → ratchet → `plugins.mjs`/`init.mjs` → `driver.mjs` →
   prompts → output style.
 - **The first three slices are the product.** Guard, extraction, and ratchet are what make
   an autonomous loop safe and terminating. Do not start `driver.mjs` until they are
@@ -201,8 +205,10 @@ are the highest-leverage artifacts in the repo, and the reviewer prompt especial
 ## Releasing
 
 **Any change to a shipped file requires a version bump**, in `.claude-plugin/plugin.json`
-and `package.json` together. Shipped means `hooks/`, `scripts/`, `commands/`, `templates/`,
-`output-styles/` and the manifests — everything except tests, docs and dev config.
+and `package.json` together. If `package-lock.json` exists, its top-level and root-package
+versions mirror `package.json`. Shipped means `hooks/`, `scripts/`, `commands/`,
+`templates/`, `output-styles/` and the manifests — everything except tests, docs and dev
+config.
 
 This is not bookkeeping. Claude Code installs a plugin into
 `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` and reads it from there. That

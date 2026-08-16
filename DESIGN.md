@@ -257,21 +257,31 @@ the run itself. `commands/meeseeks.md` runs preflight **before** shelling to the
 |---|---|---|
 | Node ≥ 22.12 | driver + impeccable installer | abort, print required version |
 | `claude` on PATH, callable non-interactively, authed | driver spawns `claude -p` children | abort, tell user to sign in |
-| Inside a git repo, **clean working tree** | ratchet does `git reset --hard` | abort, tell user to commit/stash |
+| Inside a git repository | every state transition and rollback is commit-based | abort, name the required repository |
+| Repository has at least one commit | worktrees, baselines and reset targets need a commit | abort, create the initial commit |
+| **Clean working tree** | ratchet does `git reset --hard` | abort, tell user to commit/stash |
 | Remote is **not** prod/client/customer (if a remote exists) | never point at users | abort |
 | Network reachable (npm registry) | impeccable + tooling install | abort |
-| `.meeseeks/config.json` exists | run config | auto-run `meeseeks init` (one-time scaffold) |
+| `.meeseeks/config.json` is readable | run config | scaffold when absent; abort with a repair when invalid |
 | **No other driver holds this repository** | two drivers on one tree each `git reset --hard` it and commit over the other | abort, naming the pid and the lock file to delete |
 | **`.meeseeks/` is not tracked by git** | a tracked state dir defeats the gitignore: every hard reset restores stale config and ratchet, every iteration commits run state. Measured — a target ran with a stale, reset-restored config and the only symptom was the banner's iteration count | abort; `git rm -r --cached .meeseeks && git commit` |
+| Requested OS sandbox is available | refusing fallback is the sandbox guarantee | abort with the missing host requirement |
 | **Agent-config security scan** clean | dangerous mode trusts the repo's own hooks/prompts/MCP/secrets | abort on findings (§3.6) |
 | `--dangerously-skip-permissions` acknowledged | the premise; guard hook is the safety | require `--yes` or an interactive confirm |
 
-**The run lock, `.meeseeks/run.json`.** Written by the driver at start, removed on every path out,
-and holding one number that matters: the driver's pid. Measured on 13 August 2026 — `ps` showed
-three drivers, two on the same `cwd`, because run 14 was sent `SIGTERM` and did not die before run
-15 launched. Run 15's result is void and nothing may be concluded from its log. §13.6's
-re-entrancy guard does not cover this and never did: it refuses a *nested* run, a builder invoking
-the slash command, which is a different failure entirely.
+**The run lock is `.meeseeks/lock.json`; `.meeseeks/run.json` is the run manifest (§7.1).** The
+lock must be acquired atomically by the driver before Phase 0, before the first child spawn,
+repository write, install or commit, and released only by the owner on every path out. It records
+the driver's pid, start time and an ownership token so a process that did not acquire the lock
+cannot clear it. Measured on 13 August 2026 — `ps` showed three drivers, two on the same `cwd`,
+because run 14 was sent `SIGTERM` and did not die before run 15 launched. Run 15's result is void
+and nothing may be concluded from its log. §13.6's re-entrancy guard does not cover this and never
+did: it refuses a *nested* run, a builder invoking the slash command, which is a different failure.
+
+**0.162.0 does not yet satisfy that requirement.** It checks and claims separately, and claims
+only after PRD/design work and a commit. `REVIEW.md` F1 is the release-blocking implementation
+gap; this section states the required end state rather than laundering the current race into the
+specification.
 
 Living under `.meeseeks/` means §6's positional rule already protects it — a process marked
 `MEESEEKS_RUNNING` may not write there at any depth, so a builder cannot forge or clear it.
@@ -298,7 +308,10 @@ Every child's spend is charged the moment it returns — including Phase 0 and P
 before the loop and are threaded in as `alreadySpent` (they were uncounted until v0.35.0, so a
 run could spend an entire PRD and design phase *and then* the whole ceiling). But nothing can
 price a child *before* running it, and `claude -p` accepts no token limit the driver could pass.
-So the guarantee is: **the ceiling, plus one unbounded child.**
+So the guarantee is: **the ceiling, plus every child already in flight when the breach becomes
+visible.** During a serial phase that is one child. During the parallel cold panel it can be all
+three reviewers. `--max-budget-usd` bounds money approximately when a cost ceiling is armed; no
+equivalent CLI flag makes `tokenCeiling` a hard token cap.
 
 Measured on 11 August 2026: a single builder child returned **20,223,215 tokens against a
 2,000,000 ceiling**. The check fired correctly and ended the run immediately. An operator
@@ -1056,7 +1069,7 @@ subsequent iteration.
 
 ### 5.0 The other detectors, and why they are detectors
 
-`qualityPlugins` defaults to `["impeccable", "knip", "semgrep"]`. All three are
+`qualityPlugins` defaults to `["impeccable", "knip", "semgrep", "schemathesis"]`. All four are
 **deterministic CLIs with exit codes**, because Phase 3 is defined as exit codes and no LLM.
 A model-based quality plugin cannot go here: the panel already supplies three opinions, and
 the thing a gate adds that an opinion cannot is that it may not be talked round.
@@ -1070,8 +1083,8 @@ the thing a gate adds that an opinion cannot is that it may not be talked round.
   thirty seconds ago. This is the detector half of §14's open question.
 
 impeccable is `required: true` — failing to provision it kills the run, because it carries a
-DoD line. knip and semgrep are optional and degrade to a warning: semgrep needs `python3`,
-and neither is worth killing a run over on a machine that lacks it.
+DoD line. knip, semgrep, and schemathesis are optional and degrade to a warning: semgrep needs
+`python3`, and none is worth killing a run over on a machine that lacks it.
 
 **Detection and direction are different halves of DoD line 5, and only one can be a gate.**
 impeccable answers "is this choice wrong"; nothing deterministic can answer "is this choice
@@ -1361,14 +1374,19 @@ like a seal without being one.
 
 ## 7. File layout
 
+This is the current runtime and release structure, not a substitute for `git ls-files`. Tests,
+fixtures, and historical documentation are summarized by directory so this map stays useful.
+
 ```
 meeseeks/
 ├── .claude-plugin/
-│   ├── plugin.json               # plugin manifest (name, commands, hooks)
+│   ├── plugin.json               # plugin identity, version, metadata
 │   └── marketplace.json          # lets `/plugin marketplace add owner/repo` resolve
 ├── commands/meeseeks.md              # preflight, then shells to driver
 ├── scripts/
 │   ├── driver.mjs                # the loop. node, no deps.
+│   ├── components.mjs            # boxed component worktrees and nested-driver contract
+│   ├── run-lock.mjs              # .meeseeks/lock.json, one owner per repository
 │   ├── ratchet.mjs               # ratchet + extractTestIds (unit-tested first)
 │   ├── reporters/                # one module per test-report format (§11)
 │   │   ├── index.mjs             # the registry: detect, dispatch, collapse
@@ -1389,18 +1407,24 @@ meeseeks/
 │   ├── plugins.mjs               # quality-plugin auto-install
 │   ├── capabilities.mjs          # what this project is, declared or detected (§3.7)
 │   ├── gate-policy.mjs           # which gates apply to which capabilities (§4.2)
+│   ├── gate-cache.mjs            # fail-closed unchanged-workspace gate cache
+│   ├── design-slop.mjs           # parses impeccable's machine finding stream
 │   ├── context-budget.mjs        # measures a prompt before the child is spawned (§3.9)
 │   ├── pins.mjs                  # pinned security elements and requirements (§4.3)
+│   ├── oracle.mjs                # held-out acceptance cases and relations (§4.6)
+│   ├── quarantine.mjs            # corrupt driver-state isolation
 │   ├── assumptions.mjs           # what the builder had to assume (§8.3)
 │   ├── run-manifest.mjs          # .meeseeks/run.json, and archiving the last run (§7.1, §7.2)
 │   ├── integrity.mjs             # gate-integrity: no-op gates, weak assertions (§4)
-│   ├── preflight.mjs             # the nine checks run before a run starts (§3.5)
+│   ├── preflight.mjs             # the thirteen checks run before a run starts (§3.5)
 │   ├── security-scan.mjs         # the repo's own agent surface, pre-run (§3.6)
 │   ├── config.mjs                # defaults, validation, and the risky-remote words (§10)
+│   ├── configure.mjs             # interactive author for validated config
 │   ├── style.mjs                 # the Meeseeks render layer, output only (§9)
 │   └── init.mjs                  # scaffolds .meeseeks/config.json, refuses risky remotes
 ├── hooks/
 │   ├── hooks.json                # PreToolUse on Bash|Write|Edit|MultiEdit|NotebookEdit
+│   ├── guard-fallback.cjs        # crash-net fallback when the ESM guard cannot load
 │   └── guard.mjs                 # the limit that survives permission skipping
 ├── templates/
 │   ├── prd-author.md             # idea → PRD           (Phase 0)
@@ -1408,11 +1432,16 @@ meeseeks/
 │   ├── architect.md              # PRD → design docs     (Phase 1)
 │   ├── builder-system.md         # Phase 2
 │   ├── reviewer-system.md        # Phase 5 (the actual product)
+│   ├── oracle-author.md          # PRD-only held-out acceptance author
+│   ├── security-escalation.md    # scoped cold adjudication of security pins
 │   ├── lesson-extractor.md       # evidence → one lesson, or null (§13.8)
 │   ├── frontend-direction.md     # appended to the builder only when there is a UI (§5.0)
 │   ├── toolchain-node.md         # per-toolchain idioms, into the brief (§8.4)
-│   └── toolchain-dotnet.md       # same, for .NET
+│   ├── toolchain-dotnet.md       # same, for .NET
+│   └── toolchain-undetected.md   # stack-neutral guidance before detection succeeds
 ├── output-styles/meeseeks.md
+├── skills/mr-meeseeks/SKILL.md   # opt-in voice skill; tone only
+├── tools/release-check.mjs       # version/cache invariant and HANDOFF header gate
 └── test/fixtures/                # real vitest + playwright reporter output
 ```
 
@@ -1801,14 +1830,9 @@ JSON, and `MEESEEKS_STYLE=plain` suppresses it. Final art designed at build time
 
 ## 10. Config — `.meeseeks/config.json`
 
-| key | default | note |
-|---|---|---|
-| `maxIterations` | 25 | |
-| `stallLimit` | 4 | iterations with no gate improvement before abort |
-| `tokenCeiling` | 4_000_000 | bounds *work*. Not a cap and not convertible to money — see §3.5 |
-| `costCeiling` | 50 | bounds *spend*, in USD, from the envelope's own `total_cost_usd`. Decimals allowed |
-| `childTimeoutMs` | 1_800_000 | bounds *wall-clock per child*, and it is the only one of the three that is a watchdog. `tokenCeiling` and `costCeiling` bind a child that returns; neither can see one that does not. Roughly 2.8x the longest child ever observed (§3.9) |
-| `gateTimeoutMs` | 2_700_000 | the same watchdog for gate commands, which hang the same way. **Not derived from measurement**, unlike the row above: no run has recorded a per-gate duration and mutation testing is the unmeasured slow one, so this is a backstop sized to be embarrassing to hit. When it fires, the driver also sweeps the descendants the gate leaked — see below |
+`scripts/config.mjs::defaultConfig()` is the machine authority. This section documents the same
+values; a change to either without the other is incomplete. The design notes come first, followed
+by one complete table so Markdown renderers do not have to join two fragments.
 
 **The OS sandbox is a second floor, and the refusal is the load-bearing half (R19).** The guard
 sees tool calls; it cannot see what the code a builder *wrote* does at runtime, which is the A2
@@ -1996,7 +2020,17 @@ the ceiling. Ctrl-C reaches the whole group and so takes the leak with it, but `
 the driver alone does not. The async conversion landed (0.141.0) and the free event loop now
 exists, but signal forwarding is still not wired — no handler forwards a `SIGTERM` to the gate's
 group, so an operator-kill can still leak it (`PLAN.md` item 2's residual).
+
+| key | default | note |
+|---|---|---|
+| `maxIterations` | 25 | maximum loop iterations |
+| `stallLimit` | 4 | iterations with no gate improvement before abort |
+| `tokenCeiling` | 4_000_000 | bounds *work* after returned envelopes; not a hard cap and not convertible to money (§3.5) |
+| `costCeiling` | 50 | bounds *spend* in USD from `total_cost_usd`; decimals allowed; `0` disables it |
+| `childTimeoutMs` | 1_800_000 | wall-clock watchdog per child; roughly 2.8x the longest child observed when chosen |
+| `gateTimeoutMs` | 2_700_000 | wall-clock watchdog per gate; an explicitly unmeasured backstop that also sweeps leaked descendants |
 | `sandbox.enabled` | **false** | R19: an OS-level floor **under** the guard (bubblewrap on Linux/WSL2, seatbelt on macOS). Off by default because bubblewrap is a separate package and the driver **refuses an unsandboxed fallback** — defaulting it on would refuse every run on a host without it. Preflight checks the host before the run starts |
+| `oracle.enabled` | **false** | staged held-out CLI oracle (§4.6); off until more live evidence settles false-failure risk |
 | `panelCarry.enabled` | true | A8's carry: a requirement a cold reviewer already passed with `file:line` evidence, whose evidenced file has not changed, is not re-argued on an iteration that is going to fail anyway. **A pre-filter only** — a narrowed panel that passes triggers the full panel before any ship, so nothing carried ever reaches a ship decision |
 | `maxChildTurns` | **0** (off) | `--max-turns` on each child. Zero means the flag is not passed. **No default is offered because none can be derived**: there is no arithmetic from a token or dollar ceiling to a number of agentic turns, and a made-up number would wear the authority of a measured one |
 | `reviewers` | `["security","correctness","design"]` | the specialized cold panel (§1.1); each owns its DoD lines |
@@ -2009,7 +2043,7 @@ group, so an operator-kill can still leak it (`PLAN.md` item 2's residual).
 | `styleModel` | `claude-fable-5` | Meeseeks narration + "meeseeks me" idea invention; pure flavor, never touches gate logic |
 | `lessonModel` | `claude-sonnet-5` | the cold lesson extractor (§13.8); advisory, so it never needs the strongest model |
 | `effort` | see §10.2 | reasoning effort per phase (`low`…`max`), keyed by the phase names the driver uses |
-| `qualityPlugins` | `["impeccable", "knip", "semgrep"]` | auto-installed in Phase 1 (§5); impeccable required, the other two degrade to a warning |
+| `qualityPlugins` | `["impeccable", "knip", "semgrep", "schemathesis"]` | provisioned in Phase 1 (§5); impeccable is required, the others degrade to a warning when unavailable |
 | `deadlineMs` | **0** | wall-clock ceiling on the whole run, milliseconds; `0` is off. A run-level time limit was considered and refused for ordinary runs — the ceiling is completion or budget. `--give-them-the-box` arms it at 30 minutes, because permitting nesting removes what the other bounds rely on: depth is capped, but nothing caps how many nested runs one iteration starts |
 | `extraGates` | `[]` | `{ name, command }` checks this project considers gating that no toolchain knows about. Run every iteration, required, listed in the brief as `operator:<name>`. Declared rather than detected, and declared *here* — `.meeseeks/` is positionally protected (§6), so a builder cannot delete a gate that constrains it |
 | `components` | `[]` | `{ name, dir, spec }` sub-runs executed as whole nested drivers in worktrees before the loop (§2, Phase 1c). The config declares *what* the components are; only `--give-them-the-box` on the command line permits them to run — configured components without the flag refuse the run before any child is paid for. `name` is kebab-case (it becomes branch and worktree names), `dir` is repo-relative with no `..` and is realpath-checked against the worktree at run time, `spec` is a PRD path relative to the dir or a quoted idea |
@@ -2058,6 +2092,7 @@ visibly moves — 232 versus 394 thinking tokens on one trivial prompt at `low` 
 | `security-escalation` | `high` | it can trigger a hard reset and a regression objective |
 | `builder`, `prd` | `medium` | they iterate; the ratchet and the gates are what judge them |
 | `lesson-extractor` | `low` | advisory, and returning `null` is an explicitly cheap answer |
+| `oracle-author` | `max` | writes the held-out acceptance artifact before design or code exists |
 
 **The judge is pinned at `max` and this is not a cost decision.** A verdict that gets cheaper as
 a run gets more desperate is satisficing installed at the auditor, which is the single failure
@@ -2284,7 +2319,7 @@ Write `CLAUDE.md` (test gates, slice-init rules) before step 1.
 1. `guard.mjs` + fixture tests for block/allow cases
 2. `extractTestIds` + fixture tests against real reporter output
 3. Ratchet logic, isolated and unit-tested
-4. `plugins.mjs` auto-install + `init.js` preflight
+4. `plugins.mjs` auto-install + `init.mjs` preflight
 5. `driver.mjs` loop wiring
 6. System/template prompts (prd-author, architect, builder, reviewer)
 7. Output style last — it's cosmetic

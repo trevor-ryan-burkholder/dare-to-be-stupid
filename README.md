@@ -156,7 +156,7 @@ and you edit them however you like.
 
 ```bash
 /plugin marketplace add trevor-ryan-burkholder/meeseeks
-/plugin install meeseeks
+/plugin install meeseeks@meeseeks
 ```
 
 > **If a fix seems not to work, check this first.** Claude Code caches plugins by
@@ -199,10 +199,13 @@ without writing anything; run-time env overrides are not shown.
 }
 ```
 
-**Budget arithmetic, measured rather than guessed.** An iteration costs **5–9M tokens**. A run
-capped at 12 iterations therefore cannot spend more than about **77M**, so pairing 12 iterations
-with a 150M ceiling buys a ceiling that can never bind. **If a run needs to ship, raise
-`maxIterations`, not `tokenCeiling`.**
+**Budget arithmetic, measured rather than guessed.** Completed iterations have commonly cost
+**5–9M tokens**, which is a planning range rather than an upper bound. Phase 0/1 spend arrives
+before the loop, a child can exceed the ceiling before returning, and the parallel panel can
+have three reviewers already in flight when a breach becomes visible. At twelve iterations the
+iteration cap will usually bind before a 150M token ceiling under the observed range, but neither
+number proves a maximum. **If an ordinary run needs more chances to ship, raise `maxIterations`;
+`tokenCeiling` remains a stop signal, not a cap.**
 
 The `% of budget remaining` line reports the **tightest** of iterations, tokens and dollars — the
 limit that will actually end the run, not the most flattering one.
@@ -230,6 +233,9 @@ from an exhausted budget from an abort has lost information to a punchline.
 
 ## Working on this repo
 
+Read `docs/INDEX.md` first for document authority and task-specific read routes. Historical
+ledgers are evidence, not implementation instructions.
+
 ```bash
 npm run lint          # style and obvious errors
 npm run typecheck     # jsdoc via tsc-checkJs; we are not adding TypeScript
@@ -254,9 +260,9 @@ a green tick for a suite that made no API call is a lie the reader takes for cov
 
 ## Status
 
-Pre-1.0 and honest about it. `DESIGN.md` is the specification and the source of truth;
-`HANDOFF.md` carries the execution record **including what was not verified**, which is the more
-useful half.
+Pre-1.0 and honest about it. `DESIGN.md` is the specification and source of truth.
+`HANDOFF.md` carries current measured state and routes the full execution chronology, including
+what was not verified, to the frozen archive.
 
 Measured, not asserted: **twenty-plus dogfood runs** against real throwaway projects, two of
 which reached `SHIPPED`. Cold review was **73% of a run's wall clock** while the panel ran
@@ -265,7 +271,8 @@ costs its slowest reviewer's wall clock rather than the sum. Live-verified in re
 runs, not just unit tests: the ratchet's hard reset and scoped restore, the stall and wall-clock
 endings, the repeated-regression and stuck-gate notices, the security-pin escalation, the race
 executing end to end, and the tracked-state refusal. The full audit of what has **never** been
-exercised lives in `HANDOFF.md`, and it is long on purpose.
+exercised is preserved in
+[`docs/history/HANDOFF-through-0.161.0.md`](docs/history/HANDOFF-through-0.161.0.md).
 
 ## Disclaimer
 

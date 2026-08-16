@@ -1,52 +1,47 @@
-# PLAN — what remains. Compiled 13 August 2026 from 0.88.0; statuses last swept 14 August at 0.140.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 15 August at 0.162.0
 
-**This is the only live plan.** `COMPLETION.md` is frozen as the 12 August plan; `BRIEF.md` is
-the reconciled ledger of the original brief, complete; `HANDOFF.md` records execution. Statuses
-live *here*, updated in the same commit as the work — the rule the HANDOFF header teaches.
+**This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
+acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
 
-Compiled from the open items in all three ledgers plus `BORROWED.md` rounds five and six.
-Nothing below is new invention; every item carries its origin.
+`HANDOFF.md` records current measured state. `BRIEF.md`, `COMPLETION.md`, and `AUDIT.md` are
+compatibility pointers to frozen snapshots under `docs/history/`. `BORROWED.md` points to
+non-normative research. `docs/INDEX.md` defines the complete authority map.
 
-**Ordering principle, inherited from `COMPLETION.md`:** information value first. Experiments
-precede construction where a result can invalidate the construction — and one dependency this
-time is explicit: **item 8 gates the shape of item 10.**
+**Ordering principle:** safety and correctness before feature breadth; information-producing
+experiments precede construction only when their result can invalidate that construction.
 
 Statuses: `OPEN` → `IN PROGRESS` → `DONE (version)` / `CLOSED (reason)` — plus, as reality required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answered or moved), `ANSWERED` (measurement obtained), `DROPPED` (operator refused), `DEFERRED` (operator postponed).
 
 ---
 
-## Build order — the efficient traversal of what remains (added 14 Aug)
+## Build order — current traversal at 0.162.0
 
-**The phases below are numbered by discovery order; this is the order to actually BUILD in.** The
-principle: batch by the file and test-tier each item touches, land correctness before long runs,
-and never let a ~2h measurement run block a build slice — kick every dogfood off in the background
-and build the next campaign while it runs. Phases 0–3 are complete; everything below is the
-remaining work, grouped by shared surface so the hostile reviewer warms on one area at a time and
-each tier-3 live check is paid once, not three times.
+**Gate 0 — external review defects.** These are release-blocking implementation items; the full
+requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
 
-**Campaign A — Guard & state integrity** (do first, while the guard context is warm; hardens the
-substrate every later run depends on). Item **28** (guard kill-switch + R23 realpath + R24
-tokenizer + R39 Factorio citation — *built & verified, waiting on oracle2 to land*) → **37** (guard
-ergonomics, R25) → **38** (corrupt-state quarantine, R26) → **39** (atomic red-evidence, R34 — the
-verified bug; land before any long run writes that file).
+- **F1:** acquire the repository lock atomically before any work.
+- **F2:** make the process watchdog force and settle after a bounded SIGTERM grace period.
+- **F3:** prevent an unrelated local listener from satisfying the health gate.
+- **F4:** enforce absolute HTTP response deadlines and bounded response bodies.
 
-**Campaign B — Reviewer/panel template** (one DESIGN §4 parser re-read, one tier-3 live check for
-the batch): item **40** (unverifiable channel, R27) → **41** (review packaging, R28) → **30c**
-(Trail-of-Bits differential-review mining).
+**Campaign 1 — reviewer contract:** item **40** (unverifiable channel and attack account) → item
+**41** (honest review packaging and diff base). Batch the shared parser/template work and pay the
+required tier-3 check once.
 
-**Campaign C — Gates & efficiency** (cheap, independent, parallelisable; no shared surface): item
-**29** (gitleaks + pinning) → **42** (design-slop `--json`, R29) → **43** (gate-skip on unchanged
-workspace, R35) → **44** (prompt hygiene, R30) → **45** (small trims, R31/R32/R33) → **46**
-(gate-output + retry, R40) → **30a** (LSP) → **30b** (OSV) → **30d** (builder honesty).
+**Campaign 2 — deterministic gates:** finish item **42** Slice B (impeccable JSON, reviewer
+evidence, viewport path) → item **29** (detect-first gitleaks and registry version pinning).
 
-**Measurement — on the now-hardened substrate, overlapping the campaigns:** the boxed component
-dogfood (flips item **24** → DONE, and stress-tests the hardened guard for free) · oracle2
-(running) · cases A/B (item **20**, low information value — optional) · then the DoD tail: **31a**
-web-ui smoke → **31** capstone (Ateliers). A race that applies a winner (item 9's question) is
-reclassified as a bespoke hard-but-solvable scenario, not a run to schedule.
+**Campaign 3 — live evidence:** complete item **24** with boxed-component dogfood → cases **A/B**
+from item **20** → item **31**, the staged Ateliers capstone. Case C is **PARKED by operator
+decision**; it is not first in this queue and must not be launched without reopening that decision.
 
-**Then Phase 6** (items 32–36, post-DoD ambition) and **item 21** (the mirror — improve mode on this
-repo) as the final act, once part 1 is code-complete.
+**Campaign 4 — bounded follow-ons:** item **52** denial dampening → item **53** styled milestone
+lines, after safety and reviewer work.
+
+**Deferred/post-DoD:** item **21** remains deferred until code-complete. Items **32–36** and
+**47–51** remain Phase 6. Item **30** remains a research/measurement intake, not an implicit build.
+
+`PLAN.md` owns these statuses. `HANDOFF.md` summarizes them and must not invent a second ledger.
 
 ---
 
@@ -629,9 +624,10 @@ with this idea reads this instead of building it.
 
 ## Phase 4 — breadth, then the mirror.
 
-### 20. Dogfood cases A, B, C — OPEN, **PREPARED** (run C first — TRX and the dotnet adapter)
-Breadth, not risk: the link shortener, the persistence SPA, and the .NET API — the last being
-the first run to exercise TRX extraction and the dotnet adapter end to end in anger.
+### 20. Dogfood breadth — A/B **PREPARED**; C **PARKED by operator decision**
+Cases A and B are the pending link-shortener and persistence-SPA runs in `DOGFOOD.md`.
+Case C would exercise TRX and the .NET adapter end to end, but it is not scheduled and must not
+run unless the operator explicitly reopens the 14 August decision.
 
 ### 21. Improve mode pointed at this repository — **DEFERRED 14 Aug, operator's decision**
 
