@@ -7,9 +7,9 @@
 **Reviewed tree:** `main` at `65a14cc` (`pre-codex`), version `0.161.0`
 **Code continuity:** no executable script, hook, or template changed. Documentation releases
 through 0.164.0 and the later reviewer-owned architecture maps do not alter runtime behavior.
-F1–F11 are findings against the same executable tree, and finding status is authoritative only
+F1–F17 are findings against the same executable tree, and finding status is authoritative only
 here.
-**Verdict:** **CHANGES REQUESTED** — seven high-priority defects and four medium-priority defects
+**Verdict:** **CHANGES REQUESTED** — ten high-priority defects and seven medium-priority defects
 are open.
 
 This remains a read-only review of the Claude-native implementation. The documentation cleanup
@@ -425,6 +425,210 @@ interact with F3's listener-ownership defect.
 - POSIX group cleanup and ordinary successful health probes remain green. PLAN item 65 owns the
   slice.
 
+### F12 — HIGH: Builder can rewrite the specification that the Panel later judges
+
+**Status:** OPEN
+**Affected:** `scripts/driver.mjs:5197-5198`, `scripts/driver.mjs:5979`,
+`scripts/driver.mjs:6060-6062`
+
+The Driver reads `PRD.md` once to derive requirement IDs, then retains only those strings.
+Builder has unrestricted repository writes. The cold Panel is later told to read the live
+`PRD.md`, and the post-Panel commit stages every live path. Nothing compares the specification
+bytes or digest with the version from which `requiredIds` and the Oracle were derived.
+
+**Verified reproduction:** Builder replaced the text of `PRD-1.1` with an easier requirement while
+keeping the ID. With passing gates and a passing report, `driveRun` returned `SHIPPED` and the
+mutated PRD remained authoritative.
+
+**Impact:** stable IDs do not preserve stable intent. Builder can deliberately or accidentally move
+the finish line, after which an independent Panel faithfully certifies the wrong specification.
+
+**Required resolution:**
+
+- Capture an immutable canonical PRD revision and digest before design/Oracle work.
+- Refuse Builder-era mutation of that revision, or treat it as explicit requirement drift that
+  needs operator authority and a new run rather than an ordinary iteration.
+- Give Panel and terminal receipts the canonical revision, not an unchecked working-copy file.
+- Bind requirement IDs, Oracle identity, design inputs, and final outcome to the same digest.
+
+**Acceptance evidence:**
+
+- A Builder edit that keeps every requirement ID but changes one byte cannot reach gates or Panel
+  as the same run.
+- Documentation edits outside the authoritative specification remain possible.
+- A deliberately operator-approved new revision invalidates only the prior run and starts with new
+  Oracle/review evidence. PLAN item 66 owns the slice.
+
+### F13 — MEDIUM: a current-tree detector can silently remove a previously armed quality gate
+
+**Status:** OPEN
+**Affected:** `scripts/driver.mjs:5655-5661`, `scripts/capabilities.mjs:342-356`
+
+Declared capabilities remain unioned for the run, which correctly prevents most downgrade attacks.
+The older `frontendOnly` path bypasses that set: it filters the quality-gate roster directly through
+`hasFrontend(dir)`. The filter produces no skipped-gate record and retains no prior observation.
+
+**Verified reproduction:** the same run-level declaration retained `cli`; adding `index.html`
+resolved `web-ui, cli` and armed the frontend predicate, while deleting it resolved only `cli`
+and made the predicate false. A `frontendOnly` quality gate would disappear from the roster.
+
+**Impact:** deterministic coverage can shrink after Builder changes detection inputs. The final Panel
+may catch the missing product, but the Driver no longer enforces the design-quality gate it had
+already established was applicable.
+
+**Required resolution:**
+
+- Replace `frontendOnly` with the existing `web-ui` capability mechanism.
+- Record and announce any gate-roster shrink; absence of a current detector is not by itself
+  authority to drop a gate established by the canonical design.
+- Provide an explicit, cold-reviewed escape for genuine capability removal so monotonicity cannot
+  make a temporary experiment permanent.
+
+**Acceptance evidence:**
+
+- A declared web UI keeps its quality gate when Builder deletes or renames detection markers.
+- A detected-only capability cannot remove a gate silently.
+- A legitimate capability removal has a finite, independently reviewed path and leaves durable
+  evidence. PLAN item 67 owns the slice.
+
+### F14 — HIGH: the bytes reviewed are not bound to the bytes committed and tagged
+
+**Status:** OPEN
+**Affected:** `scripts/driver.mjs:2220-2398`, `scripts/driver.mjs:2471-2489`,
+`scripts/driver.mjs:6056-6088`
+
+Gates and Panel inspect the live working tree. After Panel returns, the Driver runs `git add -A`
+and commits whatever bytes exist at that later moment. There is no workspace identity captured
+before Panel and rechecked after every reviewer, before commit, or before the ship tag.
+
+**Verified reproduction:** the reviewer read `src/a.js` as `reviewed bytes`; a concurrent write
+changed it to `changed after review` before the commit effect. `driveRun` committed the latter
+and returned `SHIPPED`.
+
+A successful Builder can leave background descendants, and ordinary operator/tooling processes can
+also write concurrently, so this is not limited to a malicious injected test double.
+
+**Impact:** a cold verdict can authorize code no reviewer or deterministic gate saw. This is a
+direct false-completion path.
+
+**Required resolution:**
+
+- Capture a complete candidate workspace identity after gates and before Panel.
+- Recheck it after each external reviewer and immediately before commit. Any drift discards the
+  verdict and restarts from gates; it is never swept into the passing commit.
+- After commit, prove the clean committed tree corresponds to the reviewed workspace identity
+  before deploy/tag.
+- Include the identity in `review.json` and `outcome.json`.
+
+**Acceptance evidence:**
+
+- A background writer firing during Panel cannot have its bytes committed under that verdict.
+- Tracked edits, untracked additions, deletions, symlink changes, and ignored-but-decision-bearing
+  mistakes are covered according to their ownership boundary.
+- Race/component landing still receives fresh main-tree gates and Panel on the exact final bytes.
+  PLAN item 68 owns the slice.
+
+### F15 — MEDIUM: Oracle cases are not confidential from the Builder they judge
+
+**Status:** OPEN
+**Affected:** `hooks/hooks.json:5`, `hooks/guard.mjs:2070-2077`,
+`scripts/driver.mjs:1180`, `scripts/oracle.mjs:14-26`
+
+The design accurately calls Oracle isolation “not supplied,” not a filesystem barrier. In practice,
+Builder has unrestricted tools, the hook does not match `Read`, and a Bash read of
+`.meeseeks/oracle.json` is allowed. The store contains the exact cases, inputs, relations, and
+literal expected output it later executes.
+
+**Verified reproduction:** the registered hook matcher is
+`Bash|Write|Edit|MultiEdit|NotebookEdit`; Builder's policy is dangerous/unrestricted; and the
+guard returned `allow` for `cat .meeseeks/oracle.json` inside a run.
+
+**Impact:** repository instructions, accidental discovery, or deliberate satisficing can contaminate
+the only evidence described as held out. F8 separately means the exposed cases may also persist
+across objectives.
+
+**Required resolution:**
+
+- Either establish a measured read-isolation boundary for the Oracle store against Builder and
+  Builder-launched code, or rename the guarantee everywhere to “not supplied adversarial cases” and
+  stop treating it as confidential held-out evidence.
+- Do not claim a PreToolUse read denial is sufficient if arbitrary Builder shell code can bypass it.
+- Preserve Panel and Oracle-author independence while solving the storage boundary.
+
+**Acceptance evidence:**
+
+- A paid Builder can neither use `Read` nor shell/application code to obtain the current cases, or
+  the product documentation explicitly narrows the guarantee and terminal policy discounts the
+  Oracle accordingly.
+- Oracle execution remains possible without revealing cases through prompts or detailed failure
+  feedback. PLAN item 69 owns the slice.
+
+### F16 — HIGH: stale test reports can confirm a failed scoped restore
+
+**Status:** OPEN
+**Affected:** `scripts/driver.mjs:1955-2034`, `scripts/driver.mjs:2057-2070`,
+`scripts/driver.mjs:5525-5527`
+
+Expected report paths are reused and are not cleared or bound to a gate attempt. During scoped
+restore verification the Driver calls `effects.gates()` but ignores its result, then trusts whatever
+report bytes exist. A failed unit gate that produced no fresh report can therefore leave an old
+passing report to “prove” the restore.
+
+**Verified reproduction:** the first gate/report established a protected regression. Scoped restore
+then ran a failing unit gate while the reader returned the previous passing report. The Driver logged
+`scoped restore held`, skipped the full reset, and left `src/core.js` containing `broken`.
+
+**Impact:** the ratchet's only permitted escape from regression can fail to restore the behavior
+while reporting success. Reused reports also lack invocation/tree provenance anywhere else they are
+read.
+
+**Required resolution:**
+
+- Give every gate attempt fresh driver-selected report paths, or remove the prior artifacts before
+  launch and require newly created regular files after success.
+- Accept a report only when its corresponding gate succeeded and its attempt/tree identity matches.
+- Scoped restore must require a successful verification gate before inspecting its reports.
+- Record enough provenance to distinguish produced-now from merely-present.
+
+**Acceptance evidence:**
+
+- A failed, crashed, timed-out, or report-less unit gate cannot reuse an earlier report.
+- The exact reproduction above falls through to the full hard reset.
+- Unit plus e2e multi-report runs reject mixed-attempt evidence. PLAN item 70 owns the slice.
+
+### F17 — MEDIUM: the ratchet protects a test name but not the test definition behind it
+
+**Status:** OPEN
+**Affected:** `scripts/reporters/shared.mjs:44-60`, `scripts/ratchet.mjs:88-250`,
+`scripts/driver.mjs:2025-2034`
+
+A test identity consists of repository-relative path, title chain, and optional browser project.
+The ratchet stores only those strings. Replacing an assertion while retaining path and title is
+therefore indistinguishable from the original test continuing to pass.
+
+**Verified reproduction:** a previously stored ID
+`test/a.test.js::protects behavior` presented under a replacement definition produced
+`evaluateIteration(...).action === "advance"`. No definition or file digest participates.
+
+**Impact:** a stable name can preserve ratchet credit after the behavior it protected is weakened.
+The integrity and aggregate mutation gates reduce the likelihood but do not establish definition
+identity or per-test sensitivity.
+
+**Required resolution:**
+
+- Record a digest of each credited test's defining file alongside its normalized ID.
+- A changed definition must not silently inherit old credit; require fresh RED/sensitivity evidence
+  and cold review, with an explicit path for legitimate test improvement.
+- Keep historical “this ID once passed” separate from current “this definition protects the
+  behavior” so the monotonic record is not destructively rewritten.
+
+**Acceptance evidence:**
+
+- Same path/title with changed assertions is detected.
+- Formatting-only policy is decided explicitly rather than guessed.
+- Legitimate strengthening can regain current credit without deleting historical evidence, while a
+  weakened replacement cannot ship on the old identity. PLAN item 71 owns the slice.
+
 ## Audit coverage maps
 
 These tables are reviewer evidence and triage aids, not new sources of product requirements.
@@ -433,11 +637,11 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 
 | Claim | Actual enforcement strength | Current qualification |
 |---|---|---|
-| ratcheted test ids never disappear | deterministic store, atomic write, fail-closed read, unit/integration coverage | ids bank after a successful unit gate; `lastGoodCommit` moves only after full acceptance |
-| Builder cannot write Driver state | positional PreToolUse guard plus child settings; paid live coverage | applies to tool-mediated writes, not reads; external hook propagation is a live contract |
+| ratcheted test ids never disappear | deterministic store, atomic write, fail-closed read, unit/integration coverage | F16 permits stale attempt evidence and F17 shows identity is name-based, not definition-based |
+| Builder cannot write Driver state | positional PreToolUse guard plus child settings; paid live coverage | tool-mediated writes only; F15 allows Oracle reads and F16 shows executed target code is outside the hook boundary |
 | Builder cannot certify Builder | separate Panel processes and Driver recombination | F6 and F7 currently weaken the evidence/process boundary |
-| Panel is cold | fresh read-only `claude -p`, safe mode, narrowed supplied prompt | not sealed: reviewers can read repository-visible state; isolation is partly discipline |
-| Oracle is independent | PRD-only no-tools author; deterministic execution | F8 breaks per-run objective binding |
+| Panel is cold | fresh read-only `claude -p`, safe mode, narrowed supplied prompt | not sealed, and F14 shows the live tree can change after it is read |
+| Oracle is independent | PRD-only no-tools author; deterministic execution | F8 breaks run binding; F15 means cases are not confidential from Builder |
 | budgets and deadlines are hard | Driver accounting, CLI child allowance, timers | in-flight overshoot exists; F2/F4 mean some wall-clock bounds are not hard |
 | sandbox and model routing hold | settings/argv plus paid live probes | owned by an external binary/provider and must be re-probed when changed |
 | terminal state is durable | `outcome.json` on `driveRun.finish` paths | F10: not all terminal paths and not atomic |
@@ -458,7 +662,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | `run.json`, `outcome.json` | per run, Driver-owned | manifest records only; outcome is terminal evidence | manifest atomic/no reader; F10 outcome coverage and atomicity |
 | `review.json`, briefs, assumptions | per run, Driver-owned | review evidence; assumptions are supplied context, not verdicts | archived; review/brief writes are forensic rather than decision inputs |
 | lessons and bloopers | cross-run, Driver-owned | advisory prompt context / human history | lesson corruption degrades loudly to none; bloopers append |
-| test/e2e reports, mutation config, browser marker | per iteration or tool invocation | ratchet/gates consume reports; other files configure or record tools | transient; F9 exposes incomplete ignore coverage |
+| test/e2e reports, mutation config, browser marker | per iteration or tool invocation | ratchet/gates consume reports; other files configure or record tools | F9 ignore gap; F16 reports are reusable and lack attempt/tree identity |
 | `runs/NNN/` | cross-run archive, Driver-owned | human/forensic evidence only | move failures stop startup; partial-move crash risk remains for PLAN item 58's admission test |
 
 ### Failure-shape summary
@@ -476,10 +680,18 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | machine-state Git boundary | every state artifact ignored except config | F9 |
 | terminal receipt | atomic record on every run terminal path | F10 |
 | Windows cleanup | shell and all descendants removed | F11 |
+| specification revision | immutable intent shared by Oracle, Builder, Panel, and outcome | F12 |
+| gate roster | no silent loss of established deterministic coverage | F13 |
+| reviewed tree | exact bytes committed and tagged | F14 |
+| Oracle confidentiality | Builder cannot inspect the cases it is judged against | F15 |
+| report attempt | fresh successful output bound to one gate/tree | F16 |
+| test definition | current assertion content, not only stable name | F17 |
 
 ### Explicit negative guarantees
 
 - Reviewer starvation is not filesystem secrecy; repository-readable state can be discovered.
+- Oracle cases are currently “not supplied,” not confidential; Builder can read them (F15).
+- `PRD.md` is not protected from Builder mutation after its requirement IDs are captured (F12).
 - The guard is not a general OS sandbox and cannot govern code after it leaves Claude's tool
   boundary.
 - Token/cost ceilings are not atomic reservations across concurrent children.
@@ -501,7 +713,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | evidence-citation adversary | F6 reproduced a shipping-eligible pass with a nonexistent citation |
 | authority by write site | F1, F8, and F9 show authority or machine state whose writer/lifecycle boundary is weaker than its reader assumes |
 | environment and argument taint | F5 exposes ambient values; command argv remains array-based and prompts remain stdin-delivered, so no additional argument-injection finding was established |
-| monotonic escape audit | test regression resets, scoped security review, and requirement re-review each retain an escape; no new finding, but `DESIGN.md` was corrected to say when test IDs are actually banked |
+| monotonic escape audit | the stored set unions correctly, but F16 weakens reset verification and F17 shows a stable ID can inherit credit after its definition changes |
 | hostile cross-platform pass | F11 is the new platform finding; F6 acceptance criteria also require Windows-shaped containment cases |
 
 ### Temporal language and terminology audit
@@ -511,7 +723,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | ratchet banking versus `lastGoodCommit` | `DESIGN.md` now distinguishes successful-unit-gate banking from full-acceptance commit advancement |
 | archived artifact count | `DESIGN.md` now names all six archived artifact classes rather than claiming there are three |
 | review package and `HEAD~1` base | PLAN item 41 is closed as inapplicable after tracing every current consumer |
-| current finding counts and queue | `HANDOFF.md` now agrees with F1–F11 and PLAN items 56/60–65 |
+| current finding counts and queue | `HANDOFF.md` now agrees with F1–F17 and PLAN items 56/60–71 |
 | conceptual ERD versus implemented Oracle lifecycle | the architecture report now labels the run-to-Oracle edge as intended but currently violated by F8 |
 | role vocabulary | Builder, Panel/reviewer, Oracle, and Driver retain the meanings and authority boundaries in `DESIGN.md`; no runtime is renamed or replaced |
 
@@ -527,7 +739,7 @@ remains byte-identical to the reviewed tree:
 - `npm run release-check` — **ok** at `0.164.0`; no shipped file has changed since release and
   `HANDOFF.md` agrees
 
-The paid live tier was not run. Existing green tests do not cover the eleven failure shapes above.
+The paid live tier was not run. Existing green tests do not cover the seventeen failure shapes above.
 
 ## Closure protocol
 

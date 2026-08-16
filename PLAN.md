@@ -31,16 +31,21 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
   Panel combination.
 - **F7 / item 61:** require both process success and envelope success from every Claude role.
 - **F8 / item 62:** bind held-out Oracle cases to the current run and PRD.
+- **F12 / item 66:** bind every role and terminal decision to one immutable specification revision.
+- **F14 / item 68:** commit and tag only the exact workspace identity gated and reviewed.
+- **F16 / item 70:** accept only fresh successful test reports from the current gate attempt.
 
 **Gate 0B — external child/platform contracts.** F5 is implemented by item **56**: measure the real
 child-environment contract before replacing ambient inheritance, then prove the boundary through a
 paid Claude child. F11 is item **65**: prove descendant cleanup on Windows rather than inferring it
-from POSIX process-group tests. Both close before feature fan-out.
+from POSIX process-group tests. F15/item **69** must either establish real Oracle read isolation or
+narrow the product guarantee based on a paid Builder probe. All close before feature fan-out.
 
 **Gate 0C — remaining external review defects.** Close F4's absolute HTTP deadline/body cap, F9's
 positional machine-state ignore boundary through item **63**, and F10's complete atomic terminal
-receipt through item **64**. F11 may share F2's process-lifecycle implementation, but retains its
-own platform evidence.
+receipt through item **64**, F13's non-shrinking gate roster through item **67**, and F17's
+definition-bound test credit through item **71**. F11 may share F2's process-lifecycle
+implementation, but retains its own platform evidence.
 
 **Campaign 1 — reviewer contract:** after F6/item **60**, implement item **40** (unverifiable
 channel and mandatory attack account). Item **41** is closed as inapplicable: the current Driver
@@ -1649,6 +1654,88 @@ POSIX process-group path.
 **Done when:** a Windows tier-2 fixture starts a shell, application, and grandchild and proves all
 three disappear within the bound while an unrelated process survives; POSIX cleanup and successful
 health probes remain green. A POSIX-only result cannot close REVIEW F11.
+
+### 66. Bind the run to an immutable specification revision — OPEN (REVIEW F12)
+
+**Problem solved:** Builder can change `PRD.md` under stable requirement IDs and have Panel judge
+the changed finish line.
+
+Capture canonical specification bytes/digest before Oracle and design work. Every role input,
+requirement set, review record, and terminal receipt names that revision. A later working-copy
+mutation either refuses as unauthorized drift or ends the run with an operator-facing request to
+start a deliberately revised objective; it is never an ordinary Builder edit.
+
+**Done when:** same-ID text mutation cannot reach Panel or `SHIPPED`; an approved new revision
+starts new Oracle/review evidence; non-authoritative product documentation remains editable; and
+the digest is checked at the role and terminal boundaries in REVIEW F12.
+
+### 67. Prevent silent deterministic-gate roster shrink — OPEN (REVIEW F13)
+
+**Problem solved:** the legacy `frontendOnly` predicate can remove a quality gate when current-tree
+markers disappear, bypassing the run's fixed declared capability set.
+
+Replace it with the `web-ui` capability policy and make every roster removal explicit. A
+detected-only capability may have a finite cold-reviewed declassification path; it may not vanish
+because one detector returned false on a later tree.
+
+**Done when:** declared UI work retains its quality gate through marker deletion, detected-only
+removal is visible and independently justified, temporary experiments do not create permanent
+unsatisfiable gates, and roster-diff tests cover both directions.
+
+### 68. Seal Panel verdicts to an exact workspace identity — OPEN (REVIEW F14)
+
+**Problem solved:** `git add -A` after Panel can commit bytes that appeared after reviewers read
+the tree.
+
+Capture a complete workspace identity after gates, verify it through Panel, and reject any drift
+before commit. Prove the resulting clean commit corresponds to that identity before deploy/tag;
+record it in review and outcome artifacts. Reuse the existing workspace hashing only if its
+tracked/untracked/symlink semantics cover the candidate boundary exactly.
+
+**Done when:** a background writer during every reviewer timing window cannot smuggle tracked,
+untracked, deleted, or symlink bytes into the passing commit; races/components still receive fresh
+main-tree verification; and the exact reproduction in REVIEW F14 cannot ship.
+
+### 69. Decide and enforce the Oracle confidentiality claim — OPEN (REVIEW F15)
+
+**Problem solved:** Builder can read the exact `oracle.json` cases despite “held-out” language.
+
+First run a paid synthetic canary through a real Builder using `Read`, Bash, and Builder-launched
+code. If the existing sandbox can establish a full read boundary without breaking target work,
+enforce and live-test it. Otherwise rename the guarantee to “not supplied adversarial cases,” make
+the limitation prominent, and do not score Oracle as confidential independent evidence. A hook-only
+denial is insufficient when arbitrary code can read the same path.
+
+**Done when:** either every measured read path is denied at the actual execution boundary, or docs,
+terminal policy, and eval interpretation consistently state the narrower guarantee. The Oracle
+author and Panel remain independently contextualized.
+
+### 70. Make test reports fresh, successful, and attempt-bound — OPEN (REVIEW F16)
+
+**Problem solved:** reused report paths and an ignored verification-gate result let stale passing
+bytes confirm a failed scoped restore.
+
+Use unique attempt identity for every expected report (or clear prior artifacts before launch),
+require the corresponding gate to succeed, and reject missing, mixed-attempt, non-regular, or
+wrong-tree output. Scoped restore verification must check the unit result before reading.
+
+**Done when:** failed/crashed/timed-out/report-less gates cannot reuse prior evidence; mixed unit/e2e
+attempts refuse; the stale-report reproduction falls through to the full reset; and report
+provenance survives archive/restart inspection.
+
+### 71. Bind current ratchet credit to the current test definition — OPEN (REVIEW F17)
+
+**Problem solved:** path/title identity survives an assertion rewrite, so weakened tests inherit
+credit earned by different bytes.
+
+Retain the append-only historical ID fact, but attach current credit to a defining-file digest.
+A changed definition must regain current RED/sensitivity and cold-review evidence through an
+explicit strengthening path; it must not silently inherit. Decide formatting-only treatment with a
+deterministic normalization or conservatively revalidate.
+
+**Done when:** same-name assertion changes are detected, legitimate strengthening can regain credit
+without deleting history, and a weakened replacement cannot ship on its predecessor's ratchet
+identity.
 
 ## Cross-cutting non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:
