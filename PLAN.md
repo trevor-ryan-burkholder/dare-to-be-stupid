@@ -20,17 +20,19 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ## Build order — current traversal at 0.164.0
 
-**Gate 0 — external review defects.** These are release-blocking implementation items; the full
-requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
+**Gate 0A — locally testable external review defects.** These are release-blocking implementation
+items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
 
 - **F1:** acquire the repository lock atomically before any work.
-- **F2:** make the process watchdog force and settle after a bounded SIGTERM grace period.
+- **F2:** make timeout and output-cap termination force and settle after a bounded SIGTERM grace
+  period.
 - **F3:** prevent an unrelated local listener from satisfying the health gate.
 - **F4:** enforce absolute HTTP response deadlines and bounded response bodies.
 
-**Campaign 0.5 — child trust boundary:** item **56** (measure the real child-environment
-contract, then stop ambient operator secrets crossing it) follows Gate 0 and precedes feature
-fan-out. The paid probe is part of the item, not evidence that may be inferred from argv tests.
+**Gate 0B — child trust boundary:** `REVIEW.md` F5 is implemented by item **56** (measure the real
+child-environment contract, then stop ambient operator secrets crossing it). It follows Gate 0A
+and precedes feature fan-out. The paid probe is part of closure, not evidence that may be inferred
+from argv tests.
 
 **Campaign 1 — reviewer contract:** item **40** (unverifiable channel and attack account) → item
 **41** (honest review packaging and diff base). Batch the shared parser/template work and pay the

@@ -6,8 +6,8 @@ on the current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` cl
 `npm run test:integration` **51 pass, 0 fail**; `npm run release-check` **ok**. These commands
 were rerun after the documentation repair; no paid live test was invoked.
 
-**External review:** `REVIEW.md` is **CHANGES REQUESTED**. F1–F3 are high-priority safety defects
-and F4 is a medium-priority timeout defect. They are the first implementation gate in
+**External review:** `REVIEW.md` is **CHANGES REQUESTED**. F1–F3 and F5 are high-priority safety
+defects; F4 is a medium-priority timeout defect. They are the first implementation gates in
 `PLAN.md`. Claude Code may implement them; Codex owns closure after reviewing the exact repair
 and its acceptance evidence.
 
@@ -18,9 +18,10 @@ the archived handoff.
 
 ## Current implementation order
 
-1. Close `REVIEW.md` F1–F4 without changing the Claude-native runtime architecture.
-2. Execute PLAN item 56's live-contract probe and close the child-environment trust boundary before
-   feature fan-out.
+1. Close `REVIEW.md` F1–F4 without changing the Claude-native runtime architecture; F2 includes the
+   resistant output-cap path.
+2. Close `REVIEW.md` F5 through PLAN item 56's live-contract probe and child-environment boundary
+   before feature fan-out.
 3. Finish PLAN items 40, 41, and 42; then item 29.
 4. Complete the live evidence for item 24, add item 57's machine-readable acceptance result, run
    dogfood cases A and B in item 20, and run the staged Ateliers capstone in item 31. Case C remains

@@ -18,7 +18,7 @@ The table below is the current status; historical headings do not override it.
 | J — boxed nesting controls | `CONCLUDED` | Controls verified; builders never initiated the nested run |
 | Tallyho web-ui smoke | `SHIPPED` | Shipped on attempt 6; findings landed through 0.161.0 |
 | Ateliers capstone | `STAGED` | PLAN item 31; no terminal result recorded in this repository |
-| Child-environment boundary probe | `BLOCKED` | PLAN item 56; run after `REVIEW.md` F1–F4 close; synthetic canary only |
+| Child-environment boundary probe | `BLOCKED` | `REVIEW.md` F5 / PLAN item 56; run after F1–F4 close; synthetic canary only |
 | Dynamic-workflow boundary probe | `BLOCKED` | PLAN item 54; do not run until `REVIEW.md` F1 and F2 are closed |
 
 ## Pending recipes
@@ -50,9 +50,9 @@ retained only in the archive.
 
 ### Child-environment boundary probe
 
-This is PLAN item 56 Slice A: a paid measurement of the real `claude -p` child contract before
-any environment filter is designed. Run it through the production child-spawn path in a disposable
-fixture or snapshot worktree. Use a synthetic canary value only — never a real credential — and
+This is `REVIEW.md` F5 / PLAN item 56 Slice A: a paid measurement of the real `claude -p` child
+contract before any environment filter is designed. Run it through the production child-spawn path
+in a disposable fixture or snapshot worktree. Use a synthetic canary value only — never a real credential — and
 have the child report presence or absence, never the value.
 
 Record the pinned Claude Code and plugin versions; whether the child shell can observe the canary;

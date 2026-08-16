@@ -7,9 +7,9 @@
 **Reviewed tree:** `main` at `65a14cc` (`pre-codex`), version `0.161.0`
 **Code continuity:** no executable script, hook, or template changed. Documentation releases
 through 0.164.0 align the launcher, flag, configuration, workflow, and roadmap contracts with
-existing behavior. The 0.164.0 launcher change is prose only; F1–F4 code remains byte-identical,
+existing behavior. The 0.164.0 launcher change is prose only; F1–F5 code remains byte-identical,
 and finding status is authoritative only here.
-**Verdict:** **CHANGES REQUESTED** — three high-priority safety defects and one medium-priority
+**Verdict:** **CHANGES REQUESTED** — four high-priority safety defects and one medium-priority
 timeout defect are open.
 
 This remains a read-only review of the Claude-native implementation. The documentation cleanup
@@ -52,21 +52,30 @@ write, and commit over each other, making both runs' evidence and results untrus
 - A dead owner's stale lock remains reclaimable.
 - A process that did not acquire the lock cannot clear another process's lock.
 
-### F2 — HIGH: the process watchdog does not bound a child that ignores SIGTERM
+### F2 — HIGH: driver-initiated termination does not bound a child that ignores SIGTERM
 
 **Status:** OPEN
-**Affected:** `scripts/driver.mjs:4488-4504`
+**Affected:** `scripts/driver.mjs:4396-4403`, `scripts/driver.mjs:4420-4431`,
+`scripts/driver.mjs:4450-4464`, `scripts/driver.mjs:4487-4504`
 
 When `timeoutMs` expires, `shell` sets `timedOut = true` and sends `SIGTERM`. It settles only after
 the child emits `exit`. There is no grace timer, `SIGKILL` escalation, or independent settlement
 path if the child traps or ignores `SIGTERM`.
 
+The 64 MB output-cap path has the same defect. It sets `overflowed = true`, sends only `SIGTERM`,
+and calls `finishOverflowed()` only after `exit`. The later timeout cannot rescue this path:
+overflow owns the verdict, but neither branch can force or independently settle a resistant child.
+
+The timeout reproduction below was executed. The overflow extension is established by the control
+flow above; its resistant-child fixture remains required acceptance evidence rather than a claimed run.
+
 **Verified reproduction:** A child that ignored `SIGTERM` and exited naturally after one second
 was run with `timeoutMs: 100`. `shell` reported a timeout, but returned after **1,018 ms**. A child
 that never exits would defeat the watchdog indefinitely.
 
-**Impact:** Gate, deploy, and Claude-child ceilings are not hard bounds. A hung process can still
-stall an unattended run forever despite the log promising it will be killed after a stated time.
+**Impact:** Gate, deploy, and Claude-child ceilings plus output-limit termination are not hard
+bounds. A process can still stall an unattended run forever despite the log promising it will be
+killed after a stated time.
 
 **Required resolution:**
 
@@ -75,14 +84,17 @@ stall an unattended run forever despite the log promising it will be killed afte
 - Apply the force step to the relevant process tree/group and retain the descendant sweep.
 - Guarantee that the promise settles even if the direct child never emits a cooperative exit
   after `SIGTERM`.
-- Keep `timedOut` distinct from buffer overflow and self-termination as it is today.
+- Apply the same bounded terminate/force/sweep mechanism when the output cap fires.
+- Keep timeout, buffer overflow, and self-termination as distinct verdicts.
 
 **Acceptance evidence:**
 
 - Tier 2 starts a direct child that traps `SIGTERM` forever and proves `shell` returns within the
   deadline plus the documented grace period.
 - The resistant child and its descendants are no longer alive after return.
-- Existing bystander, overflow, ordinary failure, and self-termination tests remain green.
+- A child that exceeds the output cap and ignores `SIGTERM` also settles within the grace bound;
+  its descendants are gone and its verdict remains overflow rather than timeout.
+- Existing bystander, ordinary-overflow, ordinary-failure, and self-termination tests remain green.
 
 ### F3 — HIGH: the health gate can pass against an unrelated local service
 
@@ -161,6 +173,42 @@ the much larger outer gate ceiling, or indefinitely when used without that outer
 - An oversized body is bounded during collection.
 - Ordinary local health and remote smoke responses still pass.
 
+### F5 — HIGH: ambient operator credentials cross into every Claude role
+
+**Status:** OPEN
+**Affected:** `scripts/driver.mjs:1273-1295`, `scripts/driver.mjs:4705-4717`,
+`scripts/driver.mjs:4867-4869`
+
+`main` uses `io.env ?? process.env` as the run environment. `childEnvironment` copies that entire
+record with `{ ...env }`, adding only the Meeseeks markers, and `spawnClaude` hands the result to
+every `claude -p` phase. Builder, Panel, Oracle-author, architect, lesson-extractor, and other
+roles therefore inherit unrelated operator credentials and secrets without an explicit grant.
+
+**Impact:** An unattended Builder can inspect ambient tokens directly from its shell, and hostile
+repository instructions or prompt injection can induce their use or disclosure. Cold roles also
+receive credentials unrelated to their assignment. The pre-production warning reduces expected
+exposure but does not establish a trust boundary.
+
+**Required resolution:**
+
+- Execute PLAN item 56's paid synthetic-canary probe before choosing the allowlist; the Claude CLI,
+  authentication, executable discovery, and platform environment are external contracts.
+- Construct a minimal child environment plus an explicit operator-configured allowlist of additional
+  variable names. Preserve every measured Meeseeks run/depth marker.
+- Never persist or print environment values. A refusal or preflight diagnostic may name a variable
+  but must not reveal its value.
+- Apply the boundary to every Claude role and descendant without weakening authentication, ordinary
+  target-tool discovery, guard propagation, or cold-role isolation.
+
+**Acceptance evidence:**
+
+- Unit tests prove synthetic secrets are absent, required benign neighbours and Meeseeks markers
+  survive, and no value appears in diagnostics or driver-owned artifacts.
+- A paid tier-3 test proves a real Claude child and its shell cannot observe the synthetic canary
+  while authentication and normal target-tool discovery still work.
+- The same probe covers Builder and at least one cold role; a role-specific exception requires an
+  explicit operator allowlist entry rather than ambient inheritance.
+
 ## Verification performed
 
 All existing non-paid gates were green after this documentation repair; the executable tree
@@ -170,7 +218,8 @@ remains byte-identical to the reviewed tree:
 - `npm run typecheck`
 - `npm test` — **2,307 passed, 0 failed**
 - `npm run test:integration` — **51 passed, 0 failed**
-- `npm run release-check` — **ok**; version `0.164.0` is an uncommitted bump and `HANDOFF.md` agrees
+- `npm run release-check` — **ok** at `0.164.0`; no shipped file has changed since release and
+  `HANDOFF.md` agrees
 
 The paid live tier was not run. Existing green tests do not cover the four failure shapes above.
 
