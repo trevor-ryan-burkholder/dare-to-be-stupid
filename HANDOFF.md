@@ -19,13 +19,16 @@ the archived handoff.
 ## Current implementation order
 
 1. Close `REVIEW.md` F1–F4 without changing the Claude-native runtime architecture.
-2. Finish PLAN items 40, 41, and 42; then item 29.
-3. Complete the live evidence for item 24, dogfood cases A and B in item 20, and the staged
-   Ateliers capstone in item 31. Case C remains parked by operator decision.
-4. Take items 52 and 53 only after the safety/reviewer work.
-5. Consult PLAN's research-gated and conditional entry for items 54 and 55 only after the queued
-   implementation work; PLAN alone decides when either item enters the queue.
-6. Keep item 21 deferred until the repository is code-complete; Phase 6 remains post-DoD.
+2. Execute PLAN item 56's live-contract probe and close the child-environment trust boundary before
+   feature fan-out.
+3. Finish PLAN items 40, 41, and 42; then item 29.
+4. Complete the live evidence for item 24, add item 57's machine-readable acceptance result, run
+   dogfood cases A and B in item 20, and stage the Ateliers capstone in item 31. Case C remains
+   parked by operator decision.
+5. Take items 52 and 53 only after the safety/reviewer work.
+6. Consult PLAN's research-gated and conditional entry for items 54, 55, and 58 only after the
+   queued implementation work; PLAN alone decides when any of them enters the queue.
+7. Keep item 21 deferred until the repository is code-complete; Phase 6 remains post-DoD.
 
 PLAN owns the statuses. This file deliberately does not duplicate their acceptance criteria.
 

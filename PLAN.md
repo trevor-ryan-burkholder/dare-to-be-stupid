@@ -28,6 +28,10 @@ requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
 - **F3:** prevent an unrelated local listener from satisfying the health gate.
 - **F4:** enforce absolute HTTP response deadlines and bounded response bodies.
 
+**Campaign 0.5 — child trust boundary:** item **56** (measure the real child-environment
+contract, then stop ambient operator secrets crossing it) follows Gate 0 and precedes feature
+fan-out. The paid probe is part of the item, not evidence that may be inferred from argv tests.
+
 **Campaign 1 — reviewer contract:** item **40** (unverifiable channel and attack account) → item
 **41** (honest review packaging and diff base). Batch the shared parser/template work and pay the
 required tier-3 check once.
@@ -35,16 +39,19 @@ required tier-3 check once.
 **Campaign 2 — deterministic gates:** finish item **42** Slice B (impeccable JSON, reviewer
 evidence, viewport path) → item **29** (detect-first gitleaks and registry version pinning).
 
-**Campaign 3 — live evidence:** complete item **24** with boxed-component dogfood → cases **A/B**
-from item **20** → item **31**, the staged Ateliers capstone. Case C is **PARKED by operator
-decision**; it is not first in this queue and must not be launched without reopening that decision.
+**Campaign 3 — live evidence:** complete item **24** with boxed-component dogfood → item **57**
+(machine-readable morning-acceptance results) → cases **A/B** from item **20** → item **31**, the
+staged Ateliers capstone. Case C is **PARKED by operator decision**; it is not first in this queue
+and must not be launched without reopening that decision.
 
 **Campaign 4 — bounded follow-ons:** item **52** denial dampening → item **53** styled milestone
 lines, after safety and reviewer work.
 
 **Research-gated and conditional work:** item **54** remains **BLOCKED** on F1 and F2; it does not
 enter the queue merely because the supporting analysis exists. Item **55** remains **PARKED** until
-a real run demonstrates a provenance or invalidation failure that passes its admission test.
+a real run demonstrates a provenance or invalidation failure that passes its admission test. Item
+**58** remains **PARKED** until a killed-run experiment proves that a lifecycle journal would close
+a forensic gap; it is not authorization for checkpoint/resume.
 
 **Deferred/post-DoD:** item **21** remains deferred until code-complete. Items **32–36** and
 **47–51** remain Phase 6. Item **30** remains a research/measurement intake, not an implicit build.
@@ -1357,21 +1364,28 @@ the release gate independently.
 implementation harness. Driver never becomes a workflow. Panel members are separately instantiated
 and cold; they never join Builder's workflow or inherit its transcript. Oracle material remains
 held out. A workflow result is only a proposed artifact and cannot update `.meeseeks/`, the ratchet,
-pins, findings, or terminal state.
+pins, findings, or terminal state. Invocation is **root-only within the durable role**: workflow
+children cannot invoke another Meeseeks workflow or recursively acquire durable authority. The
+Driver imposes its own aggregate descendant-call/fan-out ceiling rather than trusting a platform
+default, and cancellation must settle every descendant before the role returns.
 
 **Experiment shape:** use the disposable recipe in `DOGFOOD.md` against a pinned Claude Code
 version. Start from an explicit commit boundary, record every created worktree, pass guard settings
 and run markers to every descendant, impose phase and aggregate budgets, and persist a
-driver-owned receipt for invocation, model, spend, tree identity, result, and termination. Kill and
-restart are first-class cases, not cleanup details. Do not depend on preview behavior that cannot
-be detected and refused when absent.
+driver-owned receipt containing durable role and parent lineage, prompt/template/brief digests,
+settings/tool/permission digest, model and effort, spend, tree/worktree identity, result, and
+termination. Record the minimum durable context needed to reproduce the boundary — never hidden
+reasoning or an enormous telemetry graph of ephemeral agents. Kill and restart are first-class
+cases, not cleanup details. Do not depend on preview behavior that cannot be detected and refused
+when absent.
 
-**Done when:** all four DOGFOOD cases pass in a paid live run; descendant settings and context
-isolation are evidenced rather than inferred; a killed workflow leaves no process or worktree
-ambiguity; workflow success cannot advance global state; an independently cold panel reviews the
-result; and the measured outcome gives a credible improvement in accepted work or cost without a
-new false-completion path. A failed or inconclusive probe rejects adoption without affecting the
-existing Claude-native path.
+**Done when:** all four DOGFOOD cases pass in a paid live run; receipts prove Builder, Panel, and
+Oracle context separation; a child cannot recurse and an exceeded aggregate cap refuses closed;
+descendant settings are evidenced rather than inferred; a killed workflow leaves no process or
+worktree ambiguity; workflow success cannot advance global state; an independently cold panel
+reviews the result; and the measured outcome gives a credible improvement in accepted work or cost
+without a new false-completion path. A failed or inconclusive probe rejects adoption without
+affecting the existing Claude-native path.
 
 ### 55. Exact evidence provenance before any explicit graph — PARKED (conditional)
 
@@ -1383,12 +1397,14 @@ evidence, or an unsafe completion decision.
 
 **Smallest candidate:** add stable claim ids and exact subject/evidence/dependency metadata to the
 existing driver-owned artifacts: requirement id, artifact path plus digest, gate/test or reviewer
-provenance, upstream assumption/decision ids, and observed tree identity. Maintain reverse edges so
-a changed input marks only descendant claims stale. Staleness never deletes ratcheted test ids or
-silently relaxes a monotonic pin; it blocks `SHIPPED` until the existing gate or cold reviewer
-re-establishes the claim. Reject dependency cycles and missing identities fail closed. Store this
-as deterministic JSON under `.meeseeks/`; no graph database, orchestration framework, or ephemeral
-agent telemetry graph.
+provenance, upstream assumption/decision ids, observed tree identity, and — if item 54 proceeds —
+the exact role-workflow receipt that produced the candidate artifact. Stable run/child ids and
+receipt digests are evidence references, not permission for one role to inherit another role's
+context. Maintain reverse edges so a changed input marks only descendant claims stale. Staleness
+never deletes ratcheted test ids or silently relaxes a monotonic pin; it blocks `SHIPPED` until the
+existing gate or cold reviewer re-establishes the claim. Reject dependency cycles and missing
+identities fail closed. Store this as deterministic JSON under `.meeseeks/`; no graph database,
+orchestration framework, or ephemeral agent telemetry graph.
 
 **Admission test:** first trace one requirement end to end using existing run artifacts and attempt
 targeted invalidation offline. Proceed only if the prototype can (a) explain why the requirement is
@@ -1401,8 +1417,84 @@ metadata ships with cycle rejection, targeted-invalidation tests, provenance que
 coverage, guard ownership, and a terminal check proving no stale required claim can ship. A general
 graph does not follow automatically from passing this item.
 
+### 56. Child environment trust boundary — OPEN (live-contract first)
+
+**Problem solved:** `childEnvironment()` currently copies the operator's complete environment into
+each `claude -p` child. That preserves tool discovery, but it also gives an unattended Builder ambient
+credentials and unrelated secrets it was never deliberately supplied. Eve's trusted-runtime/sandbox
+split is a useful security invariant here; Eve or Vercel Sandbox is **not** the proposed dependency.
+
+**Research source:** [Eve's security model](https://eve.dev/docs/concepts/security-model), checked
+16 August 2026. The local risk is established independently by `scripts/driver.mjs` and its tests.
+
+**Slice A — measure before designing:** run one paid tier-3 probe using synthetic secret values only
+and record exactly what a Builder-launched shell can observe. Establish the minimum environment the
+installed Claude CLI and target tools actually require: executable search path, home/temp, locale,
+Claude authentication, Meeseeks run/depth markers, and platform necessities. This is an external
+binary contract; an argv or unit test cannot establish it.
+
+**Slice B — enforce the measured boundary:** construct a minimal operational child environment plus
+an explicit operator-configured allowlist of additional variable **names**. Never persist, print, or
+place values in receipts. Refuse closed — or emit a preflight refusal naming only variable names —
+when the required boundary cannot be applied or a high-risk ambient credential would otherwise cross
+it. Preserve ordinary tool discovery and every existing guard/depth marker. Do not promise credential
+brokering the Claude CLI does not expose.
+
+**Done when:** unit tests prove synthetic secrets are absent, required benign neighbours survive,
+and no value appears in diagnostics or driver-owned artifacts; a paid tier-3 test proves the same
+boundary through a real Claude child and its shell; authentication and normal target tool discovery
+still work; and the change introduces neither Eve nor another runtime dependency.
+
+### 57. Machine-readable morning-acceptance evals — OPEN (extends item 20)
+
+**Problem solved:** `DOGFOOD.md` records useful scenarios and prose outcomes, but the repository
+cannot yet compare runs mechanically on the product metric: whether an unattended result is actually
+acceptable in the morning, not whether an agent reported success. Adopt the useful part of
+[Eve's eval model](https://eve.dev/docs/evals/overview) — deterministic gates are hard, model
+judgments are soft — in the existing Node/live harness.
+
+Define stable scenario ids and emit one driver-owned JSON result per run containing run id, commit,
+plugin version, scenario, terminal state, iterations, token/cost totals, deterministic gate results,
+panel outcome, post-run black-box checks, operator repairs required, and an explicitly sourced
+`morningAccepted` value (deterministic when the scenario defines it; otherwise human-labelled).
+Cold model judgments may be recorded as advisory scores but cannot turn a deterministic failure into
+success, advance the ratchet, or declare `SHIPPED`. No Braintrust, Eve, or hosted eval dependency.
+
+**Done when:** item 20 cases A/B emit schema-validated, directly comparable results; a seeded
+black-box regression fails the hard result even when a judge likes the output; judge disagreement is
+visible but non-authoritative; and the harness can summarize acceptance, cost, time, and repair count
+across repeated runs without scraping prose logs.
+
+### 58. Forensic lifecycle event journal before resumability — PARKED (conditional)
+
+**Problem it would solve:** `run.json`, briefs, archived runs, and `outcome.json` preserve important
+snapshots, but a crash can still leave no deterministic history of which major phase, child, gate, or
+panel attempt had started or settled. Borrow Eve's
+[durability](https://eve.dev/docs/concepts/execution-model-and-durability) and
+[stable event-id](https://eve.dev/docs/concepts/sessions-runs-and-streaming) ideas only if a
+killed-run experiment demonstrates that this missing history prevents diagnosis or safe recovery.
+
+**Smallest candidate:** after F1/F2 close, append a driver-owned `.meeseeks/events.ndjson` containing
+major lifecycle transitions only: run, phase, iteration, child, gate, panel, and terminal events. Each
+event has a stable run-scoped sequence id, timestamp, attempt/parent lineage, and tree identity. Archive
+it with the run. Initially the driver **never reads it to decide anything**; it records no model deltas,
+hidden reasoning, tool chatter, or ephemeral-agent telemetry. Reconnect/replay deduplicates by id.
+
+**Admission and Done when:** kill a controlled run at named boundaries and try to reconstruct the
+settled/unsettled work from current artifacts. Reject the item if they are already sufficient. Proceed
+only if the journal reconstructs the run exactly and materially improves the diagnosis. Checkpoint/
+resume remains a separate Phase-6 decision: an interrupted operation may be replayed only after its
+idempotency and receipt semantics are designed, and this journal never becomes terminal-state authority
+by accident.
+
 ### Phase 6 non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:
+- **A third-party agent framework as Driver or required sandbox backend** — borrow measured invariants,
+  not authority. Eve, its Workflow SDK, LangGraph, or a hosted sandbox would duplicate the durable
+  control plane and violate the dependency-free Claude-native core.
+- **Persistent Panel/Oracle sessions or mid-run human-in-the-loop parking** — both weaken the cold,
+  unattended contract. A required human decision ends with item 50's terminal question artifact; it
+  never leaves a paid run waiting overnight.
 - **Persistent kernel / REPL as the builder's environment** — breaks builder starvation; state
   leaks past `git reset --hard` and the ratchet's premise dies.
 - **Builder self-memory or self-grading** — breaks cold review; self-evaluation is the enemy the
