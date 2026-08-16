@@ -245,6 +245,13 @@ that keeps failing becomes a gate here. Both directions refuse — header behind
 and header ahead of them — and so does a header that cannot be read at all, because an
 unreadable header is not evidence of a correct one.
 
+## External review
+
+`REVIEW.md` is the **Codex-owned external review ledger**. Claude Code may implement its open
+findings, but does not rewrite them or mark them closed; after a repair, record the relevant
+verification and ask Codex to re-review the exact diff. `DESIGN.md` remains the product source of
+truth — `REVIEW.md` reports defects against it rather than replacing it.
+
 ## Style of work here
 
 - The User directs, you execute. If something is ambiguous, pick the defensible option and
