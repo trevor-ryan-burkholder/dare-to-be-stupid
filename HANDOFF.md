@@ -36,10 +36,11 @@ PLAN owns the statuses. This file deliberately does not duplicate their acceptan
 ## Architecture analysis added on 16 August
 
 [`docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md`](docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md) records the
-current source-backed architecture analysis and conceptual model. The decision is **partial adoption by
-experiment** for role-internal dynamic workflows, with Driver, Builder, Panel, and Oracle authority
-unchanged. A general explicit graph is **not approved**; exact evidence identity and minimal
-dependency metadata are the only conditional next step. No runtime behavior changed.
+current source-backed architecture analysis, conceptual durable-state ER diagram, and cross-role
+information-flow map. The decision is **partial adoption by experiment** for role-internal dynamic
+workflows, with Driver, Builder, Panel, and Oracle authority unchanged. A general explicit graph is
+**not approved**; exact evidence identity and minimal dependency metadata are the only conditional
+next step. No runtime behavior changed.
 
 ## Documentation routes
 

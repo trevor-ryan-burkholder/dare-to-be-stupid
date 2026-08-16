@@ -68,6 +68,58 @@ graph. In particular:
 - model output never becomes deterministic evidence by declaration; and
 - child `SHIPPED` remains a parent pre-filter, not inherited terminal authority.
 
+### Conceptual entity/relationship diagram
+
+This diagram is a review aid, not a storage schema. `RUN` and `ITERATION` are conceptual entities
+assembled from several files; the current implementation does not assign every entity a stable id
+or persist every edge. That missing identity is exactly why minimal provenance metadata is a
+conditional proposal below. Solid relationships describe current product semantics, not permission
+for a graph layer to replace the existing stores.
+
+```mermaid
+erDiagram
+    RUN ||--|| RUN_MANIFEST : "records start"
+    RUN ||--o| RUN_OUTCOME : "records end"
+    RUN ||--o{ ITERATION : contains
+    RUN ||--o{ ASSUMPTION : records
+    RUN ||--o{ PANEL_RECORD : records
+    RUN ||--o{ COMPONENT_RUN : delegates
+    RUN ||--o| ORACLE_STORE : holds_out
+    RUN ||--o{ LESSON : retains
+
+    ITERATION ||--|| BUILD_BRIEF : compiles
+    ITERATION ||--o{ TEST_OBSERVATION : extracts
+    ITERATION ||--o{ PANEL_RECORD : receives
+    ITERATION ||--o{ GATE_FAILURE : may_cache
+    ITERATION ||--o{ CAPABILITY_SNAPSHOT : resolves
+
+    REQUIREMENT ||--o{ REVIEW_ENTRY : is_judged_by
+    PANEL_RECORD ||--|{ REVIEW_ENTRY : contains
+    REVIEW_ENTRY o|--o| REQUIREMENT_PIN : may_establish
+    REVIEW_ENTRY o|--o| SECURITY_PIN : may_establish
+    REQUIREMENT_PIN }o--|| ARTIFACT_SNAPSHOT : fingerprints
+    SECURITY_PIN }o--|| ARTIFACT_SNIPPET : fingerprints
+
+    RATCHET ||--o{ TEST_ID : protects
+    TEST_ID ||--o{ TEST_OBSERVATION : has_history
+    RED_EVIDENCE ||--o{ TEST_ID : establishes_history
+
+    ORACLE_STORE ||--|{ ORACLE_CASE : contains
+    ORACLE_CASE ||--o{ ORACLE_RESULT : produces
+    COMPONENT_RUN ||--|| RUN_OUTCOME : must_return
+```
+
+The diagram exposes four current limits rather than hiding them:
+
+- `RUN` has no stable run id shared by all records; archive co-location and iteration numbers do
+  most of that work today.
+- a `REVIEW_ENTRY` has a textual `file:line`, while the durable requirement pin fingerprints the
+  whole file; the line is a locator, not durable identity;
+- assumptions have citations but no accepted dependency edges to the requirements, artifacts, or
+  evidence that used them; and
+- gate results and test reports are mostly iteration-transient, while the ratchet, red evidence,
+  and negative gate cache retain only the relations their invariants require.
+
 ## Claude Code dynamic workflows: documented behavior
 
 Primary sources:
@@ -180,6 +232,36 @@ and a single synthesis authority. If later evidence justifies reviewer workflows
 - enforce read-only tools for every internal reviewer agent;
 - preserve the top-level reviewer's machine-parsed per-ID contract; and
 - let the Driver recompute coverage and the combined verdict exactly as today.
+
+### Current cross-role information flow
+
+```mermaid
+flowchart LR
+    O["Operator input, config, and environment"] --> D["Driver"]
+    D -->|"idea or repository + author template"| P["PRD author"]
+    P -->|"PRD.md / returned text"| D
+    D -->|"PRD only; no tools"| OA["Oracle author"]
+    OA -->|"candidate held-out cases"| D
+    D -->|"PRD + gate contract; read/write tree"| A["Architect"]
+    A -->|"design files + capability declaration"| D
+    D -->|"compiled brief + builder system prompt"| B["Builder"]
+    B -->|"candidate tree + assumptions block"| D
+    D -->|"owned ids + PRD/docs/tree + assumptions"| R1["Cold reviewer 1"]
+    D -->|"owned ids + PRD/docs/tree + assumptions"| R2["Cold reviewer 2"]
+    D -->|"owned ids + PRD/docs/tree + assumptions"| R3["Cold reviewer 3"]
+    R1 -->|"parsed report"| D
+    R2 -->|"parsed report"| D
+    R3 -->|"parsed report"| D
+    D -->|"held-out cases + executable"| OE["Deterministic Oracle execution"]
+    OE -->|"gate result"| D
+    D -->|"state transitions only after checks"| S["Driver-owned .meeseeks state"]
+```
+
+The arrows describe supplied context, not perfect secrecy. Reviewers are fresh, read-only
+processes and are not handed Builder transcripts or iteration logs, but repository-readable files
+are not sealed from them. All Claude roles currently inherit the operator environment; that open
+trust-boundary defect is `REVIEW.md` F5. Dynamic workflows must remain inside one role box and may
+return only through that role's existing arrow to the Driver.
 
 ### Oracle
 

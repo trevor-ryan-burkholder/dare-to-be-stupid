@@ -86,15 +86,19 @@ the next build task, nothing else proceeds. Monotonic. A test that has passed is
 allowed to fail again. This is the single mechanism that turns an infinite loop into a
 terminating one. **Build it first.**
 
-**The ratchet begins at the first fully-green iteration, and until then it holds nothing.**
-`saveState` is called from exactly one place — Phase 6, after the panel — so an iteration that
-fails any gate records no ids at all. Measured in case I: **71 passing tests across 8 iterations**
-and no `state.json` ever written, which means a regression in any of those 71 would have gone
-unnoticed for the whole run. The argument for the current behaviour is real (ids banked from a
-tree that never compiled cleanly would then have to keep passing forever), and the argument
-against is that a thrashing run is precisely when regression protection is worth having.
-**This section previously implied protection was unconditional. It is not, and the wording above
-is the correction rather than the decision** — see `HANDOFF.md` for the three options.
+**The ratchet begins as soon as the unit gate proves ids, not only after a fully-green
+iteration.** Until 0.121.0, `saveState` was reachable only from Phase 6, after the panel, so an
+iteration that failed any gate recorded no ids. Measured in case I: **71 passing tests across 8
+iterations** and no `state.json` ever written, which meant a regression in any of those 71 would
+have gone unnoticed for the whole run.
+
+The driver now banks an advance when the unit gate passed and the reports were read successfully.
+That is the narrow claim being made: these named tests ran and passed. A missing docs artifact or
+failed lint gate says nothing about that fact. **`lastGoodCommit` does not move on this early
+advance.** It still moves only after the complete gates and cold panel pass, so the reset target
+remains a fully accepted tree while regression protection exists during a thrashing run. Phase 6
+unions the same passing ids with the accepted commit, so the early and final writes cannot subtract
+from one another.
 
 **The reset is scoped before it is total (0.112.0).** A hard reset is whole-tree, so it discards
 everything the iteration built rather than the change that broke something. Measured in `ship1`:
@@ -1502,7 +1506,7 @@ because it lives in the driver's in-memory `progress` rather than in `state.json
 run writes `briefs/iter-001.md` over the first run's, then `iter-002.md` over the next, and the
 loss is silent: the replacement looks exactly like the original.
 
-Three artifacts are archived, and each earned its place:
+Six artifact classes are archived, and each earned its place:
 
 | artifact | why |
 |---|---|
@@ -1510,6 +1514,8 @@ Three artifacts are archived, and each earned its place:
 | `briefs/` | collides by number, per above; the only record of what the builder was actually asked on the iteration a run went wrong |
 | `reality-check.md` | overwritten, and it is the reasoning behind an `ABORTED` |
 | `assumptions.json` | **appended**, not overwritten — a different fault with a worse consequence, below |
+| `review.json` | appended by iteration, whose numbering restarts; without archiving, different runs' panel evidence becomes indistinguishable |
+| `outcome.json` | overwritten wholesale, and the only durable record of how a run ended |
 
 `assumptions.json` earned its place late, and by a different argument from the other three. It
 loses nothing: entries accumulate. But they are keyed by `iteration`, and iteration numbering
