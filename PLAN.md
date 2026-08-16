@@ -40,14 +40,16 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
 child-environment contract before replacing ambient inheritance, then prove the boundary through a
 paid Claude child. F11 is item **65**: prove descendant cleanup on Windows rather than inferring it
 from POSIX process-group tests. F15/item **69** must either establish real Oracle read isolation or
-narrow the product guarantee based on a paid Builder probe. All close before feature fan-out.
+narrow the product guarantee based on a paid Builder probe. F21/item **75** adds the real-loader
+and disposable-cache release contract. All close before feature fan-out.
 
 **Gate 0C — remaining external review defects.** Close F4's absolute HTTP deadline/body cap, F9's
 positional machine-state ignore boundary through item **63**, F10's complete atomic terminal
 receipt through item **64**, F13's non-shrinking gate roster through item **67**, F17's
 definition-bound test credit through item **71**, F19's bounded decision-artifact reads through
-item **73**, and F20's contained reporter identities through item **74**. F11 may share F2's
-process-lifecycle implementation, but retains its own platform evidence.
+item **73**, F20's contained reporter identities through item **74**, and F22's durable exact-tree
+acceptance receipt through item **76**. F11 may share F2's process-lifecycle implementation, but
+retains its own platform evidence.
 
 **Campaign 1 — reviewer contract:** after F6/item **60**, implement item **40** (unverifiable
 channel and mandatory attack account). Item **41** is closed as inapplicable: the current Driver
@@ -1783,6 +1785,43 @@ to the definition digest receiving current credit.
 **Done when:** absolute, traversal, symlink, cross-volume, UNC, and case-fold escapes fail for both
 reporters; spaces, Unicode, whitespace, and platform separators remain stable for valid neighbors;
 and a clean-clone integration case proves every credited test definition is present in-repository.
+
+### 75. Validate the real installed plugin snapshot before release — OPEN (REVIEW F21)
+
+**Problem solved:** source-tree shape and version history can pass while the Claude loader's cached
+snapshot is absent, stale, incomplete, or differently interpreted.
+
+Add a no-model external-contract gate using the real operator Claude CLI. First run
+`plugin validate` and source inventory with the CLI version recorded. Then install the candidate
+marketplace/commit into a disposable isolated Claude configuration, never the operator registry.
+Assert cached version and commit identity, command/skill/hook inventory, all runtime-local imports,
+and a zero-spend preflight launched from the cache root. Establish the CLI's isolation environment
+contract by measurement before scripting it; do not assume an undocumented flag.
+
+Also resolve the current validator warning by adding a marketplace description or recording a
+specific compatibility reason for accepting it. This is a shipped-manifest change and therefore
+requires the ordinary version bump.
+
+**Done when:** the disposable install proves the candidate commit is the executing snapshot; stale
+version, missing transitive file, wrong commit, and source-checkout leakage fixtures fail; the
+operator's actual plugin registry is byte-identical before and after; and no model/API call occurs.
+
+### 76. Persist a complete exact-tree acceptance receipt — OPEN (REVIEW F22)
+
+**Problem solved:** archived `SHIPPED` state and Panel records do not preserve which deterministic
+checks passed on which exact bytes.
+
+Extend item 64's atomic terminal receipt rather than creating another terminal authority. Reuse
+item 66's spec revision, item 68's candidate tree seal, item 70's gate-attempt/report identities,
+and item 72's conserved usage ledger. Record the required gate roster and per-gate status,
+command/config/tool identity, bounded output/report digest, Oracle/deploy result, ratchet revision,
+Panel-record digest, and terminal transition. Store a sanitized interpretable config projection or
+referenced immutable policy digest; never raw environment values or unbounded logs.
+
+**Done when:** a clean-clone auditor can traverse one `SHIPPED` receipt to every required
+same-tree acceptance edge; absent and failed gates remain distinct; stale/mixed/wrong-tree evidence
+cannot complete the receipt; archived receipts remain interpretable after config changes; and
+synthetic secrets do not appear. REVIEW F22 owns closure.
 
 ## Cross-cutting non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:

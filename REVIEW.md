@@ -7,9 +7,9 @@
 **Reviewed tree:** `main` at `65a14cc` (`pre-codex`), version `0.161.0`
 **Code continuity:** no executable script, hook, or template changed. Documentation releases
 through 0.164.0 and the later reviewer-owned architecture maps do not alter runtime behavior.
-F1–F20 are findings against the same executable tree, and finding status is authoritative only
+F1–F22 are findings against the same executable tree, and finding status is authoritative only
 here.
-**Verdict:** **CHANGES REQUESTED** — eleven high-priority defects and nine medium-priority defects
+**Verdict:** **CHANGES REQUESTED** — eleven high-priority defects and eleven medium-priority defects
 are open.
 
 This remains a read-only review of the Claude-native implementation. The documentation cleanup
@@ -749,6 +749,87 @@ locations can carry durable credit that a clean clone cannot reproduce.
 - A clean-clone integration test proves every banked test definition is repository-contained.
   PLAN item 74 owns the slice.
 
+### F21 — MEDIUM: release checks do not exercise the installed plugin snapshot
+
+**Status:** OPEN
+**Affected:** `test/plugin-manifest.test.mjs:1-223`, `tools/release-check.mjs:23-28`,
+`.claude-plugin/marketplace.json:1-24`
+
+The test labelled “Install smoke test” inspects files in the source checkout. `release-check`
+likewise proves version discipline against source history. Neither asks Claude Code to validate,
+inventory, install, or reload the plugin from the cache path that actually executes.
+
+**Verified measurement:** Claude Code 2.1.233 currently reports that `claude plugin validate .`
+passes with one warning (the marketplace has no description), and
+`claude --plugin-dir . plugin details meeseeks` discovers version 0.164.0, two skills, and one
+PreToolUse hook. The user's `installed_plugins.json` and cache contain no `meeseeks` entry, so
+the marketplace-to-cache install, pinned commit, and cached command/hook paths remain untested.
+
+**Impact:** the source tree can be green while the distributable cache snapshot is absent, stale,
+incomplete, or differently interpreted by the loader. This is the exact boundary at which a
+version-correct fix can appear installed but execute older or missing files.
+
+**Required resolution:**
+
+- Add a non-model, real-CLI release check that validates the marketplace and inventories the source
+  plugin, recording the Claude Code version.
+- In a disposable isolated Claude configuration, install from the candidate marketplace/commit and
+  assert the cached manifest version, pinned commit identity, command/skill inventory, and hook
+  script paths.
+- Run a zero-spend command/preflight smoke from the cached root and prove no source-checkout path is
+  being used.
+- Treat loader warnings deliberately; add the marketplace description or document why the current
+  warning is accepted.
+
+**Acceptance evidence:**
+
+- The clean disposable install resolves `meeseeks@meeseeks` to the candidate commit/version and
+  all runtime-local imports/hooks exist under that cache root.
+- Deleting a transitively imported shipped file, changing the cache version, or pointing metadata
+  at a stale commit makes the check fail.
+- The check performs no model/API call and does not mutate the operator's real plugin registry.
+  PLAN item 75 owns the slice.
+
+### F22 — MEDIUM: a shipped run does not preserve its deterministic acceptance proof
+
+**Status:** OPEN
+**Affected:** `scripts/run-manifest.mjs:35-83`, `scripts/driver.mjs:540-583`,
+`scripts/driver.mjs:1635-1667`, `scripts/driver.mjs:5680-5790`
+
+`run.json` records startup identity, `review.json` records Panel entries, and `outcome.json`
+records terminal state and the passing-ID set. Gate results themselves are transient. Test/e2e
+reports are deliberately excluded from per-run archives, and no terminal artifact records the
+exact gate roster, statuses, attempt identities, tree/spec revision, report digests, Oracle result,
+deploy result, or the Panel-record digest that authorized `SHIPPED`.
+
+The negative gate cache is not a substitute: it retains selected failures for reuse and says
+nothing about the complete passing acceptance set.
+
+**Impact:** after the next run archives the prior artifacts, an operator can establish that
+Meeseeks *said* `SHIPPED` and inspect the Panel, but cannot reconstruct which deterministic
+checks passed on which exact bytes or prove that all required acceptance edges converged. That
+weakens incident diagnosis and morning acceptance without changing the runtime verdict itself.
+
+**Required resolution:**
+
+- At terminal transition, persist a bounded Driver-owned acceptance receipt for the exact candidate
+  tree/spec revision.
+- Record the required gate roster and each result's name, command/config identity, status, attempt,
+  tool version, and bounded output/report digest; link the Oracle, deploy, Panel, ratchet, and
+  terminal records by immutable identity.
+- Preserve enough sanitized configuration metadata to interpret the result without persisting
+  secrets or arbitrary raw logs.
+- Reuse F14's tree seal, F16's report attempt identity, and F10's atomic terminal writer rather than
+  creating parallel notions of acceptance.
+
+**Acceptance evidence:**
+
+- A clean-clone auditor can start from one `SHIPPED` receipt and resolve every required
+  deterministic and independent-review edge to a matching exact-tree artifact.
+- Missing, stale, mixed-attempt, or wrong-tree evidence cannot produce a complete receipt.
+- A deliberately failed gate remains distinguishable from a gate absent from the roster, while
+  bounded diagnostics reveal no synthetic secret. PLAN item 76 owns the slice.
+
 ## Audit coverage maps
 
 These tables are reviewer evidence and triage aids, not new sources of product requirements.
@@ -764,7 +845,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | Oracle is independent | PRD-only no-tools author; deterministic execution | F8 breaks run binding; F15 means cases are not confidential from Builder |
 | budgets and deadlines are hard | Driver accounting, CLI child allowance, timers | in-flight overshoot exists; F18 breaks spend conservation; F2/F4 mean some wall-clock bounds are not hard |
 | sandbox and model routing hold | settings/argv plus paid live probes | owned by an external binary/provider and must be re-probed when changed |
-| terminal state is durable | `outcome.json` on `driveRun.finish` paths | F10: not all terminal paths and not atomic |
+| terminal state is durable | `outcome.json` on `driveRun.finish` paths | F10: incomplete/non-atomic coverage; F22: no complete acceptance proof |
 | graph/provenance is complete | purpose-built ratchet, pins, review, Oracle, assumptions | no general claim graph; stable run/edge identity remains conditional PLAN item 55 |
 
 ### Durable artifact registry
@@ -779,7 +860,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | `gate-skip.json` | cross-run cache, Driver-owned | carries only failures on an identical tree | atomic; corruption degrades to re-running gates |
 | `oracle.json` | intended run/objective scope, Driver-owned | deterministic held-out gate | F8: persists across runs, unignored, non-atomic |
 | `capabilities.json` | current-tree snapshot, Driver-owned | record of resolved capability state; runtime uses the in-memory resolution | atomic but F9 allows target-history pollution |
-| `run.json`, `outcome.json` | per run, Driver-owned | manifest records only; outcome is terminal evidence | manifest atomic/no reader; F10 outcome coverage and atomicity |
+| `run.json`, `outcome.json` | per run, Driver-owned | manifest records only; outcome is terminal evidence | manifest atomic/no reader; F10 outcome coverage/atomicity; F22 omits deterministic acceptance links |
 | `review.json`, briefs, assumptions | per run, Driver-owned | review evidence; assumptions are supplied context, not verdicts | archived; review/brief writes are forensic rather than decision inputs |
 | lessons and bloopers | cross-run, Driver-owned | advisory prompt context / human history | lesson corruption degrades loudly to none; bloopers append |
 | test/e2e reports, mutation config, browser marker | per iteration or tool invocation | ratchet/gates consume reports; other files configure or record tools | F9 ignore gap; F16 lacks attempt/tree identity; F19 lacks size bounds; F20 lacks path containment |
@@ -809,6 +890,8 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | child spend | every returned envelope charged exactly once | F18 |
 | decision artifact size | bounded allocation or streaming refusal | F19 |
 | reporter path | contained test definition reproducible from the repository | F20 |
+| installed snapshot | loader/cache resolves the released commit and every runtime component | F21 |
+| acceptance receipt | exact-tree deterministic and independent evidence is traversable after the run | F22 |
 
 ### Explicit negative guarantees
 
@@ -821,6 +904,8 @@ These tables are reviewer evidence and triage aids, not new sources of product r
   receipts do not conserve all completed child spend (F18).
 - File-backed decision artifacts are not uniformly size-bounded before allocation (F19).
 - Reporter file names are normalized but not proven repository-contained (F20).
+- Source validation is not proof that the installed cache snapshot matches the release (F21).
+- A terminal `SHIPPED` record does not retain a complete deterministic acceptance proof (F22).
 - A model verdict is judgment, not deterministic proof; only the Driver combines it with gates.
 - `run.json` is a record and is deliberately not read as authority.
 - There is no crash-resume protocol, lifecycle journal, dynamic-workflow runtime, or general claim
@@ -844,7 +929,10 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | budget conservation | F18 finds one uncharged role and one early-return loss after parallel settlement |
 | resource-exhaustion boundary | F2/F4 cover processes and HTTP; F19 covers unbounded file-backed decision inputs |
 | path-identity boundary | F20 proves a passing external path can enter the ratchet namespace |
-| terminal transition enumeration | no duplicate finding: pre-loop/outer-exception gaps and non-atomic receipt remain exactly F10 |
+| terminal transition enumeration | pre-loop/outer-exception gaps and non-atomic receipt remain F10; F22 is the separate evidence-completeness gap |
+| installed-package reality | source validation passes on Claude Code 2.1.233, but no disposable cache install is exercised (F21) |
+| decision reproducibility | startup and Panel records survive, but passing gate/report/Oracle/deploy edges do not converge in one durable exact-tree receipt (F22) |
+| ERD constraint audit | corrected lessons to cross-run production/use; documented F8/F10/F12/F14/F16/F17/F20/F22 cardinality or identity gaps without proposing a graph store |
 
 ### Temporal language and terminology audit
 
@@ -853,7 +941,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | ratchet banking versus `lastGoodCommit` | `DESIGN.md` now distinguishes successful-unit-gate banking from full-acceptance commit advancement |
 | archived artifact count | `DESIGN.md` now names all six archived artifact classes rather than claiming there are three |
 | review package and `HEAD~1` base | PLAN item 41 is closed as inapplicable after tracing every current consumer |
-| current finding counts and queue | `HANDOFF.md` now agrees with F1–F20 and PLAN items 56/60–74 |
+| current finding counts and queue | `HANDOFF.md` now agrees with F1–F22 and PLAN items 56/60–76 |
 | conceptual ERD versus implemented Oracle lifecycle | the architecture report now labels the run-to-Oracle edge as intended but currently violated by F8 |
 | role vocabulary | Builder, Panel/reviewer, Oracle, and Driver retain the meanings and authority boundaries in `DESIGN.md`; no runtime is renamed or replaced |
 
@@ -869,7 +957,7 @@ remains byte-identical to the reviewed tree:
 - `npm run release-check` — **ok** at `0.164.0`; no shipped file has changed since release and
   `HANDOFF.md` agrees
 
-The paid live tier was not run. Existing green tests do not cover the twenty failure shapes above.
+The paid live tier was not run. Existing green tests do not cover the twenty-two failure shapes above.
 
 ## Closure protocol
 

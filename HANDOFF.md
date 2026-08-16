@@ -7,8 +7,8 @@ on the current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` cl
 were rerun after the documentation repair; no paid live test was invoked.
 
 **External review:** `REVIEW.md` is **CHANGES REQUESTED** with eleven high-priority defects
-(F1–F3, F5–F8, F12, F14, F16, F18) and nine medium-priority defects
-(F4, F9–F11, F13, F15, F17, F19–F20). The expanded review includes a
+(F1–F3, F5–F8, F12, F14, F16, F18) and eleven medium-priority defects
+(F4, F9–F11, F13, F15, F17, F19–F22). The expanded review includes a
 guarantee-strength audit, durable-artifact registry, failure-shape matrix, and explicit
 negative-guarantee sheet. These are the first implementation gates in `PLAN.md`. Claude Code may
 implement them; Codex owns closure after reviewing the exact repair and its acceptance evidence.
@@ -25,8 +25,10 @@ the archived handoff.
    output-cap path.
 2. Close the external contracts before feature fan-out: F5/item 56 through a paid child-environment
    probe, F11/item 65 through real Windows descendant-cleanup evidence, and F15/item 69 through an
-   Oracle-read canary and an honest confidentiality decision.
-3. Close F4, F9/item 63, F10/item 64, F13/item 67, F17/item 71, F19/item 73, and F20/item 74.
+   Oracle-read canary and an honest confidentiality decision. Add F21/item 75's disposable real
+   loader/cache release check in the same external-contract campaign.
+3. Close F4, F9/item 63, F10/item 64, F13/item 67, F17/item 71, F19/item 73, F20/item 74,
+   and F22/item 76.
 4. Complete item 40's reviewer contract after F6, then finish item 42 and item 29. Item 41 is closed
    as inapplicable because no Panel diff-package path exists.
 5. Complete the live evidence for item 24, add item 57's machine-readable acceptance result, run

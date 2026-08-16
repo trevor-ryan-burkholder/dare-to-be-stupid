@@ -73,25 +73,28 @@ graph. In particular:
 This diagram is a review aid, not a storage schema. `RUN` and `ITERATION` are conceptual entities
 assembled from several files; the current implementation does not assign every entity a stable id
 or persist every edge. That missing identity is exactly why minimal provenance metadata is a
-conditional proposal below. Solid relationships describe current product semantics, not permission
-for a graph layer to replace the existing stores.
+conditional proposal below. Relationships describe current product semantics; the constraint audit
+below identifies where cardinality, identity, or persistence is not yet enforced. None grants
+permission for a graph layer to replace the existing stores.
 
 ```mermaid
 erDiagram
-    RUN ||--|| RUN_MANIFEST : "records start"
+    RUN ||--o| RUN_MANIFEST : "records start"
     RUN ||--o| RUN_OUTCOME : "records end"
     RUN ||--o{ ITERATION : contains
     RUN ||--o{ ASSUMPTION : records
     RUN ||--o{ PANEL_RECORD : records
     RUN ||--o{ COMPONENT_RUN : delegates
     RUN ||--o| ORACLE_STORE : holds_out
-    RUN ||--o{ LESSON : retains
+    RUN }o--o{ LESSON : may_supply
 
     ITERATION ||--|| BUILD_BRIEF : compiles
     ITERATION ||--o{ TEST_OBSERVATION : extracts
     ITERATION ||--o{ PANEL_RECORD : receives
-    ITERATION ||--o{ GATE_FAILURE : may_cache
+    ITERATION ||--o{ GATE_RESULT : executes
     ITERATION ||--o{ CAPABILITY_SNAPSHOT : resolves
+    ITERATION ||--o{ LESSON : may_extract
+    GATE_RESULT o|--o| GATE_FAILURE : may_cache
 
     REQUIREMENT ||--o{ REVIEW_ENTRY : is_judged_by
     PANEL_RECORD ||--|{ REVIEW_ENTRY : contains
@@ -106,10 +109,10 @@ erDiagram
 
     ORACLE_STORE ||--|{ ORACLE_CASE : contains
     ORACLE_CASE ||--o{ ORACLE_RESULT : produces
-    COMPONENT_RUN ||--|| RUN_OUTCOME : must_return
+    COMPONENT_RUN ||--o| RUN_OUTCOME : must_return
 ```
 
-The diagram exposes five current limits rather than hiding them:
+The diagram exposes six current limits rather than hiding them:
 
 - `RUN` has no stable run id shared by all records; archive co-location and iteration numbers do
   most of that work today.
@@ -118,10 +121,31 @@ The diagram exposes five current limits rather than hiding them:
 - assumptions have citations but no accepted dependency edges to the requirements, artifacts, or
   evidence that used them; and
 - gate results and test reports are mostly iteration-transient, while the ratchet, red evidence,
-  and negative gate cache retain only the relations their invariants require; and
+  and negative gate cache retain only the relations their invariants require;
+- lessons are cross-run advisory records: an iteration may extract one and later runs may receive
+  it, so a lesson is not owned by exactly one run; and
 - the diagram shows the intended run-to-Oracle relationship, but the current implementation leaves
   `oracle.json` in place across runs and does not bind it to the current PRD. `REVIEW.md` F8 is the
   release-blocking lifecycle defect; the ERD is not evidence that the relationship is enforced.
+
+### ERD constraint audit
+
+| Relationship or entity | Current implementation | Constraint status |
+|---|---|---|
+| `RUN -> RUN_MANIFEST` | one atomic manifest exists only after design and before the main loop | pre-loop runs have no manifest/receipt; F10 defines the missing durable run boundary |
+| `RUN -> RUN_OUTCOME` | `driveRun.finish` writes one outcome, while earlier and outer failures bypass it | optional in practice and non-atomic; F10 |
+| `RUN -> ORACLE_STORE` | one unversioned `oracle.json` may survive multiple runs/specifications | intended one-to-zero-or-one cardinality is not enforced; F8/F12 |
+| `RUN <-> LESSON` | lessons persist across runs; an iteration produces them and later briefs may consume them | many-to-many use with missing stable source/consumer run ids; advisory only |
+| `ITERATION -> GATE_RESULT` | gate results exist in memory; only selected failures enter `gate-skip.json` | runtime cardinality exists, durable passing provenance does not; F22 |
+| `ITERATION -> TEST_OBSERVATION` | reused report files are parsed into name-based IDs | attempt/tree/path/definition identity is incomplete; F16/F17/F20 |
+| `PANEL_RECORD -> REVIEW_ENTRY` | required ownership/cardinality is checked before and after review | enforced for IDs, but evidence and exact-tree identity remain F6/F14 |
+| `REVIEW_ENTRY -> REQUIREMENT_PIN` | a passing cited entry may establish a whole-file fingerprint | carry is a pre-filter only; current definition/source constraints remain F6/F12 |
+| `COMPONENT_RUN -> RUN_OUTCOME` | the parent requires a readable child outcome before merge | child terminal authority is correctly a parent pre-filter, never inherited shipping authority |
+| `RUN -> acceptance proof` | outcome, Panel, ratchet, Oracle, deploy, and gates have no shared immutable receipt | relation is absent rather than a graph-storage request; F22/item 76 is the minimal repair |
+
+This audit does not justify a graph database or general claim DAG. The concrete repairs are stable
+run/spec/tree/attempt identities and receipts added to the stores that already own the decisions.
+A future shadow DAG remains conditional on PLAN item 55's measured admission test.
 
 ## Claude Code dynamic workflows: documented behavior
 
