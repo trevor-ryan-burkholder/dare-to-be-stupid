@@ -4,13 +4,13 @@
 > Claude Code owns implementation. Do not treat an entry as closed until Codex has reviewed the
 > repair and the relevant verification has passed.
 
-**Reviewed committed baseline:** `main` at `be19c9c`, manifests at `0.164.0`.
+**Reviewed committed baseline:** `main` at `ed0a51f`; executable baseline `be19c9c`; manifests at `0.164.0`.
 **Runtime continuity:** shipped JavaScript, hooks, templates, and output styles match `65a14cc`
 (`pre-codex`, 0.161.0). The shipped command and manifests changed through 0.164.0 and were reviewed
 at `be19c9c`; they are not folded into the older runtime label. The uncommitted changes described
-by this document are documentation only. F1–F28 cite the current committed files unless a finding
+by this document are documentation only. F1–F29 cite the current committed files unless a finding
 explicitly identifies historical evidence, and finding status is authoritative only here.
-**Verdict:** **CHANGES REQUESTED** — fifteen high-priority defects and thirteen medium-priority defects
+**Verdict:** **CHANGES REQUESTED** — sixteen high-priority defects and thirteen medium-priority defects
 are open.
 
 This remains a read-only review of the Claude-native implementation. The documentation cleanup
@@ -1111,6 +1111,54 @@ to honor them.
   settings, and plugin identities.
 - The disposable installed-plugin check uses the same staged candidate. PLAN item 83 owns closure.
 
+### F29 — HIGH: the cold reviewer treats Builder-mutable instructions as review authority
+
+**Status:** OPEN
+**Affected:** `templates/reviewer-system.md:216-219`, `scripts/driver.mjs:6000-6004`,
+`scripts/preflight.mjs:411`
+
+Review children correctly run under `--safe-mode`, which current Claude Code documents as disabling
+automatic `CLAUDE.md`, rules, Skills, plugins, hooks, MCP, and memory discovery. The reviewer template
+then explicitly tells the same cold child to read target `CLAUDE.md` and treats its rules and referenced
+design documents as binding. Builder can modify those files after the one preflight agent-surface scan.
+The isolation flag therefore closes automatic configuration discovery but the prompt reopens the
+candidate-controlled instruction channel as ordinary repository text.
+
+**Impact:** a Builder can write apparent repository policy that narrows the Definition of Done,
+suppresses a finding, or recasts its own output as compliant. Every Panel member reads the same tree,
+so process independence does not diversify this shared instruction attack. This weakens the central
+property that Builder cannot certify Builder even if tools, context, and processes remain separate.
+
+**Required resolution:**
+
+- Treat every candidate-tree file as untrusted evidence, never as authority over the reviewer. Remove
+  the blanket instruction to obey target `CLAUDE.md` or documents merely because the candidate names
+  them. Keep `--safe-mode`; do not replace it with a prompt claim.
+- Derive binding review requirements and conventions from item 66's immutable pre-Builder
+  specification revision and Driver/plugin-owned reviewer constitution. If project conventions must
+  be review authority, snapshot and identify the admitted pre-Builder bytes; later changes are output
+  to review, not new instructions.
+- Re-run the agent-config security scan on the exact candidate before Panel as defense in depth, and
+  bind that result to item 68's reviewed-tree identity. Do not claim a pattern scanner proves prompt-
+  injection immunity.
+- Extend item 77's supply report to distinguish trusted reviewer instructions, untrusted candidate
+  evidence, and disabled ambient customizations. Preserve Panel access to implementation evidence;
+  this is an authority boundary, not a ban on reading code or documentation.
+
+**Acceptance evidence:**
+
+- Static tests prove reviewer argv retains `--safe-mode`, the prompt contains no instruction to obey
+  candidate policy, and only identified Driver/pre-Builder sources populate the binding requirement
+  frame.
+- A fixture passes initial preflight, then adds or changes `CLAUDE.md`, `.claude/rules/`, a Skill,
+  hook, or MCP configuration. The exact final-tree scan refuses known-hostile forms before Panel and
+  preserves benign candidate documentation as reviewable evidence rather than authority.
+- A pinned paid canary proves a cold reviewer does not auto-load project/user/local customizations and
+  still receives the Driver-owned reviewer prompt. A paired hostile/benign reviewer-calibration case
+  proves candidate text cannot obtain a pass merely by declaring itself binding.
+- Item 68 seals the scanned/reviewed bytes, item 77 records the supply classes, and PLAN item 85 owns
+  closure. A scan result or model assertion alone is insufficient.
+
 ## Audit coverage maps
 
 These tables are reviewer evidence and triage aids, not new sources of product requirements.
@@ -1121,8 +1169,8 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 |---|---|---|
 | ratcheted test ids never disappear | deterministic store, atomic write, fail-closed read, unit/integration coverage | F16 permits stale attempt evidence; F17 is definition-blind; F20 admits out-of-repository identities |
 | Builder cannot write Driver state | positional PreToolUse guard plus child settings; paid live coverage | tool-mediated writes only; F15 allows Oracle reads and F16 shows executed target code is outside the hook boundary |
-| Builder cannot certify Builder | separate Panel processes and Driver recombination | F6 and F7 currently weaken the evidence/process boundary |
-| Panel is cold | fresh read-only `claude -p`, safe mode, narrowed supplied prompt | not sealed, and F14 shows the live tree can change after it is read |
+| Builder cannot certify Builder | separate Panel processes and Driver recombination | F6/F7 weaken evidence/process success; F29 lets Builder-mutable policy influence every reviewer |
+| Panel is cold | fresh read-only `claude -p`, safe mode, narrowed supplied prompt | F29 reintroduces Builder-mutable policy through an explicit read; F14 shows the live tree can change after it is read |
 | Oracle is independent | PRD-only zero-tool author; deterministic execution | F8 breaks run binding; F15 means cases are not confidential from Builder; F27 shows the zero-tool author policy is not enforced |
 | budgets and deadlines are hard | Driver accounting, CLI child allowance, timers | in-flight overshoot exists; F18 breaks spend conservation; F2/F4 mean some wall-clock bounds are not hard |
 | sandbox and model routing hold | settings/argv plus paid live probes | owned by an external binary/provider and must be re-probed when changed; F23 records one inert model route as active |
@@ -1182,6 +1230,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | pre-loop change provenance | launch and document phases admit only declared paths from a clean tree | F26 |
 | role tool availability | each non-Builder sees only its declared built-ins and no inherited capability surface | F27 |
 | Claude Code feature floor | selected binary is new enough for every mandatory external contract | F28 |
+| reviewer instruction authority | only immutable pre-Builder and Driver-owned policy can bind Panel | F29 |
 
 ### Explicit negative guarantees
 
@@ -1205,6 +1254,8 @@ These tables are reviewer evidence and triage aids, not new sources of product r
   empty list currently disables nothing (F27).
 - A successful `claude --version` exit does not establish compatibility with the required external
   command and child contracts (F28).
+- `--safe-mode` prevents automatic project customization, but the reviewer prompt explicitly reads
+  Builder-mutable `CLAUDE.md` and treats it as binding (F29).
 - A model verdict is judgment, not deterministic proof; only the Driver combines it with gates.
 - `run.json` is a record and is deliberately not read as authority.
 - There is no crash-resume protocol, lifecycle journal, dynamic-workflow runtime, or general claim
@@ -1229,6 +1280,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | preflight-to-use race | F26 traces the separate launcher calls, missing Driver revalidation, write-capable document roles, and broad phase staging |
 | tool availability versus approval | F27 finds `allowedTools`/`--allowedTools` treated as a closed set even though the external CLI requires `--tools`; the production Oracle policy is absent from its live contract test |
 | version-to-capability boundary | F28 finds preflight accepting a known-too-old class of CLI without parsing a measured feature floor; version remains an early gate rather than a substitute for live contracts |
+| reviewer instruction provenance | F29 finds safe-mode isolation explicitly reopened by treating Builder-mutable repository policy as binding; candidate content must remain evidence |
 | monotonic escape audit | the stored set unions correctly, but F16 weakens reset verification and F17 shows a stable ID can inherit credit after its definition changes |
 | hostile cross-platform pass | F11 is the platform finding; F6 and F20 require Windows-shaped containment cases |
 | budget conservation | F18 finds one uncharged role and one early-return loss after parallel settlement |
@@ -1246,7 +1298,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | ratchet banking versus `lastGoodCommit` | `DESIGN.md` now distinguishes successful-unit-gate banking from full-acceptance commit advancement |
 | archived artifact count | `DESIGN.md` now names all six archived artifact classes rather than claiming there are three |
 | review package and `HEAD~1` base | PLAN item 41 is closed as inapplicable after tracing every current consumer |
-| current finding counts and queue | `HANDOFF.md` now agrees with F1–F28 and PLAN items 56/60–83; item 77 is a separate research-derived boundary item, not a REVIEW finding |
+| current finding counts and queue | `HANDOFF.md` now agrees with F1–F29 and corresponding PLAN items 56, 60–76, 78–83, and 85; items 77 and 84 are separate research-derived boundary items |
 | model-role vocabulary | DESIGN now says `styleModel` is inert, deterministic style has no model, and bare improvisation uses `prdModel`; F23/item 78 own the code/config repair |
 | flag vocabulary | README and DESIGN name `--confirm-prd`; the shipped command remains the release-blocking mismatch in F24/item 79 |
 | invocation authority | DESIGN now requires a user-only supported command and disclaims arbitrary direct-Bash authentication; the versioned command/loader repair remains F25/item 80 |
@@ -1267,7 +1319,7 @@ remains byte-identical to the reviewed tree:
 - `npm run release-check` — **ok** at `0.164.0`; no shipped file has changed since release and
   `HANDOFF.md` agrees
 
-The paid live tier was not run. Existing green tests do not cover the twenty-eight failure shapes above.
+The paid live tier was not run. Existing green tests do not cover the twenty-nine failure shapes above.
 
 ## Closure protocol
 

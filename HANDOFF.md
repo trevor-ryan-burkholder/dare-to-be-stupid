@@ -6,8 +6,8 @@ on the current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` cl
 `npm run test:integration` **51 pass, 0 fail**; `npm run release-check` **ok**. These commands
 were rerun after the documentation repair; no paid live test was invoked.
 
-**External review:** `REVIEW.md` is **CHANGES REQUESTED** with fifteen high-priority defects
-(F1–F3, F5–F8, F12, F14, F16, F18, F25–F28) and thirteen medium-priority defects
+**External review:** `REVIEW.md` is **CHANGES REQUESTED** with sixteen high-priority defects
+(F1–F3, F5–F8, F12, F14, F16, F18, F25–F29) and thirteen medium-priority defects
 (F4, F9–F11, F13, F15, F17, F19–F24). The expanded review includes a
 guarantee-strength audit, durable-artifact registry, failure-shape matrix, and explicit
 negative-guarantee sheet. These are the first implementation gates in `PLAN.md`. Claude Code may
@@ -32,7 +32,9 @@ the archived handoff.
    external-contract campaign; batch item 80 with F24/item 79's versioned command repair. Close
    F27/item 82 with pinned role-tool availability canaries, including the real Oracle-author phase.
    Close F28/item 83 in that same pinned matrix by deriving and enforcing the oldest CLI that
-   passes every mandatory contract; a version pass does not replace those canaries.
+   passes every mandatory contract; a version pass does not replace those canaries. Close
+   F29/item 85 after item 66 and alongside items 77/82/83: candidate files remain evidence, while
+   reviewer authority comes only from identified pre-Builder and Driver-owned sources.
 3. Close F4, F9/item 63, F10/item 64, F13/item 67, F17/item 71, F19/item 73, F20/item 74,
    F22/item 76, and F23/item 78. F24/item 79 already lands once in step 2's shared command/loader
    slice; its Gate 0C classification does not create a second implementation pass.

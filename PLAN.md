@@ -1538,8 +1538,46 @@ Define stable scenario ids and emit one driver-owned JSON result per run contain
 plugin version, scenario, terminal state, iterations, token/cost totals, deterministic gate results,
 panel outcome, post-run black-box checks, operator repairs required, and an explicitly sourced
 `morningAccepted` value (deterministic when the scenario defines it; otherwise human-labelled).
-Cold model judgments may be recorded as advisory scores but cannot turn a deterministic failure into
-success, advance the ratchet, or declare `SHIPPED`. No Braintrust, Eve, or hosted eval dependency.
+Also bind an execution-resource profile: OS/architecture, available or enforced CPU and memory,
+concurrency, phase timeouts, and relevant external tool versions. Compare candidates only on matched
+profiles and enforcement semantics; classify infrastructure failures separately rather than charging
+them to model capability or quietly dropping them. Cold model judgments may be recorded as advisory
+scores but cannot turn a deterministic failure into success, advance the ratchet, or declare
+`SHIPPED`. No Braintrust, Eve, or hosted eval dependency.
+
+Treat stochastic reliability as a first-class result, not as noise hidden by a best run. Give every
+attempt a stable trial index and identical harness/config identity, retain raw successes and trial
+count, and report first-attempt success plus both any-success and all-success consistency over the
+declared cohort. `pass@k` can describe search when multiple attempts are genuinely available;
+unattended morning acceptance is governed by `pass^k`/all-trials consistency because the user gets
+one night, not a cherry-picked candidate. Publish the estimator and sample size rather than false
+precision, and never let a best-of-N success erase a failed required trial.
+
+Stratify the corpus by task horizon. Each scenario records a reference-solution human-effort band or
+another independently defined difficulty band; agent wall-clock time is not a proxy for task length.
+Report acceptance separately for short fixtures and substantial multi-phase work, and do not claim
+overnight reliability from a suite containing only cheap synthetic cases. This borrows the useful
+measurement invariant from METR's task-completion time horizons without importing its benchmark or
+predictive model.
+
+Do not collapse operational reliability into `morningAccepted` alone. Record a bounded failure class:
+accepted, safe refusal/incomplete, incorrect `SHIPPED` (false completion), scope/security violation,
+destructive outcome, or harness/infrastructure failure; also record whether a declared transient fault
+was recovered within budget. False completion, scope/security violation, and destructive outcome are
+non-compensable selection failures—no mean score, cost saving, or lucky rerun can wash them out. For a
+cheap fixture cohort, pair nominal tasks with semantically equivalent requirement wording and
+deterministic injected child timeout, malformed envelope, or tool failure. Report outcome consistency,
+perturbation robustness, recovery, failure severity, and resource variance separately. Model
+self-confidence remains advisory and is not a completion signal.
+
+Evaluate the evaluators as a separate component. Maintain versioned candidate snapshots containing
+independently labelled seeded defects plus clean benign neighbours, run each Panel role cold against
+them, and record per-role high-severity miss rate, false-positive rate, and disagreement with exact
+reviewer prompt/model/tool-policy identity. Labels come from deterministic checks where possible and
+otherwise from an operator-owned expert rubric; they never come from Builder or the reviewer being
+scored. Keep calibration discovery/selection/final partitions separate, and never place calibration
+answers in a production role's prompt or target tree. Calibration measures whether a reviewer
+configuration is safe to adopt; it does not give the eval harness terminal authority over a live run.
 
 The scenario corpus may declare **discovery**, **selection**, and untouched **final-test** partitions.
 Candidate comparison uses selection only: aggregate quality must strictly improve, ties reject, and
@@ -1549,7 +1587,18 @@ The final-test partition is opened only for reporting after selection, never for
 **Done when:** item 20 cases A/B emit schema-validated, directly comparable results; a seeded
 black-box regression fails the hard result even when a judge likes the output; judge disagreement is
 visible but non-authoritative; and the harness can summarize acceptance, cost, time, and repair count
-across repeated runs without scraping prose logs.
+across repeated runs without scraping prose logs. A cheap deterministic cohort also proves that a
+one-of-three success is visibly unreliable rather than promoted as a win; baseline and candidate use
+the same declared trial count; and at least one substantial multi-phase scenario is reported
+separately before the project makes a measured morning-acceptance claim. A seeded false `SHIPPED`,
+scope/security violation, or destructive result cannot be averaged into acceptance; a safe refusal is
+reported separately; one requirement-paraphrase pair and one deterministic transient-fault case expose
+robustness and recovery without relying on a model's confidence report. A paid cold calibration case
+also proves each relevant Panel role sees a seeded high-severity defect and does not invent the same
+finding in its clean neighbour; a reviewer prompt/model change cannot be selected by hiding misses,
+false positives, or disagreement behind aggregate morning acceptance. A deliberately changed CPU,
+memory, concurrency, timeout, or tool profile refuses direct comparison, while a synthetic
+infrastructure outage remains visible as missing evidence rather than a model-quality regression.
 
 ### 58. Forensic lifecycle event journal before resumability — PARKED (conditional)
 
@@ -1566,12 +1615,20 @@ event has a stable run-scoped sequence id, timestamp, attempt/parent lineage, an
 it with the run. Initially the driver **never reads it to decide anything**; it records no model deltas,
 hidden reasoning, tool chatter, or ephemeral-agent telemetry. Reconnect/replay deduplicates by id.
 
+Any later cold-load path must rebuild derived state under current invariant checks and verify an exact
+compatibility fence before it resumes: journal schema, Driver/plugin version, target tree, effective
+config/policy digest, role prompt/tool-supply contracts, and external CLI identity. A mismatch or
+corrupt event refuses resume; it never tries to reinterpret old events under new semantics. This is
+the smallest useful lesson from OpenHands' persisted-event reload and agent/tool compatibility check,
+not a reason to adopt its event stream or runtime.
+
 **Admission and Done when:** kill a controlled run at named boundaries and try to reconstruct the
 settled/unsettled work from current artifacts. Reject the item if they are already sufficient. Proceed
 only if the journal reconstructs the run exactly and materially improves the diagnosis. Checkpoint/
 resume remains a separate Phase-6 decision: an interrupted operation may be replayed only after its
 idempotency and receipt semantics are designed, and this journal never becomes terminal-state authority
-by accident.
+by accident. A compatibility-canary reload under a changed schema, plugin, config, tool policy, or tree
+must refuse before spawning or replaying any side effect.
 
 ### 59. Offline validation-gated prompt and lesson optimization — PARKED (requires 35 and 57)
 
@@ -1856,10 +1913,19 @@ command/config/tool identity, bounded output/report digest, Oracle/deploy result
 Panel-record digest, and terminal transition. Store a sanitized interpretable config projection or
 referenced immutable policy digest; never raw environment values or unbounded logs.
 
+Make the receipt a typed, versioned assertion rather than an unlabelled bag of digests. Bind one
+explicit acceptance claim type to an immutable subject (candidate tree plus resulting commit when
+available), and separate its resolved inputs—specification, policy/config, plugin/Driver/CLI, gate
+roster, and review artifacts—from the claim's results. A verifier rejects an unknown schema or claim
+type and any subject mismatch. This borrows in-toto's useful subject/predicate separation and SLSA's
+input/result distinction; it does not claim SLSA conformance, require signatures, or add an
+attestation framework.
+
 **Done when:** a clean-clone auditor can traverse one `SHIPPED` receipt to every required
 same-tree acceptance edge; absent and failed gates remain distinct; stale/mixed/wrong-tree evidence
-cannot complete the receipt; archived receipts remain interpretable after config changes; and
-synthetic secrets do not appear. REVIEW F22 owns closure.
+cannot complete the receipt; archived receipts remain interpretable after config changes; an unknown
+schema, claim type, or subject fails closed; and synthetic secrets do not appear. REVIEW F22 owns
+closure.
 
 ### 77. Record and enforce the cold-role supply boundary — OPEN (BORROWED R44)
 
@@ -2053,6 +2119,82 @@ canaries, and record exact
 binary, CLI, settings, and plugin identities; README, DESIGN, preflight output, and fixtures name
 the same floor; and raising a required external feature's minimum cannot leave the check stale.
 REVIEW F28 owns closure.
+
+### 84. Measure and admit fail-closed child containment — OPEN (live-contract first)
+
+**Problem solved:** R19's optional sandbox proves only that Claude accepts
+`{"sandbox":{"enabled":true}}`; its live test deliberately does not prove confinement. The current
+Builder still uses `--dangerously-skip-permissions`, can read most of the operator host, and—unless
+the sandbox happens to enforce a suitable default—can send repository or credential data to arbitrary
+network destinations. Item **56** removes ambient environment values but cannot stop filesystem reads
+or exfiltration. Current Claude Code documents stronger native controls (`failIfUnavailable`,
+`allowUnsandboxedCommands: false`, filesystem deny-read/allow-read, and outbound domain policy) plus
+an `auto` permission mode for non-interactive runs. Those controls are versioned and, in auto mode,
+provider/model/plan restricted and preview-quality; documentation is not evidence that this plugin's
+children receive or survive them.
+
+**Boundary:** extend the existing Claude-native sandbox experiment; do not add a container service,
+proxy dependency, or new control plane. Deterministic OS/filesystem/network enforcement is the floor.
+A Bash/subprocess domain policy is not a whole-role egress boundary: inventory the model/auth channel,
+built-in WebFetch/WebSearch, MCP, plugins/Skills/Agent, browser/computer-use surfaces, and local/private
+or Unix-socket routes separately. Disable unavailable/nonessential surfaces through item **82**'s
+actual tool policy; if a required Builder surface cannot be constrained or observed, describe the
+narrower guarantee and do not call the child network-contained. Auto mode's classifier may be measured
+as defense in depth, but it is model-judged, cannot certify work, cannot advance the ratchet, and
+cannot replace the guard, cold Panel, or Oracle. A requested containment profile that is unavailable
+or ignored refuses before target mutation; it never silently falls back to bypass mode. Preserve the
+current unsandboxed-compatible path until the experiment establishes which operators and platforms
+can support a stronger default.
+
+**Experiment:** after items **56**, **82**, and **83** establish environment, role-tool, and CLI
+identity, pass a pinned writing child a driver-owned settings profile with sandbox startup failure and
+unsandboxed escape disabled. Measure the minimum filesystem reads and outbound domains needed for
+Claude authentication, package installation, source control, and representative target gates; allow
+names/domains, never secret values. Run synthetic hostile canaries for a credential-file read, an
+unapproved HTTPS destination through **each available outbound surface**, local/private and Unix-socket
+escape where the platform exposes them, a request to disable the sandbox, hostile repository
+instructions, and a `.meeseeks/` write. Prove built-in fetch/search or an inherited MCP/plugin cannot
+route around the Bash proxy; a canary that cannot be attempted because the tool is absent records that
+observed absence rather than a universal guarantee. Run benign neighbours for normal editing,
+dependency installation, tests, local git commits, guard delivery, and process-tree settlement. Test
+auto mode separately: record its exact eligibility and denial/termination behavior, and treat a
+classifier outage or repeated headless denial as a named fail-closed result rather than a generic
+Builder failure.
+
+**Done when:** paid pinned live evidence distinguishes settings registration from actual filesystem
+and network confinement; secret canaries never appear in logs or receipts; every available outbound
+surface is constrained, disabled, or named as outside the guarantee; an unavailable sandbox, ignored
+key, denied required domain, unsandboxed retry, or unsupported auto-mode combination is diagnosed
+before—or settles without—unbounded work; benign Builder behavior and the independent review boundary
+remain intact; and the evidence supports one of three explicit outcomes: adopt a
+portable stronger default, offer a capability-gated profile with truthful limitations, or reject the
+change and retain R19. No outcome is inferred from vendor marketing or a single successful child.
+
+### 85. Keep candidate instructions out of reviewer authority — OPEN (REVIEW F29)
+
+**Problem solved:** cold roles use `--safe-mode`, so current Claude Code does not automatically load
+target `CLAUDE.md`, rules, Skills, plugins, hooks, MCP servers, or memory. The reviewer template then
+explicitly tells Panel to read target `CLAUDE.md` and treats its rules and referenced design documents
+as binding. Builder can change that surface after preflight. Process separation therefore leaves a
+shared candidate-controlled route into every reviewer verdict.
+
+Keep candidate-tree content available as evidence, but remove its ability to define the reviewer's
+instructions. Binding requirements come from item **66**'s immutable pre-Builder specification
+revision and a Driver/plugin-owned reviewer constitution; any project convention admitted as authority
+must be snapshotted before Builder and identified in the review supply. A later Builder edit to that
+file is an output to assess. Preserve `--safe-mode`, and make item **77** report trusted instruction
+sources, untrusted candidate evidence, and disabled ambient sources separately. Immediately before
+Panel, re-run the agent-config security scan against the exact item **68** candidate identity. That
+scan is a fail-closed known-pattern defense, not proof that arbitrary model-visible text is safe.
+
+**Done when:** reviewer templates contain no direction to obey candidate policy; unit tests bind every
+authoritative requirement frame to the immutable pre-Builder source; a post-preflight fixture changes
+`CLAUDE.md`, `.claude/rules/`, a Skill, hook, and MCP configuration and proves hostile forms refuse
+before Panel while benign documentation remains readable only as evidence; the final scan is sealed to
+the reviewed tree; item **77**'s supply report names the trust class and identity of each source; and a
+pinned paid hostile/benign canary proves project/user/local customizations stay unloaded while the
+Driver-owned reviewer prompt and implementation evidence remain available. Items **66**, **68**,
+**77**, **82**, and **83** are prerequisites. REVIEW F29 owns closure.
 
 ## Cross-cutting non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:
