@@ -278,7 +278,7 @@ because run 14 was sent `SIGTERM` and did not die before run 15 launched. Run 15
 and nothing may be concluded from its log. §13.6's re-entrancy guard does not cover this and never
 did: it refuses a *nested* run, a builder invoking the slash command, which is a different failure.
 
-**0.162.0 does not yet satisfy that requirement.** It checks and claims separately, and claims
+**0.163.0 does not yet satisfy that requirement.** It checks and claims separately, and claims
 only after PRD/design work and a commit. `REVIEW.md` F1 is the release-blocking implementation
 gap; this section states the required end state rather than laundering the current race into the
 specification.
@@ -695,203 +695,6 @@ Output contract:
 }
 ```
 
-### 4.3 Pins — the second and third monotonic properties
-
-The ratchet is monotonic on **test ids**. That closes oscillation on the one property the loop
-can measure for free, and says nothing about two others that degrade just as quietly.
-`scripts/pins.mjs` is the same mechanism pointed at both, and `.meeseeks/pins.json` is driver-owned.
-
-**Security elements (A4).** SCAFFOLD-CEGIS (arXiv 2603.08520) reports that security degrades
-*gradually across iterations* through specification drift — 43.7% of ten-round chains ended
-more vulnerable than baseline — and that adding a static SAST gate made it **worse**, 12.5% to
-20.8%, because static rules cannot see removed defensive logic or weakened exception handling.
-Meeseeks had exactly the shape they measured: `npm audit` plus a security auditor, per iteration,
-with no memory. When the security reviewer passes an id with `file:line` evidence, that line is
-pinned as a defensive element.
-
-**Requirements (A8).** A requirement a cold reviewer passed with `file:line` evidence is pinned
-to that file, so a later panel can tell whether the ground it was passed on has moved.
-
-Same shape, opposite failure directions, and that difference is the design:
-
-| | fingerprint | when it stops matching |
-|---|---|---|
-| security element | the **snippet**, whitespace-normalised | escalate; may become a regression |
-| requirement | the whole **file** | unpin, and re-establish from scratch |
-
-**The pin store must never be tracked by git**, and it was. `ensureMeeseeksIgnored` listed
-`state.json`, `lessons.json`, `red-evidence.json`, `bloopers.log` and the reports, and omitted
-`pins.json` — the file holding **two** of the three monotonic properties. Tracked, a
-`git reset --hard` to `lastGoodCommit` restores an older copy, so a pin earned since that commit is
-silently gone, and so is any recorded quarantine, which is the only thing stopping a run shipping
-over lost protection. It is precisely the failure the ignore stanza's own comment describes for
-`state.json`, in the file where a false negative is unrecoverable.
-
-Two defects, not one: the *list* was short, and the *check* asked only whether `.meeseeks/state.json`
-appeared. So a repository written by an older build reported "already covered" forever and never
-received the newer lines. **An all-or-nothing check on a list that later grows stops covering its
-own list.** Every path is now checked individually and only the missing ones are appended, which
-repairs an existing repository and stays idempotent. Found by running `git ls-files .meeseeks` on a real
-repository before deliberately triggering a reset in it.
-
-**Why a security pin escalates instead of resetting.** Re-verification is a substring search
-over code the builder may reformat at any chaos level above 1. "Ambiguity is a fail" converts a
-formatter run into a hard reset plus a regression objective the builder **cannot satisfy** — it
-is told to restore something that was never removed, and under monotonicity a false pin is
-unremovable. That is not a strict design; it is a run that cannot terminate.
-
-So the authority that pins is the authority that unpins. The cheap check runs every iteration
-and finds a guard that merely moved or was reindented, for free. Only when it fails does one
-`security-escalation` child, scoped to that single element, choose between three answers:
-
-- **removed** → regression. Hard reset, regression objective, nothing else proceeds.
-- **moved** → re-pin at the new location. No reset.
-- **cannot tell** → quarantine: recorded, surfaced, excluded from further re-verification.
-
-Fail-closed here is **`unknown`, not `removed`**. An unparseable escalation is not evidence a
-guard was deleted, and treating it as one would destroy the tree over a parsing failure.
-
-**Quarantine is not a pass, and one line of code is what makes that true.** A run may not reach
-`SHIPPED` while any element is quarantined. That converts dropped protection from something a
-run absorbs silently into something it has to resolve, and it is the whole difference between
-this and a threshold that drifts.
-
-**Why a requirement pin is fail-closed in the other direction.** A carried pass is a review that
-did not happen, so invalidation is eager: any change to the evidenced file unpins, ambiguity
-unpins rather than carries, and an evidence target that no longer resolves **fails** — the panel
-verdict is overridden downward, which is the only direction a pin may ever move one. The Ralph
-design where the *builder* marks its own stories complete is what this must not become, and the
-distance is that nothing here is written by a builder: the store is driver-owned and §6 denies
-every write under `.meeseeks` positionally.
-
-**A run with pins it cannot re-verify aborts.** Carrying them forward unchecked would report the
-same clean pass as a run that verified everything, which is §4's own rule about silent skips.
-
-> **Built (0.92.0): carrying a pass to skip a reviewer call.** A8's saving — asking the panel
-> only about un-carried ids — is wired as `narrowedPanelPlan` plus a synthetic `carriedReport`,
-> and `panelCarry.enabled` defaults to on (§10). It is a pre-filter only: a narrowed panel that
-> returns `pass` triggers the full panel, which decides. The delta was measured in `panelB`:
-> carrying 9 of 16 requirements cut review tokens by **8.3%** (1,402,476 → 1,285,670) and wall
-> clock by 28.5% — small, because a cold reviewer's cost is the *read* rather than the id list,
-> so the saving does not scale with the number of ids carried.
-
-### 4.6 The held-out oracle — the only check not downstream of the builder
-
-**Every other check in this document is downstream of the thing it judges.** The gates run what
-the builder wrote. The ratchet protects ids the builder named. The mutation gate mutates the
-builder's source against the builder's tests. `gate-integrity` reads scripts the builder authored.
-Even the cold panel reads a repository the builder shaped. A mistake shared between an
-implementation and its own tests is invisible to all of them.
-
-**Run 12 measured exactly that, and it is the reason A3 stopped being deferred.** The panel
-passed a binary reporting `mean: 0` where the true answer is 1/3, at exit 0. The reviewer was not
-lazy: it wrote an independent reference parser and summariser *from the PRD and data model* and
-differentially fuzzed **110,877 cases** against it. It could not have found the defect. The
-reference was derived from the same documents, so a property those documents never mention —
-floating-point associativity — is invisible to **both** implementations equally.
-
-**A differential fuzz against a reference built from the same spec is not an independent oracle.
-It is the same assumption, twice.**
-
-So `.meeseeks/oracle.json` holds executable acceptance cases authored at **Phase 0b** — from the PRD
-alone, **before the design phase and before any code exists.** A child that has seen the code
-cannot write them.
-
-**Held out means *not supplied*, in §6.1's sense, and the distinction is stated rather than
-implied.** The store is under `.meeseeks/`, so §6's positional rule makes it driver-owned and a
-builder may not write it. It is never rendered into a brief, a system prompt or a review prompt.
-That second half is a **discipline, not a barrier** — a builder executing arbitrary code can read
-the file, and `oracle.mjs` says so in its own header. Against satisficing, which is the threat
-model this whole document aims at, an artifact the builder was never handed is entirely
-sufficient: **it cannot build to a test it has not been shown.**
-
-**A3's deferral reason no longer holds.** It was deferred because "the builder would own whether
-the gate can fail" — the same objection §4.4 faced with Stryker's threshold, and answered there by
-writing the config into `.meeseeks/` and passing it positionally. The same move applies.
-
-Four properties, each load-bearing:
-
-- **Everything fails closed.** A missing, unreadable or empty store fails the gate; failure to
-  author ends the run. A store that cannot be read is the one shape that looks exactly like an
-  oracle everything passed.
-- **A case that asserts nothing is refused at parse time.** It would execute, check nothing and
-  report success — the "test that cannot fail" of §4, reproduced *inside* the check built to be
-  independent of the builder's tests.
-- **Invocation resolves through `package.json` `bin`**, because that is what a user runs. Run 10
-  found a build whose declared bin was **inert** — zero bytes, exit 0, through a real
-  `npm install -g` — while every gate stayed green, each having invoked `node dist/cli.js`
-  directly. A project with no declared bin fails by name rather than having a plausible-looking
-  file guessed for it.
-- **`cli` only.** Invoking with argv and comparing stdout is a command-line shape; arming it on an
-  `api` or a `library` would be a gate that cannot pass, which is §4.2's defect class.
-
-**It is off by default (`oracle.enabled`), and that contradicts §13's rejection of `enabled`
-flags — deliberately.** §13's argument is about disabling a check *known to work*. This one was
-staged behind a flag because its feared failure mode is the worst available here: **a case that
-invents a requirement the specification does not decide becomes a gate the builder cannot satisfy
-for the rest of the run, and the builder cannot tell an invention from a real requirement.** That
-class has bitten seven times. It has since been armed against real builds, and the fear did not
-materialise: `oracle1` judged **19 of 19** on a case-G target at a false-failure rate of **0**,
-and `oracle2` (14 August) ran the metamorphic relations against real generated code, where they
-caught real numeric defects, drove a fix, and passed at ship with zero false failures. What
-`oracle1` also measured is why the default has not yet flipped: its exit-code-only cases could
-not see run 12's defect class even when that defect was planted back into the tree — the
-relations are the half that can, and they have one live run behind them. The flag remains a
-staging device, not an escape hatch. `templates/oracle-author.md` aims squarely at the invention
-class: when the specification is silent, the author is told to leave the case out and say so.
-
-### 4.5 `DoD-6-adversarial-input` — the line that was bought with a ship
-
-Every other DoD line asks whether the code does what it was told. This one asks whether the
-code **lies**, and it exists because dogfood run 9 proved that nothing else in this document
-can ask that question.
-
-**What happened, because the mechanism matters more than the defect.** Run 9 shipped
-`panel unanimous on 15 requirement(s)`, 0 quarantined pins, the ratchet at 58. The binary
-reports statistics over *half* its input when a quote is left unterminated, at exit `0`, with
-an empty stderr. The same defect run 8 shipped, on the same PRD.
-
-**The panel was not asleep. The panel found it.** All three cold reviewers found it
-independently, **each ran the program themselves**, and each returned `status: fail` citing
-`src/csv.ts:21` — one at severity `major`, confidence 0.95, quoting the input and the output it
-produced. 0.58.0's widened remit worked exactly as specified.
-
-They filed it as `advisory-`, and §4.1 says an advisory cannot move the verdict in either
-direction. So the run shipped over three independent, executed, evidenced findings of a
-confidently wrong answer.
-
-**They filed it there because there was nowhere else.** The output contract has two channels: a
-verdict on a *required id*, or an advisory. No required id covered it — the PRD never mentions
-unterminated quotes, and `PRD-2.1` (quoted fields containing commas, doubled quotes and
-newlines) is genuinely, correctly satisfied. **A reviewer obeying the contract had exactly one
-place to put the finding, and it was the place that cannot block.**
-
-The lesson is not about reviewers and not about advisories. **A remit is not a channel.** 0.58.0
-told the panel it *may* fail a demonstrable wrong answer without giving it an id on which to do
-so, and permission with no place to act is indistinguishable from no permission at all. When
-widening what a reviewer may judge, check that a required id exists to carry the answer.
-
-Three properties make this line work rather than merely exist:
-
-- **Required, not advisory.** It is in `requiredIdsFor`, so every panel member who owns it must
-  return an entry, and a `fail` blocks. Owned by **correctness** — it is a truthfulness question,
-  and that reviewer already executes the binary.
-- **The bar is narrow and absolute: a wrong answer at exit 0.** A crash is not a failure of this
-  line, and neither is a non-zero exit with a diagnostic — those are the program *refusing to
-  lie*, which is the behaviour being required. Silence plus a plausible number is the defect. A
-  wider bar would fail every program that has any bug at all, and §4.2's whole history is gates
-  that no honest project could satisfy.
-- **A pass must name what was tried.** "I probed and found nothing" with no stated input classes
-  is a skipped check wearing a verdict, and the parser's own rule is that missing evidence fails.
-
-**What this does not do**, said plainly so nobody reads it as more than it is: it is a *judgment*
-line, not a gate. No exit code enforces it, it is exactly as good as the reviewer executing it,
-and it can be satisfied by a reviewer that probes lazily. It is strictly better than the advisory
-channel that discarded three correct findings, and strictly weaker than a deterministic check —
-which for this defect class does not exist, because "is this number right" is the oracle problem.
-`gate-integrity` cannot see it, the mutation gate cannot see it (the tests are insensitive to
-inputs nobody wrote), and neither can any linter.
-
 ### 4.1 Advisory findings — the one place a number is allowed
 
 Reviewers see real problems that no id covers: a module doing two jobs, an error path nobody
@@ -975,6 +778,86 @@ Note what is *not* here: `quality:impeccable` keeps its own detection-based armi
 because it asks whether there is a UI to inspect right now, which is a question about the tree
 rather than about intent.
 
+### 4.3 Pins — the second and third monotonic properties
+
+The ratchet is monotonic on **test ids**. That closes oscillation on the one property the loop
+can measure for free, and says nothing about two others that degrade just as quietly.
+`scripts/pins.mjs` is the same mechanism pointed at both, and `.meeseeks/pins.json` is driver-owned.
+
+**Security elements (A4).** SCAFFOLD-CEGIS (arXiv 2603.08520) reports that security degrades
+*gradually across iterations* through specification drift — 43.7% of ten-round chains ended
+more vulnerable than baseline — and that adding a static SAST gate made it **worse**, 12.5% to
+20.8%, because static rules cannot see removed defensive logic or weakened exception handling.
+Meeseeks had exactly the shape they measured: `npm audit` plus a security auditor, per iteration,
+with no memory. When the security reviewer passes an id with `file:line` evidence, that line is
+pinned as a defensive element.
+
+**Requirements (A8).** A requirement a cold reviewer passed with `file:line` evidence is pinned
+to that file, so a later panel can tell whether the ground it was passed on has moved.
+
+Same shape, opposite failure directions, and that difference is the design:
+
+| | fingerprint | when it stops matching |
+|---|---|---|
+| security element | the **snippet**, whitespace-normalised | escalate; may become a regression |
+| requirement | the whole **file** | unpin, and re-establish from scratch |
+
+**The pin store must never be tracked by git**, and it was. `ensureMeeseeksIgnored` listed
+`state.json`, `lessons.json`, `red-evidence.json`, `bloopers.log` and the reports, and omitted
+`pins.json` — the file holding **two** of the three monotonic properties. Tracked, a
+`git reset --hard` to `lastGoodCommit` restores an older copy, so a pin earned since that commit is
+silently gone, and so is any recorded quarantine, which is the only thing stopping a run shipping
+over lost protection. It is precisely the failure the ignore stanza's own comment describes for
+`state.json`, in the file where a false negative is unrecoverable.
+
+Two defects, not one: the *list* was short, and the *check* asked only whether `.meeseeks/state.json`
+appeared. So a repository written by an older build reported "already covered" forever and never
+received the newer lines. **An all-or-nothing check on a list that later grows stops covering its
+own list.** Every path is now checked individually and only the missing ones are appended, which
+repairs an existing repository and stays idempotent. Found by running `git ls-files .meeseeks` on a real
+repository before deliberately triggering a reset in it.
+
+**Why a security pin escalates instead of resetting.** Re-verification is a substring search
+over code the builder may reformat at any chaos level above 1. "Ambiguity is a fail" converts a
+formatter run into a hard reset plus a regression objective the builder **cannot satisfy** — it
+is told to restore something that was never removed, and under monotonicity a false pin is
+unremovable. That is not a strict design; it is a run that cannot terminate.
+
+So the authority that pins is the authority that unpins. The cheap check runs every iteration
+and finds a guard that merely moved or was reindented, for free. Only when it fails does one
+`security-escalation` child, scoped to that single element, choose between three answers:
+
+- **removed** → regression. Hard reset, regression objective, nothing else proceeds.
+- **moved** → re-pin at the new location. No reset.
+- **cannot tell** → quarantine: recorded, surfaced, excluded from further re-verification.
+
+Fail-closed here is **`unknown`, not `removed`**. An unparseable escalation is not evidence a
+guard was deleted, and treating it as one would destroy the tree over a parsing failure.
+
+**Quarantine is not a pass, and one line of code is what makes that true.** A run may not reach
+`SHIPPED` while any element is quarantined. That converts dropped protection from something a
+run absorbs silently into something it has to resolve, and it is the whole difference between
+this and a threshold that drifts.
+
+**Why a requirement pin is fail-closed in the other direction.** A carried pass is a review that
+did not happen, so invalidation is eager: any change to the evidenced file unpins, ambiguity
+unpins rather than carries, and an evidence target that no longer resolves **fails** — the panel
+verdict is overridden downward, which is the only direction a pin may ever move one. The Ralph
+design where the *builder* marks its own stories complete is what this must not become, and the
+distance is that nothing here is written by a builder: the store is driver-owned and §6 denies
+every write under `.meeseeks` positionally.
+
+**A run with pins it cannot re-verify aborts.** Carrying them forward unchecked would report the
+same clean pass as a run that verified everything, which is §4's own rule about silent skips.
+
+> **Built (0.92.0): carrying a pass to skip a reviewer call.** A8's saving — asking the panel
+> only about un-carried ids — is wired as `narrowedPanelPlan` plus a synthetic `carriedReport`,
+> and `panelCarry.enabled` defaults to on (§10). It is a pre-filter only: a narrowed panel that
+> returns `pass` triggers the full panel, which decides. The delta was measured in `panelB`:
+> carrying 9 of 16 requirements cut review tokens by **8.3%** (1,402,476 → 1,285,670) and wall
+> clock by 28.5% — small, because a cold reviewer's cost is the *read* rather than the id list,
+> so the saving does not scale with the number of ids carried.
+
 ### 4.4 The conditional second pass — mutation testing
 
 The most load-bearing DoD claim is "tests assert real values, not truthiness". §4 now enforces
@@ -1051,6 +934,123 @@ drift — which §13 rejects by name.
 Tests are never mutated. A mutated test is an oracle turned into a lie.
 
 ---
+### 4.5 `DoD-6-adversarial-input` — the line that was bought with a ship
+
+Every other DoD line asks whether the code does what it was told. This one asks whether the
+code **lies**, and it exists because dogfood run 9 proved that nothing else in this document
+can ask that question.
+
+**What happened, because the mechanism matters more than the defect.** Run 9 shipped
+`panel unanimous on 15 requirement(s)`, 0 quarantined pins, the ratchet at 58. The binary
+reports statistics over *half* its input when a quote is left unterminated, at exit `0`, with
+an empty stderr. The same defect run 8 shipped, on the same PRD.
+
+**The panel was not asleep. The panel found it.** All three cold reviewers found it
+independently, **each ran the program themselves**, and each returned `status: fail` citing
+`src/csv.ts:21` — one at severity `major`, confidence 0.95, quoting the input and the output it
+produced. 0.58.0's widened remit worked exactly as specified.
+
+They filed it as `advisory-`, and §4.1 says an advisory cannot move the verdict in either
+direction. So the run shipped over three independent, executed, evidenced findings of a
+confidently wrong answer.
+
+**They filed it there because there was nowhere else.** The output contract has two channels: a
+verdict on a *required id*, or an advisory. No required id covered it — the PRD never mentions
+unterminated quotes, and `PRD-2.1` (quoted fields containing commas, doubled quotes and
+newlines) is genuinely, correctly satisfied. **A reviewer obeying the contract had exactly one
+place to put the finding, and it was the place that cannot block.**
+
+The lesson is not about reviewers and not about advisories. **A remit is not a channel.** 0.58.0
+told the panel it *may* fail a demonstrable wrong answer without giving it an id on which to do
+so, and permission with no place to act is indistinguishable from no permission at all. When
+widening what a reviewer may judge, check that a required id exists to carry the answer.
+
+Three properties make this line work rather than merely exist:
+
+- **Required, not advisory.** It is in `requiredIdsFor`, so every panel member who owns it must
+  return an entry, and a `fail` blocks. Owned by **correctness** — it is a truthfulness question,
+  and that reviewer already executes the binary.
+- **The bar is narrow and absolute: a wrong answer at exit 0.** A crash is not a failure of this
+  line, and neither is a non-zero exit with a diagnostic — those are the program *refusing to
+  lie*, which is the behaviour being required. Silence plus a plausible number is the defect. A
+  wider bar would fail every program that has any bug at all, and §4.2's whole history is gates
+  that no honest project could satisfy.
+- **A pass must name what was tried.** "I probed and found nothing" with no stated input classes
+  is a skipped check wearing a verdict, and the parser's own rule is that missing evidence fails.
+
+**What this does not do**, said plainly so nobody reads it as more than it is: it is a *judgment*
+line, not a gate. No exit code enforces it, it is exactly as good as the reviewer executing it,
+and it can be satisfied by a reviewer that probes lazily. It is strictly better than the advisory
+channel that discarded three correct findings, and strictly weaker than a deterministic check —
+which for this defect class does not exist, because "is this number right" is the oracle problem.
+`gate-integrity` cannot see it, the mutation gate cannot see it (the tests are insensitive to
+inputs nobody wrote), and neither can any linter.
+
+### 4.6 The held-out oracle — the only check not downstream of the builder
+
+**Every other check in this document is downstream of the thing it judges.** The gates run what
+the builder wrote. The ratchet protects ids the builder named. The mutation gate mutates the
+builder's source against the builder's tests. `gate-integrity` reads scripts the builder authored.
+Even the cold panel reads a repository the builder shaped. A mistake shared between an
+implementation and its own tests is invisible to all of them.
+
+**Run 12 measured exactly that, and it is the reason A3 stopped being deferred.** The panel
+passed a binary reporting `mean: 0` where the true answer is 1/3, at exit 0. The reviewer was not
+lazy: it wrote an independent reference parser and summariser *from the PRD and data model* and
+differentially fuzzed **110,877 cases** against it. It could not have found the defect. The
+reference was derived from the same documents, so a property those documents never mention —
+floating-point associativity — is invisible to **both** implementations equally.
+
+**A differential fuzz against a reference built from the same spec is not an independent oracle.
+It is the same assumption, twice.**
+
+So `.meeseeks/oracle.json` holds executable acceptance cases authored at **Phase 0b** — from the PRD
+alone, **before the design phase and before any code exists.** A child that has seen the code
+cannot write them.
+
+**Held out means *not supplied*, in §6.1's sense, and the distinction is stated rather than
+implied.** The store is under `.meeseeks/`, so §6's positional rule makes it driver-owned and a
+builder may not write it. It is never rendered into a brief, a system prompt or a review prompt.
+That second half is a **discipline, not a barrier** — a builder executing arbitrary code can read
+the file, and `oracle.mjs` says so in its own header. Against satisficing, which is the threat
+model this whole document aims at, an artifact the builder was never handed is entirely
+sufficient: **it cannot build to a test it has not been shown.**
+
+**A3's deferral reason no longer holds.** It was deferred because "the builder would own whether
+the gate can fail" — the same objection §4.4 faced with Stryker's threshold, and answered there by
+writing the config into `.meeseeks/` and passing it positionally. The same move applies.
+
+Four properties, each load-bearing:
+
+- **Everything fails closed.** A missing, unreadable or empty store fails the gate; failure to
+  author ends the run. A store that cannot be read is the one shape that looks exactly like an
+  oracle everything passed.
+- **A case that asserts nothing is refused at parse time.** It would execute, check nothing and
+  report success — the "test that cannot fail" of §4, reproduced *inside* the check built to be
+  independent of the builder's tests.
+- **Invocation resolves through `package.json` `bin`**, because that is what a user runs. Run 10
+  found a build whose declared bin was **inert** — zero bytes, exit 0, through a real
+  `npm install -g` — while every gate stayed green, each having invoked `node dist/cli.js`
+  directly. A project with no declared bin fails by name rather than having a plausible-looking
+  file guessed for it.
+- **`cli` only.** Invoking with argv and comparing stdout is a command-line shape; arming it on an
+  `api` or a `library` would be a gate that cannot pass, which is §4.2's defect class.
+
+**It is off by default (`oracle.enabled`), and that contradicts §13's rejection of `enabled`
+flags — deliberately.** §13's argument is about disabling a check *known to work*. This one was
+staged behind a flag because its feared failure mode is the worst available here: **a case that
+invents a requirement the specification does not decide becomes a gate the builder cannot satisfy
+for the rest of the run, and the builder cannot tell an invention from a real requirement.** That
+class has bitten seven times. It has since been armed against real builds, and the fear did not
+materialise: `oracle1` judged **19 of 19** on a case-G target at a false-failure rate of **0**,
+and `oracle2` (14 August) ran the metamorphic relations against real generated code, where they
+caught real numeric defects, drove a fix, and passed at ship with zero false failures. What
+`oracle1` also measured is why the default has not yet flipped: its exit-code-only cases could
+not see run 12's defect class even when that defect was planted back into the tree — the
+relations are the half that can, and they have one live run behind them. The flag remains a
+staging device, not an escape hatch. `templates/oracle-author.md` aims squarely at the invention
+class: when the specification is silent, the author is told to leave the case out and say so.
+
 
 ## 5. Quality-plugin auto-install (the "install plugins like impeccable" line)
 
@@ -1487,36 +1487,6 @@ means nobody managed to ask, not that there is no Claude.
 It needed no new guard rule. §6's protection is positional, so a builder cannot rewrite the
 record of what it is.
 
-### 7.3 `.meeseeks/outcome.json` — what this run *ended* as
-
-§7.1 records what a run **was**, written once after the design phase. Nothing recorded how it
-**ended**: the terminal state, the reason, the iteration count and the spend existed only on
-stdout.
-
-**Stdout is not durable, and this project has the proof.** Dogfood run 4's log lived inside the
-repository because an earlier version of `DOGFOOD.md` said to put it there, `git add -A` tracked
-it, and the ratchet's own `git reset --hard` reverted it. Worse than losing lines: git *replaces*
-the file rather than truncating it, so the shell's open descriptor was left pointing at an
-unlinked inode and **every line written after the reset went nowhere.** That run's terminal state
-had to be reconstructed from `.meeseeks/`, `git log` and the reflog.
-
-So `finish` writes one record on every terminal path — `state`, `reason`, `iterations`,
-`spentTokens`, `costUsd`, `passing`, and `endedAt` from the injected clock. Three properties:
-
-- **It is written at the one door every terminal state passes through.** A state added later
-  cannot forget it, which is the same argument §3.9 makes for the context budget living inside
-  `spawnClaude`.
-- **It lands in `.meeseeks/`**, so it is driver-owned by §6's positional rule and needs no new
-  guard clause, and the ratchet never rewrites it.
-- **Failing to write it does not fail the run.** This is forensics. Destroying a completed run's
-  result because its receipt could not be filed is the wrong way round — the failure is reported
-  instead. That is the opposite of §7.2's archiving, which *does* fail the run, and the
-  difference is real: archiving protects the **previous** run's evidence, and continuing over a
-  failed archive destroys it.
-
-It joins the per-run archive list, because like `run.json` it is overwritten wholesale and a
-second run would otherwise erase the first one's ending.
-
 ### 7.2 `.meeseeks/runs/NNN/` — the previous run, kept
 
 A manifest that only ever describes the *current* run is current rather than forensic. Before
@@ -1584,6 +1554,36 @@ Then `/meeseeks <path|"idea"|∅>`. The interactive session need not run with
 build children it spawns (§3), fenced by the guard hook (§6).
 
 ---
+### 7.3 `.meeseeks/outcome.json` — what this run *ended* as
+
+§7.1 records what a run **was**, written once after the design phase. Nothing recorded how it
+**ended**: the terminal state, the reason, the iteration count and the spend existed only on
+stdout.
+
+**Stdout is not durable, and this project has the proof.** Dogfood run 4's log lived inside the
+repository because an earlier version of `DOGFOOD.md` said to put it there, `git add -A` tracked
+it, and the ratchet's own `git reset --hard` reverted it. Worse than losing lines: git *replaces*
+the file rather than truncating it, so the shell's open descriptor was left pointing at an
+unlinked inode and **every line written after the reset went nowhere.** That run's terminal state
+had to be reconstructed from `.meeseeks/`, `git log` and the reflog.
+
+So `finish` writes one record on every terminal path — `state`, `reason`, `iterations`,
+`spentTokens`, `costUsd`, `passing`, and `endedAt` from the injected clock. Three properties:
+
+- **It is written at the one door every terminal state passes through.** A state added later
+  cannot forget it, which is the same argument §3.9 makes for the context budget living inside
+  `spawnClaude`.
+- **It lands in `.meeseeks/`**, so it is driver-owned by §6's positional rule and needs no new
+  guard clause, and the ratchet never rewrites it.
+- **Failing to write it does not fail the run.** This is forensics. Destroying a completed run's
+  result because its receipt could not be filed is the wrong way round — the failure is reported
+  instead. That is the opposite of §7.2's archiving, which *does* fail the run, and the
+  difference is real: archiving protects the **previous** run's evidence, and continuing over a
+  failed archive destroys it.
+
+It joins the per-run archive list, because like `run.json` it is overwritten wholesale and a
+second run would otherwise erase the first one's ending.
+
 
 ## 8. Builder system prompt (Phase 2)
 
@@ -1677,6 +1677,24 @@ The archived briefs are debugging artifacts. When a run ends badly the first que
 what the builder was actually asked for on the iteration it went wrong, and reconstructing
 that from what it did is guesswork. A raced iteration archives one brief per candidate.
 
+### 8.2 Git history — only where the code has any
+
+A builder changing code it did not write is in a different position from one writing a file
+that did not exist ten minutes ago. So `scripts/history.mjs` adds a few commit subjects and
+a targeted `git blame` line for the files an objective actually points at — and only when
+every one of these holds:
+
+- the repository already had real history **when the run started** (a run that generated the
+  whole application has nothing but its own commits, and quoting those back to the builder
+  is quoting the builder);
+- the file has more than one commit touching it, so it predates this run;
+- a finding cited a `file:line`, which is what blame is aimed at.
+
+Capped at three files, five commits each. No model, no analysis — `git log` and `git blame`,
+bounded, handed to the brief as data. Every condition here exists to stop this becoming a
+habit rather than a judgement.
+
+---
 ### 8.3 The assumptions log — what the builder decided that nobody asked it to
 
 Karpathy's first principle: models make wrong assumptions on your behalf and run along with
@@ -1749,24 +1767,6 @@ registered toolchain, so the gap is a decision somebody makes rather than one th
 This item was blocked behind §3.8's second adapter — not by effort, but because a one-entry
 table is not a seam.
 
-### 8.2 Git history — only where the code has any
-
-A builder changing code it did not write is in a different position from one writing a file
-that did not exist ten minutes ago. So `scripts/history.mjs` adds a few commit subjects and
-a targeted `git blame` line for the files an objective actually points at — and only when
-every one of these holds:
-
-- the repository already had real history **when the run started** (a run that generated the
-  whole application has nothing but its own commits, and quoting those back to the builder
-  is quoting the builder);
-- the file has more than one commit touching it, so it predates this run;
-- a finding cited a `file:line`, which is what blame is aimed at.
-
-Capped at three files, five commits each. No model, no analysis — `git log` and `git blame`,
-bounded, handed to the brief as data. Every condition here exists to stop this becoming a
-habit rather than a judgement.
-
----
 
 ## 9. Meeseeks output style (cosmetic only)
 
@@ -2077,44 +2077,6 @@ file that will not parse. `--show` prints the config as written — the file mer
 defaults, through the validator — without prompting or writing. It is not the running driver's
 view: run-time env overrides such as `MEESEEKS_CHAOS` are applied at launch and are not shown.
 
-### 10.2 Per-phase reasoning effort
-
-`--effort` takes `low`, `medium`, `high`, `xhigh` or `max`, and it is a per-phase knob of exactly
-the same shape as the per-phase models this section already carries. Verified against a live
-child rather than read from help text: every level is accepted by `claude -p`, and the dial
-visibly moves — 232 versus 394 thinking tokens on one trivial prompt at `low` and `max`.
-
-| phase | default | why |
-|---|---|---|
-| `review` | **`max`** | §1.1: the smartest thing in the loop should be the one deciding |
-| `design` | `high` | design mistakes compound across every later iteration |
-| `reality-check` | `high` | it can end a run `ABORTED` |
-| `security-escalation` | `high` | it can trigger a hard reset and a regression objective |
-| `builder`, `prd` | `medium` | they iterate; the ratchet and the gates are what judge them |
-| `lesson-extractor` | `low` | advisory, and returning `null` is an explicitly cheap answer |
-| `oracle-author` | `max` | writes the held-out acceptance artifact before design or code exists |
-
-**The judge is pinned at `max` and this is not a cost decision.** A verdict that gets cheaper as
-a run gets more desperate is satisficing installed at the auditor, which is the single failure
-§1.1 exists to prevent.
-
-**It is recorded in `run.json`**, beside `models`, for the reason that field exists: two runs are
-comparable only if what drove them is written down, and effort changes how hard every child
-thinks.
-
-**The flag sits before `--allowedTools`, and that placement is deliberate.** That flag is
-variadic; anything following it is read as one more tool name. It is the defect that killed every
-phase but `builder`, and it is why `test/live/claude-child.live.test.mjs` asserts **every** level
-against a real child rather than asserting the array (§11.1).
-
-> **Not built: dynamic escalation.** Raising effort after `n` stalled iterations is the obvious
-> next move, and the trigger already exists — `race.after` and `realityCheck.after` both key off
-> the same counter. Three constraints if it is ever built. It may only ever **escalate**: §13
-> rejects a threshold that learns its way downward, and an effort dial that drops when a run
-> *looks* healthy is that defect wearing a new hat. The **reviewer is never dynamic**, for the
-> reason its default is `max`. And it must be measured before it is trusted — "raise effort on a
-> stall" is a hypothesis, and this repository has been wrong about two of those in a single day.
-
 ### 10.1 Deploy — synchronous, fixed-host, and verified before the tag
 
 > **The ssh path is live-verified as of 13 August 2026, against a real DigitalOcean droplet
@@ -2218,6 +2180,44 @@ arming. Tier 2 covers the probe against a real listening server, because HTTP is
 program's contract and unit assertions about it are not enough.
 
 ---
+### 10.2 Per-phase reasoning effort
+
+`--effort` takes `low`, `medium`, `high`, `xhigh` or `max`, and it is a per-phase knob of exactly
+the same shape as the per-phase models this section already carries. Verified against a live
+child rather than read from help text: every level is accepted by `claude -p`, and the dial
+visibly moves — 232 versus 394 thinking tokens on one trivial prompt at `low` and `max`.
+
+| phase | default | why |
+|---|---|---|
+| `review` | **`max`** | §1.1: the smartest thing in the loop should be the one deciding |
+| `design` | `high` | design mistakes compound across every later iteration |
+| `reality-check` | `high` | it can end a run `ABORTED` |
+| `security-escalation` | `high` | it can trigger a hard reset and a regression objective |
+| `builder`, `prd` | `medium` | they iterate; the ratchet and the gates are what judge them |
+| `lesson-extractor` | `low` | advisory, and returning `null` is an explicitly cheap answer |
+| `oracle-author` | `max` | writes the held-out acceptance artifact before design or code exists |
+
+**The judge is pinned at `max` and this is not a cost decision.** A verdict that gets cheaper as
+a run gets more desperate is satisficing installed at the auditor, which is the single failure
+§1.1 exists to prevent.
+
+**It is recorded in `run.json`**, beside `models`, for the reason that field exists: two runs are
+comparable only if what drove them is written down, and effort changes how hard every child
+thinks.
+
+**The flag sits before `--allowedTools`, and that placement is deliberate.** That flag is
+variadic; anything following it is read as one more tool name. It is the defect that killed every
+phase but `builder`, and it is why `test/live/claude-child.live.test.mjs` asserts **every** level
+against a real child rather than asserting the array (§11.1).
+
+> **Not built: dynamic escalation.** Raising effort after `n` stalled iterations is the obvious
+> next move, and the trigger already exists — `race.after` and `realityCheck.after` both key off
+> the same counter. Three constraints if it is ever built. It may only ever **escalate**: §13
+> rejects a threshold that learns its way downward, and an effort dial that drops when a run
+> *looks* healthy is that defect wearing a new hat. The **reviewer is never dynamic**, for the
+> reason its default is `max`. And it must be measured before it is trusted — "raise effort on a
+> stall" is a hypothesis, and this repository has been wrong about two of those in a single day.
+
 
 ## 11. Known weak point
 
@@ -2250,6 +2250,34 @@ nobody has read. **Empty does not throw** — "no test files" is a real state, a
 advance on it belongs to the ratchet, not to a parser. That last one is not theoretical: it is
 what both live runs on 10 August 2026 produced, and every component behaved correctly.
 
+### 11.1 Three test tiers
+
+The weak point above is one instance of a general one, and the general one has a name in this
+repository's history: **`claudeArgs` was unit-tested and correct.** It built exactly the array
+it meant to. The defect lived in *another program's parsing* of that array — `--allowedTools`
+is variadic, the prompt followed it, and the CLI read the prompt as one more tool name. Every
+phase but `builder` was dead, and no run could ever ship. No assertion about the array would
+have caught it.
+
+So: **anything whose contract is owned by a different binary needs one live check, not more
+assertions.** Three tiers, separately runnable, each with an honest cost:
+
+| tier | command | needs | cost |
+|---|---|---|---|
+| 1 — unit | `npm test` | node only | free, seconds |
+| 2 — integration | `npm run test:integration` | real `git`, `node`, `npm` | free, seconds |
+| 3 — live | `npm run test:live` | a real `claude -p` | **real money** |
+
+Tier 2 covers the contracts owned by git and npm: worktree creation and removal, `--ff-only`
+merging, `--numstat` cross-checked against git's own `--shortstat`, and the health probe
+against an actual `npm start` — a shell running npm running a script running a server, then
+torn down again. It found something on its first execution: a `git` predating `--initial-branch`.
+
+Tier 3 is armed by `MEESEEKS_LIVE=1` and **fails without it** rather than skipping. A green tick
+for a suite that made no API call is a lie the reader will take for coverage, and this codebase
+does not get to refuse silent passes everywhere else and then ship one in its own harness.
+
+---
 ### 11.2 TRX — the first format that is not JSON
 
 `dotnet test --logger trx` writes XML, and the registry was built on `JSON.parse`. Widening it
@@ -2283,34 +2311,6 @@ filenames, so a toolchain writing anything else produced a report nobody read �
 from a run in which nothing passed, which is exactly how both 10 August runs ended at
 `passing: 0`. `Toolchain.reports` is what lets the driver ask instead of assume.
 
-### 11.1 Three test tiers
-
-The weak point above is one instance of a general one, and the general one has a name in this
-repository's history: **`claudeArgs` was unit-tested and correct.** It built exactly the array
-it meant to. The defect lived in *another program's parsing* of that array — `--allowedTools`
-is variadic, the prompt followed it, and the CLI read the prompt as one more tool name. Every
-phase but `builder` was dead, and no run could ever ship. No assertion about the array would
-have caught it.
-
-So: **anything whose contract is owned by a different binary needs one live check, not more
-assertions.** Three tiers, separately runnable, each with an honest cost:
-
-| tier | command | needs | cost |
-|---|---|---|---|
-| 1 — unit | `npm test` | node only | free, seconds |
-| 2 — integration | `npm run test:integration` | real `git`, `node`, `npm` | free, seconds |
-| 3 — live | `npm run test:live` | a real `claude -p` | **real money** |
-
-Tier 2 covers the contracts owned by git and npm: worktree creation and removal, `--ff-only`
-merging, `--numstat` cross-checked against git's own `--shortstat`, and the health probe
-against an actual `npm start` — a shell running npm running a script running a server, then
-torn down again. It found something on its first execution: a `git` predating `--initial-branch`.
-
-Tier 3 is armed by `MEESEEKS_LIVE=1` and **fails without it** rather than skipping. A green tick
-for a suite that made no API call is a lie the reader will take for coverage, and this codebase
-does not get to refuse silent passes everywhere else and then ship one in its own harness.
-
----
 
 ## 12. Build order
 
@@ -2520,14 +2520,14 @@ read-only tools, never dangerous mode) over evidence the driver assembled, and r
 
 ## 14. Decisions taken
 
-Every question in the implemented design has been answered, and each answer lives in the section
-that implements it: impeccable installation and gating (§5.1), "meeseeks me" mode (§13.1),
-pluggable deploy (§10), the specialized cold panel (§1.1), and model routing (§10).
+Every question required by the implemented design has an answer in the section that implements
+it: quality-plugin installation and gating (§5), "meeseeks me" mode (§13.1), pluggable deploy
+(§10.1), the specialized cold panel (§1.1), and model routing (§10.2).
 
-One remains genuinely undecided, and is safe to leave that way: whether to add a backend or
-security quality plugin alongside impeccable, which only inspects user interfaces. Until
-one is chosen, the design-slop gate is simply not armed on a project with no UI — the
-single gate skip §5.1 carves out.
+Quality-plugin breadth is no longer an unresolved design question. The default set includes
+Impeccable, Knip, Semgrep, and Schemathesis; applicability still comes from the target's declared
+capabilities. Impeccable inspects user interfaces, so the design-slop gate remains legitimately
+unarmed on a target with no UI under the single skip defined in §5.1.
 
 ---
 

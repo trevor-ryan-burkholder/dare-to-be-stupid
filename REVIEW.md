@@ -5,8 +5,9 @@
 > repair and the relevant verification has passed.
 
 **Reviewed tree:** `main` at `65a14cc` (`pre-codex`), version `0.161.0`
-**Code continuity:** no executable script, hook, or template changed. The 0.162.0 documentation
-release aligns the launcher contract with existing `--give-them-the-box` behavior; F1–F4 code
+**Code continuity:** no executable script, hook, or template changed. Documentation releases
+through 0.163.0 align the launcher, flag, and configuration contracts with existing behavior;
+F1–F4 code
 remains byte-identical and finding status is authoritative only here.
 **Verdict:** **CHANGES REQUESTED** — three high-priority safety defects and one medium-priority
 timeout defect are open.
@@ -162,16 +163,16 @@ the much larger outer gate ceiling, or indefinitely when used without that outer
 
 ## Verification performed
 
-All existing non-paid gates were green on the reviewed tree:
+All existing non-paid gates were green after this documentation repair; the executable tree
+remains byte-identical to the reviewed tree:
 
 - `npm run lint`
 - `npm run typecheck`
 - `npm test` — **2,307 passed, 0 failed**
 - `npm run test:integration` — **51 passed, 0 failed**
-- `npm run release-check` — version `0.162.0` and shipped-file baseline clean
+- `npm run release-check` — version `0.163.0` is an uncommitted bump and `HANDOFF.md` agrees
 
-The paid live tier was not run. The worktree was clean after review. Existing green tests do not
-cover the four failure shapes above.
+The paid live tier was not run. Existing green tests do not cover the four failure shapes above.
 
 ## Closure protocol
 

@@ -1,7 +1,7 @@
 # Dogfood — current scenarios and pending runs
 
 **Document status:** current operational runbook
-**Last swept:** 16 August 2026 at version 0.162.0
+**Last swept:** 16 August 2026 at version 0.163.0
 
 Completed run logs, recipes, autopsies, and measurements are preserved at
 [`docs/history/DOGFOOD-through-2026-08-15.md`](docs/history/DOGFOOD-through-2026-08-15.md).

@@ -178,34 +178,41 @@ whole thing is `node:` builtins and shelling out.
 Everything lives in `.meeseeks/config.json`, which the guard protects during a run — so a gate
 declared here is one the builder **cannot delete**.
 
-**You don't have to hand-author it.** `node scripts/configure.mjs` (run in the target
-repository, with the path pointing at the plugin's `scripts/`) walks the common settings as
-prompts — same validator as the driver, blank keeps the shown default, keys it does not ask
-about survive untouched. `--show` prints the config as written (file merged over defaults)
-without writing anything; run-time env overrides are not shown.
+**You don't have to hand-author it.** From the target repository, invoke the installed plugin's
+script by its real path — the relative path `scripts/configure.mjs` would look inside the target
+and is usually wrong:
+
+```bash
+cd /path/to/target
+node /absolute/path/to/meeseeks/scripts/configure.mjs
+```
+
+The plugin details shown by `/plugin` identify the installed copy; a source checkout works too.
+The wizard walks the common settings as prompts using the same validator as the driver. Blank
+keeps the shown default, and keys it does not ask about survive untouched. `--show` prints the
+config as written (file merged over defaults) without writing anything; run-time env overrides
+are not shown.
 
 ```jsonc
 {
-  "maxIterations": 20,        // the cap that usually binds. See the note below.
-  "tokenCeiling": 120000000,  // 0 means no ceiling, for development
-  "costCeiling": 150,         // 0 means no ceiling
+  "maxIterations": 25,
+  "tokenCeiling": 4000000,    // 0 means no ceiling
+  "costCeiling": 50,          // 0 means no ceiling
   "deadlineMs": 0,            // wall clock; 0 is off. --give-them-the-box arms one
-  "extraGates": [             // checks this project considers gating
-    { "name": "release-check", "command": ["npm", "run", "release-check"] }
-  ],
-  "race": { "enabled": false, "n": 2, "after": 2 },
+  "extraGates": [],           // target-specific operator gates go here
+  "race": { "enabled": false, "n": 3, "after": 2 },
   "oracle": { "enabled": false },
   "sandbox": { "enabled": false }
 }
 ```
 
-**Budget arithmetic, measured rather than guessed.** Completed iterations have commonly cost
-**5–9M tokens**, which is a planning range rather than an upper bound. Phase 0/1 spend arrives
-before the loop, a child can exceed the ceiling before returning, and the parallel panel can
-have three reviewers already in flight when a breach becomes visible. At twelve iterations the
-iteration cap will usually bind before a 150M token ceiling under the observed range, but neither
-number proves a maximum. **If an ordinary run needs more chances to ship, raise `maxIterations`;
-`tokenCeiling` remains a stop signal, not a cap.**
+**Budget arithmetic, measured rather than guessed.** The defaults are conservative stop signals:
+the 4M-token or $50 ceiling will commonly bind before the 25-iteration limit. Completed iterations
+have cost **5–9M tokens** in measured dogfood, which is a planning range rather than an upper bound.
+Phase 0/1 spend arrives before the loop, a child can exceed a ceiling before returning, and the
+parallel panel can have three reviewers already in flight when a breach becomes visible. A ceiling
+therefore bounds whether more work starts; it cannot cap work already in flight. Raise or disable
+one only as an explicit operator decision.
 
 The `% of budget remaining` line reports the **tightest** of iterations, tokens and dollars — the
 limit that will actually end the run, not the most flattering one.

@@ -21,7 +21,9 @@ Start an autonomous run in the current repository.
 Two flags may accompany any of those:
 
 - `--deadline=<minutes>` — a wall clock on the whole run. Off unless given; `0` explicitly
-  disables one. The ordinary ceilings are completion or budget, so most runs never want this.
+  disables one, except that `--deadline=0` is refused with `--give-them-the-box`: nested and
+  unbounded is the one combination the driver will not start. The ordinary ceilings are
+  completion or budget, so most runs never want this.
 - `--give-them-the-box` — **unsupported, deliberately.** Permits a run inside a run, to depth
   two, and arms a 30-minute wall clock unless `--deadline` set one. Everything else still holds.
   It exists because the canon's moral is a Meeseeks who cannot finish summoning another, and a

@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 15 August at 0.162.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 16 August at 0.163.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -10,11 +10,15 @@ non-normative research. `docs/INDEX.md` defines the complete authority map.
 **Ordering principle:** safety and correctness before feature breadth; information-producing
 experiments precede construction only when their result can invalidate that construction.
 
-Statuses: `OPEN` → `IN PROGRESS` → `DONE (version)` / `CLOSED (reason)` — plus, as reality required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answered or moved), `ANSWERED` (measurement obtained), `DROPPED` (operator refused), `DEFERRED` (operator postponed).
+Statuses: `OPEN` → `IN PROGRESS` → `DONE (version)` / `CLOSED (reason)` — plus, as reality
+required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answered or moved),
+`ANSWERED` (measurement obtained), `BLOCKED` (cannot start until named prerequisites close),
+`PARKED` (intentionally outside the current queue until its admission condition is met),
+`DROPPED` (operator refused), and `DEFERRED` (operator postponed).
 
 ---
 
-## Build order — current traversal at 0.162.0
+## Build order — current traversal at 0.163.0
 
 **Gate 0 — external review defects.** These are release-blocking implementation items; the full
 requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -37,6 +41,10 @@ decision**; it is not first in this queue and must not be launched without reope
 
 **Campaign 4 — bounded follow-ons:** item **52** denial dampening → item **53** styled milestone
 lines, after safety and reviewer work.
+
+**Research-gated and conditional work:** item **54** remains **BLOCKED** on F1 and F2; it does not
+enter the queue merely because the supporting analysis exists. Item **55** remains **PARKED** until
+a real run demonstrates a provenance or invalidation failure that passes its admission test.
 
 **Deferred/post-DoD:** item **21** remains deferred until code-complete. Items **32–36** and
 **47–51** remain Phase 6. Item **30** remains a research/measurement intake, not an implicit build.
@@ -955,7 +963,7 @@ SQLite persistence via a typed data layer, two roles (admin/member) with server-
 integrity, project/task CRUD, a dashboard with live counts, a seed script, `/api/health`, and
 Playwright e2e over the core flows. 12 requirements across auth, data, roles, UI and a
 build-and-runs gate (PRD-5.1). Every requirement is satisfiable; none is a trap. Config: uncapped
-ceilings, `maxIterations: 20`, the standard quality-plugin trio.
+ceilings, `maxIterations: 20`, the standard quality-plugin set.
 
 **Runs, not just ships:** PRD-5.1 requires `npm run build` to succeed and the server to serve
 `/login` 200; PRD-5.2 requires the e2e suite to pass against the running app. "That runs" is in

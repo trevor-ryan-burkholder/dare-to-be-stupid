@@ -1,6 +1,7 @@
 # Dynamic workflows and durable provenance
 
-Status: architecture research; no runtime implementation exists yet.
+Status: supporting architecture analysis and experiment design; non-normative, with no runtime
+implementation yet.
 
 Last researched: 2026-08-16 against Claude Code documentation current on that date.
 
@@ -11,8 +12,9 @@ This note evaluates two related ideas:
 2. adding explicit dependency and provenance metadata so Meeseeks can explain and
    selectively invalidate conclusions.
 
-`DESIGN.md` remains the product specification. This document records the research,
-trade-offs, proposed boundaries, and experiments behind any future specification change.
+`DESIGN.md` remains the product specification. This architecture note records source-backed
+analysis, trade-offs, proposed boundaries, and experiments behind any future specification
+change. Raw research remains under `docs/research/`.
 
 ## Decision summary
 
