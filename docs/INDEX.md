@@ -1,7 +1,7 @@
 # Documentation index
 
 **Status:** canonical
-**Last swept:** 15 August 2026 at version 0.162.0
+**Last swept:** 16 August 2026 at version 0.162.0
 
 This file is the control plane for project documentation. Read it first, then load only the
 document needed for the task. Historical and research documents are evidence, not instructions.
@@ -17,6 +17,7 @@ document needed for the task. Historical and research documents are evidence, no
 | `REVIEW.md` | Codex-owned external findings and closure evidence | Release gate for reviewed defects | Claude Code may repair; Codex closes after verification |
 | `HANDOFF.md` | Current repository state and immediate handoff | Operational summary | Keep short; move chronology to `docs/history/` |
 | `DOGFOOD.md` | Pending live experiments and current scenario status | Operational runbook | Completed results move to `docs/history/` |
+| `docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md` | Dynamic-workflow and explicit-provenance architecture research | Supporting analysis; `DESIGN.md` §15 is normative | Update when official behavior is re-verified or an architecture decision changes |
 | `README.md` | Installation, use, and contributor quick start | User-facing summary | Link to canonical detail instead of duplicating it |
 | `BORROWED.md` | Compatibility pointer to the research ledger | Non-normative | Research lives under `docs/research/` |
 | `BRIEF.md`, `COMPLETION.md`, `AUDIT.md` | Compatibility pointers to frozen snapshots | Historical only | Never use as a source of current work |
@@ -35,6 +36,8 @@ When documents disagree, use this order:
 - **Changing code:** `CLAUDE.md`, the relevant `DESIGN.md` section, `PLAN.md`, and open
   `REVIEW.md` findings that touch the change.
 - **Reviewing code:** `REVIEW.md`, the relevant invariant in `DESIGN.md`, and the exact diff.
+- **Dynamic-workflow or provenance work:** `DESIGN.md` §15, then
+  `docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md`, `PLAN.md`, and `DOGFOOD.md`.
 - **Running dogfood:** `DOGFOOD.md`; consult the archived run record only for precedent.
 - **Understanding why:** the relevant file under `docs/history/`, `docs/research/`, or
   `docs/adr/`.

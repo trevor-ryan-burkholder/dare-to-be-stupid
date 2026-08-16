@@ -1,4 +1,4 @@
-# START HERE — current handoff, last swept 15 August 2026
+# START HERE — current handoff, last swept 16 August 2026
 
 **State:** `main` at `0.162.0`. The manifests and package-lock root metadata agree. Measured
 on the current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean;
@@ -23,9 +23,19 @@ the archived handoff.
 3. Complete the live evidence for item 24, dogfood cases A and B in item 20, and the staged
    Ateliers capstone in item 31. Case C remains parked by operator decision.
 4. Take items 52 and 53 only after the safety/reviewer work.
-5. Keep item 21 deferred until the repository is code-complete; Phase 6 remains post-DoD.
+5. Treat the dynamic-workflow probe in item 54 as research-gated and blocked on the safety
+   findings; item 55 remains conditional on evidence that current provenance is insufficient.
+6. Keep item 21 deferred until the repository is code-complete; Phase 6 remains post-DoD.
 
 PLAN owns the statuses. This file deliberately does not duplicate their acceptance criteria.
+
+## Architecture research added on 16 August
+
+[`docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md`](docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md) records the
+current official-source research and conceptual model. The decision is **partial adoption by
+experiment** for role-internal dynamic workflows, with Driver, Builder, Panel, and Oracle authority
+unchanged. A general explicit graph is **not approved**; exact evidence identity and minimal
+dependency metadata are the only conditional next step. No runtime behavior changed.
 
 ## Documentation routes
 
@@ -34,6 +44,8 @@ PLAN owns the statuses. This file deliberately does not duplicate their acceptan
 - `PLAN.md` — only live implementation plan.
 - `REVIEW.md` — Codex-owned external findings.
 - `DOGFOOD.md` — pending experiments and scenario status.
+- `docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md` — supporting research and experiment design;
+  `DESIGN.md` §15 owns the normative boundary.
 - [`docs/history/HANDOFF-through-0.161.0.md`](docs/history/HANDOFF-through-0.161.0.md) — full
   execution chronology through this release.
 

@@ -2520,7 +2520,7 @@ read-only tools, never dangerous mode) over evidence the driver assembled, and r
 
 ## 14. Decisions taken
 
-Every question this design opened has been answered, and each answer lives in the section
+Every question in the implemented design has been answered, and each answer lives in the section
 that implements it: impeccable installation and gating (§5.1), "meeseeks me" mode (§13.1),
 pluggable deploy (§10), the specialized cold panel (§1.1), and model routing (§10).
 
@@ -2528,3 +2528,75 @@ One remains genuinely undecided, and is safe to leave that way: whether to add a
 security quality plugin alongside impeccable, which only inspects user interfaces. Until
 one is chosen, the design-slop gate is simply not armed on a project with no UI — the
 single gate skip §5.1 carves out.
+
+---
+
+## 15. Deferred execution and provenance architecture
+
+**Status: constraints and research conclusions, not shipped behavior.** The supporting analysis,
+official-source notes, alternatives, failure modes, and live questions are in
+[`docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md`](docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md). This
+section is the normative boundary if experiments in `PLAN.md` proceed.
+
+### 15.1 Dynamic workflows are disposable role internals
+
+Meeseeks remains the durable control plane. A long-lived role may eventually use a Claude Code
+dynamic workflow for bounded fan-out, synthesis, or adversarial exploration, but the workflow is
+computation *inside that role*. It owns no objective, budget ledger, ratchet, pin, review verdict,
+or terminal-state transition merely because one of its agents reports success.
+
+- **Driver is not a workflow.** Only the driver may apply role outputs to driver-owned state, and
+  only through the same parsing, gates, evidence checks, and fail-closed transitions used without
+  workflows.
+- **Builder may use a workflow; its workflow may not certify Builder.** A workflow result is a
+  proposed tree or bounded artifact. It passes through deterministic gates and the independently
+  created cold panel exactly like any other builder output.
+- **Panel members remain separate, cold invocations.** They do not join Builder's workflow, inherit
+  its transcript, share its synthesis context, or accept its internal reviewer as panel evidence.
+  A panel member may use its own bounded workflow only if that workflow begins from the panel
+  member's deliberately narrow evidence envelope and cannot see Builder's reasoning history.
+- **Oracle remains held-out and non-authoritative over execution.** Workflow agents may not author,
+  reveal, revise, or grade the held-out oracle. Oracle evidence is evaluated through the existing
+  deterministic and cold-review paths; it does not inherit Builder's context.
+- **Every descendant keeps the existing guard and run markers.** A workflow integration must prove
+  that protected settings, `MEESEEKS_RUNNING`, nesting controls, permissions, timeouts, and process
+  cleanup reach every spawned child. A convenience API is not evidence that these boundaries
+  propagated.
+
+Workflow isolation is not a snapshot protocol. An isolated worktree generally begins from a Git
+commit, not from the caller's uncommitted edits. A role that delegates evolving work must therefore
+create an explicit, attributable phase boundary and import the result deliberately; it may not
+assume a temporary workflow worktree contains the current tree.
+
+### 15.2 Do not build a general graph
+
+The current design already encodes the useful graph implicitly: requirements and panel ownership,
+ratcheted test ids, evidence fingerprints, security and requirement pins, assumptions, findings,
+delegated runs, and terminal conditions. Replacing these with a graph abstraction would add a
+second authority without yet solving a demonstrated product failure. A graph database, workflow
+framework, or node-per-agent telemetry model is rejected.
+
+The first justified increment, if stale evidence or requirement drift proves costly in real runs,
+is **exact provenance metadata** on the existing artifacts: stable claim ids, requirement ids,
+artifact identities and digests, reviewer or gate provenance, upstream assumptions/decisions, and
+the tree identity at which the evidence was observed. Reverse dependency traversal may then mark
+only descendant claims stale. It must not erase unrelated ratchet progress or silently unpin a
+monotonic property; staleness forces re-evaluation and blocks `SHIPPED` until the existing authority
+re-establishes the claim.
+
+If explicit claim dependencies are added, they form a driver-owned acyclic graph. A cycle is an
+input error, missing provenance is not a pass, and no workflow process may write the graph. The
+representation should remain the smallest deterministic JSON structure that proves targeted
+invalidation and resumability; storage technology is not part of the product.
+
+### 15.3 Adoption gates
+
+The open safety findings in `REVIEW.md` take precedence. Dynamic fan-out magnifies the consequences
+of a non-atomic run lock and a watchdog that cannot kill a resistant child, so no unattended
+workflow experiment may become a product path until those findings are closed. Any later adoption
+also requires a paid live contract test against a pinned Claude Code version: preview behavior,
+model routing, budget reporting, worktree creation, context isolation, and termination are external
+contracts and cannot be established by unit tests over our argv.
+
+Success is measured by morning user acceptance, false-completion rate, recovery, and cost per
+accepted outcome. Agent count, workflow complexity, and tokens consumed are not success metrics.

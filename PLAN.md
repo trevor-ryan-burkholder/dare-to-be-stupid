@@ -1334,6 +1334,65 @@ DoD-5-design."). Plain-mode bypass + mapping-tightness tests per event, the exis
 evening, on quota — `CLAUDE.md`'s warning stands: the style layer is the thing most likely to eat time
 that belongs to the ratchet.
 
+### 54. Role-internal Claude Code dynamic workflow experiment — BLOCKED (research-gated)
+
+**Problem solved:** bounded fan-out and synthesis may improve difficult implementation work, but
+only if they do not transfer durable authority to an ephemeral agent organization. This item tests
+that proposition; it does not replace `driver.mjs`, the ratchet, the panel, or the oracle.
+
+**Blocked by:** `REVIEW.md` F1 (atomic run ownership) and F2 (hard process termination). Fan-out
+before those close would amplify two known unattended-execution failures. F3 and F4 remain part of
+the release gate independently.
+
+**Architecture boundary:** `DESIGN.md` §15 and
+`docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md`. Builder may invoke a bounded workflow as an internal
+implementation harness. Driver never becomes a workflow. Panel members are separately instantiated
+and cold; they never join Builder's workflow or inherit its transcript. Oracle material remains
+held out. A workflow result is only a proposed artifact and cannot update `.meeseeks/`, the ratchet,
+pins, findings, or terminal state.
+
+**Experiment shape:** use the disposable recipe in `DOGFOOD.md` against a pinned Claude Code
+version. Start from an explicit commit boundary, record every created worktree, pass guard settings
+and run markers to every descendant, impose phase and aggregate budgets, and persist a
+driver-owned receipt for invocation, model, spend, tree identity, result, and termination. Kill and
+restart are first-class cases, not cleanup details. Do not depend on preview behavior that cannot
+be detected and refused when absent.
+
+**Done when:** all four DOGFOOD cases pass in a paid live run; descendant settings and context
+isolation are evidenced rather than inferred; a killed workflow leaves no process or worktree
+ambiguity; workflow success cannot advance global state; an independently cold panel reviews the
+result; and the measured outcome gives a credible improvement in accepted work or cost without a
+new false-completion path. A failed or inconclusive probe rejects adoption without affecting the
+existing Claude-native path.
+
+### 55. Exact evidence provenance before any explicit graph — PARKED (conditional)
+
+**Problem it would solve:** after an assumption, requirement, or implementation artifact changes,
+the current tree can identify many stale pins by fingerprint but cannot always answer a complete
+machine-readable chain of *why* a requirement is satisfied or calculate the smallest affected set.
+No implementation is justified until a real run demonstrates that this gap causes waste, stale
+evidence, or an unsafe completion decision.
+
+**Smallest candidate:** add stable claim ids and exact subject/evidence/dependency metadata to the
+existing driver-owned artifacts: requirement id, artifact path plus digest, gate/test or reviewer
+provenance, upstream assumption/decision ids, and observed tree identity. Maintain reverse edges so
+a changed input marks only descendant claims stale. Staleness never deletes ratcheted test ids or
+silently relaxes a monotonic pin; it blocks `SHIPPED` until the existing gate or cold reviewer
+re-establishes the claim. Reject dependency cycles and missing identities fail closed. Store this
+as deterministic JSON under `.meeseeks/`; no graph database, orchestration framework, or ephemeral
+agent telemetry graph.
+
+**Admission test:** first trace one requirement end to end using existing run artifacts and attempt
+targeted invalidation offline. Proceed only if the prototype can (a) explain why the requirement is
+satisfied, (b) invalidate all and only descendants after an assumption or artifact change, (c)
+preserve unrelated verified progress, (d) survive restart, and (e) make terminal-state checking
+more deterministic. Otherwise keep the current ratchet/pin/fingerprint model.
+
+**Done when:** either the admission test rejects the feature with recorded evidence, or the minimal
+metadata ships with cycle rejection, targeted-invalidation tests, provenance queries, crash/reload
+coverage, guard ownership, and a terminal check proving no stale required claim can ship. A general
+graph does not follow automatically from passing this item.
+
 ### Phase 6 non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:
 - **Persistent kernel / REPL as the builder's environment** — breaks builder starvation; state
