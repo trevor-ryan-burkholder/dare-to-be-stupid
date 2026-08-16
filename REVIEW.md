@@ -1,15 +1,16 @@
-# Codex code review — 15 August 2026
+# Codex code review — 16 August 2026
 
 > **Ownership:** This is the Codex reviewer document. Codex records and verifies findings here;
 > Claude Code owns implementation. Do not treat an entry as closed until Codex has reviewed the
 > repair and the relevant verification has passed.
 
-**Reviewed tree:** `main` at `65a14cc` (`pre-codex`), version `0.161.0`
-**Code continuity:** no executable script, hook, or template changed. Documentation releases
-through 0.164.0 and the later reviewer-owned architecture maps do not alter runtime behavior.
-F1–F22 are findings against the same executable tree, and finding status is authoritative only
-here.
-**Verdict:** **CHANGES REQUESTED** — eleven high-priority defects and eleven medium-priority defects
+**Reviewed committed baseline:** `main` at `be19c9c`, manifests at `0.164.0`.
+**Runtime continuity:** shipped JavaScript, hooks, templates, and output styles match `65a14cc`
+(`pre-codex`, 0.161.0). The shipped command and manifests changed through 0.164.0 and were reviewed
+at `be19c9c`; they are not folded into the older runtime label. The uncommitted changes described
+by this document are documentation only. F1–F28 cite the current committed files unless a finding
+explicitly identifies historical evidence, and finding status is authoritative only here.
+**Verdict:** **CHANGES REQUESTED** — fifteen high-priority defects and thirteen medium-priority defects
 are open.
 
 This remains a read-only review of the Claude-native implementation. The documentation cleanup
@@ -36,7 +37,7 @@ write, and commit over each other, making both runs' evidence and results untrus
 
 **Required resolution:**
 
-- Acquire the lock in the driver before the first child spawn, repository write, install, or
+- Acquire the lock in the driver before the first child spawn, target-content write, install, or
   commit.
 - Make acquisition one atomic filesystem operation, not `check` followed by overwrite. An
   exclusive create or atomic lock directory are suitable shapes.
@@ -830,6 +831,286 @@ weakens incident diagnosis and morning acceptance without changing the runtime v
 - A deliberately failed gate remains distinguishable from a gate absent from the roster, while
   bounded diagnostics reveal no synthetic secret. PLAN item 76 owns the slice.
 
+### F23 — MEDIUM: `styleModel` is an accepted setting and recorded model with no consumer
+
+**Status:** OPEN
+**Affected:** `scripts/config.mjs:178-183`, `scripts/config.mjs:546-555`,
+`scripts/driver.mjs:5160-5175`, `scripts/driver.mjs:5548-5561`
+
+`defaultConfig()` exposes `styleModel`, strict validation accepts any string supplied for it, and
+`run.json` records that value under the active `models` map. No role invocation reads it. Meeseeks
+narration is the deterministic `scripts/style.mjs` render layer, and bare `/meeseeks` combines idea
+invention with PRD authoring in a child selected by `prdModel`.
+
+This was verified by tracing every `runChild`/`spawnClaude` call and every `styleModel` reference:
+the only Driver read is the manifest write. The previous DESIGN row claiming Fable handled
+narration and idea invention described behavior that does not exist; DESIGN now states the current
+gap rather than concealing it.
+
+**Impact:** an operator can set `styleModel`, pass strict validation, and observe no behavioral or
+cost change, while the durable run record says that model participated. This is a false control and
+makes model/provenance comparisons unreliable. It does not currently change a gate verdict.
+
+**Required resolution:**
+
+- Keep narration deterministic and keep improvisation under `prdModel`; do not silently repurpose
+  the old setting into a new model call.
+- Remove `styleModel` from active defaults and active-model provenance through a documented
+  compatibility transition for existing strict configs.
+- During any deprecation window, accept the legacy key only with an explicit startup warning that
+  it is ignored and names `prdModel` as the improvisation control. New configs must not emit it.
+- Record only configured model selectors that can affect a child. Exact per-invocation model
+  provenance belongs to F22's acceptance receipt rather than this compatibility slice.
+
+**Acceptance evidence:**
+
+- Config fixtures cover an existing legacy key, a newly generated config, and removal at the
+  declared compatibility boundary; none silently pretends the key is active.
+- An injected-child Driver test proves `prdModel` selects the bare-improvisation child; changing the
+  legacy key does not produce a false active-model record.
+- A run manifest contains no inert style selector; F22 remains responsible for exact actual-model
+  provenance per child invocation. The ordinary version bump applies. Paid live evidence is needed
+  only if the implementation also changes child argv, routing, or another external CLI contract.
+  PLAN item 78 owns the compatibility slice.
+
+### F24 — MEDIUM: the shipped command hides the supported `--confirm-prd` checkpoint
+
+**Status:** OPEN
+**Affected:** `commands/meeseeks.md:1-30`, `scripts/driver.mjs:3950-4000`,
+`scripts/driver.mjs:5191-5196`
+
+The Driver parser accepts `--confirm-prd`, commits the authored or ingested `PRD.md`, and exits
+before Oracle, design, or the loop. DESIGN names that human checkpoint. The installed command's
+`argument-hint` omits it and its instructions say that exactly two flags may accompany an input.
+The command passes `$ARGUMENTS` through, so the feature works only for an operator who already
+knows an undocumented spelling. After success the Driver says only to re-run without the flag,
+rather than naming `/meeseeks ./PRD.md`; a literal no-input or repeated-idea rerun can enter the
+idea/improvisation authoring branch and spend an unnecessary PRD-model call before retaining the
+already committed file.
+
+**Impact:** the supported `/meeseeks` surface conceals the only deliberate review boundary before
+unattended work begins. A user who wants to inspect generated intent is led to believe the choice
+does not exist, which weakens original-intent reliability without a runtime failure signal.
+
+**Required resolution:**
+
+- Add `--confirm-prd` to the shipped command frontmatter and flag instructions.
+- State that the first invocation ends after committing `PRD.md`; the accepted run starts as a new
+  invocation with `/meeseeks ./PRD.md`, not as a resumed session. Make the Driver's successful exit
+  message name the same exact continuation rather than merely saying to remove the flag.
+- Keep `--yes` internal to launcher/preflight acknowledgement; do not expose an inert Driver flag
+  as another user control.
+- Keep README, DESIGN, and the shipped command vocabulary identical.
+
+**Acceptance evidence:**
+
+- A static command-contract test fails if the frontmatter, instruction, or argument pass-through
+  loses `--confirm-prd`.
+- An injected-child Driver integration fixture proves idea plus `--confirm-prd` commits a PRD,
+  spawns no later phase, instructs `/meeseeks ./PRD.md`, and the explicit PRD rerun does not
+  re-author intent.
+- `claude plugin validate` passes and the shipped command change receives a version bump. A paid
+  slash-command invocation is needed only if implementation changes Claude Code's external loading
+  or argument-passing contract. PLAN item 79 owns the slice.
+
+### F25 — HIGH: Claude may autonomously invoke the unattended-run command
+
+**Status:** OPEN
+**Affected:** `commands/meeseeks.md:1-5`, `commands/meeseeks.md:34-44`
+
+Current Claude Code uses the same mechanism for custom commands and skills. Its official command
+contract says commands work like skills, `disable-model-invocation` defaults to `false`, and a skill
+without that field is available to Claude's Skill tool. It explicitly recommends the field for
+side-effecting workflows whose timing belongs to the user. The installed Claude Code checked for
+this review is 2.1.233. See the current
+[Anthropic skills documentation](https://code.claude.com/docs/en/slash-commands#control-who-invokes-a-skill).
+
+The shipped command has no `disable-model-invocation` field. During its active turn it grants the
+Bash permissions needed to run preflight and the Driver, and its preflight command supplies `--yes`
+itself. A normal interactive Claude session is not marked `MEESEEKS_RUNNING`, so the nested-run
+guard also does not distinguish a model-selected launch from a user-selected launch.
+
+**Impact:** Claude can select a command that starts a long-lived, permission-bypassing autonomous
+loop even though the operator did not invoke `/meeseeks`. Dirty-tree, remote, and repository scans
+still reduce damage, but none is an authorization check. The failure violates the supported
+command's user-invocation boundary before any Builder, Panel, Oracle, ratchet, or receipt exists.
+It does not establish that arbitrary direct Bash invocation is preventable.
+
+**Required resolution:**
+
+- Add `disable-model-invocation: true` to the shipped command and keep it user-invocable. Do not use
+  `user-invocable: false`, which enforces the opposite policy.
+- Treat scheduled or other non-interactive command launches as unsupported until they have a
+  separate, explicit operator-created authorization contract. State explicitly that the field
+  governs Skill selection, not a model/process already granted arbitrary Bash and a direct script
+  path; do not turn F25 closure into a false global launch-authentication claim.
+- Add a static command-contract test and batch real installed-loader evidence with F24/item 79 and
+  F21/item 75 rather than paying for a separate release campaign.
+- Fail acceptance if the supported pinned Claude Code version ignores the field or the loader
+  surface cannot prove the command is withheld from the model.
+
+**Acceptance evidence:**
+
+- Static tests reject an absent, false, or inverted invocation-control field, and
+  `claude plugin validate` accepts the command.
+- Against the staged, version-bumped installed plugin, a pinned-CLI canary proves `/meeseeks` is not
+  available to autonomous Skill invocation while direct user invocation still loads it and reaches
+  a deliberately safe preflight refusal.
+- The evidence records the actual CLI, plugin, cache, and command identities. PLAN item 80 owns the
+  slice.
+
+### F26 — HIGH: preflight and document phases do not bind the changes they authorize
+
+**Status:** OPEN
+**Affected:** `commands/meeseeks.md:1-44`, `scripts/driver.mjs:1177-1184`,
+`scripts/driver.mjs:4988-5000`, `scripts/driver.mjs:5102-5112`,
+`scripts/driver.mjs:5191`, `scripts/driver.mjs:5328`
+
+The supported command runs `init.mjs` and the Driver as two separate model-directed Bash calls.
+Current Claude Code documents `allowed-tools` as a temporary pre-approval, not a restriction on the
+launcher's available tool pool. The command correctly narrows what it pre-approves, but its prose
+instruction not to edit is the only thing preventing another launcher tool call between the clean
+preflight and Driver start. A concurrent operator or process can produce the same race.
+
+The Driver does not close it: before Phase 0 it rechecks only whether `.meeseeks/` is tracked, and
+F1 covers a later non-atomic run lock. PRD and design children then receive Write/Edit over the
+repository even though their templates declare exact output paths. `commitPhase()` stages
+`git add -A`, so any post-preflight, concurrent, or off-contract child change is committed under the
+PRD/design phase message. This was verified by tracing the command sequence, `runPreflight`, Driver
+entry, role permissions, and both phase-commit call sites.
+
+**Impact:** a working-tree change that preflight promised would be refused can instead be absorbed
+as trusted Meeseeks output, later reset, or shipped. A newly written agent hook or configuration can
+also appear after the security scan but before a child spawn. The resulting tree has no reliable
+provenance even if its later tests and review pass.
+
+**Required resolution:**
+
+- After F1's atomic lock and before archive, child spawn, target-content write, or commit, make the
+  Driver capture current HEAD/status and re-run the non-production remote, positional tracked-state,
+  agent-config scan, effective-config validation, and requested-sandbox checks. Keep command
+  preflight as operator feedback, not as a cross-process authorization receipt. Do not claim this
+  repository snapshot seals mutable host binaries, authentication, or network state.
+- Give each PRD/design phase an explicit path allowlist matching its template contract. Compare the
+  complete tracked/untracked change set to that allowlist and refuse any unexpected neighbour.
+- Stage only admitted paths. Never reset, clean, absorb, or overwrite an unexpected change while
+  refusing it; it may be operator data.
+- Keep this boundary separate from F14, which owns the final gated/reviewed tree rather than launch
+  and pre-loop authorship.
+
+**Acceptance evidence:**
+
+- Integration fixtures pass command preflight and then independently change tracked/untracked
+  status, the remote to a production-shaped URL, the agent surface to a known unsafe file, or the
+  config to request an unavailable sandbox. Driver entry re-evaluates each and refuses before any
+  child/target-content write/archive with repository bytes preserved; a clean benign neighbour proceeds.
+- Hostile PRD and design fixtures write one extra path and are refused without staging it; benign
+  fixtures commit every declared conditional output and no other path.
+- No pre-loop phase uses `git add -A`; the launch/refusal receipt identifies HEAD and bounded path
+  metadata without storing contents or secrets. PLAN item 81 owns the slice.
+
+### F27 — HIGH: the role tool policy approves tools but does not restrict availability
+
+**Status:** OPEN
+**Affected:** `scripts/driver.mjs:1177-1215`, `scripts/driver.mjs:1290-1350`,
+`test/oracle.test.mjs:263-278`, `test/live/oracle-contract.live.test.mjs:39-50`
+
+`PHASE_PERMISSIONS` describes each non-Builder role with `allowedTools`; comments and tests treat
+Oracle-author's empty array as “no tools at all.” `claudeArgs()` passes only `--allowedTools` for a
+non-empty array and passes no tool flag for an empty one. The paid Oracle contract test also invokes
+`phase: "review"`, not the production `oracle-author` policy.
+
+Current official Claude Code semantics are explicit: `--allowedTools` changes permission approval,
+not which tools appear in the model context; `--tools` restricts built-in availability and
+`--tools ""` disables all built-ins. Settings omitted from explicit `--settings` may retain
+file-based values, and MCP surfaces require their own exclusion. See the official
+[CLI reference](https://code.claude.com/docs/en/cli-usage) and
+[Agent SDK permission model](https://code.claude.com/docs/en/agent-sdk/permissions).
+
+Consequently, omitting `--allowedTools` does not establish a zero-tool Oracle. Read-only tools are
+normally available without approval, so an Oracle authored on a resumed tree can inspect the
+implementation that its cases are supposed not to have seen. Other roles can also inherit a broader
+available or pre-approved surface than their table claims. `--safe-mode` may strip customizations,
+but neither the repository nor official contract establishes it as an exact or empty tool set.
+
+**Impact:** the structural reason Oracle-author was split from `review` is not enforced by the CLI
+argv, and its unit/live tests prove the wrong abstraction. Cases may align with existing code rather
+than the PRD, weakening the only held-out deterministic gate. Ambient capabilities can also cross
+Panel/document-role boundaries without appearing in `PHASE_PERMISSIONS`.
+
+**Required resolution:**
+
+- Model available tools separately from auto-approved tools. Builder remains intentionally
+  unrestricted; every other role gets an exact `--tools` set, including `--tools ""` for
+  Oracle-author.
+- Use a measured fail-closed non-interactive permission configuration and prevent inherited
+  MCP/settings/Skill/Agent surfaces from broadening the non-Builder set. Preserve explicit
+  `childSettings()` and the guard for writing roles.
+- Keep every new flag before variadic `--allowedTools`, and do not treat `--safe-mode` as the
+  availability control.
+- Fix the paid Oracle contract test to invoke `oracle-author`; add live policy-class canaries rather
+  than more argv-only assertions. Keep F15's separate question—whether Builder can read the finished
+  Oracle store—out of this repair.
+
+**Acceptance evidence:**
+
+- Unit tests prove exact availability and approval argv for every phase, literal zero built-ins for
+  Oracle-author, and unchanged unrestricted Builder behavior.
+- Pinned live canaries show Oracle-author cannot read a repository sentinel, a read-only role can
+  read but cannot write it, and a document role retains only its declared built-ins and guard.
+  Synthetic inherited allow/MCP capabilities do not appear.
+- Evidence records actual CLI/settings/plugin identities and distinguishes unavailable from denied.
+  Items 77 and 82 then unblock the role-internal workflow experiment; PLAN item 82 owns closure.
+
+### F28 — HIGH: preflight accepts any callable Claude Code version
+
+**Status:** OPEN
+**Affected:** `scripts/preflight.mjs:102-109`, `test/preflight.test.mjs:51-59`,
+`test/preflight.test.mjs:135-140`, `test/live/binary-identity.live.test.mjs:8-16`
+
+`checkClaudeCli()` treats any successful `claude --version` exit as compatible. It neither parses
+the version nor enforces a minimum. The healthy preflight fixture happens to say 2.1.226, but the
+only failing case is a missing executable.
+
+That is not sufficient for this product. Driver and command behavior depends on versioned external
+contracts: `--safe-mode`, `--settings`, output envelopes, hook propagation, command/Skill
+frontmatter, and the distinction between `--tools` and `--allowedTools`. The repository's own live
+binary-identity test records an ancestor npm binary at 2.1.136 that “has never heard of
+`--safe-mode`.” The repository has individual live measurements on 2.1.226/2.1.228 and source
+validation on 2.1.233, not a complete product contract matrix. The exact earliest compatible
+version has not been established, so selecting a convenient constant now would replace
+an absent check with unsupported precision.
+
+**Impact:** a stale or shadowed PATH binary can pass preflight and then reject a required flag,
+produce a different envelope, or fail to enforce a command/role boundary. An unattended run may die
+after doing work, and fixes for F25 or F27 may appear installed while the executing loader is too old
+to honor them.
+
+**Required resolution:**
+
+- Establish one canonical minimum supported Claude Code feature floor from the oldest pinned CLI
+  that passes every mandatory live command and child contract used by the release. Do not infer it
+  from a single documented feature or guess it from the current developer machine.
+- Parse `claude --version` fail-closed and refuse older, prerelease-ambiguous, or unparseable output
+  before run work. Print the selected executable identity, detected value, required floor, and an
+  upgrade/sign-in repair without attempting a network install.
+- Keep the version floor in one runtime source and align preflight, README, DESIGN, fixtures, and
+  release evidence. Raise it when a required external feature raises the demonstrated floor.
+- Treat the check as an early compatibility gate, not capability proof. Paid live contracts,
+  including items 75, 80, and 82, remain mandatory at the declared floor and the current supported
+  CLI.
+
+**Acceptance evidence:**
+
+- Unit cases cover below/equal/above-floor versions, ordinary decorated output, prerelease output,
+  malformed output, and a failed executable.
+- An integration fixture places a known-old synthetic binary first on PATH and proves refusal before
+  state creation, child spawn, target-content write, or automatic upgrade.
+- Pinned live runs at the declared floor and current supported version pass the staged candidate's
+  full `npm run test:live`, including the item 75/80/82 canaries, and record exact binary, CLI,
+  settings, and plugin identities.
+- The disposable installed-plugin check uses the same staged candidate. PLAN item 83 owns closure.
+
 ## Audit coverage maps
 
 These tables are reviewer evidence and triage aids, not new sources of product requirements.
@@ -842,9 +1123,12 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | Builder cannot write Driver state | positional PreToolUse guard plus child settings; paid live coverage | tool-mediated writes only; F15 allows Oracle reads and F16 shows executed target code is outside the hook boundary |
 | Builder cannot certify Builder | separate Panel processes and Driver recombination | F6 and F7 currently weaken the evidence/process boundary |
 | Panel is cold | fresh read-only `claude -p`, safe mode, narrowed supplied prompt | not sealed, and F14 shows the live tree can change after it is read |
-| Oracle is independent | PRD-only no-tools author; deterministic execution | F8 breaks run binding; F15 means cases are not confidential from Builder |
+| Oracle is independent | PRD-only zero-tool author; deterministic execution | F8 breaks run binding; F15 means cases are not confidential from Builder; F27 shows the zero-tool author policy is not enforced |
 | budgets and deadlines are hard | Driver accounting, CLI child allowance, timers | in-flight overshoot exists; F18 breaks spend conservation; F2/F4 mean some wall-clock bounds are not hard |
-| sandbox and model routing hold | settings/argv plus paid live probes | owned by an external binary/provider and must be re-probed when changed |
+| sandbox and model routing hold | settings/argv plus paid live probes | owned by an external binary/provider and must be re-probed when changed; F23 records one inert model route as active |
+| external CLI feature contract | parsed minimum plus pinned live command/child canaries | F28 currently accepts any callable version and the supported floor is unmeasured |
+| supported command requires user invocation | `disable-model-invocation` plus direct user invocation | F25 leaves that command on the model's autonomous Skill surface; arbitrary direct Bash is outside this guarantee |
+| preflight authorizes the tree the Driver receives | command preflight plus Driver checks | F26 leaves a model/process gap and stages all pre-loop changes |
 | terminal state is durable | `outcome.json` on `driveRun.finish` paths | F10: incomplete/non-atomic coverage; F22: no complete acceptance proof |
 | graph/provenance is complete | purpose-built ratchet, pins, review, Oracle, assumptions | no general claim graph; stable run/edge identity remains conditional PLAN item 55 |
 
@@ -860,7 +1144,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | `gate-skip.json` | cross-run cache, Driver-owned | carries only failures on an identical tree | atomic; corruption degrades to re-running gates |
 | `oracle.json` | intended run/objective scope, Driver-owned | deterministic held-out gate | F8: persists across runs, unignored, non-atomic |
 | `capabilities.json` | current-tree snapshot, Driver-owned | record of resolved capability state; runtime uses the in-memory resolution | atomic but F9 allows target-history pollution |
-| `run.json`, `outcome.json` | per run, Driver-owned | manifest records only; outcome is terminal evidence | manifest atomic/no reader; F10 outcome coverage/atomicity; F22 omits deterministic acceptance links |
+| `run.json`, `outcome.json` | per run, Driver-owned | manifest records only; outcome is terminal evidence | manifest atomic/no reader; F10 outcome coverage/atomicity; F22 omits deterministic acceptance links; F23 records an unused model as active |
 | `review.json`, briefs, assumptions | per run, Driver-owned | review evidence; assumptions are supplied context, not verdicts | archived; review/brief writes are forensic rather than decision inputs |
 | lessons and bloopers | cross-run, Driver-owned | advisory prompt context / human history | lesson corruption degrades loudly to none; bloopers append |
 | test/e2e reports, mutation config, browser marker | per iteration or tool invocation | ratchet/gates consume reports; other files configure or record tools | F9 ignore gap; F16 lacks attempt/tree identity; F19 lacks size bounds; F20 lacks path containment |
@@ -892,6 +1176,12 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | reporter path | contained test definition reproducible from the repository | F20 |
 | installed snapshot | loader/cache resolves the released commit and every runtime component | F21 |
 | acceptance receipt | exact-tree deterministic and independent evidence is traversable after the run | F22 |
+| configured model route | every accepted active model key reaches the role it claims to control | F23 |
+| operator PRD checkpoint | installed command advertises and preserves the supported pre-loop human boundary | F24 |
+| supported command invocation | `/meeseeks` is unavailable to autonomous Skill selection and remains directly user-invocable | F25 |
+| pre-loop change provenance | launch and document phases admit only declared paths from a clean tree | F26 |
+| role tool availability | each non-Builder sees only its declared built-ins and no inherited capability surface | F27 |
+| Claude Code feature floor | selected binary is new enough for every mandatory external contract | F28 |
 
 ### Explicit negative guarantees
 
@@ -906,6 +1196,15 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 - Reporter file names are normalized but not proven repository-contained (F20).
 - Source validation is not proof that the installed cache snapshot matches the release (F21).
 - A terminal `SHIPPED` record does not retain a complete deterministic acceptance proof (F22).
+- `styleModel` is currently an inert accepted key and `run.json` nevertheless records it as active
+  model provenance (F23); narration is deterministic and improvisation uses `prdModel`.
+- The Driver supports `--confirm-prd`, but the installed command does not advertise it (F24).
+- The installed `/meeseeks` command remains available to autonomous model invocation (F25).
+- A clean command preflight does not bind the Driver's input tree or document-phase outputs (F26).
+- `PHASE_PERMISSIONS.allowedTools` records approvals, not a closed role tool surface; Oracle-author's
+  empty list currently disables nothing (F27).
+- A successful `claude --version` exit does not establish compatibility with the required external
+  command and child contracts (F28).
 - A model verdict is judgment, not deterministic proof; only the Driver combines it with gates.
 - `run.json` is a record and is deliberately not read as authority.
 - There is no crash-resume protocol, lifecycle journal, dynamic-workflow runtime, or general claim
@@ -924,6 +1223,12 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | evidence-citation adversary | F6 reproduced a shipping-eligible pass with a nonexistent citation |
 | authority by write site | F1, F8, and F9 show authority or machine state whose writer/lifecycle boundary is weaker than its reader assumes |
 | environment and argument taint | F5 exposes ambient values; command argv remains array-based and prompts remain stdin-delivered, so no additional argument-injection finding was established |
+| configuration-to-effect reachability | F23 proves one strict accepted model key has no runtime consumer and is still recorded as active provenance |
+| command-surface reachability | F24 finds one implemented control omitted by the installed command hint and instructions; `--yes` is intentionally left internal |
+| launcher-authority reachability | F25 checks the current external command/skill default and finds no user-only control on the supported command |
+| preflight-to-use race | F26 traces the separate launcher calls, missing Driver revalidation, write-capable document roles, and broad phase staging |
+| tool availability versus approval | F27 finds `allowedTools`/`--allowedTools` treated as a closed set even though the external CLI requires `--tools`; the production Oracle policy is absent from its live contract test |
+| version-to-capability boundary | F28 finds preflight accepting a known-too-old class of CLI without parsing a measured feature floor; version remains an early gate rather than a substitute for live contracts |
 | monotonic escape audit | the stored set unions correctly, but F16 weakens reset verification and F17 shows a stable ID can inherit credit after its definition changes |
 | hostile cross-platform pass | F11 is the platform finding; F6 and F20 require Windows-shaped containment cases |
 | budget conservation | F18 finds one uncharged role and one early-return loss after parallel settlement |
@@ -941,7 +1246,12 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | ratchet banking versus `lastGoodCommit` | `DESIGN.md` now distinguishes successful-unit-gate banking from full-acceptance commit advancement |
 | archived artifact count | `DESIGN.md` now names all six archived artifact classes rather than claiming there are three |
 | review package and `HEAD~1` base | PLAN item 41 is closed as inapplicable after tracing every current consumer |
-| current finding counts and queue | `HANDOFF.md` now agrees with F1–F22 and PLAN items 56/60–76 |
+| current finding counts and queue | `HANDOFF.md` now agrees with F1–F28 and PLAN items 56/60–83; item 77 is a separate research-derived boundary item, not a REVIEW finding |
+| model-role vocabulary | DESIGN now says `styleModel` is inert, deterministic style has no model, and bare improvisation uses `prdModel`; F23/item 78 own the code/config repair |
+| flag vocabulary | README and DESIGN name `--confirm-prd`; the shipped command remains the release-blocking mismatch in F24/item 79 |
+| invocation authority | DESIGN now requires a user-only supported command and disclaims arbitrary direct-Bash authentication; the versioned command/loader repair remains F25/item 80 |
+| role tool terminology | DESIGN now distinguishes `--tools` availability, `--allowedTools` approval, safe-mode isolation, and inherited MCP/settings surfaces; F27/item 82 own enforcement |
+| CLI compatibility terminology | DESIGN distinguishes a measured product-wide feature floor from any one feature minimum; F28/item 83 own enforcement |
 | conceptual ERD versus implemented Oracle lifecycle | the architecture report now labels the run-to-Oracle edge as intended but currently violated by F8 |
 | role vocabulary | Builder, Panel/reviewer, Oracle, and Driver retain the meanings and authority boundaries in `DESIGN.md`; no runtime is renamed or replaced |
 
@@ -957,7 +1267,7 @@ remains byte-identical to the reviewed tree:
 - `npm run release-check` — **ok** at `0.164.0`; no shipped file has changed since release and
   `HANDOFF.md` agrees
 
-The paid live tier was not run. Existing green tests do not cover the twenty-two failure shapes above.
+The paid live tier was not run. Existing green tests do not cover the twenty-eight failure shapes above.
 
 ## Closure protocol
 

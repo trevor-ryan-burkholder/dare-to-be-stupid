@@ -5,6 +5,31 @@ better. Ranked by value, with honest costs. Appearance here does not mean a prop
 
 Sources at the bottom.
 
+## Current disposition — read this before the chronological ledger
+
+The headings below preserve what a research pass concluded **at that time**. Phrases such as
+“take it” and “cheap and real” are historical intake verdicts, not current instructions. The
+current authorities are `DESIGN.md` for accepted architecture and `PLAN.md` for scheduled work.
+
+- **Implemented or absorbed:** the original items 1–6; R1–R7, R9–R10, R13–R21, R23–R24, R26,
+  R30–R35, R39, and R40. Later text in the relevant entry records the shipped version or the
+  canonical design section.
+- **Still live in PLAN:** R25's remaining denial dampening is item 52; R27 is item 40; R29 is item
+  42; R36/R37 are item 35; R38's component core is item 24 and its residual restart registry is
+  item 36; R41/R42 are item 59; and R44 is item 77.
+- **Closed, rejected, or only cautionary:** R8, R11–R12, R22, R28, and the explicitly rejected
+  round controls remain evidence, not work. R43 was rechecked against the existing stalled-progress
+  tracker and reality-check circuit breaker and adds taxonomy without a new decision. R46's useful
+  character count and growth trajectory already ship in the context-budget path; imperative-word
+  density is not a reliable acceptance metric. R47 overlaps the terminal receipt, morning-acceptance
+  result, and conditional lifecycle journal without establishing another consumer.
+- **Parked:** R45 becomes relevant only if one document is intentionally co-written by an operator
+  and the Driver. No current artifact has that ownership shape, so an intra-document guard would be
+  speculative.
+
+Before reopening a rejected or parked item, identify changed repository conditions or new evidence.
+Do not infer current priority from this file's physical order.
+
 ---
 
 ## Tier 1 — take these

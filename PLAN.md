@@ -24,14 +24,15 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
 
 - **F1:** acquire the repository lock atomically before any work.
+- **F26 / item 81:** after that lock, revalidate launch safety and admit only declared pre-loop phase outputs.
 - **F2:** make timeout and output-cap termination force and settle after a bounded SIGTERM grace
   period.
 - **F3:** prevent an unrelated local listener from satisfying the health gate.
 - **F6 / item 60:** resolve every passing reviewer citation to a contained, existing line before
   Panel combination.
 - **F7 / item 61:** require both process success and envelope success from every Claude role.
-- **F8 / item 62:** bind held-out Oracle cases to the current run and PRD.
 - **F12 / item 66:** bind every role and terminal decision to one immutable specification revision.
+- **F8 / item 62:** bind held-out Oracle cases to that run and specification revision.
 - **F14 / item 68:** commit and tag only the exact workspace identity gated and reviewed.
 - **F16 / item 70:** accept only fresh successful test reports from the current gate attempt.
 - **F18 / item 72:** conserve every completed child envelope into ceilings and terminal receipts.
@@ -41,20 +42,54 @@ child-environment contract before replacing ambient inheritance, then prove the 
 paid Claude child. F11 is item **65**: prove descendant cleanup on Windows rather than inferring it
 from POSIX process-group tests. F15/item **69** must either establish real Oracle read isolation or
 narrow the product guarantee based on a paid Builder probe. F21/item **75** adds the real-loader
-and disposable-cache release contract. All close before feature fan-out.
+and disposable-cache release contract. F25/item **80** makes the shipped command user-invocable only
+under the current Claude Code command/skill contract without claiming to authenticate arbitrary
+direct Bash. F27/item **82** makes each non-Builder role's tool availability match its declared
+policy rather than only pre-approving named tools. F28/item **83** establishes and enforces the
+measured product-wide Claude Code feature floor. All close before feature fan-out.
 
 **Gate 0C — remaining external review defects.** Close F4's absolute HTTP deadline/body cap, F9's
 positional machine-state ignore boundary through item **63**, F10's complete atomic terminal
 receipt through item **64**, F13's non-shrinking gate roster through item **67**, F17's
 definition-bound test credit through item **71**, F19's bounded decision-artifact reads through
-item **73**, F20's contained reporter identities through item **74**, and F22's durable exact-tree
-acceptance receipt through item **76**. F11 may share F2's process-lifecycle implementation, but
-retains its own platform evidence.
+item **73**, F20's contained reporter identities through item **74**, F22's durable exact-tree
+acceptance receipt through item **76**, F23's inert model configuration through item **78**, and
+F24's hidden PRD checkpoint through item **79**. F11 may share F2's process-lifecycle
+implementation, but retains its own platform evidence.
+
+**Gate 0 dependency edges.** The A/B/C groups classify priority and external evidence; they are not
+permission to implement shared primitives in arbitrary order. Preserve these concrete edges:
+
+1. F1 owns the run before any later Driver state transition. Item **81** then captures and enforces
+   launch/pre-loop provenance under that ownership before any child, archive, target-content write, or
+   phase commit. F2 and F11 share one bounded terminate/force/sweep state machine while retaining
+   separate platform evidence.
+2. Item **66** establishes the one specification identity consumed by items **62**, **68**, and
+   **76**; do not let any of those invent a parallel PRD identity.
+3. Item **64** establishes the atomic terminal writer before item **73** routes refusal through it
+   and before item **76** extends its receipt.
+4. Items **68**, **70**, and **72** establish exact-tree, attempt, and usage identities before item
+   **76** assembles the acceptance receipt. Items **71** and **74** must agree on the contained test
+   definition receiving current credit.
+5. Item **75** may build the reusable loader gate in Gate 0B, but its acceptance run exercises the
+   staged, version-bumped candidate after that slice's shipped-file changes have landed. Items
+   **79** and **80** should share one versioned command-contract slice, whose installed result item
+   **75** verifies. Item **83** may add parsing and early refusal independently, but its declared
+   floor is accepted only after the staged candidate passes the mandatory item **75**, **80**, and
+   **82** live contracts at both the floor and current supported CLI. This is an evidence
+   dependency, not a construction cycle. Every later release candidate reruns the gate; an earlier
+   source-only or version-only pass is never acceptance evidence.
+6. Items **77**, **82**, and **83** close the durable prompt-supply, effective tool-availability,
+   and supported-CLI boundaries before item **54** may fan a role out into a dynamic workflow.
+   None is evidence for another, and `--safe-mode` is not a substitute for an exact tool set.
 
 **Campaign 1 — reviewer contract:** after F6/item **60**, implement item **40** (unverifiable
-channel and mandatory attack account). Item **41** is closed as inapplicable: the current Driver
-does not assemble a Panel diff package, and its `HEAD~1` uses do not feed review evidence. Batch
-actual shared parser/template work and pay the required tier-3 check once.
+channel and mandatory attack account). After item **66** establishes specification identity,
+item **77** makes the cold-role `not supplied` discipline machine-checkable; it complements but
+does not close F15's separate filesystem-confidentiality question. Item **41** is closed as
+inapplicable: the current Driver does not assemble a Panel diff package, and its `HEAD~1` uses do
+not feed review evidence. Batch actual shared parser/template work and pay the required tier-3
+check once.
 
 **Campaign 2 — deterministic gates:** finish item **42** Slice B (impeccable JSON, reviewer
 evidence, viewport path) → item **29** (detect-first gitleaks and registry version pinning).
@@ -1337,7 +1372,7 @@ reviewer prompt gains constitutional text as a side effect.
 
 ## Current follow-ons and research-gated experiments
 
-This heading ends Phase 6. Items 52, 53, 56, and 57 are pre-DoD only in the order stated at
+This heading ends Phase 6. Items 52, 53, 56, 57, and 77–82 are pre-DoD only in the order stated at
 the top of this file; items 54, 55, and 58 are conditional or research-gated; item 59 remains
 post-DoD because it depends on Phase-6 item 35. Item numbering records chronology, not priority.
 The top-level build order is authoritative when physical placement and execution order differ.
@@ -1398,9 +1433,11 @@ that belongs to the ratchet.
 only if they do not transfer durable authority to an ephemeral agent organization. This item tests
 that proposition; it does not replace `driver.mjs`, the ratchet, the panel, or the oracle.
 
-**Blocked by:** `REVIEW.md` F1 (atomic run ownership) and F2 (hard process termination). Fan-out
-before those close would amplify two known unattended-execution failures. F3 and F4 remain part of
-the release gate independently.
+**Blocked by:** `REVIEW.md` F1 (atomic run ownership), F2 (hard process termination), item **77**
+(durable prompt-supply boundary), F27/item **82** (effective role tool availability), and
+F28/item **83** (supported CLI feature floor). Fan-out before those close would amplify known
+unattended-execution or role-isolation failures. F3 and F4
+remain part of the release gate independently.
 
 **Architecture boundary:** `DESIGN.md` §15 and
 `docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md`. Builder may invoke a bounded workflow as an internal
@@ -1415,9 +1452,10 @@ default, and cancellation must settle every descendant before the role returns.
 **Experiment shape:** use the disposable recipe in `DOGFOOD.md` against a pinned Claude Code
 version. Start from an explicit commit boundary, record every created worktree, pass guard settings
 and run markers to every descendant, impose phase and aggregate budgets, and persist a
-driver-owned receipt containing durable role and parent lineage, prompt/template/brief digests,
-settings/tool/permission digest, model and effort, spend, tree/worktree identity, result, and
-termination. Record the minimum durable context needed to reproduce the boundary — never hidden
+driver-owned receipt containing durable role and parent lineage, item 77's prompt-supply manifest,
+settings/tool/permission digest, model and effort, whole-tree `modelUsage` plus estimated spend,
+tree/worktree identity, result, and termination. Top-level `usage` is not descendant accounting.
+Record the minimum durable context needed to reproduce the boundary — never hidden
 reasoning or an enormous telemetry graph of ephemeral agents. Kill and restart are first-class
 cases, not cleanup details. Do not depend on preview behavior that cannot be detected and refused
 when absent.
@@ -1822,6 +1860,199 @@ referenced immutable policy digest; never raw environment values or unbounded lo
 same-tree acceptance edge; absent and failed gates remain distinct; stale/mixed/wrong-tree evidence
 cannot complete the receipt; archived receipts remain interpretable after config changes; and
 synthetic secrets do not appear. REVIEW F22 owns closure.
+
+### 77. Record and enforce the cold-role supply boundary — OPEN (BORROWED R44)
+
+**Problem solved:** Panel and Oracle independence partly rely on `not supplied`: the Driver does
+not place Builder history, workflow synthesis, or held-out cases into a cold role's context. That
+is an architectural discipline, not filesystem secrecy, and today prompt construction leaves no
+machine-readable account of which input classes crossed the boundary. A future refactor can add a
+forbidden input while template-string tests remain green.
+
+Make prompt assembly return both the rendered text and a Driver-owned, sanitized supply manifest.
+The manifest identifies the role invocation, specification revision from item **66**, input class,
+content digest, and byte count; it never stores raw environment values, hidden reasoning, or a
+second copy of prompt content. A per-role policy rejects forbidden classes before spawn: Panel may
+not receive Builder logs, iteration history, or Builder-workflow synthesis; Oracle-author remains
+PRD-only; Builder may not receive Oracle cases or Panel transcripts. Archive the manifest beside
+the role receipt. This proves only the deliberate prompt/brief channel. It must never be described
+as preventing a role from reading repository-visible files; F15/item **69** owns that different
+question.
+
+**Done when:** hostile unit cases inject every forbidden class into each affected role and refuse
+before `claude -p`; benign neighbours prove each documented allowed class still arrives; a
+verifier given the assembled prompt and system/template inputs can recompute every manifest digest
+and byte count without the manifest storing those bytes again; item **54** reuses this
+manifest for a role-internal workflow rather than
+creating another context ledger; and an integration fixture proves a cold Panel invocation cannot
+be assembled with Builder history even when a caller attempts it.
+
+### 78. Retire the inert `styleModel` without breaking configuration silently — OPEN (REVIEW F23)
+
+**Problem solved:** `styleModel` is a validated operator setting and `run.json` records it as an
+active model, but no `spawnClaude` path consumes it. Meeseeks narration is deterministic and bare
+`/meeseeks` sends idea invention plus PRD authoring through `prdModel`. A setting that accepts a
+custom value and changes nothing is a false control; recording it as active also corrupts run
+comparability.
+
+Keep the deterministic style layer and `prdModel` routing. Do not repurpose the old name into new
+behavior. Remove it from active defaults and the run manifest through an explicit compatibility
+transition: existing target configs may be accepted for one documented deprecation window only if
+startup says the key is ignored and names the replacement (`prdModel` for improvisation); new
+configs and the wizard stop emitting it. Remove the legacy acceptance at the declared boundary.
+The run manifest lists only configured model selectors that can affect a child invocation; item
+76's acceptance receipt, not this compatibility slice, owns exact per-invocation model provenance.
+
+**Done when:** changing `styleModel` cannot silently appear to select a model; legacy, new, and
+post-window config fixtures exercise the documented transition; a Driver test with an injected
+child proves bare improvisation selects `prdModel`; deterministic narration creates no model record;
+`run.json` contains only active configured model selectors; and DESIGN/configure/help text agree.
+This is a shipped config/manifest change and receives the ordinary version bump. The paid live tier
+is required only if the implementation also changes child argv, routing, or an external CLI contract;
+the smallest compatibility repair does not.
+
+### 79. Expose the existing `--confirm-prd` checkpoint in the shipped command — OPEN (REVIEW F24)
+
+**Problem solved:** the Driver and DESIGN support `--confirm-prd`, but the installed command's
+frontmatter hint and instructions claim there are only two flags and omit it. The only deliberate
+human checkpoint is therefore invisible on the supported `/meeseeks` surface even though the parser
+accepts it.
+
+Update `commands/meeseeks.md` in a versioned shipped slice: list the flag in `argument-hint`, explain
+that it commits `PRD.md` and exits before Oracle/design/build, and tell the operator to start the
+accepted artifact explicitly with `/meeseeks ./PRD.md`. Update the Driver's successful checkpoint
+message to name that same exact continuation; “re-run without `--confirm-prd`” alone can send a
+literal operator back through idea/improvisation authoring. It is a boundary between two invocations,
+not a suspended unattended run. Keep README and DESIGN language aligned; `--yes` remains the
+launcher's internal preflight acknowledgement and is not promoted as a user control.
+
+**Done when:** a static command-contract test asserts the frontmatter, instruction, and pass-through
+of `--confirm-prd`; an injected-child Driver integration fixture authors an idea with the flag,
+observes a committed PRD and no later phase spawn, asserts that the exit instruction names
+`/meeseeks ./PRD.md`, then starts that exact PRD without re-authoring it; `claude plugin validate`
+passes; and the shipped command/Driver change receives the required version bump. A paid
+slash-command invocation is not required unless implementation changes the external Claude Code
+loading or argument-passing contract. REVIEW F24 owns closure.
+
+### 80. Make the supported `/meeseeks` command user-invocable only — OPEN (REVIEW F25)
+
+**Problem solved:** current Claude Code treats custom commands as skills and, unless
+`disable-model-invocation: true` is present, advertises them to the model for autonomous invocation.
+`commands/meeseeks.md` omits the control while granting its active turn permission to run preflight
+and the Driver. The command itself supplies preflight `--yes`, and an ordinary interactive session
+is not marked `MEESEEKS_RUNNING`; neither existing boundary proves that a person requested a new
+unattended run.
+
+Add `disable-model-invocation: true` to the shipped command frontmatter. Keep it user-invocable;
+`user-invocable: false` is the opposite policy. This closes autonomous Skill selection, not direct
+execution by a process already granted arbitrary Bash and aware of the plugin script path; that is
+an unsupported operator/development surface, not an authentication guarantee. Do not weaken the
+command control to support scheduled or model-selected launches: any future non-interactive
+supported launcher needs its own explicit operator-created authorization and acceptance contract.
+Add a static frontmatter assertion and batch the external behavior probe with items **79** and
+**75** against the staged installed candidate.
+
+**Done when:** command-contract tests fail if the field is absent, false, or confused with
+`user-invocable`; `claude plugin validate` accepts the versioned command; a paid pinned-CLI canary
+shows the installed command is absent from the model's invocable Skill surface while a direct user
+invocation still loads it and reaches a deliberately safe preflight refusal; the canary records the
+actual CLI/plugin identities; and an unsupported or unobservable control fails acceptance rather
+than falling back to prompt wording. REVIEW F25 owns closure.
+
+### 81. Bind preflight and document phases to declared repository changes — OPEN (REVIEW F26)
+
+**Problem solved:** supported launch runs preflight in one interactive Claude tool call and starts
+the Driver in a later call. Claude Code's `allowed-tools` field pre-approves the two intended Bash
+commands but does not restrict the launcher's other tools. The Driver rechecks tracked state and the
+run lock, not repository cleanliness or the other mutable preflight facts. Its PRD and design
+children also hold unrestricted repository Write/Edit, despite templates declaring exact output
+paths, and `commitPhase()` stages every change with `git add -A`. A launcher edit, concurrent user
+edit, or off-contract document-child edit can therefore be committed as trusted phase output.
+
+After F1 acquires the atomic run lock, make the Driver establish the authoritative launch snapshot
+before any archive, child, target-content write, or commit. Reuse, at minimum, preflight's clean
+HEAD/status, non-production remote classification, positional tracked-state check, agent-config
+security scan, effective-config validation, and requested-sandbox availability rather than creating
+weaker lookalikes. Binary/auth/network failures keep their existing fail-closed behavior; do not
+misdescribe a repository snapshot as sealing mutable host state. Around each pre-loop document
+phase, record the before identity and declare its permitted output set (`PRD.md` for PRD authoring;
+the architect template's
+named root/docs files, with conditional `docs/openapi.yaml`, for design), and refuse if any other
+tracked or untracked path changes. Stage explicit admitted paths only; never clean, reset, or absorb
+an unexpected path. The earlier command preflight remains fast operator feedback, but only the
+Driver observation authorizes work. F14 continues to own the later exact reviewed-tree/ship edge.
+
+**Done when:** integration fixtures pass command preflight, then independently leave a tracked or
+untracked change, switch to a production-shaped remote, install a newly unsafe agent-config file,
+or request an unavailable sandbox before Driver entry; each is re-evaluated and refused before
+spawn/target-content write/archive while preserving repository bytes. A benign clean current HEAD
+still proceeds. Separate hostile PRD and design children write one off-contract neighbour and are
+refused without staging it; benign fixtures commit exactly every declared conditional output; no
+pre-loop phase uses
+`git add -A`; the launch snapshot and refusal identify HEAD plus bounded changed-path metadata without
+capturing file contents or secrets; and F1/F14 tests prove the new boundary neither races the run
+lock nor claims to solve post-review identity. REVIEW F26 owns closure.
+
+### 82. Enforce role tool availability, not only tool approval — OPEN (REVIEW F27)
+
+**Problem solved:** `PHASE_PERMISSIONS` calls its field `allowedTools`, and `claudeArgs()` passes
+those names only through Claude Code's `--allowedTools`. Official semantics make that an approval
+list, not an availability list; unlisted tools remain in context and an empty list emits no flag.
+The code and tests nevertheless call Oracle-author's empty list “no tools at all.” On a resumed tree,
+that author can be exposed to the implementation whose cases must come only from the PRD. Ambient
+settings or MCP surfaces can similarly broaden other non-Builder roles.
+
+Separate tool availability from permission approval in the role policy. Preserve Builder's
+intentional unrestricted surface. For every other role, pass an exact built-in availability set
+with `--tools` (`""` for Oracle-author), combine it with a measured non-interactive fail-closed
+permission mode, and prevent inherited MCP/settings/Skill/Agent surfaces from adding capabilities.
+Keep explicit `childSettings()` so writing roles still receive the guard; do not use `--safe-mode`
+as proof of a zero-tool or exact-tool boundary. Put every flag before variadic `--allowedTools`.
+Record requested and observed tool-policy identity in item **76**'s receipt; item **77** remains the
+separate prompt-supply ledger.
+
+**Done when:** unit tests assert the exact availability and approval argv for every phase, including
+literal `--tools ""` for Oracle-author and unchanged unrestricted Builder behavior; the paid Oracle
+contract test uses `phase: "oracle-author"` rather than `review`; pinned live canaries prove the
+Oracle cannot read a repository sentinel, a read-only role can read but cannot write it, and a
+document role retains only its declared built-ins plus the guard. A synthetic inherited allow rule
+and MCP tool do not broaden any non-Builder surface. The result records actual CLI/settings/plugin
+identities, distinguishes unavailable from denied, and refuses acceptance if effective availability
+cannot be observed. Items **77**, **82**, and **83** then unblock item **54**; this slice closes only
+F27/item **82**.
+
+### 83. Enforce a measured Claude Code feature floor — OPEN (REVIEW F28)
+
+**Problem solved:** preflight currently accepts any executable whose `claude --version` exits
+successfully, even though Meeseeks relies on versioned flags, settings, hooks, command/Skill
+controls, tool-availability semantics, and envelope fields. The repository has already observed
+2.1.136 missing `--safe-mode`; a callable but incompatible PATH shadow can therefore fail only
+after an unattended run has started work.
+
+Establish one canonical minimum from the oldest pinned Claude Code release that passes every
+mandatory live command and child contract used by the staged candidate. Do not guess an earlier
+version from a single feature's documentation. If historical releases cannot be tested safely,
+start with the lowest version actually verified and lower it only when evidence supports doing so.
+Keep the value in one runtime source. Parse the ordinary decorated `claude --version` output and
+refuse older, prerelease-ambiguous, or malformed values before state creation, child spawn,
+target-content write, or install. Report the detected and required values plus a repair; never
+auto-upgrade. Record the actual selected binary/CLI identity in the release evidence; item
+**76** reuses that observation when its acceptance receipt lands.
+
+A version comparison is only an early compatibility gate. Items **75**, **80**, and **82** still
+own their installed-loader, command-surface, and role-tool behavior canaries. Item **54**'s
+documented workflow minimum is only one input to the product floor and cannot substitute for the
+whole contract suite.
+
+**Done when:** unit tests cover a missing executable, below/equal/above-floor stable versions,
+ordinary decorated output, prerelease output, and malformed output; an integration fixture puts a
+known-old synthetic binary first on PATH and proves refusal before any run mutation or automatic
+upgrade while preserving preflight's complete check report; pinned paid live runs at the declared floor and current supported CLI pass the same staged
+installed candidate's full `npm run test:live`, including the item **75**, **80**, and **82**
+canaries, and record exact
+binary, CLI, settings, and plugin identities; README, DESIGN, preflight output, and fixtures name
+the same floor; and raising a required external feature's minimum cannot leave the check stale.
+REVIEW F28 owns closure.
 
 ## Cross-cutting non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:

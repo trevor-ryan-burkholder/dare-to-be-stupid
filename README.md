@@ -47,13 +47,17 @@ definition of done, or the budget dies.
 /meeseeks "a link shortener with an admin page" # build from an idea
 /meeseeks                                       # improvise: it invents its own
 /meeseeks --improve "error handling"            # the repo already exists: find whats wrong, fix it
+/meeseeks "an idea" --confirm-prd               # stop after committing PRD.md for a human read
 
 /meeseeks ./PRD.md --deadline=90                # a 90-minute wall clock; off unless asked for
 /meeseeks ./PRD.md --give-them-the-box          # unsupported: permits nested runs, arms a clock
 ```
 
-**The two flags, precisely:**
+**The three control flags, precisely:**
 
+- `--confirm-prd` — author or ingest and commit `PRD.md`, then exit before Oracle, design, build,
+  or any unattended loop work. Review the file and start the accepted run explicitly with
+  `/meeseeks ./PRD.md`; this is a checkpoint between invocations, not a paused live run.
 - `--deadline=<minutes>` — a wall clock on the whole run, checked between iterations. Off unless
   given; the ordinary ceilings are completion or budget, so most runs never want one. The flag
   outranks `deadlineMs` in config (a flag is this session's instruction; config is the target's
@@ -69,6 +73,12 @@ definition of done, or the budget dies.
 > **Pre-production only.** Build children run with `--dangerously-skip-permissions`. Point this at
 > a throwaway repository and nothing else. The plugin's own guard hook is the floor under that,
 > not a substitute for choosing the right directory.
+
+> **Current release status.** The guarantees described below are design invariants, not a claim
+> that the current release enforces every one perfectly. The independent release gate is currently
+> **CHANGES REQUESTED** with open false-completion, termination, evidence, and trust-boundary
+> defects in [`REVIEW.md`](REVIEW.md). Until those findings close, treat `SHIPPED` as evidence to
+> inspect, never as production authorization.
 
 ---
 
@@ -168,8 +178,11 @@ and you edit them however you like.
 > upgrade** — if both are present, `/dare` and `/meeseeks` are two different programs. Remove the
 > old one.
 
-**Requirements:** Node ≥ 22.12, `git`, and the `claude` CLI. **No runtime dependencies** — the
-whole thing is `node:` builtins and shelling out.
+**Requirements:** Node ≥ 22.12, `git`, and the Claude Code CLI. Version 0.164.0 has no
+defensible declared CLI minimum: preflight checks only that `claude --version` runs, so
+compatibility with older releases is unclaimed. REVIEW F28 / PLAN item 83 own the measured,
+fail-closed feature floor. **No runtime dependencies** — the whole thing is `node:` builtins and
+shelling out.
 
 ---
 

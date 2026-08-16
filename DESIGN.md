@@ -171,7 +171,9 @@ which case "meeseeks me" mode (§13) invents its own idea — a `claude -p` call
 requirements** (`PRD-1.1`, `PRD-3.2`, …).
 Numbered requirements are load-bearing: the reviewer emits one verdict object per
 requirement ID, so the PRD's structure *is* the DoD checklist. Unattended by default;
-`--confirm-prd` pauses for a human read before the loop starts.
+`--confirm-prd` commits `PRD.md` and exits before Oracle, design, or the loop. After the human
+read, the accepted artifact starts a new invocation as `/meeseeks ./PRD.md`; no live run is paused
+or resumed.
 
 ### 2.1 Phase 0, improve mode — the repository *is* the input
 
@@ -255,12 +257,35 @@ run `/meeseeks`. Everything else is either checked-and-explained by preflight or
 the run itself. `commands/meeseeks.md` runs preflight **before** shelling to the driver and
 **fails loud** rather than starting a half-configured unattended run.
 
+**The supported `/meeseeks` command is user-invoked only.** It must remain user-invocable and be
+unavailable to Claude's autonomous Skill tool (`disable-model-invocation: true`). This is distinct
+from the nested-run guard: an ordinary interactive session is not marked `MEESEEKS_RUNNING`, and
+command preflight supplies `--yes` internally, so neither mechanism replaces the command-level
+control. This is not an OS authentication wall against a model already granted arbitrary Bash and
+aware of a script path; direct script entry is an unsupported operator/development path. The
+current shipped command omits the Skill control; REVIEW F25 / PLAN item 80 own the versioned repair
+and real-loader evidence without claiming the broader wall.
+
+**The Driver revalidates mutable launch safety and owns pre-loop output provenance.** The command's
+preflight is useful operator feedback, not an authorization receipt that survives another model
+turn. After the atomic run lock and before any child, target-content write, archive, or commit, the
+Driver must observe the clean launch tree and mutable destructive-safety checks itself: current
+HEAD/status, non-production remote classification, positional tracked-state boundary, agent-config
+security scan, validated effective config, and availability of any requested OS sandbox. Runtime
+binary/auth/network failures remain ordinary fail-closed preflight/child failures rather than a
+claim that the repository snapshot seals the host. Each PRD/design phase then has an explicit
+output-path allowlist and refuses unexpected changes before staging only those
+paths. It never uses a broad phase `git add -A` to absorb an unattributed edit. This matters because
+Claude Code `allowed-tools` pre-approves matching tools but does not remove the rest of the launcher's
+tool pool, and the document children intentionally hold Write/Edit. Current 0.164.0 does not enforce
+this boundary; REVIEW F26 / PLAN item 81 own it. F14 separately owns final reviewed-tree identity.
+
 **Preflight verifies (hard-fails with a fix hint if missing):**
 
 | Check | Why | If missing |
 |---|---|---|
 | Node ≥ 22.12 | driver + impeccable installer | abort, print required version |
-| `claude` on PATH, callable non-interactively, authed | driver spawns `claude -p` children | abort, tell user to sign in |
+| `claude` on PATH, at or above the measured supported feature floor, callable non-interactively, authed | driver and command rely on versioned flags, settings, hooks, Skill controls, and envelope fields | abort, print detected and required versions plus the upgrade/sign-in fix |
 | Inside a git repository | every state transition and rollback is commit-based | abort, name the required repository |
 | Repository has at least one commit | worktrees, baselines and reset targets need a commit | abort, create the initial commit |
 | **Clean working tree** | ratchet does `git reset --hard` | abort, tell user to commit/stash |
@@ -273,9 +298,20 @@ the run itself. `commands/meeseeks.md` runs preflight **before** shelling to the
 | **Agent-config security scan** clean | dangerous mode trusts the repo's own hooks/prompts/MCP/secrets | abort on findings (§3.6) |
 | `--dangerously-skip-permissions` acknowledged | the premise; guard hook is the safety | require `--yes` or an interactive confirm |
 
+**The Claude Code floor is evidence, not a guessed constant.** Choose it from the oldest pinned CLI
+that passes the staged candidate's full `npm run test:live`, including every mandatory
+command/child contract used by the release, and raise it when a
+required feature raises the floor. Preflight parses `claude --version` and refuses an older or
+unparseable value before any run work. A version pass does not replace the paid live suite: flags
+such as `--safe-mode` have had behavior not fully specified by help text. Current 0.164.0 checks
+only whether `claude --version` exits successfully; the repository records a 2.1.136 binary
+that lacks `--safe-mode`, individual live measurements on 2.1.226/2.1.228, and source
+validation on 2.1.233—not a complete product contract matrix. REVIEW F28 / PLAN item 83
+own the measured floor and enforcement.
+
 **The run lock is `.meeseeks/lock.json`; `.meeseeks/run.json` is the run manifest (§7.1).** The
 lock must be acquired atomically by the driver before Phase 0, before the first child spawn,
-repository write, install or commit, and released only by the owner on every path out. It records
+target-content write, install or commit, and released only by the owner on every path out. It records
 the driver's pid, start time and an ownership token so a process that did not acquire the lock
 cannot clear it. Measured on 13 August 2026 — `ps` showed three drivers, two on the same `cwd`,
 because run 14 was sent `SIGTERM` and did not die before run 15 launched. Run 15's result is void
@@ -1011,6 +1047,14 @@ It is the same assumption, twice.**
 So `.meeseeks/oracle.json` holds executable acceptance cases authored at **Phase 0b** — from the PRD
 alone, **before the design phase and before any code exists.** A child that has seen the code
 cannot write them.
+
+**That requires tool availability to be restricted, not merely unapproved.** Every non-Builder
+role has a closed built-in tool set; Oracle-author has none. Claude Code's `--allowedTools` changes
+approval only, while `--tools` controls which built-ins enter the model context and `--tools ""`
+disables them. Inherited MCP/settings surfaces must not reopen the set. Current 0.164.0 models the
+policy only as `allowedTools`, omits the flag for Oracle-author's empty list, and therefore does not
+establish the no-repository-context guarantee. REVIEW F27 / PLAN item 82 own the exact availability
+policy and pinned live evidence.
 
 **Held out means *not supplied*, in §6.1's sense, and the distinction is stated rather than
 implied.** The store is under `.meeseeks/`, so §6's positional rule makes it driver-owned and a
@@ -1849,7 +1893,9 @@ of the CLI binary rather than guessed, since 2.1.228 answers a refused command w
 
 Only phases that keep the guard get it, and the split is **derived** from `isColdPhase` rather
 than listed, for the same reason the guard's is: a phase added later with write tools is
-sandboxed automatically. Cold phases run under `--safe-mode`, which strips customizations anyway.
+sandboxed automatically. Cold phases run under `--safe-mode` to strip customizations. Safe mode is
+not the phase's closed tool-availability policy; REVIEW F27 / PLAN item 82 separately require an
+exact `--tools` surface and refusal of inherited MCP/settings expansion.
 
 **The driver refuses the fallback on the builder's behalf.** R19's recorded failure mode is an
 agent on a kernel where bubblewrap failed *asking to rerun unsandboxed*, and a sandbox that can be
@@ -2046,7 +2092,7 @@ group, so an operator-kill can still leak it (`PLAN.md` item 2's residual).
 | `reviewerModel` | `claude-opus-5` | the judge should be the smartest thing in the loop |
 | `designModel` | `claude-opus-5` | Phase 1 — design mistakes compound across every later iteration |
 | `prdModel` | `claude-sonnet-5` | Phase 0 PRD authoring |
-| `styleModel` | `claude-fable-5` | Meeseeks narration + "meeseeks me" idea invention; pure flavor, never touches gate logic |
+| `styleModel` | `claude-fable-5` | **currently inert compatibility key (REVIEW F23 / PLAN item 78):** no child consumes it. Narration is deterministic and bare `/meeseeks` uses `prdModel` for idea/PRD authoring. It is recorded misleadingly in `run.json` until the compatibility-safe retirement lands |
 | `lessonModel` | `claude-sonnet-5` | the cold lesson extractor (§13.8); advisory, so it never needs the strongest model |
 | `effort` | see §10.2 | reasoning effort per phase (`low`…`max`), keyed by the phase names the driver uses |
 | `qualityPlugins` | `["impeccable", "knip", "semgrep", "schemathesis"]` | provisioned in Phase 1 (§5); impeccable is required, the others degrade to a warning when unavailable |

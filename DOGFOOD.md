@@ -18,8 +18,8 @@ The table below is the current status; historical headings do not override it.
 | J — boxed nesting controls | `CONCLUDED` | Controls verified; builders never initiated the nested run |
 | Tallyho web-ui smoke | `SHIPPED` | Shipped on attempt 6; findings landed through 0.161.0 |
 | Ateliers capstone | `STAGED` | PLAN item 31; no terminal result recorded in this repository |
-| Child-environment boundary probe | `BLOCKED` | `REVIEW.md` F5 / PLAN item 56; run after F1–F4 close; synthetic canary only |
-| Dynamic-workflow boundary probe | `BLOCKED` | PLAN item 54; do not run until `REVIEW.md` F1 and F2 are closed |
+| Child-environment boundary probe | `BLOCKED` | `REVIEW.md` F5 / PLAN item 56; run after PLAN Gate 0A closes; synthetic canary only |
+| Dynamic-workflow boundary probe | `BLOCKED` | PLAN item 54; do not run until `REVIEW.md` F1, F2, F27/item 82, F28/item 83, and PLAN item 77 are closed |
 
 ## Pending recipes
 
@@ -55,6 +55,11 @@ contract before any environment filter is designed. Run it through the productio
 in a disposable fixture or snapshot worktree. Use a synthetic canary value only — never a real credential — and
 have the child report presence or absence, never the value.
 
+The operational prerequisite is PLAN Gate 0A, not the stale numeric range F1–F4: the atomic owner,
+hard termination, role-result integrity, exact specification/evidence identities, and conserved
+usage all need to exist before this paid external-contract evidence is trusted. F4 remains a
+release blocker but is not a prerequisite of the child-environment measurement itself.
+
 Record the pinned Claude Code and plugin versions; whether the child shell can observe the canary;
 the names of benign environment variables required for executable discovery, home/temp, locale,
 authentication, and Meeseeks run/depth markers; and any preflight or child failure caused by their
@@ -76,8 +81,9 @@ Record:
   worktree created; and proof of which tree each agent saw;
 - the effective settings, tools, permissions, and environment received by every descendant,
   including guard registration, `MEESEEKS_RUNNING`, and nesting markers;
-- requested and actual models, phase and aggregate token/cost ceilings, agent counts, reported
-  spend, exit status, and termination reason;
+- requested and actual models, phase and aggregate token/cost ceilings, agent counts, whole-tree
+  `modelUsage`, estimated spend, exit status, and termination reason; record top-level `usage`
+  separately because official SDK semantics exclude subagents from it;
 - the workflow's raw output separately from the driver's parsed receipt and any later gate or
   panel evidence. Do not preserve hidden reasoning or per-agent telemetry as durable state.
 

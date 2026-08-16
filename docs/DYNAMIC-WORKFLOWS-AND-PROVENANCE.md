@@ -164,7 +164,12 @@ The following statements are documented behavior, not Meeseeks assumptions:
 
 - A dynamic workflow is a JavaScript script executed by a workflow runtime. The script
   coordinates subagents while intermediate results remain in script variables.
-- Workflows require Claude Code 2.1.154 or later.
+- The workflow script itself has no direct filesystem or shell access and cannot load modules;
+  agents perform reads, writes, and commands. This narrows the script's authority but does not
+  narrow the agents' inherited permissions.
+- Workflows require Claude Code 2.1.154 or later. That is the workflow feature minimum, not
+  Meeseeks' product-wide supported CLI floor: other mandatory flags and boundaries may require a
+  newer release, and PLAN item 83 must establish the floor through the complete pinned live suite.
 - Saved workflows live under project or user `.claude/workflows/` directories, or may be
   distributed by a plugin and invoked as a namespaced slash command.
 - Slash commands can be sent programmatically through the Agent SDK; supported commands
@@ -185,6 +190,9 @@ The following statements are documented behavior, not Meeseeks assumptions:
   cannot be answered during unattended `-p` execution.
 - A paused workflow reuses some completed-agent results only within the same Claude Code
   session. Exiting and starting another session starts the workflow again.
+- Matching agents in one workflow may share a cached tools-and-system-prompt prefix; this mechanism
+  does not share their intermediate results. Cache reuse is a cost behavior, not proof of durable
+  role independence, which still requires separate top-level processes and supplied contexts.
 - Workflow run scripts are written under Claude's session storage. That storage is not
   Meeseeks durable state.
 
@@ -284,11 +292,14 @@ flowchart LR
     D -->|"state transitions only after checks"| S["Driver-owned .meeseeks state"]
 ```
 
-The arrows describe supplied context, not perfect secrecy. Reviewers are fresh, read-only
-processes and are not handed Builder transcripts or iteration logs, but repository-readable files
-are not sealed from them. All Claude roles currently inherit the operator environment; that open
-trust-boundary defect is `REVIEW.md` F5. Dynamic workflows must remain inside one role box and may
-return only through that role's existing arrow to the Driver.
+The arrows describe intended supplied context and tool classes, not proof that the current runtime
+enforces perfect secrecy. Reviewers are fresh processes and are not handed Builder transcripts or
+iteration logs, but repository-readable files are not sealed from them. `REVIEW.md` F27 records
+that the current `allowedTools` table controls approval rather than exact availability, so the
+Oracle-author “no tools” edge and other role tool sets require PLAN item 82 before a workflow can
+inherit them safely. All Claude roles currently inherit the operator environment; that separate
+open trust-boundary defect is F5. Dynamic workflows must remain inside one role box and may return
+only through that role's existing arrow to the Driver.
 
 ### Oracle
 
@@ -329,15 +340,18 @@ primarily pre-approve; explicit agent tool sets, deny rules, and hooks establish
 
 ## Models and cost accounting
 
-The stable SDK result exposes approximate total cost, aggregate usage, per-model usage,
-duration, permission denials, and terminal reason. Assistant messages also identify the
-actual model. Meeseeks can therefore record requested and actual model sets separately and
-reject a policy-sensitive substitution.
+The stable SDK result exposes estimated total cost, top-level `usage`, whole-tree
+`modelUsage`, duration, permission denials, and terminal reason. The distinction is
+load-bearing: `usage` excludes subagents, while `total_cost_usd` and `modelUsage` include them.
+Assistant messages also identify the actual model. Meeseeks can therefore record requested and
+actual model sets separately and reject a policy-sensitive substitution, but a workflow adapter
+must not feed top-level `usage` into the run token ceiling as though it covered descendants.
 
-The cost is a client-side estimate. Official documentation does not promise an atomic
-reservation across concurrent workflow agents or explicitly guarantee how every nested
-workflow failure is aggregated into the outer result. Meeseeks must assume in-flight
-overshoot is possible.
+The cost is a client-side estimate. Error results can carry usage, but a session crash may zero
+the final fields and leave some descendant usage unrecoverable. Official documentation does not
+promise an atomic reservation across concurrent workflow agents or exactly how the non-interactive
+CLI envelope exposes every workflow failure. Meeseeks must assume in-flight overshoot and missing
+crash accounting are possible.
 
 Any future workflow receipt should contain at least:
 
@@ -558,7 +572,8 @@ phase faster.
 2. Do `childSettings()`, the guard hook, `MEESEEKS_RUNNING`, and the box-depth marker reach
    every workflow agent?
 3. Does the outer result account for every successful, failed, cancelled, and retried
-   workflow agent, and what is the maximum observed in-flight budget overshoot?
+   workflow agent; does the production CLI envelope expose whole-tree `modelUsage` rather than
+   only top-level `usage`; and what is the maximum observed in-flight budget overshoot?
 4. Can each workflow stage enforce a narrower tool set on every supported provider/version,
    or must the driver hook enforce privilege classes?
 5. Which workflow-specific identifiers and phase/failure details are exposed through stable
