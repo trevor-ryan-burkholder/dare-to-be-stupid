@@ -1,7 +1,7 @@
 # Dogfood — current scenarios and pending runs
 
 **Document status:** current operational runbook
-**Last swept:** 16 August 2026 at version 0.163.0
+**Last swept:** 16 August 2026 at version 0.164.0
 
 Completed run logs, recipes, autopsies, and measurements are preserved at
 [`docs/history/DOGFOOD-through-2026-08-15.md`](docs/history/DOGFOOD-through-2026-08-15.md).
@@ -18,6 +18,7 @@ The table below is the current status; historical headings do not override it.
 | J — boxed nesting controls | `CONCLUDED` | Controls verified; builders never initiated the nested run |
 | Tallyho web-ui smoke | `SHIPPED` | Shipped on attempt 6; findings landed through 0.161.0 |
 | Ateliers capstone | `STAGED` | PLAN item 31; no terminal result recorded in this repository |
+| Child-environment boundary probe | `BLOCKED` | PLAN item 56; run after `REVIEW.md` F1–F4 close; synthetic canary only |
 | Dynamic-workflow boundary probe | `BLOCKED` | PLAN item 54; do not run until `REVIEW.md` F1 and F2 are closed |
 
 ## Pending recipes
@@ -47,6 +48,19 @@ For either run:
 Case C must not be launched unless the operator explicitly reopens it. The original recipe is
 retained only in the archive.
 
+### Child-environment boundary probe
+
+This is PLAN item 56 Slice A: a paid measurement of the real `claude -p` child contract before
+any environment filter is designed. Run it through the production child-spawn path in a disposable
+fixture or snapshot worktree. Use a synthetic canary value only — never a real credential — and
+have the child report presence or absence, never the value.
+
+Record the pinned Claude Code and plugin versions; whether the child shell can observe the canary;
+the names of benign environment variables required for executable discovery, home/temp, locale,
+authentication, and Meeseeks run/depth markers; and any preflight or child failure caused by their
+absence. Archive the result under `docs/history/`. This probe measures the baseline; it is not
+evidence that the eventual allowlist boundary is correct.
+
 ### Dynamic-workflow boundary probe
 
 This is a contract experiment, not a product run. Its purpose is to determine whether a spawned
@@ -58,23 +72,27 @@ Record:
 
 - the Claude Code version, documented feature surface, invocation form, and durable workflow
   definition or artifact;
-- the starting commit, every worktree created, and proof of which tree each agent saw;
-- model selection, effective token/cost limits, reported spend, exit status, and termination
-  reason for every workflow phase;
-- the settings and environment received by every descendant, including guard registration,
-  `MEESEEKS_RUNNING`, and nesting markers;
+- the durable role and parent lineage; prompt, template, brief, and input-tree digests; every
+  worktree created; and proof of which tree each agent saw;
+- the effective settings, tools, permissions, and environment received by every descendant,
+  including guard registration, `MEESEEKS_RUNNING`, and nesting markers;
+- requested and actual models, phase and aggregate token/cost ceilings, agent counts, reported
+  spend, exit status, and termination reason;
 - the workflow's raw output separately from the driver's parsed receipt and any later gate or
-  panel evidence.
+  panel evidence. Do not preserve hidden reasoning or per-agent telemetry as durable state.
 
 The probe has four fail-closed cases:
 
-1. A spawned `claude -p` role invokes the bounded workflow through a documented interface.
-2. A workflow child attempts to write `.meeseeks/` and is denied; no child can advance a ratchet,
-   pin, review verdict, or terminal state.
-3. A resistant or abandoned workflow is killed within the configured ceiling, leaves no live
-   descendants, and can be diagnosed after restart from driver-owned receipts.
+1. A spawned top-level `claude -p` role invokes one bounded workflow through a documented interface.
+2. A workflow child attempts both a `.meeseeks/` write and recursive role-workflow or nested-Meeseeks
+   invocation. Every attempt is refused, and no child advances a ratchet, pin, review verdict, or
+   terminal state.
+3. A resistant workflow is killed within its phase ceiling, and a separate run that exceeds the
+   Driver-owned aggregate descendant cap refuses closed. Both cases settle every descendant and
+   remain diagnosable after restart from Driver-owned receipts.
 4. Builder output is reviewed by newly instantiated cold panel members that receive no Builder
    transcript, workflow synthesis, or internal reviewer verdict.
 
-Any missing receipt, unsupported version, context leak, unbounded child, or uncertain guard
-propagation fails the probe. Results belong in `docs/history/`; only then may PLAN item 54 change.
+Any missing receipt or digest, unsupported version, context leak, recursive invocation, aggregate-cap
+overshoot without refusal, unbounded child, unsettled descendant, or uncertain guard propagation
+fails the probe. Results belong in `docs/history/`; only then may PLAN item 54 change.

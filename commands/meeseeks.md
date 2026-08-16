@@ -63,11 +63,11 @@ holds the ratchet, and ends in one of four states: `SHIPPED`, `STALLED`, `BUDGET
   your reasoning about the code.
 - **Do not re-run a failed preflight with a workaround.** If the working tree is dirty, say
   so and stop; committing on the user's behalf is not your call.
-- **Do not edit `.meeseeks/state.json` or `.meeseeks/config.json` once a run has started.** A hook
-  denies it from inside a run. That is the ratchet, and it is not editable by the processes
-  it constrains. Before and after a run they are ordinary files: if the user wants a
-  different `maxIterations` or a cleared lesson store, edit it here rather than handing them
-  a command to run themselves.
+- **Do not edit anything under `.meeseeks/` once a run has started.** A hook denies every path
+  at every depth, including artifacts that do not exist yet. The protected state is not editable
+  by the processes it constrains. Before and after a run these are ordinary files: if the user
+  wants a different `maxIterations` or a cleared lesson store, edit the relevant file here rather
+  than handing them a command to run themselves.
 - **Do not invent a nested run.** Nested runs are refused at the driver and guard hook unless
   the operator explicitly supplied `--give-them-the-box`. That flag is the only exception; the
   launcher may pass it through but may never add it on the operator's behalf.

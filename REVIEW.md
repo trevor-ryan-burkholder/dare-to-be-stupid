@@ -6,9 +6,9 @@
 
 **Reviewed tree:** `main` at `65a14cc` (`pre-codex`), version `0.161.0`
 **Code continuity:** no executable script, hook, or template changed. Documentation releases
-through 0.163.0 align the launcher, flag, and configuration contracts with existing behavior;
-F1–F4 code
-remains byte-identical and finding status is authoritative only here.
+through 0.164.0 align the launcher, flag, configuration, workflow, and roadmap contracts with
+existing behavior. The 0.164.0 launcher change is prose only; F1–F4 code remains byte-identical,
+and finding status is authoritative only here.
 **Verdict:** **CHANGES REQUESTED** — three high-priority safety defects and one medium-priority
 timeout defect are open.
 
@@ -170,7 +170,7 @@ remains byte-identical to the reviewed tree:
 - `npm run typecheck`
 - `npm test` — **2,307 passed, 0 failed**
 - `npm run test:integration` — **51 passed, 0 failed**
-- `npm run release-check` — version `0.163.0` is an uncommitted bump and `HANDOFF.md` agrees
+- `npm run release-check` — **ok**; version `0.164.0` is an uncommitted bump and `HANDOFF.md` agrees
 
 The paid live tier was not run. Existing green tests do not cover the four failure shapes above.
 

@@ -109,6 +109,10 @@ The following statements are documented behavior, not Meeseeks assumptions:
 - Workflow run scripts are written under Claude's session storage. That storage is not
   Meeseeks durable state.
 
+The 16-concurrent and 1,000-total values are platform maxima, not a Meeseeks safety policy.
+Any experiment must impose a lower Driver-owned aggregate descendant ceiling across all role
+workflows in the run and refuse closed when that ceiling is exhausted.
+
 Rapidly changing, version-specific behavior must be capability-probed. Documentation of a
 feature is not evidence that the installed CLI version, provider, organization policy, and
 plugin loading path satisfy Meeseeks' exact contract.
@@ -188,8 +192,10 @@ Panel context.
 ### Recursive Meeseeks
 
 A dynamic workflow is not a delegated child Meeseeks. A child Meeseeks owns a scoped PRD,
-state, budget, gates, and terminal outcome; a workflow owns none of those. Workflow agents
-must remain subject to the same nesting flag and depth marker as their top-level role.
+state, budget, gates, and terminal outcome; a workflow owns none of those. Only the durable
+top-level role may invoke its role workflow. An ephemeral workflow agent may not invoke another
+role workflow or acquire Meeseeks authority, and it remains subject to the same nesting flag and
+depth marker as its top-level role.
 
 ## Permissions, guard, and environment
 
@@ -229,12 +235,18 @@ Any future workflow receipt should contain at least:
 ```json
 {
   "role": "builder",
+  "parentRun": "<run-id>",
+  "parentRoleInvocation": "<role-invocation-id>",
   "inputTree": "<git-tree>",
   "inputSpec": "<prd/design hash>",
+  "promptTemplateBrief": "<combined content hash>",
   "workflowDefinition": "<content hash>",
+  "settingsToolsPermissions": "<content hash>",
+  "worktrees": ["<identity>"],
   "claudeCodeVersion": "<version>",
   "requestedModels": ["<model>"],
   "actualModels": ["<model>"],
+  "aggregateAgentCeiling": 0,
   "agentExpected": 0,
   "agentCompleted": 0,
   "agentFailed": 0,

@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 16 August at 0.163.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 16 August at 0.164.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.163.0
+## Build order — current traversal at 0.164.0
 
 **Gate 0 — external review defects.** These are release-blocking implementation items; the full
 requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -51,11 +51,11 @@ lines, after safety and reviewer work.
 enter the queue merely because the supporting analysis exists. Item **55** remains **PARKED** until
 a real run demonstrates a provenance or invalidation failure that passes its admission test. Item
 **58** remains **PARKED** until a killed-run experiment proves that a lifecycle journal would close
-a forensic gap; it is not authorization for checkpoint/resume. Item **59** remains **PARKED** until
-items 35 and 57 supply the promotion and evaluation boundaries it requires.
+a forensic gap; it is not authorization for checkpoint/resume.
 
 **Deferred/post-DoD:** item **21** remains deferred until code-complete. Items **32–36** and
-**47–51** remain Phase 6. Item **30** remains a research/measurement intake, not an implicit build.
+**47–51** remain Phase 6; item **59** is also post-DoD because it depends on item 35. Item **30**
+remains a research/measurement intake, not an implicit build.
 
 `PLAN.md` owns these statuses. `HANDOFF.md` summarizes them and must not invent a second ledger.
 
@@ -521,8 +521,9 @@ round-trip to discover.
 
 **Spec:**
 
-- New shipped file `scripts/configure.mjs`, run as `node scripts/configure.mjs` in the target
-  repository. Interactive wizard over `node:readline/promises`. No dependencies, ESM, Node ≥22.12.
+- New shipped file `scripts/configure.mjs`; from the target repository, run the installed or source
+  copy by absolute path. Interactive wizard over `node:readline/promises`. No dependencies, ESM,
+  Node ≥22.12.
 - **Refuses under `MEESEEKS_RUNNING`.** A process inside a run may not reshape the config that
   constrains it. The env marker is the same fact the guard hook reads — and the check here is
   load-bearing, not decorative: the guard hook travels with Claude Code tool calls, and a
@@ -1307,6 +1308,13 @@ and **fails on an unenforced one**; a staleness gate refuses a constitution that
 enforcement set (the `release-check` lesson — a discipline that keeps failing becomes a gate); and no
 reviewer prompt gains constitutional text as a side effect.
 
+## Current follow-ons and research-gated experiments
+
+This heading ends Phase 6. Items 52, 53, 56, and 57 are pre-DoD only in the order stated at
+the top of this file; items 54, 55, and 58 are conditional or research-gated; item 59 remains
+post-DoD because it depends on Phase-6 item 35. Item numbering records chronology, not priority.
+The top-level build order is authoritative when physical placement and execution order differ.
+
 ### 52. Denial dampening (R25c), done without giving the guard a write primitive — OPEN (was part of item 37, cut on review)
 
 **Origin:** R25c, built into item 37's first cut and **removed before landing** when the item-37 hostile
@@ -1540,7 +1548,7 @@ reproduced from its receipt and still goes through the ordinary shipped-file ver
 live tier before release. A failed or inconclusive experiment closes the item without changing the
 production path.
 
-### Phase 6 non-goals — the refusals ARE the product
+## Cross-cutting non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:
 - **Automatic transcript harvesting or runtime prompt/skill mutation** — item 59 is an offline,
   staged development experiment over structured driver artifacts. Production roles never rewrite

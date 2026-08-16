@@ -1,6 +1,6 @@
 # START HERE — current handoff, last swept 16 August 2026
 
-**State:** `main` at `0.163.0`. The manifests and package-lock root metadata agree. Measured
+**State:** `main` at `0.164.0`. The manifests and package-lock root metadata agree. Measured
 on the current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean;
 `npm test` **2307 pass, 0 fail**;
 `npm run test:integration` **51 pass, 0 fail**; `npm run release-check` **ok**. These commands
@@ -23,12 +23,12 @@ the archived handoff.
    feature fan-out.
 3. Finish PLAN items 40, 41, and 42; then item 29.
 4. Complete the live evidence for item 24, add item 57's machine-readable acceptance result, run
-   dogfood cases A and B in item 20, and stage the Ateliers capstone in item 31. Case C remains
+   dogfood cases A and B in item 20, and run the staged Ateliers capstone in item 31. Case C remains
    parked by operator decision.
 5. Take items 52 and 53 only after the safety/reviewer work.
-6. Consult PLAN's research-gated and conditional entry for items 54, 55, 58, and 59 only after the
+6. Consult PLAN's research-gated and conditional entry for items 54, 55, and 58 only after the
    queued implementation work; PLAN alone decides when any of them enters the queue.
-7. Keep item 21 deferred until the repository is code-complete; Phase 6 remains post-DoD.
+7. Keep item 21 deferred until the repository is code-complete; Phase 6 and PLAN item 59 remain post-DoD.
 
 PLAN owns the statuses. This file deliberately does not duplicate their acceptance criteria.
 

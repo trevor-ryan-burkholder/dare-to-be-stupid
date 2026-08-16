@@ -982,22 +982,22 @@ the trainable parameters of a frozen agent — rollout → reflect → aggregate
 replay → consolidate behind the same gate → stage → **human adopts**). The most on-topic repo yet
 reconned for the §3.9 prompt-drift problem.
 
-## R41. Gate template edits on a held-out replay corpus — **take; the big one**
+## R41. Gate prompt or lesson candidates on held-out replay — **captured conditionally in PLAN item 59**
 
 From `skillopt/evaluation/gate.py`: a pure decision function, strict `>` acceptance, reject returns
 the incumbent unchanged, best-so-far tracked with the step that earned it — the decision/effect split
-this repo already houses. The borrow: `templates/*.md` changes must beat the incumbent on a fixed
-corpus of replayed cases (runs 1–12 supply it) before landing. Turns "prompt drift is measured"
-(§3.9) into "prompt drift is GATED." Cost is honest: each comparison is live-tier money — a
-release-check-shaped optional gate for template commits, not per-commit CI.
+this repo already houses. PLAN item 59 captures the protocol as a parked, operator-side experiment:
+discovery, selection, and untouched final-test partitions; strict improvement; and per-required-scenario
+non-regression. It is not a current release gate. Existing template commits continue through the
+ordinary shipped-file and live-tier requirements unless and until item 59 passes its admission tests.
 
-## R42. In-run rejected-attempt buffer with score deltas — **take; cheap**
+## R42. Operator-side rejected-candidate buffer with score deltas — **captured in PLAN items 35 and 59**
 
-From `skillopt/engine/trainer.py` `_format_step_buffer`: each prior step feeds forward its failure
-patterns and, on rejection, the specific edits tried and the score drop, so the optimizer never
-retries them. Meeseeks' lesson memory records only earned successes; nothing tells a builder "this
-exact repair was tried in iteration N and made it worse." Driver-owned, `.meeseeks/`-guarded, a brief
-section + bookkeeping over data the driver already holds. **Must never reach the cold reviewer.**
+From `skillopt/engine/trainer.py` `_format_step_buffer`: prior optimizer steps feed forward failure
+patterns, attempted edits, and score drops so the optimizer does not retry a known regression. In
+Meeseeks this belongs only to the promoter or offline research lab. It is never Builder or reviewer
+context and never a runtime repair brief. PLAN item 46 already owns the distinct, bounded case where
+the current iteration's deterministic gate failures are supplied for one repair attempt.
 
 ## R43. Four-way longitudinal categorization — **take; cheap**
 

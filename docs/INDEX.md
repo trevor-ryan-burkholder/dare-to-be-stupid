@@ -1,7 +1,7 @@
 # Documentation index
 
 **Status:** canonical
-**Last swept:** 16 August 2026 at version 0.163.0
+**Last swept:** 16 August 2026 at version 0.164.0
 
 This file is the control plane for project documentation. Read it first, then load only the
 document needed for the task. Historical and research documents are evidence, not instructions.

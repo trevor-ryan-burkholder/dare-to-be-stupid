@@ -193,18 +193,21 @@ keeps the shown default, and keys it does not ask about survive untouched. `--sh
 config as written (file merged over defaults) without writing anything; run-time env overrides
 are not shown.
 
-```jsonc
+```json
 {
   "maxIterations": 25,
-  "tokenCeiling": 4000000,    // 0 means no ceiling
-  "costCeiling": 50,          // 0 means no ceiling
-  "deadlineMs": 0,            // wall clock; 0 is off. --give-them-the-box arms one
-  "extraGates": [],           // target-specific operator gates go here
+  "tokenCeiling": 4000000,
+  "costCeiling": 50,
+  "deadlineMs": 0,
+  "extraGates": [],
   "race": { "enabled": false, "n": 3, "after": 2 },
   "oracle": { "enabled": false },
   "sandbox": { "enabled": false }
 }
 ```
+
+A zero token or cost ceiling disables that ceiling. A zero deadline is off unless
+`--give-them-the-box` arms one. Put target-specific operator gates in `extraGates`.
 
 **Budget arithmetic, measured rather than guessed.** The defaults are conservative stop signals:
 the 4M-token or $50 ceiling will commonly bind before the 25-iteration limit. Completed iterations

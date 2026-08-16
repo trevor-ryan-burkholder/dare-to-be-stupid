@@ -278,7 +278,7 @@ because run 14 was sent `SIGTERM` and did not die before run 15 launched. Run 15
 and nothing may be concluded from its log. §13.6's re-entrancy guard does not cover this and never
 did: it refuses a *nested* run, a builder invoking the slash command, which is a different failure.
 
-**0.163.0 does not yet satisfy that requirement.** It checks and claims separately, and claims
+**0.164.0 does not yet satisfy that requirement.** It checks and claims separately, and claims
 only after PRD/design work and a commit. `REVIEW.md` F1 is the release-blocking implementation
 gap; this section states the required end state rather than laundering the current race into the
 specification.
@@ -2065,9 +2065,10 @@ group, so an operator-kill can still leak it (`PLAN.md` item 2's residual).
 or `customer`, and requires a clean working tree (the ratchet's `reset --hard` destroys
 uncommitted work).
 
-**`configure.mjs` is the interactive way to author this file** — `node scripts/configure.mjs`
-in the target repository, one prompt group per section (budgets, loop shape, race, oracle,
-deploy, components). It owns no rules of its own: it builds a plain object and hands it to
+**`configure.mjs` is the interactive way to author this file.** From the target repository,
+invoke the installed or source plugin by absolute path: `node /absolute/path/to/meeseeks/scripts/configure.mjs`.
+The wizard presents one prompt group per section (budgets, loop shape, race, oracle, deploy,
+components). It owns no rules of its own: it builds a plain object and hands it to
 `validateConfig`, writes with `writeConfig`, and preserves every key it does not ask about
 (`extraGates`, `effort`, …) byte-for-byte, so the wizard and the driver can never disagree
 about what a valid config is. It refuses under `MEESEEKS_RUNNING` before reading anything — a
@@ -2562,11 +2563,22 @@ or terminal-state transition merely because one of its agents reports success.
   that protected settings, `MEESEEKS_RUNNING`, nesting controls, permissions, timeouts, and process
   cleanup reach every spawned child. A convenience API is not evidence that these boundaries
   propagated.
+- **Workflow invocation is root-only within a durable role.** An ephemeral workflow child may not
+  invoke another Meeseeks role workflow, spawn a child Meeseeks without the existing explicit nesting
+  authority, or acquire durable Builder, Panel, Oracle, or Driver authority.
+- **The Driver owns an aggregate descendant ceiling.** Claude Code platform limits are not a safety
+  policy. Meeseeks must impose a lower run-scoped cap across role workflows, refuse when it is
+  exhausted, and settle every descendant before cancellation or role return.
 
 Workflow isolation is not a snapshot protocol. An isolated worktree generally begins from a Git
 commit, not from the caller's uncommitted edits. A role that delegates evolving work must therefore
 create an explicit, attributable phase boundary and import the result deliberately; it may not
 assume a temporary workflow worktree contains the current tree.
+
+Every role-workflow invocation must leave one Driver-owned receipt that identifies the durable role
+and parent lineage, input tree and prompt/template/brief digests, effective settings and permissions,
+requested and actual models, worktree identity, phase and aggregate usage, result digest, and terminal
+reason. The receipt is reproducible boundary evidence, not hidden reasoning or per-agent telemetry.
 
 ### 15.2 Do not build a general graph
 
