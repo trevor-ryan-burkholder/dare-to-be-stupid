@@ -26,7 +26,7 @@ the archived handoff.
    dogfood cases A and B in item 20, and stage the Ateliers capstone in item 31. Case C remains
    parked by operator decision.
 5. Take items 52 and 53 only after the safety/reviewer work.
-6. Consult PLAN's research-gated and conditional entry for items 54, 55, and 58 only after the
+6. Consult PLAN's research-gated and conditional entry for items 54, 55, 58, and 59 only after the
    queued implementation work; PLAN alone decides when any of them enters the queue.
 7. Keep item 21 deferred until the repository is code-complete; Phase 6 remains post-DoD.
 

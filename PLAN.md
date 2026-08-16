@@ -51,7 +51,8 @@ lines, after safety and reviewer work.
 enter the queue merely because the supporting analysis exists. Item **55** remains **PARKED** until
 a real run demonstrates a provenance or invalidation failure that passes its admission test. Item
 **58** remains **PARKED** until a killed-run experiment proves that a lifecycle journal would close
-a forensic gap; it is not authorization for checkpoint/resume.
+a forensic gap; it is not authorization for checkpoint/resume. Item **59** remains **PARKED** until
+items 35 and 57 supply the promotion and evaluation boundaries it requires.
 
 **Deferred/post-DoD:** item **21** remains deferred until code-complete. Items **32–36** and
 **47–51** remain Phase 6. Item **30** remains a research/measurement intake, not an implicit build.
@@ -1037,6 +1038,13 @@ gate (cold-reviewed or usage-thresholded). **Invariant:** driver-owned, never bu
 (§13.8); design the escape before the enforcement; the builder stays starved. The Factorio study
 (R39) is the warning label: self-modifiable state under the builder's reach becomes the exploit.
 
+**SkillOpt harvest:** promotion support must come from independent runs/objectives, not merely
+several iterations of one run. Stage each candidate with its source evidence, support count, digest,
+and proposed atomic edit. Keep an append-only rejected-candidate ledger containing the validation
+delta and refusal reason so the promoter can avoid repeating harmful edits; this ledger never enters
+a Builder brief. Item 59 owns the offline optimization experiment, while this item owns the durable
+store, adoption, rollback, and retraction boundary.
+
 ### 36. Durable, resumable, daemon-backed runs (folds R38) — OPEN
 A driver that survives the terminal closing, re-discovers in-flight worktrees on relaunch, and
 resumes — plus a driver-owned sub-run registry (sub-run-id → worktree → status) extending race.mjs'
@@ -1460,6 +1468,11 @@ panel outcome, post-run black-box checks, operator repairs required, and an expl
 Cold model judgments may be recorded as advisory scores but cannot turn a deterministic failure into
 success, advance the ratchet, or declare `SHIPPED`. No Braintrust, Eve, or hosted eval dependency.
 
+The scenario corpus may declare **discovery**, **selection**, and untouched **final-test** partitions.
+Candidate comparison uses selection only: aggregate quality must strictly improve, ties reject, and
+every required deterministic scenario must preserve or improve. Missing or non-finite results refuse.
+The final-test partition is opened only for reporting after selection, never for choosing the candidate.
+
 **Done when:** item 20 cases A/B emit schema-validated, directly comparable results; a seeded
 black-box regression fails the hard result even when a judge likes the output; judge disagreement is
 visible but non-authoritative; and the harness can summarize acceptance, cost, time, and repair count
@@ -1487,8 +1500,51 @@ resume remains a separate Phase-6 decision: an interrupted operation may be repl
 idempotency and receipt semantics are designed, and this journal never becomes terminal-state authority
 by accident.
 
+### 59. Offline validation-gated prompt and lesson optimization — PARKED (requires 35 and 57)
+
+**Problem solved:** Meeseeks treats `templates/*.md` as product code and records sparse lessons, but
+changes to either are still principally hand-authored and validated one at a time. A plausible prompt
+or lesson edit can improve the failure that inspired it while quietly weakening unrelated objectives.
+SkillOpt demonstrates a useful *development protocol* for this problem; its Python engine, transcript
+harvester, and runtime self-evolution are not proposed dependencies.
+
+**Research source:** [SkillOpt](https://github.com/microsoft/SkillOpt) and its
+[method and ablations](https://arxiv.org/html/2605.23904v2), checked 16 August 2026. The borrowable
+mechanisms are bounded atomic text edits, strict held-out validation, independent support counts,
+per-edit application reports, and a rejected-edit buffer. SkillOpt-Sleep's automatic transcript path
+is specifically rejected because its own
+[data-boundary warning](https://github.com/microsoft/SkillOpt/blob/main/docs/sleep/README.md#how-it-works)
+says provider-bound excerpts are not guaranteed secret-free.
+
+**Experiment boundary:** this is an offline, operator-side laboratory using driver-owned structured
+run artifacts and item 57's stable scenarios — never raw child transcripts. Freeze the target model,
+harness, evaluator, and baseline; let a separate optimizer propose at most one or two exact
+append/insert/replace/delete edits to one artifact; then stage the resulting diff for operator/Codex
+review. Production Meeseeks never invokes the optimizer, never auto-adopts a candidate, and never lets
+Builder, Panel, or Oracle rewrite their own instructions. The first target is
+`templates/lesson-extractor.md`, whose output is advisory and already has recorded falsehood cases.
+Builder and reviewer prompts require separate adversarial corpora before they may enter the lab.
+
+**Acceptance rule:** discovery evidence may generate candidates; selection evidence alone chooses
+among them; the untouched final-test partition reports generalization. Selection must strictly improve
+the primary acceptance measure, ties reject, and no required deterministic scenario may regress.
+Model-judged scores remain advisory and cannot override a hard failure. Every attempt records artifact
+and baseline digests, exact edits, independent-run support, apply/skip status, scenario-level deltas,
+cost/latency, and acceptance or rejection reason. Rejected records are promoter-only evidence, not
+runtime guidance.
+
+**Done when:** a versioned fixture experiment accepts a seeded general improvement, rejects an
+anecdotal or overfitted edit, rejects an aggregate improvement that regresses one required scenario,
+and proves the final-test partition was not consulted during selection; the staged candidate can be
+reproduced from its receipt and still goes through the ordinary shipped-file version bump and required
+live tier before release. A failed or inconclusive experiment closes the item without changing the
+production path.
+
 ### Phase 6 non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:
+- **Automatic transcript harvesting or runtime prompt/skill mutation** — item 59 is an offline,
+  staged development experiment over structured driver artifacts. Production roles never rewrite
+  their own instructions, and sensitive child transcripts are not optimization input.
 - **A third-party agent framework as Driver or required sandbox backend** — borrow measured invariants,
   not authority. Eve, its Workflow SDK, LangGraph, or a hosted sandbox would duplicate the durable
   control plane and violate the dependency-free Claude-native core.
