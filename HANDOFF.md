@@ -6,9 +6,9 @@ on the current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` cl
 `npm run test:integration` **51 pass, 0 fail**; `npm run release-check` **ok**. These commands
 were rerun after the documentation repair; no paid live test was invoked.
 
-**External review:** `REVIEW.md` is **CHANGES REQUESTED** with ten high-priority defects
-(F1–F3, F5–F8, F12, F14, F16) and seven medium-priority defects
-(F4, F9–F11, F13, F15, F17). The expanded review includes a
+**External review:** `REVIEW.md` is **CHANGES REQUESTED** with eleven high-priority defects
+(F1–F3, F5–F8, F12, F14, F16, F18) and nine medium-priority defects
+(F4, F9–F11, F13, F15, F17, F19–F20). The expanded review includes a
 guarantee-strength audit, durable-artifact registry, failure-shape matrix, and explicit
 negative-guarantee sheet. These are the first implementation gates in `PLAN.md`. Claude Code may
 implement them; Codex owns closure after reviewing the exact repair and its acceptance evidence.
@@ -21,12 +21,12 @@ the archived handoff.
 ## Current implementation order
 
 1. Close the locally implementable high-priority defects: F1–F3, F6/item 60, F7/item 61,
-   F8/item 62, F12/item 66, F14/item 68, and F16/item 70. F2 includes the resistant output-cap
-   path.
+   F8/item 62, F12/item 66, F14/item 68, F16/item 70, and F18/item 72. F2 includes the resistant
+   output-cap path.
 2. Close the external contracts before feature fan-out: F5/item 56 through a paid child-environment
    probe, F11/item 65 through real Windows descendant-cleanup evidence, and F15/item 69 through an
    Oracle-read canary and an honest confidentiality decision.
-3. Close F4, F9/item 63, F10/item 64, F13/item 67, and F17/item 71.
+3. Close F4, F9/item 63, F10/item 64, F13/item 67, F17/item 71, F19/item 73, and F20/item 74.
 4. Complete item 40's reviewer contract after F6, then finish item 42 and item 29. Item 41 is closed
    as inapplicable because no Panel diff-package path exists.
 5. Complete the live evidence for item 24, add item 57's machine-readable acceptance result, run

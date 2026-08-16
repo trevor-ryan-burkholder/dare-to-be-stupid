@@ -34,6 +34,7 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
 - **F12 / item 66:** bind every role and terminal decision to one immutable specification revision.
 - **F14 / item 68:** commit and tag only the exact workspace identity gated and reviewed.
 - **F16 / item 70:** accept only fresh successful test reports from the current gate attempt.
+- **F18 / item 72:** conserve every completed child envelope into ceilings and terminal receipts.
 
 **Gate 0B — external child/platform contracts.** F5 is implemented by item **56**: measure the real
 child-environment contract before replacing ambient inheritance, then prove the boundary through a
@@ -42,10 +43,11 @@ from POSIX process-group tests. F15/item **69** must either establish real Oracl
 narrow the product guarantee based on a paid Builder probe. All close before feature fan-out.
 
 **Gate 0C — remaining external review defects.** Close F4's absolute HTTP deadline/body cap, F9's
-positional machine-state ignore boundary through item **63**, and F10's complete atomic terminal
-receipt through item **64**, F13's non-shrinking gate roster through item **67**, and F17's
-definition-bound test credit through item **71**. F11 may share F2's process-lifecycle
-implementation, but retains its own platform evidence.
+positional machine-state ignore boundary through item **63**, F10's complete atomic terminal
+receipt through item **64**, F13's non-shrinking gate roster through item **67**, F17's
+definition-bound test credit through item **71**, F19's bounded decision-artifact reads through
+item **73**, and F20's contained reporter identities through item **74**. F11 may share F2's
+process-lifecycle implementation, but retains its own platform evidence.
 
 **Campaign 1 — reviewer contract:** after F6/item **60**, implement item **40** (unverifiable
 channel and mandatory attack account). Item **41** is closed as inapplicable: the current Driver
@@ -1736,6 +1738,51 @@ deterministic normalization or conservatively revalidate.
 **Done when:** same-name assertion changes are detected, legitimate strengthening can regain credit
 without deleting history, and a weakened replacement cannot ship on its predecessor's ratchet
 identity.
+
+### 72. Conserve every child result in budget accounting — OPEN (REVIEW F18)
+
+**Problem solved:** Oracle-author spend and later settled reviewers after an ordered early exit do
+not reach durable progress, ceilings, or the final bill.
+
+Create one Driver-owned usage ledger for every `runChild` result. A returned envelope is recorded
+exactly once before its verdict is interpreted. Parallel operations collect and charge every
+settled result while preserving declared-order adjudication; completed later reviewers never gain
+verdict authority merely because their spend must be recorded. `handedOutUsd`, `alreadySpent`,
+airtime, component receipts, and terminal outcomes derive from or reconcile against the same facts.
+
+**Done when:** sentinel usage across every Claude phase balances exactly; Oracle-author tokens and
+cost enter `alreadySpent`; failed/exhausted parallel panels conserve all completed envelopes; no
+success path double-charges; and REVIEW F18's reproduction reports the actual 160 tokens and $6.01.
+
+### 73. Bound allocation for decision-bearing artifacts — OPEN (REVIEW F19)
+
+**Problem solved:** prompt-bound, parsed, and hashed files can be synchronously loaded without a
+size boundary, allowing a repository or generated report to exhaust the Driver.
+
+Classify file inputs by use. Stat and refuse oversized prompt/report/evidence artifacts before full
+allocation, with explicit names and sizes; stream repository hashing; and bound parser cardinality
+or nesting where byte size alone is insufficient. Refusal is a terminally recorded failure, never
+truncation or empty evidence. Choose defaults from current prompt/shell limits and measured fixture
+sizes, documenting any configurable escape.
+
+**Done when:** oversized PRD, report, and evidence fixtures fail before allocation; a large tracked
+blob hashes with bounded memory; valid boundary neighbors work; and a refusal leaves the atomic
+terminal evidence required by item 64.
+
+### 74. Require repository-contained reporter identities — OPEN (REVIEW F20)
+
+**Problem solved:** Vitest or Playwright can name an absolute/traversing file and bank a passing
+ratchet ID for a test definition absent from the deliverable.
+
+Add a shared reporter-path validator that proves lexical and filesystem containment under the
+candidate root before ID construction. Define fail-closed behavior for nonexistent paths and
+cross-platform normalization; do not collapse distinct Unicode or case-sensitive files unless the
+host establishes they are aliases. Coordinate with item 71 so the accepted contained path points
+to the definition digest receiving current credit.
+
+**Done when:** absolute, traversal, symlink, cross-volume, UNC, and case-fold escapes fail for both
+reporters; spaces, Unicode, whitespace, and platform separators remain stable for valid neighbors;
+and a clean-clone integration case proves every credited test definition is present in-repository.
 
 ## Cross-cutting non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:

@@ -7,9 +7,9 @@
 **Reviewed tree:** `main` at `65a14cc` (`pre-codex`), version `0.161.0`
 **Code continuity:** no executable script, hook, or template changed. Documentation releases
 through 0.164.0 and the later reviewer-owned architecture maps do not alter runtime behavior.
-F1–F17 are findings against the same executable tree, and finding status is authoritative only
+F1–F20 are findings against the same executable tree, and finding status is authoritative only
 here.
-**Verdict:** **CHANGES REQUESTED** — ten high-priority defects and seven medium-priority defects
+**Verdict:** **CHANGES REQUESTED** — eleven high-priority defects and nine medium-priority defects
 are open.
 
 This remains a read-only review of the Claude-native implementation. The documentation cleanup
@@ -629,6 +629,126 @@ identity or per-test sensitivity.
 - Legitimate strengthening can regain current credit without deleting historical evidence, while a
   weakened replacement cannot ship on the old identity. PLAN item 71 owns the slice.
 
+### F18 — HIGH: child spend is not conserved into the durable run total
+
+**Status:** OPEN
+**Affected:** `scripts/driver.mjs:1805-1822`, `scripts/driver.mjs:2249-2283`,
+`scripts/driver.mjs:5063-5067`, `scripts/driver.mjs:5214-5237`
+
+There are two holes in the rule that every returned Claude envelope is charged exactly once.
+The Oracle-author result is parsed and stored without ever calling `chargePreLoop`. In the
+parallel Panel, all reviewers finish under `Promise.all`, but an early failure or ceiling exit
+returns while later declared-order results remain uncharged.
+
+`runChild` separately adds every child cost to `handedOutUsd`, so later per-child dollar
+allowances see more spend than `outcome.json`, the terminal line, and `driveRun` do. That
+asymmetry limits some subsequent cost but does not repair the missing token accounting or receipt.
+
+**Verified reproduction:** three reviewers returned 10/20/30 tokens and $1/$2/$3 after a
+100-token, $0.01 Builder. The first reviewer failed. All three review promises completed, but the
+ABORTED outcome reported **110 tokens and $1.01**, omitting the other 50 tokens and $5. The
+Oracle-author omission is established directly by the only call site: its result goes from
+`runChild` to `parseOracleCases` without a charge.
+
+**Impact:** token and cost ceilings, airtime, component parent accounting, and the final bill can
+disagree with work actually purchased. The Oracle omission can let the loop begin below a token
+ceiling already crossed by pre-loop work; the Panel omission makes terminal evidence understate
+completed concurrent work.
+
+**Required resolution:**
+
+- Put all Claude-result accounting behind one Driver-owned conservation boundary.
+- Charge each returned child exactly once, including Oracle-author and every settled parallel
+  reviewer, before any verdict-dependent early return.
+- Keep declared-order decision semantics while separating “collect/charge all settled results”
+  from “parse/adjudicate until the first decisive failure.”
+- Reconcile `handedOutUsd` and durable progress from the same ledger or assert their equality;
+  malformed or missing usage remains explicit rather than invented.
+
+**Acceptance evidence:**
+
+- A phase-by-phase table test covers PRD, Oracle-author, design/retry, Builder, race, Panel,
+  escalation, reality check, and lesson extraction with distinct sentinel usage.
+- Early failed/exhausted reviewers still all appear once in spend, without later reports gaining
+  verdict authority.
+- The reproduction reports 160 tokens and $6.01, and pre-loop Oracle spend reaches
+  `alreadySpent`. PLAN item 72 owns the slice.
+
+### F19 — MEDIUM: decision-bearing file reads have no size boundary
+
+**Status:** OPEN
+**Affected:** `scripts/driver.mjs:5158`, `scripts/driver.mjs:5197`,
+`scripts/driver.mjs:5762`, `scripts/driver.mjs:5948`, `scripts/driver.mjs:6054`,
+`scripts/gate-cache.mjs:128-143`
+
+The shell boundary caps each output stream at 64 MB and prompt submission has a character budget,
+but several file-backed inputs are synchronously read in full before either protection applies.
+These include an operator-supplied PRD, generated test reports, reviewer evidence files, the review
+package, and every tracked/untracked file hashed for gate-cache identity.
+
+A target-controlled gate can therefore write an arbitrarily large report under `.meeseeks/`;
+the Driver allocates and parses it on the decision path. A large repository blob is likewise copied
+whole into memory merely to hash it.
+
+**Impact:** a malformed or simply enormous project artifact can exhaust Driver memory and end an
+overnight run without a bounded terminal transition. This is availability and forensic integrity,
+not a claim that ordinary repositories commonly reach the limit.
+
+**Required resolution:**
+
+- Define explicit size policy for prompt-bound and parsed decision artifacts, checking metadata
+  before allocation and failing closed with the artifact name and measured size.
+- Stream hashes for repository files so workspace identity does not require a whole-file buffer.
+- Bound report cardinality/depth in addition to raw bytes where parsing can amplify memory.
+- Keep limits configurable only where a legitimate workload can justify them; do not silently
+  truncate evidence.
+
+**Acceptance evidence:**
+
+- Oversized PRD/report/evidence inputs fail before full allocation and cannot degrade to empty or
+  passing evidence.
+- A large tracked blob can be hashed with bounded memory.
+- Boundary-sized valid neighbors still work, and the terminal receipt names the resource refusal.
+  PLAN item 73 owns the slice.
+
+### F20 — MEDIUM: reporter paths can create test identities outside the repository
+
+**Status:** OPEN
+**Affected:** `scripts/reporters/shared.mjs:31-38`,
+`scripts/reporters/vitest.mjs:42-55`, `scripts/reporters/playwright.mjs:76-89`
+
+`toPosixRelative` resolves a reported file and returns `path.relative(rootDir, absolute)`
+without checking containment. Vitest and Playwright therefore accept absolute or traversing test
+paths and turn them into ratchet IDs beginning with `../`.
+
+**Verified reproduction:** a Vitest-shaped passing result naming `/tmp/outside.test.js` under
+root `/repo` parsed successfully as:
+
+```
+../tmp/outside.test.js::suite > works
+```
+
+**Impact:** the ratchet can bank a test whose defining file is not part of the candidate repository
+or its committed deliverable. Combined with F17's name-only identity, external or runner-forged
+locations can carry durable credit that a clean clone cannot reproduce.
+
+**Required resolution:**
+
+- Resolve reporter paths through the same lexical and realpath containment policy used for other
+  evidence, with an explicit policy for nonexistent generated paths.
+- Reject absolute, traversal, cross-volume, UNC, symlink-escape, and case-fold escape inputs that
+  do not identify a contained repository file.
+- Preserve stable POSIX IDs for valid Windows and POSIX neighbors.
+
+**Acceptance evidence:**
+
+- The reproduction and equivalent Playwright, `..`, symlink, Windows-drive, UNC, and
+  case-insensitive escape cases fail closed.
+- Contained paths containing spaces, Unicode, leading/trailing whitespace, and platform separators
+  retain deterministic IDs.
+- A clean-clone integration test proves every banked test definition is repository-contained.
+  PLAN item 74 owns the slice.
+
 ## Audit coverage maps
 
 These tables are reviewer evidence and triage aids, not new sources of product requirements.
@@ -637,12 +757,12 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 
 | Claim | Actual enforcement strength | Current qualification |
 |---|---|---|
-| ratcheted test ids never disappear | deterministic store, atomic write, fail-closed read, unit/integration coverage | F16 permits stale attempt evidence and F17 shows identity is name-based, not definition-based |
+| ratcheted test ids never disappear | deterministic store, atomic write, fail-closed read, unit/integration coverage | F16 permits stale attempt evidence; F17 is definition-blind; F20 admits out-of-repository identities |
 | Builder cannot write Driver state | positional PreToolUse guard plus child settings; paid live coverage | tool-mediated writes only; F15 allows Oracle reads and F16 shows executed target code is outside the hook boundary |
 | Builder cannot certify Builder | separate Panel processes and Driver recombination | F6 and F7 currently weaken the evidence/process boundary |
 | Panel is cold | fresh read-only `claude -p`, safe mode, narrowed supplied prompt | not sealed, and F14 shows the live tree can change after it is read |
 | Oracle is independent | PRD-only no-tools author; deterministic execution | F8 breaks run binding; F15 means cases are not confidential from Builder |
-| budgets and deadlines are hard | Driver accounting, CLI child allowance, timers | in-flight overshoot exists; F2/F4 mean some wall-clock bounds are not hard |
+| budgets and deadlines are hard | Driver accounting, CLI child allowance, timers | in-flight overshoot exists; F18 breaks spend conservation; F2/F4 mean some wall-clock bounds are not hard |
 | sandbox and model routing hold | settings/argv plus paid live probes | owned by an external binary/provider and must be re-probed when changed |
 | terminal state is durable | `outcome.json` on `driveRun.finish` paths | F10: not all terminal paths and not atomic |
 | graph/provenance is complete | purpose-built ratchet, pins, review, Oracle, assumptions | no general claim graph; stable run/edge identity remains conditional PLAN item 55 |
@@ -662,7 +782,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | `run.json`, `outcome.json` | per run, Driver-owned | manifest records only; outcome is terminal evidence | manifest atomic/no reader; F10 outcome coverage and atomicity |
 | `review.json`, briefs, assumptions | per run, Driver-owned | review evidence; assumptions are supplied context, not verdicts | archived; review/brief writes are forensic rather than decision inputs |
 | lessons and bloopers | cross-run, Driver-owned | advisory prompt context / human history | lesson corruption degrades loudly to none; bloopers append |
-| test/e2e reports, mutation config, browser marker | per iteration or tool invocation | ratchet/gates consume reports; other files configure or record tools | F9 ignore gap; F16 reports are reusable and lack attempt/tree identity |
+| test/e2e reports, mutation config, browser marker | per iteration or tool invocation | ratchet/gates consume reports; other files configure or record tools | F9 ignore gap; F16 lacks attempt/tree identity; F19 lacks size bounds; F20 lacks path containment |
 | `runs/NNN/` | cross-run archive, Driver-owned | human/forensic evidence only | move failures stop startup; partial-move crash risk remains for PLAN item 58's admission test |
 
 ### Failure-shape summary
@@ -686,6 +806,9 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | Oracle confidentiality | Builder cannot inspect the cases it is judged against | F15 |
 | report attempt | fresh successful output bound to one gate/tree | F16 |
 | test definition | current assertion content, not only stable name | F17 |
+| child spend | every returned envelope charged exactly once | F18 |
+| decision artifact size | bounded allocation or streaming refusal | F19 |
+| reporter path | contained test definition reproducible from the repository | F20 |
 
 ### Explicit negative guarantees
 
@@ -694,7 +817,10 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 - `PRD.md` is not protected from Builder mutation after its requirement IDs are captured (F12).
 - The guard is not a general OS sandbox and cannot govern code after it leaves Claude's tool
   boundary.
-- Token/cost ceilings are not atomic reservations across concurrent children.
+- Token/cost ceilings are not atomic reservations across concurrent children, and current
+  receipts do not conserve all completed child spend (F18).
+- File-backed decision artifacts are not uniformly size-bounded before allocation (F19).
+- Reporter file names are normalized but not proven repository-contained (F20).
 - A model verdict is judgment, not deterministic proof; only the Driver combines it with gates.
 - `run.json` is a record and is deliberately not read as authority.
 - There is no crash-resume protocol, lifecycle journal, dynamic-workflow runtime, or general claim
@@ -714,7 +840,11 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | authority by write site | F1, F8, and F9 show authority or machine state whose writer/lifecycle boundary is weaker than its reader assumes |
 | environment and argument taint | F5 exposes ambient values; command argv remains array-based and prompts remain stdin-delivered, so no additional argument-injection finding was established |
 | monotonic escape audit | the stored set unions correctly, but F16 weakens reset verification and F17 shows a stable ID can inherit credit after its definition changes |
-| hostile cross-platform pass | F11 is the new platform finding; F6 acceptance criteria also require Windows-shaped containment cases |
+| hostile cross-platform pass | F11 is the platform finding; F6 and F20 require Windows-shaped containment cases |
+| budget conservation | F18 finds one uncharged role and one early-return loss after parallel settlement |
+| resource-exhaustion boundary | F2/F4 cover processes and HTTP; F19 covers unbounded file-backed decision inputs |
+| path-identity boundary | F20 proves a passing external path can enter the ratchet namespace |
+| terminal transition enumeration | no duplicate finding: pre-loop/outer-exception gaps and non-atomic receipt remain exactly F10 |
 
 ### Temporal language and terminology audit
 
@@ -723,7 +853,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | ratchet banking versus `lastGoodCommit` | `DESIGN.md` now distinguishes successful-unit-gate banking from full-acceptance commit advancement |
 | archived artifact count | `DESIGN.md` now names all six archived artifact classes rather than claiming there are three |
 | review package and `HEAD~1` base | PLAN item 41 is closed as inapplicable after tracing every current consumer |
-| current finding counts and queue | `HANDOFF.md` now agrees with F1–F17 and PLAN items 56/60–71 |
+| current finding counts and queue | `HANDOFF.md` now agrees with F1–F20 and PLAN items 56/60–74 |
 | conceptual ERD versus implemented Oracle lifecycle | the architecture report now labels the run-to-Oracle edge as intended but currently violated by F8 |
 | role vocabulary | Builder, Panel/reviewer, Oracle, and Driver retain the meanings and authority boundaries in `DESIGN.md`; no runtime is renamed or replaced |
 
@@ -739,7 +869,7 @@ remains byte-identical to the reviewed tree:
 - `npm run release-check` — **ok** at `0.164.0`; no shipped file has changed since release and
   `HANDOFF.md` agrees
 
-The paid live tier was not run. Existing green tests do not cover the seventeen failure shapes above.
+The paid live tier was not run. Existing green tests do not cover the twenty failure shapes above.
 
 ## Closure protocol
 
