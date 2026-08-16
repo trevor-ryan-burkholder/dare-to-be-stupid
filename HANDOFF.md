@@ -6,10 +6,11 @@ on the current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` cl
 `npm run test:integration` **51 pass, 0 fail**; `npm run release-check` **ok**. These commands
 were rerun after the documentation repair; no paid live test was invoked.
 
-**External review:** `REVIEW.md` is **CHANGES REQUESTED**. F1–F3 and F5 are high-priority safety
-defects; F4 is a medium-priority timeout defect. They are the first implementation gates in
-`PLAN.md`. Claude Code may implement them; Codex owns closure after reviewing the exact repair
-and its acceptance evidence.
+**External review:** `REVIEW.md` is **CHANGES REQUESTED** with seven high-priority defects
+(F1–F3, F5–F8) and four medium-priority defects (F4, F9–F11). The expanded review includes a
+guarantee-strength audit, durable-artifact registry, failure-shape matrix, and explicit
+negative-guarantee sheet. These are the first implementation gates in `PLAN.md`. Claude Code may
+implement them; Codex owns closure after reviewing the exact repair and its acceptance evidence.
 
 **Paid live tier:** not rerun for this documentation-only cleanup. At 0.161.0 an intermediate
 `CI=1` change failed one live test and was reverted before release; the shipped change was
@@ -18,18 +19,21 @@ the archived handoff.
 
 ## Current implementation order
 
-1. Close `REVIEW.md` F1–F4 without changing the Claude-native runtime architecture; F2 includes the
-   resistant output-cap path.
-2. Close `REVIEW.md` F5 through PLAN item 56's live-contract probe and child-environment boundary
-   before feature fan-out.
-3. Finish PLAN items 40, 41, and 42; then item 29.
-4. Complete the live evidence for item 24, add item 57's machine-readable acceptance result, run
+1. Close the locally implementable high-priority defects: F1–F3, F6/item 60, F7/item 61, and
+   F8/item 62. F2 includes the resistant output-cap path.
+2. Close the external contracts before feature fan-out: F5/item 56 through a paid child-environment
+   probe, and F11/item 65 through real Windows descendant-cleanup evidence.
+3. Close F4, F9/item 63, and F10/item 64.
+4. Complete item 40's reviewer contract after F6, then finish item 42 and item 29. Item 41 is closed
+   as inapplicable because no Panel diff-package path exists.
+5. Complete the live evidence for item 24, add item 57's machine-readable acceptance result, run
    dogfood cases A and B in item 20, and run the staged Ateliers capstone in item 31. Case C remains
    parked by operator decision.
-5. Take items 52 and 53 only after the safety/reviewer work.
-6. Consult PLAN's research-gated and conditional entry for items 54, 55, and 58 only after the
+6. Take items 52 and 53 only after the safety/reviewer work.
+7. Consult PLAN's research-gated and conditional entry for items 54, 55, and 58 only after the
    queued implementation work; PLAN alone decides when any of them enters the queue.
-7. Keep item 21 deferred until the repository is code-complete; Phase 6 and PLAN item 59 remain post-DoD.
+8. Keep item 21 deferred until the repository is code-complete; Phase 6 and PLAN item 59 remain
+   post-DoD.
 
 PLAN owns the statuses. This file deliberately does not duplicate their acceptance criteria.
 

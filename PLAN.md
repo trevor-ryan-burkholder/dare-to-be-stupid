@@ -20,23 +20,32 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ## Build order — current traversal at 0.164.0
 
-**Gate 0A — locally testable external review defects.** These are release-blocking implementation
+**Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
 
 - **F1:** acquire the repository lock atomically before any work.
 - **F2:** make timeout and output-cap termination force and settle after a bounded SIGTERM grace
   period.
 - **F3:** prevent an unrelated local listener from satisfying the health gate.
-- **F4:** enforce absolute HTTP response deadlines and bounded response bodies.
+- **F6 / item 60:** resolve every passing reviewer citation to a contained, existing line before
+  Panel combination.
+- **F7 / item 61:** require both process success and envelope success from every Claude role.
+- **F8 / item 62:** bind held-out Oracle cases to the current run and PRD.
 
-**Gate 0B — child trust boundary:** `REVIEW.md` F5 is implemented by item **56** (measure the real
-child-environment contract, then stop ambient operator secrets crossing it). It follows Gate 0A
-and precedes feature fan-out. The paid probe is part of closure, not evidence that may be inferred
-from argv tests.
+**Gate 0B — external child/platform contracts.** F5 is implemented by item **56**: measure the real
+child-environment contract before replacing ambient inheritance, then prove the boundary through a
+paid Claude child. F11 is item **65**: prove descendant cleanup on Windows rather than inferring it
+from POSIX process-group tests. Both close before feature fan-out.
 
-**Campaign 1 — reviewer contract:** item **40** (unverifiable channel and attack account) → item
-**41** (honest review packaging and diff base). Batch the shared parser/template work and pay the
-required tier-3 check once.
+**Gate 0C — remaining external review defects.** Close F4's absolute HTTP deadline/body cap, F9's
+positional machine-state ignore boundary through item **63**, and F10's complete atomic terminal
+receipt through item **64**. F11 may share F2's process-lifecycle implementation, but retains its
+own platform evidence.
+
+**Campaign 1 — reviewer contract:** after F6/item **60**, implement item **40** (unverifiable
+channel and mandatory attack account). Item **41** is closed as inapplicable: the current Driver
+does not assemble a Panel diff package, and its `HEAD~1` uses do not feed review evidence. Batch
+actual shared parser/template work and pay the required tier-3 check once.
 
 **Campaign 2 — deterministic gates:** finish item **42** Slice B (impeccable JSON, reviewer
 evidence, viewport path) → item **29** (detect-first gitleaks and registry version pinning).
@@ -831,10 +840,17 @@ non-empty attack account is an unparseable pass (already a fail by law). Makes l
 passes machine-detectable. Surface: `templates/reviewer-system.md` + the envelope parser + tests in
 one commit; **tier 3**. **Campaign B**.
 
-### 41. Review packaging — truncation honesty + the diff base (R28) — OPEN
-Per-file/total byte caps when assembling the panel's evidence, with an in-band marker so a starved
-reviewer is told; and the diff base is the recorded pre-iteration commit, never `HEAD~1`. Surface:
-the review-packaging path in `scripts/driver.mjs`. **Campaign B**.
+### 41. Review packaging — truncation honesty + the diff base (R28) — **CLOSED (not applicable, source-traced 16 Aug 2026)**
+The proposed implementation surface does not exist. Panel processes receive a bounded prompt and
+inspect the candidate repository directly with read-only tools; the Driver does not assemble or
+truncate a review diff package. The `HEAD~1` uses in `scripts/driver.mjs` support lesson extraction
+and scoped restore/change accounting, not Panel evidence. `diffStat()` is consumed by the blooper
+record after reset, not by a reviewer. Therefore replacing a review base or adding truncation markers
+would create a second evidence path rather than repair the current one.
+
+R28 remains useful non-normative research if a future implementation introduces a packaged diff.
+At that point the package must name its exact base/tree and mark every truncation in-band. No runtime
+change is justified today.
 
 ### 42. Design-slop gate drives impeccable's real `--json` interface (R29) — **IN PROGRESS (Slice A done, 0.152.0)**
 Read impeccable's machine-parseable finding stream (advisory/primary partition, `file://` targets,
@@ -1549,6 +1565,90 @@ and proves the final-test partition was not consulted during selection; the stag
 reproduced from its receipt and still goes through the ordinary shipped-file version bump and required
 live tier before release. A failed or inconclusive experiment closes the item without changing the
 production path.
+
+### 60. Resolve reviewer evidence before accepting a pass — OPEN (REVIEW F6)
+
+**Problem solved:** the current Panel contract accepts evidence-shaped text even when the cited file
+or line does not exist. That permits a hallucinated or stale citation to participate in `SHIPPED`.
+
+Add one Driver-owned validation boundary between report parsing and Panel combination. A passing
+citation must resolve against the exact candidate repository to a readable regular file and a
+positive, in-range, non-empty line. Reject absolute paths, traversal, directories, and symlink
+escapes. Invalid evidence changes the entry to failure before it can be counted, pinned, carried, or
+stored. Content/blob identity remains the durable pin; the line number is only a locator.
+
+**Done when:** every hostile location in REVIEW F6's acceptance evidence fails beside a valid POSIX
+and Windows-shaped neighbour; an integration case proves fake evidence cannot reach the ship effect;
+and any parser/template contract change receives the required paid live check. This may batch with
+item 40, but F6 closure remains independently reviewer-owned.
+
+### 61. Conjoin Claude process and envelope success — OPEN (REVIEW F7)
+
+**Problem solved:** `spawnClaude` can reinterpret a failed process as a successful role result when
+failed stdout contains a success-shaped Claude envelope.
+
+Preserve distinct timeout, output-overflow, signal/nonzero-process, and envelope-error outcomes.
+`ClaudeResult.ok` requires both a successful shell result and a valid non-error envelope. Failed
+stdout may contribute bounded diagnostics and usage accounting but never role authority. Share the
+termination/failure representation with F2 instead of adding another parallel state machine.
+
+**Done when:** unit and tier-2 cases keep nonzero, signal, timeout, and overflow failures failed even
+with a valid success envelope; normal success and `is_error:true` keep their meanings; and the
+mandatory paid tier-3 check observes the production `claude -p` contract. REVIEW F7 owns closure.
+
+### 62. Bind the Oracle store to one run and one PRD — OPEN (REVIEW F8)
+
+**Problem solved:** `.meeseeks/oracle.json` currently survives previous-run archival, so a new
+objective can reuse held-out cases written for an old PRD.
+
+Give the store explicit current-objective identity. Prefer archiving the prior store and authoring a
+fresh one from the current PRD; exact PRD-digest reuse is acceptable only if independently proved and
+does not expose cases to implementation roles. Write atomically, fail closed on corruption, include
+the store in item 63's machine-state boundary, and preserve PRD-only/no-tools Oracle authoring.
+
+**Done when:** different sequential PRDs cannot share cases; the previous store is archived with its
+run; interruption cannot produce accepted partial JSON; and target `git add -A` cannot stage the
+store. REVIEW F8 owns closure.
+
+### 63. Make the machine-state Git boundary positional — OPEN (REVIEW F9)
+
+**Problem solved:** a filename enumeration omits current Driver artifacts and makes every future
+artifact trackable until somebody remembers to extend the list.
+
+Ignore everything under `.meeseeks/` by position while explicitly carving out the operator-owned
+`config.json`, or derive equivalent rules from one authoritative artifact registry if Git platform
+semantics require it. Correct the test that calls `capabilities.json` operator-owned. This is a Git
+history boundary, separate from the write guard, but the ownership classification must agree.
+
+**Done when:** an integration fixture materializes every current state writer plus an unknown future
+artifact, runs `git add -A`, and proves only the deliberate config carve-out may stage across
+supported platforms. REVIEW F9 owns closure.
+
+### 64. Record every terminal run outcome atomically — OPEN (REVIEW F10)
+
+**Problem solved:** paid pre-loop and outer-exception aborts can leave no `outcome.json`, and the
+existing direct overwrite can destroy the only terminal receipt on interruption.
+
+Define the durable run-start boundary and route every terminal return after it through one shared
+atomic writer. Record only known phase, state, spend, and reason; never invent unavailable usage.
+Failure to write the receipt is loud but must not rewrite the terminal decision already reached.
+
+**Done when:** PRD, Oracle, component, unexpected post-lock, budget, and ship paths each leave one
+correct parseable receipt; interruption leaves a complete old receipt or no accepted receipt, never
+truncated JSON; and component fail-closed behavior is unchanged. REVIEW F10 owns closure.
+
+### 65. Prove and enforce Windows descendant cleanup — OPEN (REVIEW F11)
+
+**Problem solved:** Windows timeout cleanup currently terminates the `shell:true` wrapper without
+establishing that its application children and grandchildren are gone.
+
+Implement a bounded Windows process-tree termination path shared with F2's lifecycle contract.
+Preserve grace then force, guaranteed settlement, and bystander safety; do not weaken the existing
+POSIX process-group path.
+
+**Done when:** a Windows tier-2 fixture starts a shell, application, and grandchild and proves all
+three disappear within the bound while an unrelated process survives; POSIX cleanup and successful
+health probes remain green. A POSIX-only result cannot close REVIEW F11.
 
 ## Cross-cutting non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:

@@ -109,7 +109,7 @@ erDiagram
     COMPONENT_RUN ||--|| RUN_OUTCOME : must_return
 ```
 
-The diagram exposes four current limits rather than hiding them:
+The diagram exposes five current limits rather than hiding them:
 
 - `RUN` has no stable run id shared by all records; archive co-location and iteration numbers do
   most of that work today.
@@ -118,7 +118,10 @@ The diagram exposes four current limits rather than hiding them:
 - assumptions have citations but no accepted dependency edges to the requirements, artifacts, or
   evidence that used them; and
 - gate results and test reports are mostly iteration-transient, while the ratchet, red evidence,
-  and negative gate cache retain only the relations their invariants require.
+  and negative gate cache retain only the relations their invariants require; and
+- the diagram shows the intended run-to-Oracle relationship, but the current implementation leaves
+  `oracle.json` in place across runs and does not bind it to the current PRD. `REVIEW.md` F8 is the
+  release-blocking lifecycle defect; the ERD is not evidence that the relationship is enforced.
 
 ## Claude Code dynamic workflows: documented behavior
 
