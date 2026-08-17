@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 16 August at 0.164.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.164.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -123,8 +123,11 @@ a real run demonstrates a provenance or invalidation failure that passes its adm
 a forensic gap; it is not authorization for checkpoint/resume.
 
 **Deferred/post-DoD:** item **21** remains deferred until code-complete. Items **32–36** and
-**47–51** remain Phase 6; item **59** is also post-DoD because it depends on item 35. Item **30**
-remains a research/measurement intake, not an implicit build.
+**47–51** remain Phase 6; within that phase item **49**'s artifact substrate precedes its first
+Verified Research instance, item **34**, despite their chronological numbering. Item **59** is also
+post-DoD because it depends on item 35. Item **30** remains a research/measurement intake, not an
+implicit build. Item **86** is parked post-DoD; it cannot enter the queue until its containment and
+incremental-detection admission conditions are met.
 
 `PLAN.md` owns these statuses. `HANDOFF.md` summarizes them and must not invent a second ledger.
 
@@ -785,8 +788,11 @@ statuses in the same commit as the work, not after it
 One item per commit; version bump with any shipped file; statuses here in the same commit;
 execution records in `HANDOFF.md`. Tier 2 before commits touching race, health-probe,
 toolchains, or anything shelling out; tier 3 whenever `claudeArgs`, `childSettings`, envelope
-parsing, or a template output contract moves (items 4, 10, 16 at minimum). No new personas —
-the cap was spent on `oracle-author`. Nothing from `BRIEF.md` section E's do-not-add list.
+parsing, or a template output contract moves (items 4, 10, 16 at minimum). No new standing
+authority personas—the cap was spent on `oracle-author`. Driver-owned job/lens prompt addenda
+explicitly required by items 34 and 86 reuse existing authority identities and spawn paths; they do
+not create a persona, effort key, or terminal authority. Nothing from `BRIEF.md` section E's
+do-not-add list.
 Experiments write their result down whichever way they land: a surprising `CLOSED` is worth
 more than a flattering `DONE`.
 
@@ -1101,13 +1107,69 @@ check** per toolchain. The core loop is already language-agnostic (the ratchet p
 JSON, not syntax) — this is surface, not spine.
 
 ### 34. Verified research mode — OPEN (the first instance of item 49's substrate)
-The differentiated land-grab: do what their "research agent" does, but *verified*. New job-type
-whose gates are citations-resolve (the quoted text appears in the cited source), claims-are-sourced,
-no-contradictions, coverage-of-a-checklist — and the **held-out oracle repurposed as a
-fact-checker** authored before the research is written. **Invariant:** nothing-defaults-to-pass and
-the held-out principle carry over unchanged; the reporter emits deterministic pass/fail evidence
-(a citation resolver) exactly as a test reporter does. Offers the one thing a self-evaluating
-research agent structurally cannot: research trustworthy unwatched.
+
+**Problem solved:** a polished unattended report can contain unsupported, stale, incomplete, or
+contradictory claims while its author confidently reports success. This job type applies the
+existing independent-evidence spine to research without pretending that citation syntax proves
+truth.
+
+**Prerequisites:** Gate 0, including item **77**'s executed prompt-supply boundary; item **40**'s
+parsed `unverifiable` channel; item **49**'s artifact substrate; and a recorded item **84**
+containment outcome. Reuse those mechanisms rather than creating research-local substitutes.
+
+The Driver seals the question, scope, freshness date, allowed source classes, evidence-retention
+policy, acceptance checklist, and budget before execution. A fresh job-specialized producer in the
+existing Builder authority class (called Researcher here) produces the report plus a
+machine-readable claim/source manifest.
+This is a sealed job brief in the existing producer authority class and role-spawn path, not a new
+durable authority, standing persona, or configuration effort key. It must not literally reuse the
+current code-only `builder-system.md` contract. Implementation first factors common producer
+authority rules from job-specific code/research addenda, all Driver-owned and versioned; the job's
+explicit tool/effect profile may narrow but never broaden its sealed authorization. Deterministic
+checks prove only what scripts can establish: required coverage exists, citation locations resolve,
+quoted text matches the cited source, material claims have evidence links, and the manifest does not
+assign incompatible normalized values to the same claim id. A Driver-owned prose-toolchain
+acquisition gate produces a source-evidence package for every material citation: canonical
+identity, retrieval time, content digest, locator, and the exact source artifact or reviewable
+context policy permits retaining.
+Reviewers inspect that immutable package rather than a silently changed refetch. If evidence cannot
+be retained or independently reacquired under the sealed policy, classify it `unverifiable`; never
+archive credentials, authorization headers, or secret values. Item **77**'s supply report and item
+**85**'s authority boundary classify every source artifact and its metadata as untrusted evidence;
+source instructions cannot become Researcher or reviewer authority. The first supported retrieval
+profile is public HTTPS only: validate every redirect and connection target as public, reject
+local/private/link-local addresses and non-HTTPS schemes, apply F4's absolute deadline/body-cap
+primitive, send no ambient cookies or credentials, and normalize source content to inert text without
+script or active-content execution. Authenticated, local, and private sources are refused until a
+separate normative security profile and hostile live evidence exist. Whether a source actually
+supports an inference, whether uncited counterevidence changes the conclusion, and whether the
+report answers the question remain cold-review judgments.
+
+One independently instantiated cold Panel member receives the final artifact, manifest, and bound
+source evidence under a factuality lens without the Researcher's scratch context. A separate cold
+Panel member judges synthesis, usefulness, and checklist coverage. Both reuse the existing
+cold-review authority and spawn path with Driver-owned lens addenda; the current code-specific
+reviewer contract must not be followed literally for prose evidence. They are not new reviewer
+personas. The existing Oracle may supply a precommitted held-out fact fixture only when it has a
+deterministic executable observation and was authored before the Researcher output. Disputed
+semantic support remains Panel judgment or `unverifiable`; a second model
+opinion is not deterministic Oracle evidence. Researcher cannot author, see, revise, or grade the
+fixture. Only Driver may record accepted criteria or terminal status. A disposable dynamic workflow
+may run inside Researcher, but its success is role output, never certification.
+
+**Done when:** item **49**'s artifact substrate can run a real research artifact end to end; fixtures
+cover unsupported claims, citation mismatch, unavailable and stale required sources, source change
+between production and review, disallowed evidence retention, redirect-to-local/private targets,
+DNS/address-policy changes, body/deadline exhaustion, active content, contradictory manifest values,
+incomplete coverage, reviewer parse failure, crash/restart, and budget exhaustion; source packages
+bind acquisition identity without secrets and hostile-source fixtures cannot alter role authority;
+the acceptance receipt binds the package digest, and carry invalidates when the report, manifest,
+or package changes; deterministic output distinguishes traceability from semantic support; cold
+factuality and synthesis reviewers remain independently contextualized; deterministic held-out
+fixtures execute without Researcher context; semantic uncertainty is recorded as `unverifiable`;
+and unavailable required evidence fails closed with a structured reason mapped to one of the
+existing non-`SHIPPED` terminal
+states.
 
 ### 35. Continual-memory discipline, operator-side (folds R36 + R37) — OPEN
 Adopt Prime Agent's Continual-Harness *discipline* on the DRIVER, never the builder: bound the
@@ -1251,10 +1313,12 @@ work is entirely at the toolchain layer; **no spine change, and a change that ne
 **Design, with the tensions resolved:**
 - **Checks are a real test suite over the artifact.** "Chapter 3 exists and is ≥2000 words", "every
   citation resolves to text that appears in the cited source", "every bolded term is in the glossary",
-  "no two chapters contradict on a stated fact" — these are **test ids**. Written as an ordinary node
-  test file over `manuscript/`, they emit JSON `extractTestIds` already parses: **zero parser work**, and
-  the ratchet then guarantees a chapter that once passed may never silently regress. That is the identical
-  guarantee, pointed at prose.
+  and "the manifest does not assign conflicting normalized values to one claim id" — these are
+  **test ids**. Written as an ordinary node test file over `manuscript/`, they emit JSON
+  `extractTestIds` already parses: **zero parser work**, and the ratchet then guarantees a chapter
+  that once passed may never silently regress. Semantic contradiction across differently worded
+  claims remains a cold-review question; a model assertion must not masquerade as deterministic
+  evidence.
 - **A prose/artifact toolchain** (`scripts/toolchains/prose.mjs`) on the existing fixed contract (detect,
   map operations, name a reporter — the shape dotnet proved). **Dependency to resolve first:** detection
   here is weak (a manuscript directory is not a `package.json`), so this likely needs the
@@ -1262,17 +1326,31 @@ work is entirely at the toolchain layer; **no spine change, and a change that ne
   gate 49 behind an explicit config key; do not sniff.
 - **Prose gates**, flagship first: a **citation resolver** (the quoted text actually appears in the cited
   source — deterministic, and exactly the "reporter emits pass/fail evidence" shape 34 names), plus
-  link-check, style (vale), word-count floors, contradiction check. The code operations (`build`, `types`,
-  `e2e`, `security-audit`) must **decline honestly and visibly** (§3.8): a gate list that silently shrinks
-  reads as a job that never needed them.
-- **The held-out oracle becomes the fact-checker** (34's core): authored **before** the content and never
-  shown to the writer. A writing agent structurally cannot fact-check itself; this can, and that is the
-  differentiated claim.
+  link-check, style (vale), word-count floors, and machine-readable claim-consistency checks. For
+  material citations, a Driver-owned prose-toolchain acquisition step binds canonical source
+  identity, retrieval time, content digest, locator, and retained review context; a later live
+  refetch may check continued availability but cannot silently replace the version the report used.
+  The initial profile fetches public HTTPS only, validates every redirect and connection target as
+  public, rejects local/private/link-local addresses, sends no ambient credentials, reuses F4's
+  absolute deadline/body cap, and captures inert text rather than executing active content. Evidence
+  that policy forbids retaining or independently reacquiring is `unverifiable`, and credentials
+  never enter the artifact.
+  Captured source text and metadata remain untrusted evidence under items **77** and **85**, never
+  prompt authority. The acceptance receipt binds the source-package digest, and carry must include
+  that identity. The code operations (`build`, `types`, `e2e`, `security-audit`) must **decline
+  honestly and visibly**
+  (§3.8): a gate list that silently shrinks reads as a job that never needed them.
+- **The held-out oracle remains deterministic** (34's core): a fact fixture is sealed **before** the
+  content, never shown to the writer, and must name an executable observation with an exact expected
+  result. Semantic support that cannot be reduced to that form remains cold Panel judgment or
+  `unverifiable`; the writing role cannot author, see, revise, or grade the fixture.
 - **The honest boundary, stated in the product, not just here.** For code, "does it pass" is objective.
-  For prose, *structure* is objective (citations resolve, sections exist, no contradictions) while
-  *quality* is contested. The guarantee therefore weakens from **provably correct** to **provably
-  structurally sound, plus a cold panel's judgment** — still far better than an unverified writing agent,
-  but not the same claim, and a run must never dress the second as the first.
+  For prose, *structure and traceability* are objective (citation locations resolve, sections exist,
+  and normalized manifest values are internally consistent) while source support, factual truth, and
+  quality require independent judgment. The guarantee therefore weakens from **provably correct** to
+  **provably structurally sound and traceable, plus cold factuality and quality judgments** — still far
+  better than an unverified writing agent, but not the same claim, and a run must never dress the second
+  as the first.
 
 **The filter — and it gates the CRITERION, never the job type.** A first draft of this item gated by job
 type ("a report qualifies, a logo does not") and the operator refuted it on 15 Aug: **a job with a DoD is
@@ -1307,8 +1385,13 @@ tokens later, which is this project's most expensive defect class (the ungrounde
 **Done when:** an artifact toolchain detects (or is declared) and maps its operations; the code gates it
 cannot run decline visibly; a checks-as-tests suite over a real artifact feeds the ratchet through the
 existing reporter path with no parser change; the citation resolver passes on a resolving quote, fails on
-a misquote, and **fails closed** on a source it cannot fetch; a job whose check cannot be stated is
-refused with that reason; and one live artifact run ships end to end.
+a misquote, and **fails closed** on a required source it cannot fetch; a machine-readable contradiction
+fixture fails while differently worded semantic claims remain assigned to cold review; no deterministic
+gate claims that resolution proves support or truth; mutable-source, redirect-to-private,
+address-policy-change, oversized/slow-body, active-content, and non-retainable-source fixtures
+preserve provenance or refuse closed without secrets; receipt and carry fixtures stale
+when the bound source package changes; a job whose check cannot be stated is refused with that reason;
+and one live artifact run ships end to end.
 
 ### 50. The blocked-question artifact — a question as OUTPUT, never as interrupt — OPEN (Phase-6 class, post-DoD)
 
@@ -1404,8 +1487,9 @@ reviewer prompt gains constitutional text as a side effect.
 
 This heading ends Phase 6. Items 52, 53, 56, 57, and 77–85 are pre-DoD only in the order stated at
 the top of this file; items 54, 55, and 58 are conditional or research-gated; item 59 remains
-post-DoD because it depends on Phase-6 item 35. Item numbering records chronology, not priority.
-The top-level build order is authoritative when physical placement and execution order differ.
+post-DoD because it depends on Phase-6 item 35. Item 86 is PARKED post-DoD behind its own admission
+conditions. Item numbering records chronology, not priority. The top-level build order is
+authoritative when physical placement and execution order differ.
 
 ### 52. Denial dampening (R25c), done without giving the guard a write primitive — OPEN (was part of item 37, cut on review)
 
@@ -1546,28 +1630,36 @@ graph does not follow automatically from passing this item.
 
 **Problem solved:** `childEnvironment()` currently copies the operator's complete environment into
 each `claude -p` child. That preserves tool discovery, but it also gives an unattended Builder ambient
-credentials and unrelated secrets it was never deliberately supplied. Eve's trusted-runtime/sandbox
-split is a useful security invariant here; Eve or Vercel Sandbox is **not** the proposed dependency.
+credentials, unrelated secrets, and Claude control variables it was never deliberately supplied.
+Those variables can silently change retry/resume behavior, workflow availability, model routing,
+permission posture, or budget timing. Eve's trusted-runtime/sandbox split is a useful security
+invariant here; Eve or Vercel Sandbox is **not** the proposed dependency.
 
 **Research sources:** [Eve's security model](https://eve.dev/docs/concepts/security-model) and
 Claude Code's official [environment-variable](https://code.claude.com/docs/en/env-vars) and
 [sandbox credential](https://code.claude.com/docs/en/sandboxing#protect-credentials) controls,
-checked 16 August 2026. The local risk is established independently by `scripts/driver.mjs` and
+checked 17 August 2026. The local risk is established independently by `scripts/driver.mjs` and
 its tests.
 
 **Slice A — measure before designing:** run one paid tier-3 probe using synthetic secret values only
 and record exactly what a Builder-launched shell can observe. Establish the minimum environment the
 installed Claude CLI and target tools actually require: executable search path, home/temp, locale,
-Claude authentication, Meeseeks run/depth markers, and platform necessities. Separately measure
-`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`: current documentation says the parent Claude process keeps
+Claude authentication, Meeseeks run/depth markers, role-derived Claude controls, and platform
+necessities. Treat ambient `CLAUDE_CODE_*` values as control-plane inputs, not harmless process
+metadata: seed synthetic values for retry watchdog, interrupted-turn resume, safe mode/workflow
+disablement, subagent model override, and print-background wait, then prove that only the Driver's
+explicit per-role values cross. Separately measure `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`: current
+documentation says the parent Claude process keeps
 Anthropic/cloud credentials while Bash, hook, and stdio-MCP subprocesses lose them, and on Linux the
 Bash path also enters a PID namespace that cannot see or signal host processes. This is an external
 binary contract; an argv or unit test cannot establish it, and F2/F11 process supervision must not be
 weakened as a side effect.
 
 **Slice B — enforce the measured boundary:** construct a minimal operational child environment plus
-an explicit operator-configured allowlist of additional variable **names**. Never persist, print, or
-place values in receipts. Refuse closed — or emit a preflight refusal naming only variable names —
+an explicit Driver-owned per-role control set plus an operator-configured allowlist of additional
+variable **names** for target tools. Do not allow that operator list to override Driver-owned Claude
+controls. Never persist, print, or place values in receipts. Refuse closed — or emit a preflight
+refusal naming only variable names —
 when the required boundary cannot be applied or a high-risk ambient credential would otherwise cross
 it. Preserve ordinary tool discovery and every existing guard/depth marker. The native subprocess
 scrub may be defense in depth only after a pinned canary proves its exact provider coverage and
@@ -1577,7 +1669,8 @@ If a target tool genuinely requires a secret, item **84** may test Claude's name
 Bash/proxy/platform scope.
 
 **Done when:** unit tests prove synthetic secrets are absent, required benign neighbours survive,
-and no value appears in diagnostics or driver-owned artifacts; a paid tier-3 test proves the same
+ambient Claude control variables cannot alter the sealed role contract, and no value appears in
+diagnostics or driver-owned artifacts; a paid tier-3 test proves the same
 boundary through a real Claude child and its Bash, hook, and stdio-MCP subprocess surfaces;
 authentication and normal target tool discovery still work; enabling native scrub neither hides a
 required descendant from F2/F11 settlement nor broadens its documented provider-only coverage; and
@@ -2267,6 +2360,57 @@ Driver-owned reviewer prompt and implementation evidence remain available. The c
 only those seeded cases, not arbitrary prompt-injection immunity. Items **66**, **68**,
 **77**, **82**, and **83** are prerequisites. REVIEW F29 owns closure.
 
+### 86. Verified red-team assessment job type — PARKED (post-DoD follow-on)
+
+**Problem solved:** the existing hostile Panel, security review, mutation/integrity gates, and
+held-out Oracle judge known requirements and evidence, but they do not authorize a bounded actor to
+actively seek reproducible counterexamples against a declared threat model. The useful addition is
+that scoped assessment job—not a standing fifth authority and not a generic claim that the target is
+secure.
+
+The operator authorizes the target, threat model, allowed techniques, prohibited effects, network
+and credential policy, budget, and stop conditions. Driver seals that authorization with the exact
+candidate identity and cannot broaden it. A fresh job-specialized producer in the existing Builder
+authority class (called Red here) receives an immutable read-only candidate snapshot. Generated
+attack harnesses, commands, configurations, and inputs live in a separately identified disposable
+assessment workspace. Each finding binds the candidate identity and assessment-harness identity and
+includes reproducible evidence. An independently instantiated verifier in the existing cold
+security-review process reruns each reproduction from the same candidate in a fresh assessment
+workspace and includes a benign control so indiscriminate failure is not mistaken for a
+vulnerability. Red and reproduction reuse existing role spawn paths and authority identities with
+Driver-owned job/lens prompt addenda and exact restricted tool/effect profiles. The current
+code-writing Builder prompt and tool policy must not be inherited literally by a read-only Red job.
+These are not new durable authorities, standing personas, or configuration effort keys. The cold
+Panel judges requirement and severity impact; Builder alone mutates the
+candidate to repair accepted findings; the independent verifier reruns the reproduction and
+regression controls. Disputed semantic evidence remains cold Panel judgment or `unverifiable` unless
+an existing deterministic Oracle fixture directly covers it. Driver alone updates durable state or
+terminal status.
+
+Red cannot certify Red, advance the ratchet, edit Driver-owned state, or declare the target secure.
+“No findings” is an inconclusive coverage observation, not a pass. A dynamic workflow may organize
+bounded discovery inside Red, but its ephemeral agents gain no durable authority. Red-team output is
+untrusted input until independently reproduced; prompt text does not expand authorization to
+production targeting, persistence, destructive action, credential collection, or data exfiltration.
+
+**Admission:** F2, item **40**, item **56**, item **65**/F11 cross-platform descendant cleanup,
+items **66**, **68**, **76**, **77**, **82**, **83**, **85**, and a recorded item **84** containment
+outcome must exist first. The permitted effect and network profile must fail closed, survive
+restart without broadening scope, and prove Red cannot mutate the candidate or reach Driver-owned
+decision stores. A benign synthetic pilot
+must show independently reproduced incremental detection beyond the existing Panel/security path;
+otherwise close this item as redundant. Item 49 is not a prerequisite: Red is an assessment campaign
+over the existing code/security spine, not an artifact-writing mode.
+
+**Done when:** hostile and benign scope fixtures prove authorization cannot broaden after launch;
+every finding binds to the exact candidate and carries a reproduction plus control; verifier
+independence and context starvation are live-proven; assessment harness identity is recorded
+separately; Red cannot write the candidate; accepted Builder repairs force reproduction and
+regression reruns; crash, timeout, output cap, budget exhaustion, unavailable containment, and
+malformed finding evidence all terminate fail-closed without orphan descendants; the final report
+distinguishes reproduced, rejected, unresolved, and unattempted coverage; and a measured pilot
+improves incremental defect discovery or morning acceptance enough to justify its added cost.
+
 ## Cross-cutting non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:
 - **Automatic transcript harvesting or runtime prompt/skill mutation** — item 59 is an offline,
@@ -2283,6 +2427,7 @@ Recorded so a future session does not "helpfully" add them:
 - **Builder self-memory or self-grading** — breaks cold review; self-evaluation is the enemy the
   whole design defeats.
 - **Open-ended "just keep working" mode with no DoD** — meeseeks requires a verifiable done-bar;
-  the answer to "handle more work" is more job-types with done-bars (32–34), never no done-bar.
+  the answer to "handle more work" is more job-types with done-bars (32–34, 49, and parked
+  assessment item 86), never no done-bar.
 - **A warm interactive TUI as the primary surface** — unattended-trustworthy is the moat; an
   attended mode, if ever built, is a separate surface and must not wag the verification dog.

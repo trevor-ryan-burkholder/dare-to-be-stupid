@@ -1,4 +1,4 @@
-# START HERE — current handoff, last swept 16 August 2026
+# START HERE — current handoff, last swept 17 August 2026
 
 **State:** `main` at `0.164.0`. The manifests and package-lock root metadata agree. Measured
 on the current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean;
@@ -55,18 +55,21 @@ the archived handoff.
    queued implementation work; item 54 additionally requires item 77 and item 84's recorded
    containment outcome, and PLAN alone decides when any of them enters the queue.
 9. Keep item 21 deferred until the repository is code-complete; Phase 6 and PLAN item 59 remain
-   post-DoD.
+   post-DoD. Item 86 remains parked behind its containment and incremental-detection admission
+   conditions.
 
 PLAN owns the statuses. This file deliberately does not duplicate their acceptance criteria.
 
-## Architecture analysis added on 16 August
+## Architecture analysis
 
 [`docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md`](docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md) records the
 current source-backed architecture analysis, conceptual durable-state ER diagram, and cross-role
 information-flow map. The decision is **partial adoption by experiment** for role-internal dynamic
-workflows, with Driver, Builder, Panel, and Oracle authority unchanged. A general explicit graph is
-**not approved**; exact evidence identity and minimal dependency metadata are the only conditional
-next step. No runtime behavior changed.
+workflows, with Driver, Builder, Panel, and Oracle authority unchanged. It also records Verified
+Research as an existing producer-authority job contract and a Red assessment job as a parked
+post-DoD experiment; both require independently cold evidence and preserve Driver terminal
+authority. A general explicit graph is **not approved**; exact evidence identity and minimal
+dependency metadata are the only conditional next step. No runtime behavior changed.
 
 ## Documentation routes
 

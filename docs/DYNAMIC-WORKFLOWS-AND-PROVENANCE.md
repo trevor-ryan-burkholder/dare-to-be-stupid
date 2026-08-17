@@ -3,7 +3,7 @@
 Status: supporting architecture analysis and experiment design; non-normative, with no runtime
 implementation yet.
 
-Last researched: 2026-08-16 against Claude Code documentation current on that date.
+Last researched: 2026-08-17 against Claude Code documentation current on that date.
 
 This note evaluates two related ideas:
 
@@ -39,6 +39,12 @@ change. Raw research remains under `docs/research/`.
   structures cannot address.
 - **Reliability prerequisites come first.** PLAN Gate 0 and item 77 must close, and item 84 must
   record the actual containment outcome, before one `claude -p` child may fan out into many agents.
+- **Verified Research: adopt first as a job type, independently of workflow adoption.** Item 34 may
+  use item 49's artifact substrate without dynamic fan-out; a workflow inside Researcher is a later
+  optimization and never its factuality verdict.
+- **Verified Red Team: park behind containment and incremental-value evidence.** Item 86 is a scoped
+  assessment producer, not a new authority. It enters implementation only if a benign pilot shows
+  reproducible findings beyond the existing Panel/security path.
 
 The success measure is morning user acceptance: the user returns to work that satisfies
 the original intent without substantive repair. Agent count, token count, and raw speed are
@@ -176,6 +182,9 @@ The following statements are documented behavior, not Meeseeks assumptions:
   newer release, and PLAN item 83 must establish the floor through the complete pinned live suite.
 - Saved workflows live under project or user `.claude/workflows/` directories, or may be
   distributed by a plugin and invoked as a namespaced slash command.
+- Claude Code currently bundles `/deep-research`, which fans out source gathering, cross-checks
+  claims, filters claims that fail its internal vote, and labels claims it cannot verify. Those are
+  useful producer behaviors, not deterministic proof that a surviving claim is true.
 - Slash commands can be sent programmatically through the Agent SDK; supported commands
   are reported in the initialization message.
 - Workflows are available in `claude -p` and the Agent SDK, and launch without an
@@ -316,16 +325,19 @@ iteration logs, but repository-readable files are not sealed from them. `REVIEW.
 that the current `allowedTools` table controls approval rather than exact availability, so the
 Oracle-author “no tools” edge and other role tool sets require PLAN item 82 before a workflow can
 inherit them safely. All Claude roles currently inherit the operator environment; that separate
-open trust-boundary defect is F5. Dynamic workflows must remain inside one role box and may return
-only through that role's existing arrow to the Driver.
+open trust-boundary defect is F5. The boundary must exclude ambient Claude control variables as well
+as credentials: retries, resume, workflow availability, model routing, permission posture, and
+budget timing are sealed role semantics, not operator-shell defaults. Dynamic workflows must remain
+inside one role box and may return only through that role's existing arrow to the Driver.
 
 ### Oracle
 
 Current Oracle execution is deterministic and remains so. A workflow may eventually help
 the PRD-only Oracle-author generate candidate cases, but only after experiments show it
-improves missed-case discovery without increasing invented requirements. A future evidence
-adjudicator would be a separately instantiated cold role, not a continuation of Builder or
-Panel context.
+improves missed-case discovery without increasing invented requirements. Semantic source support
+that cannot be reduced to a precommitted executable observation remains cold Panel judgment or
+`unverifiable`; creating another model role and calling it an Oracle would not make that evidence
+deterministic.
 
 ### Recursive Meeseeks
 
@@ -531,6 +543,131 @@ semantic conclusion.
 No graph cache may substitute for the final deterministic gates and full cold Panel on the
 exact shipping tree.
 
+## Role-local job types: Research and Red Team
+
+Research and red-team work should be expressed as verified job contracts mapped onto the existing
+producer authority class under Meeseeks' durable control plane, not as new standing personas or
+global authorities. Initial implementations reuse existing role spawn paths and authority identities,
+but the current code-only Builder/reviewer prompts and tool profiles cannot be reused literally.
+Factor their common authority rules from Driver-owned job/lens addenda, and give every job an explicit
+tool/effect profile that can narrow but never broaden sealed authorization. This adds no standing
+persona or configuration effort key. Each job may use a disposable dynamic
+workflow internally, but workflow success is only evidence. It cannot advance the global ratchet,
+certify its own output, or declare a terminal state. Driver remains the only component that applies
+accepted evidence to durable state.
+
+### Verified Research — adopt the job type first
+
+Research mode solves a concrete artifact-verification problem: a polished report can contain
+unsupported, stale, or contradictory claims even when its author says the work is complete. It
+should therefore be the first specialized job type built on item 49's artifact substrate. It does
+not depend on dynamic workflows; those are an optional later execution mechanism inside Researcher.
+The bundled `/deep-research` command is one candidate harness for a paid, capability-probed item 54
+experiment. Its internal cross-checking and voting may reduce producer errors, but Meeseeks must still
+run its own structural gates and independently cold acceptance path.
+
+The durable flow is:
+
+1. Driver records the research question, scope, freshness date, source constraints, acceptance
+   checklist, retention policy, and budget before execution.
+2. A fresh job-specialized producer in the existing Builder authority class (called Researcher
+   here) gathers sources and produces both the report and a machine-readable claim/source manifest.
+3. A Driver-owned prose-toolchain acquisition gate binds each material citation to canonical
+   source identity, retrieval time, content digest, locator, and the exact source artifact or
+   reviewable context the sealed policy permits retaining. The first profile supports bounded public
+   HTTPS only: every redirect and connection target must remain public; local/private/link-local
+   addresses and other schemes are rejected; F4's absolute deadline/body cap applies; no ambient
+   cookies or credentials are sent; and source content is captured as inert text without active
+   execution. Authenticated, local, and private sources require a later normative security profile.
+   Credentials, authorization headers, and secret values are never retained. A later refetch may
+   test continued availability but cannot replace the cited version.
+   Source text and metadata are explicitly supplied as untrusted evidence under items 77 and 85;
+   instructions inside them never become role or review authority. The acceptance receipt binds the
+   package digest; research carry is valid only while the report, manifest, and package identities
+   remain unchanged.
+4. Deterministic gates verify that cited locations resolve against the bound evidence, exact
+   quotations match, required sections and checklist items are present, material claims map to
+   evidence, and normalized manifest values do not conflict. These checks prove structure and
+   traceability, not support or truth.
+5. One independently instantiated cold Panel member receives the question, final artifact,
+   manifest, and bound source evidence under a factuality lens, but not Researcher's scratch context.
+   A separate cold Panel member judges synthesis and whether the artifact answers the operator's
+   question.
+6. The existing Oracle may provide a sealed, precommitted fact fixture only when it names a
+   deterministic executable observation and exact expected result. Semantic support that cannot be
+   reduced to such an observation remains cold Panel judgment or `unverifiable`.
+7. Only Driver may record accepted criteria or declare the research job complete.
+
+Researcher cannot certify Researcher. Missing, inaccessible, or stale required sources fail closed
+with a structured reason; `blocked`, `inconclusive`, and `unverifiable` do not become new terminal
+states, and Driver maps the cause to existing `STALLED`, `BUDGET`, or `ABORTED` semantics. A dynamic
+workflow may provide bounded source fan-out or synthesis inside step 2, but its participants are
+disposable and its internal review cannot replace steps 3–5.
+
+The pilot should measure unsupported-claim escape rate, citation-support precision against an
+independently labeled sample, required-question coverage, cold-review disagreement, cost, and
+morning user acceptance.
+
+### Verified Red Team — park behind containment evidence
+
+Meeseeks already has adversarial review through the cold Panel, security review, held-out Oracle,
+and hostile Definition-of-Done gates. A standing Red authority would duplicate those roles and blur
+terminal authority. The useful addition is narrower: an explicitly authorized security-assessment
+job that attempts to produce reproducible counterevidence against a sealed target and threat model.
+
+The durable flow is:
+
+1. Operator authorizes the target, threat model, allowed techniques, prohibited effects, network
+   and credential policy, resource budget, and stop conditions. Driver seals that authorization
+   with the exact candidate identity and cannot broaden it.
+2. A fresh job-specialized producer in the existing Builder authority class (called Red here)
+   receives an immutable read-only candidate snapshot. Attack harnesses, commands, configurations,
+   and generated inputs live in a separately identified disposable assessment workspace. It emits
+   findings plus reproducible evidence binding both identities; its output is untrusted until
+   independently reproduced.
+3. An independently instantiated verifier in the existing cold security-review class attempts each
+   reproduction from the same candidate in a fresh assessment workspace and includes a benign
+   control so indiscriminate failure is not mistaken for a vulnerability. This is a reviewer lens,
+   not a new durable authority.
+4. The cold Panel determines requirement and severity impact. Builder repairs accepted findings;
+   the verifier reruns the reproduction and regression controls after the change.
+5. Disputed evidence remains cold Panel judgment or `unverifiable` unless an existing deterministic
+   Oracle fixture directly covers it. Only Driver may update durable state or terminal status.
+
+Red cannot declare the target secure, and “no findings” is an inconclusive coverage observation,
+not a pass. A prompt cannot authorize production targeting, persistence, destructive actions,
+credential collection, or data exfiltration. Dynamic workflows may organize discovery internally
+but gain no durable authority.
+
+Admission requires measured child-environment minimization, bounded cross-platform process-tree
+termination, exact-tree evidence receipts, explicit network/effect controls, disposable isolation,
+restart-safe scope recovery, and tests showing that Red cannot mutate the candidate, edit
+Driver-owned state, or certify itself. Item 49's prose/artifact toolchain is not a prerequisite. A
+benign synthetic pilot must demonstrate incremental, independently reproduced detection beyond the
+existing Panel/security path; otherwise the mode is redundant and should remain closed.
+
+The pilot should measure incremental reproduced findings, false-positive rate,
+regression-prevention value, containment violations, cost, and morning user acceptance.
+
+### Shared invariants
+
+Both job types inherit the existing Builder/Panel/Oracle/Driver separation:
+
+- Researcher and Red are job labels in the existing producer authority class, not standing personas;
+- job-specific prompt addenda and restricted tool/effect profiles are required where the existing
+  code-only contract is incompatible; they do not create new authority identities;
+- factuality, synthesis, and reproduction are lenses in existing cold review authority/spawn paths,
+  not new standing personas;
+- the producing role owns work, never acceptance;
+- Panel/security lenses, verifier, and Oracle are independently instantiated and contextualized;
+- workflow participants do not become durable graph nodes unless their output becomes an accepted
+  artifact, decision, or evidence record;
+- context, token, time, tool, effect, and child-process budgets are bounded;
+- crash recovery resumes from Driver-owned briefs, artifacts, receipts, and verdicts, not model
+  memory; and
+- success is measured by user acceptance and escaped defects, not agents spawned, findings emitted,
+  citations counted, or workflow-reported success.
+
 ## Failure modes
 
 | Failure | Required defense |
@@ -550,6 +687,18 @@ exact shipping tree.
 | model invents a narrow dependency | Driver acceptance required; uncertainty widens invalidation |
 | dependency cycle deadlocks work | reject cycles, layer dependencies, add deadlines/failure states |
 | every temporary agent becomes a graph node | one receipt per durable role computation |
+| citation resolution is presented as factual support | deterministic gates claim only structure and traceability; cold factuality review judges support |
+| a mutable source changes between writing and cold review | Driver-owned acquisition package binds source identity, retrieval time, digest, locator, and reviewable context; non-replayable evidence is `unverifiable` |
+| a prior research verdict carries after its source package changes | acceptance receipt binds package digest; carry requires unchanged report, manifest, and package identities |
+| citation acquisition reaches localhost, metadata, or a private service | public-HTTPS-only first profile; validate every redirect and connection target; fail closed on policy or address changes |
+| citation acquisition hangs, floods storage, or executes active content | reuse F4 absolute deadline/body cap; capture bounded inert text only |
+| a source package leaks access credentials | send and retain no ambient credentials; keep content/provenance only |
+| source text prompt-injects its producer or cold reviewer | item 77 labels it untrusted evidence; item 85 and restricted tools preserve Driver-owned authority |
+| Researcher's own synthesis certifies the report | separate cold factuality and synthesis review; Driver alone records acceptance |
+| Red expands its scope from target instructions | Driver-sealed authorization and effect policy cannot broaden after launch |
+| Red mutates the candidate and then “discovers” its own defect | immutable candidate snapshot; separate identified assessment workspace; Builder alone repairs |
+| a Red finding is accepted because it sounds plausible | independent exact-candidate reproduction with a benign control |
+| “no findings” is presented as “secure” | explicit inconclusive coverage result; existing gates and Panel still decide acceptance |
 
 ## Smallest safe experiment sequence
 

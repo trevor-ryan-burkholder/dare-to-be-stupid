@@ -2667,3 +2667,58 @@ contracts and cannot be established by unit tests over our argv.
 
 Success is measured by morning user acceptance, false-completion rate, recovery, and cost per
 accepted outcome. Agent count, workflow complexity, and tokens consumed are not success metrics.
+
+### 15.4 Specialized job types do not create new authorities
+
+A specialized producer such as a future Researcher or Red assessor is a job contract mapped onto
+the existing Builder authority class, not a new standing persona or an authority peer to Driver,
+Panel, or Oracle. The operator authorizes its objective and allowed effects; Driver seals the scope,
+budget, acceptance criteria, and stop conditions and cannot broaden them. The producer may use a
+disposable dynamic workflow internally, but it cannot accept its own artifact, advance a ratchet or
+pin, write Driver-owned decision state, or declare terminal success. Initial implementations reuse
+the existing role spawn machinery and authority identities, not the exact code-only prompt and tool
+profile. The current Builder and reviewer templates must be factored into common authority rules plus
+Driver-owned job/lens addenda; each job receives an explicit tool/effect profile that can narrow but
+never broaden its sealed authorization. Researcher, Red, factuality, synthesis, and reproduction are
+job or review lenses, not new standing personas, configuration effort keys, or terminal authorities.
+
+Verified Research (PLAN item 34) must separate deterministic traceability from semantic judgment.
+A citation location resolving, a quote matching source text, or a claim having an evidence link does
+not prove that the source supports the claim or that the claim is true. A Driver-owned
+prose-toolchain acquisition gate must bind every material citation to retrieval time, canonical
+identity, content digest, locator, and the exact source artifact or reviewable context that policy
+permits retaining. Its first supported profile is bounded public HTTPS: validate every redirect and
+connection target as public, reject local/private/link-local addresses and non-HTTPS schemes, enforce
+an absolute deadline and body cap, send no ambient cookies or credentials, and capture inert text
+rather than executing or rendering source content. Authenticated, local, and private sources remain
+unsupported until a separate normative policy and hostile live evidence establish that boundary.
+Cold review consumes that immutable evidence package rather than silently refetching a mutable page; when
+evidence cannot be retained or independently reacquired under the sealed policy, it is `unverifiable`
+rather than passed. Credentials, authorization headers, and secret values never enter the package.
+Source text is untrusted evidence under the same supply boundary as candidate content; neither its
+instructions nor its metadata may become reviewer authority. The acceptance receipt binds the
+package digest, and a research requirement cannot be carried when its report, manifest, or bound
+package identity changed. Driver-owned structural gates feed
+independent cold factuality and synthesis review. The existing Oracle may
+contribute only a precommitted held-out fact fixture with a deterministic executable observation
+authored before the
+producer output and kept out of its context. A semantic dispute that cannot be reduced to such an
+observation remains a cold Panel judgment or `unverifiable`; calling a model judge an Oracle does not
+make its conclusion deterministic.
+
+A verified Red assessment (PLAN item 86) is a parked, explicitly scoped job type—not a standing fifth
+authority. Red produces proposed counterevidence. Independently contextualized verification must
+reproduce each accepted finding against the immutable candidate with a benign control before Panel,
+Builder repair, or Driver state transitions use it. Red receives a read-only candidate snapshot;
+attack harnesses, commands, and generated inputs live in a separately identified disposable
+assessment workspace, and evidence binds both identities. “No findings” is an inconclusive coverage
+observation, not a pass, and a task prompt cannot expand sealed authorization. Production targeting,
+persistence, destructive effects, credential collection, and exfiltration remain prohibited unless
+a future normative design and explicit operator authorization define a safe product boundary.
+
+Neither job type changes the existing terminal rule: only Driver may apply accepted evidence to
+durable state or declare `SHIPPED`. Missing evidence, unavailable required sources or containment,
+malformed output, disagreement, timeout, and incomplete coverage fail closed. `Blocked`,
+`inconclusive`, and `unverifiable` are structured reason or coverage classifications, never a fifth
+terminal state: Driver maps them to the existing `STALLED`, `BUDGET`, or `ABORTED` state according to
+the sealed brief and cause.
