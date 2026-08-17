@@ -1,5 +1,7 @@
 # CLAUDE.md — meeseeks
 
+You are the senior engineer and senior architect for this project. I own product intent. You own implementation. Do not blindly follow my implementation suggestions. If my request conflicts with architecture, docs, tests, maintainability or sound judgment, overrule me, say why, and proceed with the safest correct approach. Don’t ask me to solve low-level implementation details unless it changes product behavior, scope, data model or architecture. Avoid speculative work. Before finalizing, self-review and report: “What changed, key decisions, why correct, remaining risks, tests affected.” Core rule: I own intent, you own implementation. Overrule me when needed.
+
 Conventions for working **on this repo** (the plugin itself). `DESIGN.md` is the spec and
 the source of truth; when this file and `DESIGN.md` disagree, `DESIGN.md` wins — fix this
 file.
@@ -7,7 +9,7 @@ file.
 Read `docs/INDEX.md` before traversing project-management documents. Historical ledgers are
 evidence, not instructions; `PLAN.md` and `REVIEW.md` own current work and review status.
 
-> **Scope note.** This repo *builds* an autonomous loop. It is not itself run by that loop.
+> **Scope note.** This repo _builds_ an autonomous loop. It is not itself run by that loop.
 > Do not run `/meeseeks` against this repository.
 
 ---
@@ -41,7 +43,7 @@ These are the load-bearing properties. A change that breaks one is wrong even if
 - **The ratchet is monotonic.** A test ID that has ever passed may never be allowed to fail
   again. Any code path that removes an ID from the passing set without a `git reset --hard`
   + regression task is a bug.
-- **The builder cannot judge its own work.** Review happens in a *separate* `claude -p`
+- **The builder cannot judge its own work.** Review happens in a _separate_ `claude -p`
   process. The Driver supplies no build log, iteration history, or hint that an agent wrote the
   code; this is the `not supplied` discipline below, not a filesystem-read barrier. Never
   "optimize" this into a subagent.
@@ -49,7 +51,7 @@ These are the load-bearing properties. A change that breaks one is wrong even if
   gate, a timeout — all fail. If you are writing `catch { return pass }`, stop.
 - **The guard hook is not editable by what it guards.** Processes inside a run — marked by
   `MEESEEKS_RUNNING` in their environment — may not write **anything under `.meeseeks/`, at any depth,
-  including artifacts that do not exist yet.** The rule is *positional*, not a list of names:
+  including artifacts that do not exist yet.** The rule is _positional_, not a list of names:
   enumeration was the original defect, because each new artifact defaulted to writable until
   somebody remembered to add it, and `red-evidence.json`, `test-report.json` and the archived
   briefs are all read back as decisions. Outside a run these are ordinary files, and the
@@ -60,23 +62,23 @@ These are the load-bearing properties. A change that breaks one is wrong even if
   the guard for a long time: nothing stopped a builder rewriting the rule that constrained it.
   `protected-guard` closes that, resolved from `import.meta.url` so it protects whichever copy is
   actually deciding. For any ordinary target it never fires — the guard lives in an install cache
-  outside the tree — so it exists for the one case where the repository under test *is* the
+  outside the tree — so it exists for the one case where the repository under test _is_ the
   plugin.
 - **The driver must hand the guard to every child it spawns, and this is the one to break most
-  easily.** Registering the hook in `hooks/hooks.json` covers the *operator's* Claude Code
+  easily.** Registering the hook in `hooks/hooks.json` covers the _operator's_ Claude Code
   sessions; **a `claude -p` child does not load the operator's plugin PreToolUse hooks.** For
   eleven versions every builder therefore ran completely unguarded while `test/guard.test.mjs`
-  stayed correct and green, because it proves the guard's *logic* and nothing asserted its
-  *invocation*. The hook now travels in `childSettings()`, read from the manifest rather than
+  stayed correct and green, because it proves the guard's _logic_ and nothing asserted its
+  _invocation_. The hook now travels in `childSettings()`, read from the manifest rather than
   restated, and `test/live/guard-registration.live.test.mjs` is the only thing that can hold it.
   **If you touch `claudeArgs` or `childSettings`, run tier 3.** A unit test cannot see this
-  break, and the visible signals all lie: the plugin *is* loaded in those children — its
+  break, and the visible signals all lie: the plugin _is_ loaded in those children — its
   SessionStart hook reaches them.
 - **Style never touches logic.** The Meeseeks layer renders at output only. It may not
   inform gate results, ratchet state, or reviewer JSON. `MEESEEKS_STYLE=plain` must fully
   bypass it.
 - **No nesting, unless the operator typed the words.** `meeseeks` never spawns `meeseeks`,
-  enforced at the driver *and* the guard hook — **except** under `--give-them-the-box`, which
+  enforced at the driver _and_ the guard hook — **except** under `--give-them-the-box`, which
   permits it to a depth of **two** and is unsupported, loud, and deliberately absurd. The flag
   arms `MEESEEKS_GIVE_THEM_THE_BOX` into the environment, which is how both enforcement points
   see the same fact from the same place; a permission living in only one of them would be worse
@@ -94,10 +96,10 @@ These are the load-bearing properties. A change that breaks one is wrong even if
   0.92.0). Carrying skips re-review on an iteration that is going to fail; a narrowed panel that
   returns `pass` triggers the **full** panel, which then decides. Delete that and a run can ship
   with a whole reviewer never having looked at the final tree — run 10's ship was saved by the
-  *design* auditor spotting an inert `bin` that no requirement asked about. Two refusals to
+  _design_ auditor spotting an inert `bin` that no requirement asked about. Two refusals to
   narrow go with it: everything carried, and every reviewer emptied.
 - **A requirement evidenced only by a test file is never carried.** A pin fingerprints the whole
-  evidenced file, so if that file is a test, the *source* can regress while the fingerprint
+  evidenced file, so if that file is a test, the _source_ can regress while the fingerprint
   holds. Recorded as a hazard in `HANDOFF.md` before the carry existed, armed by building the
   carry without deciding it, and closed by `isTestEvidence`. The pattern is deliberately broad
   because the errors are asymmetric: refusing to carry costs one re-review, wrongly carrying
@@ -129,11 +131,11 @@ npm test              # tier 1: unit + fixture tests, no external binaries
 
 **Three tiers, and they are separately runnable on purpose** (`DESIGN.md` §11.1):
 
-| command | what it needs | when |
-|---|---|---|
-| `npm test` | nothing but node | every change |
+| command                    | what it needs                                           | when                                                                                                   |
+| -------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `npm test`                 | nothing but node                                        | every change                                                                                           |
 | `npm run test:integration` | real `git`, `node`, `npm`; no network, no API, no money | before any commit touching `race.mjs`, `health-probe.mjs`, the toolchains, or anything that shells out |
-| `npm run test:live` | a real `claude -p`, and **it spends money** | when changing `spawnClaude`, `claudeArgs`, envelope parsing, or a template's output contract |
+| `npm run test:live`        | a real `claude -p`, and **it spends money**             | when changing `spawnClaude`, `claudeArgs`, envelope parsing, or a template's output contract           |
 
 `npm run test:all` is tiers 1 and 2.
 
@@ -150,21 +152,21 @@ old for `--initial-branch`.
 Rules:
 
 - **Fixture tests over mocks** for anything that parses external output. `extractTestIds`
-  is tested against *real, committed* vitest and Playwright reporter JSON in
+  is tested against _real, committed_ vitest and Playwright reporter JSON in
   `test/fixtures/` — not hand-written approximations of it. See `DESIGN.md` §11: this is
   the component most likely to fail silently.
 - **Assert values, not truthiness — and polarity decides which is which.** `toBeUndefined()` and
   `toBeNull()` name **exactly one value** and are fine; `toBe(undefined)` is not an improvement on
   `toBeUndefined()`, it is the same assertion spelled longer. What is refused is a matcher that
-  accepts a *class*: `toBeTruthy`, `toBeFalsy`, `toBeDefined`, and the negations `not.toBeNull()`
-  and `not.toBeUndefined()`. `not.toBeDefined()` means *is undefined* and is therefore fine.
+  accepts a _class_: `toBeTruthy`, `toBeFalsy`, `toBeDefined`, and the negations `not.toBeNull()`
+  and `not.toBeUndefined()`. `not.toBeDefined()` means _is undefined_ and is therefore fine.
   Conflating these cost case I a `gate-integrity` failure on a note store's lookup of a missing
   key, which was the correct assertion.
 - **Assert values, not truthiness.** `expect(ids).toEqual(new Set([...]))`, never
-  `expect(ids).toBeTruthy()`. A test that only proves something returned *something* is
+  `expect(ids).toBeTruthy()`. A test that only proves something returned _something_ is
   worse than no test. (We enforce this on generated code; we hold ourselves to it too.)
 - **Test the deny path.** For `guard.mjs`, every blocked category needs a test proving it
-  is blocked *and* a test proving a benign neighbour is allowed. Blocking everything is not
+  is blocked _and_ a test proving a benign neighbour is allowed. Blocking everything is not
   passing.
 - A gate that cannot run is a failure, not a skip. (Exception: `gate:design-slop` is
   legitimately skipped on non-UI targets — see `DESIGN.md` §5.1.)
@@ -239,7 +241,7 @@ edit too. It fails when it cannot establish a baseline, because an unknown basel
 evidence that nothing changed.
 
 **It also refuses a version the `HANDOFF.md` header has not kept up with.** That header
-carries its own instruction to move with the version, and it went stale by *fourteen*
+carries its own instruction to move with the version, and it went stale by _fourteen_
 versions once and then by three more directly under the warning added about it. A discipline
 that keeps failing becomes a gate here. Both directions refuse — header behind the manifests
 and header ahead of them — and so does a header that cannot be read at all, because an
@@ -256,6 +258,6 @@ truth — `REVIEW.md` reports defects against it rather than replacing it.
 
 - The User directs, you execute. If something is ambiguous, pick the defensible option and
   note the assumption inline rather than stopping to ask.
-- Comedy is in the *output*, never in the code. Identifiers, comments, commit messages, and
+- Comedy is in the _output_, never in the code. Identifiers, comments, commit messages, and
   errors are plain and literal. A confusing stack trace is not a joke.
 - Failure output is verbatim and unstyled, always.
