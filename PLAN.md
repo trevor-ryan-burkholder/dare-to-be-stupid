@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.166.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.167.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.166.0
+## Build order — current traversal at 0.167.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -35,7 +35,13 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
   outputs — **implemented at 0.166.0**; `REVIEW.md` F26 stays OPEN until Codex has verified the
   repair. See item 81 below for what landed.
 - **F2:** make timeout and output-cap termination force and settle after a bounded SIGTERM grace
-  period.
+  period — **implemented at 0.167.0**; `REVIEW.md` F2 stays OPEN until Codex has verified the
+  repair. `shell` now escalates `SIGTERM` → five-second grace → `SIGKILL`, settles without waiting
+  for a cooperative exit, sweeps descendants on the output-cap path as well as the ceiling, and
+  keeps the first termination's verdict. Evidence:
+  `test/integration/shell-termination.integration.test.mjs` — a resistant child and its descendants
+  under both paths, a cooperative child that does not pay the grace, and the stale-sweep regression
+  the escalation itself introduced. `DESIGN.md` §11.1 states the mechanism.
 - **F3:** prevent an unrelated local listener from satisfying the health gate.
 - **F6 / item 60:** resolve every passing reviewer citation to a contained, existing line before
   Panel combination.

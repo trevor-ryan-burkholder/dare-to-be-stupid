@@ -4313,6 +4313,24 @@ function sweepLeakedGroup(before) {
 const MAX_SHELL_BUFFER = 64 * 1024 * 1024;
 
 /**
+ * How long a child has to exit after `SIGTERM` before it is killed outright (REVIEW F2).
+ *
+ * **The defect this bounds was measured.** A child that trapped `SIGTERM` and exited of its own
+ * accord one second later was run with `timeoutMs: 100`; `shell` reported a timeout and returned
+ * after **1,018 ms**. A child that never exits would have defeated the watchdog forever, because
+ * every path out of the ceiling and out of the 64MB cap waited on a cooperative `exit` that a
+ * resistant child simply does not send. The log promised the operator a kill after a stated time
+ * and the promise was not one the code could keep.
+ *
+ * Five seconds, and the number is a judgement rather than a measurement: long enough for a real
+ * gate to flush its reporters and go, short enough that the *documented* bound stays close to the
+ * ceiling the operator actually configured. It is a constant rather than a config key because it
+ * is not a policy anyone should be tuning per target — a target that needs longer than this to
+ * die after being asked is the problem the escalation exists for.
+ */
+export const TERMINATION_GRACE_MS = 5_000;
+
+/**
  * Really shell out. Exported for tier 2 only.
  *
  * Every unit test drives the gate runners through an injected double, which is what makes the
@@ -4372,8 +4390,17 @@ export function shell(command, args, options) {
     let overflowed = false;
     let exited = false;
     let settled = false;
+    // Whether a bounded termination is already in flight. **The first one to start owns the
+    // verdict**, which is the rule that survived adding a grace period: before it, the cap could
+    // only fire before the ceiling, so `exit` checking overflow first was enough. Now that both
+    // paths wait, either could reach the other's window, and `timedOut` is the discriminator
+    // `runDeploy`'s operator messaging keys on — it must not change meaning in a race nobody can
+    // see.
+    let terminating = false;
     /** @type {NodeJS.Timeout | undefined} */
     let timer;
+    /** @type {NodeJS.Timeout | undefined} */
+    let graceTimer;
 
     const text = (/** @type {Buffer[]} */ chunks) => Buffer.concat(chunks).toString('utf8');
 
@@ -4382,6 +4409,7 @@ export function shell(command, args, options) {
       if (settled) return;
       settled = true;
       if (timer !== undefined) clearTimeout(timer);
+      if (graceTimer !== undefined) clearTimeout(graceTimer);
       // Close this side of the pipes. On the timed-out path a leaked descendant may still hold
       // the write end, and the sync teardown dropped its read end exactly like this.
       child.stdout?.destroy();
@@ -4390,7 +4418,15 @@ export function shell(command, args, options) {
       resolve(result);
     };
 
-    const finishTimedOut = () =>
+    const finishTimedOut = () => {
+      // **Guarded before the sweep, not inside `settle`.** The sweep is an argument to `settle`,
+      // so it runs before `settle` can decline a second call — and after a forced kill there is
+      // always a second call, because the child's `exit` event arrives once the promise has
+      // already resolved and the *next* command has been spawned. Measured: with the escalation
+      // added and this guard missing, every other `shell` call in a process returned in 14ms with
+      // its child killed before it could run, because a stale `before` snapshot made that
+      // perfectly innocent child look like a survivor of the previous timeout.
+      if (settled) return;
       settle({
         ok: false,
         // A killed child reports no exit code, so without the flag a timeout arrives as a
@@ -4408,15 +4444,59 @@ export function shell(command, args, options) {
         // here, after the command is done being waited on.
         reaped: sweepLeakedGroup(before),
       });
+    };
 
-    const finishOverflowed = () =>
+    const finishOverflowed = () => {
+      // Same guard, same reason: this one sweeps too now.
+      if (settled) return;
       settle({
         ok: false,
         status: 1,
         stdout: text(outChunks),
         stderr: text(errChunks),
         timedOut: false,
+        // Swept for the same reason the timeout path is: a gate that backgrounded a dev server
+        // and then flooded a stream leaks exactly the same descendants, and the cap is no more
+        // able to reap them than the ceiling was. Absent — rather than empty — when no ceiling
+        // was requested, because `before` is only sampled then: without that pre-image there is
+        // no way to tell this command's survivors from the driver's own processes, and killing
+        // by guess would be worse than reporting honestly that nothing was looked at.
+        ...(before === null ? {} : { reaped: sweepLeakedGroup(before) }),
       });
+    };
+
+    /**
+     * Ask the child to stop, give it a bounded moment, then insist — and settle either way.
+     *
+     * **The bug this replaces was that there was no `then`** (REVIEW F2). Both the ceiling and
+     * the output cap sent `SIGTERM` and waited for a cooperative `exit` that a child which traps
+     * or ignores the signal never sends, so an unattended run could stall forever underneath a
+     * log line promising it had been killed. The escalation is `SIGKILL`, which cannot be caught,
+     * and the settlement does not wait for the child's permission.
+     *
+     * The descendants go with it. `finish` sweeps the process group by subtraction, which is how
+     * this file has always reached a backgrounded grandchild, and `SIGKILL` on the direct child
+     * covers the platform where that sweep cannot run at all.
+     *
+     * @param {() => void} finish the verdict this termination belongs to
+     */
+    const insist = (finish) => {
+      if (terminating) return;
+      terminating = true;
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // Already gone between the decision and the signal; 'exit' has fired or is about to.
+      }
+      graceTimer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // Gone during the grace period after all, which is the outcome this was aiming at.
+        }
+        finish();
+      }, TERMINATION_GRACE_MS);
+    };
 
     /**
      * Collect one stream under the cap; past it, kill the child as `maxBuffer` did.
@@ -4427,7 +4507,9 @@ export function shell(command, args, options) {
      */
     const collect = (stream, chunks, grow) => {
       stream?.on('data', (/** @type {Buffer} */ chunk) => {
-        if (settled || overflowed) return;
+        // `terminating` as well as `overflowed`: output arriving during a ceiling's grace period
+        // must not flip the verdict to overflow after the timeout already claimed it.
+        if (settled || overflowed || terminating) return;
         const total = grow(chunk.length);
         if (total <= MAX_SHELL_BUFFER) {
           chunks.push(chunk);
@@ -4439,11 +4521,7 @@ export function shell(command, args, options) {
           finishOverflowed();
           return;
         }
-        try {
-          child.kill('SIGTERM');
-        } catch {
-          // Already gone between the read and the signal.
-        }
+        insist(finishOverflowed);
       });
     };
     collect(child.stdout, outChunks, (bytes) => (outBytes += bytes));
@@ -4469,11 +4547,12 @@ export function shell(command, args, options) {
       // were waiting on. The ordinary path keeps waiting for 'close' below, because a command
       // is not done being read until both pipes reach EOF.
       //
-      // Overflow is checked FIRST, because whichever fired first owns the verdict and the cap
-      // can only have fired first: it SIGTERMs the child the instant a stream crosses 64MB,
-      // while `timedOut` can still flip true if the ceiling lands inside that SIGTERM-to-exit
-      // window. The sync `execFileSync` reported that doubly-degenerate overlap as a buffer
-      // failure (ok:false, timedOut:false, no sweep), and `timedOut` is the discriminator
+      // Overflow is checked FIRST, because whichever fired first owns the verdict, and `insist`
+      // now guarantees that ordering rather than leaving it to timing: a ceiling that fires
+      // inside the cap's grace window cannot start a second termination, and output arriving
+      // inside the ceiling's grace window cannot flip `overflowed`. So reaching here with
+      // `overflowed` true means the cap claimed it. The sync `execFileSync` reported that
+      // doubly-degenerate overlap as a buffer failure, and `timedOut` is the discriminator
       // `runDeploy`'s operator messaging keys on — it must not change meaning in a race the
       // operator cannot see.
       if (overflowed) finishOverflowed();
@@ -4512,11 +4591,7 @@ export function shell(command, args, options) {
           finishTimedOut();
           return;
         }
-        try {
-          child.kill('SIGTERM');
-        } catch {
-          // Already gone between the check and the signal; 'exit' has fired or is about to.
-        }
+        insist(finishTimedOut);
       }, options.timeoutMs);
     }
   });

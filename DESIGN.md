@@ -2147,6 +2147,33 @@ server running" are different diagnoses. Proved against real processes in
 `test/integration/gate-orphan.integration.test.mjs`; no unit test can see it, because what
 happens to an orphan after a kill is the operating system's contract and not ours (§11.1).
 
+**A ceiling that only asked was not a ceiling** (REVIEW F2, repaired at 0.167.0). Until then both
+termination paths sent `SIGTERM` and then waited for a cooperative `exit`. Measured: a child that
+trapped the signal and exited of its own accord one second later was run with `timeoutMs: 100`;
+`shell` reported a timeout and returned after **1,018 ms**. A child that never exits would have
+stalled an unattended run indefinitely underneath a log line promising it had been killed after a
+stated time. The 64MB output cap had the identical shape and the ceiling could not rescue it,
+because overflow owns the verdict and neither branch could force.
+
+Termination is now `SIGTERM`, a bounded grace of **`TERMINATION_GRACE_MS` — five seconds**, then
+`SIGKILL`, and the promise settles whether or not the child ever admits to having exited. The force
+step reaches the descendants through the same subtraction sweep, which the output-cap path now runs
+too. The grace is a constant rather than a config key: a target that needs longer than that to die
+after being asked is the problem the escalation exists for. Three properties hold across it:
+
+- **The first termination to start owns the verdict.** With a grace window either path can now
+  reach the other's, so a ceiling firing inside the cap's grace cannot start a second termination,
+  and output arriving inside the ceiling's grace cannot flip `overflowed`. `timedOut` is what the
+  deploy's operator messaging keys on and must not change meaning in a race nobody can see.
+- **A cooperative child still settles on its own exit**, so the grace is paid only by children that
+  refuse and no ordinary timeout gets five seconds slower.
+- **A settled call sweeps once.** The sweep is an argument to `settle`, so it runs before `settle`
+  can decline a second call — and after a forced kill there is always a second call, because the
+  child's `exit` arrives once the promise has resolved and the *next* command has been spawned.
+  Measured while building this: without the guard, every other `shell` call in a process returned
+  in 14ms with its child killed before it ran a line, because a stale snapshot made an innocent
+  child look like a survivor. Proved in `test/integration/shell-termination.integration.test.mjs`.
+
 **Not covered, and named rather than implied:** a gate killed by the *operator* rather than by
 the ceiling. Ctrl-C reaches the whole group and so takes the leak with it, but `kill` sent to
 the driver alone does not. The async conversion landed (0.141.0) and the free event loop now
