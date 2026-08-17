@@ -812,6 +812,28 @@ Three properties replace it:
   rather than a skip — so this is the ownership evidence a probe can actually establish, and it is
   described as that rather than as proof.
 
+**A ratchet id names a file inside the candidate** (REVIEW F20, implemented at 0.175.0).
+`toPosixRelative` resolved a reported file and subtracted the root without ever asking whether the
+answer was inside it, so a Vitest-shaped passing result naming `/tmp/outside.test.js` under root
+`/repo` became the id `../tmp/outside.test.js::suite > works` — durable credit for a test whose
+defining file is not part of the candidate and which a clean clone could never reproduce. A
+misconfigured `include`, a globally installed fixture or a monorepo layout is enough; no hostile
+runner is required.
+
+Containment is now proved twice, because one check cannot see what the other can: **lexically** on
+the resolved path, which catches `..`, an absolute path outside the root and a case-variant root;
+and **through `realpath`** when the path exists, which is the only way to see a symlink inside the
+repository pointing out of it. Drive-qualified and UNC prefixes are refused by shape on every
+platform, because a report is a document that can have been written anywhere and a POSIX
+`path.resolve` would fold `C:\x` into an ordinary filename. A path that does **not** exist is
+accepted on the lexical rule alone — runners report virtual and generated files, and a nonexistent
+path cannot be a symlink escape — but it can never be *outside*. The returned id stays the lexical
+relative path, so nothing that already worked changed its identity, and spaces, Unicode, leading and
+trailing whitespace and platform separators are preserved rather than folded.
+
+A report naming an outside file is refused **whole**. Banking the rest would keep exactly the credit
+the refusal exists to withhold.
+
 **Every envelope the run bought is charged exactly once** (REVIEW F18, implemented at 0.174.0).
 Two holes sat in the seam between "a child returned" and "the run knows it". The Oracle author's
 result went from `runChild` straight to the parser without ever reaching `chargePreLoop`, so its

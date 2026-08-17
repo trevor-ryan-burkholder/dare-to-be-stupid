@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.174.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.175.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.174.0
+## Build order — current traversal at 0.175.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -94,7 +94,7 @@ feature fan-out.
 positional machine-state ignore boundary through item **63**, F10's complete atomic terminal
 receipt through item **64**, F13's non-shrinking gate roster through item **67**, F17's
 definition-bound test credit through item **71**, F19's bounded decision-artifact reads through
-item **73**, F20's contained reporter identities through item **74**, F22's durable exact-tree
+item **73**, F20's contained reporter identities through item **74** (**implemented at 0.175.0**; REVIEW F20 open pending Codex), F22's durable exact-tree
 acceptance receipt through item **76**, F23's inert model configuration through item **78**, and
 F24's hidden PRD checkpoint through item **79**. F11 may share F2's process-lifecycle
 implementation, but retains its own platform evidence.
@@ -2329,7 +2329,25 @@ sizes, documenting any configurable escape.
 blob hashes with bounded memory; valid boundary neighbors work; and a refusal leaves the atomic
 terminal evidence required by item 64.
 
-### 74. Require repository-contained reporter identities — OPEN (REVIEW F20)
+### 74. Require repository-contained reporter identities — IMPLEMENTED (0.175.0); REVIEW F20 open pending Codex
+
+**Landed at 0.175.0** in `scripts/reporters/shared.mjs`, so both reporters inherit it from the one
+place ids are constructed. Containment is proved lexically and, when the path exists, through
+`realpath`; drive-qualified and UNC prefixes are refused by shape on every platform; a nonexistent
+generated path is accepted on the lexical rule alone as a stated policy; and the returned id stays
+the lexical relative path, so no existing identity changed.
+
+Evidence: `test/reporter-paths.test.mjs` (the vitest reproduction and its Playwright equivalent,
+traversal, drive-qualified, UNC, case-variant root, the root itself, an empty name, symlink escape
+and its in-repo neighbour, an unresolvable root, and the deterministic-identity set — spaces,
+Unicode, padded filenames, separators, absolute-inside, and a nonexistent generated path) and
+`test/integration/reporter-paths.integration.test.mjs`, which clones a real repository and proves
+every banked identity is a file the clone contains, refuses a real outside file, refuses the
+*origin's* copy when the clone is under review, and refuses a whole report over one bad record.
+
+**Coordination with item 71** (F17's definition digest) is still owed: this establishes that the
+accepted path is contained, and item 71 will bind it to the definition receiving current credit.
+That is item 71's slice, and this one does not pre-empt it.
 
 **Problem solved:** Vitest or Playwright can name an absolute/traversing file and bank a passing
 ratchet ID for a test definition absent from the deliverable.
