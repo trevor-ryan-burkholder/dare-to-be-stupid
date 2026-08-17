@@ -1611,6 +1611,7 @@ export function repeatedRegressionNote(counts, regressions) {
  *   shipTimeMutation?: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
  *   checkSpecification: () => { ok: boolean, digest: string, detail: string },
  *   workspaceIdentity: () => string | null | Promise<string | null>,
+ *   verifyPublication: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
  *   readTestReports: () => unknown[],
  *   commit: (message: string) => string | Promise<string>,
  *   diffStat: () => string | Promise<string>,
@@ -1669,6 +1670,12 @@ export async function driveRun(options) {
   // whether a candidate satisfies a specification; a loop that cannot say *which* specification it
   // is judging has nothing to decide. An absent check would have to mean "assume unchanged", which
   // is the defect itself with a shrug attached.
+  if (typeof effects.verifyPublication !== 'function') {
+    throw new DriverError(
+      'driveRun was given no way to verify what a commit published. A run that cannot tell whether the reviewed ' +
+        'bytes actually landed cannot deploy or tag them (REVIEW F31).',
+    );
+  }
   if (typeof effects.workspaceIdentity !== 'function') {
     throw new DriverError(
       'driveRun was given no way to identify the candidate workspace. A verdict that cannot be sealed to the ' +
@@ -2750,6 +2757,25 @@ export async function driveRun(options) {
       await closeIteration(iterationNumber, ['ship:workspace-drift'], score, passing.size);
       continue;
     }
+    // The seal says the *working* tree is still the reviewed one. This says the working tree is
+    // what git actually holds (REVIEW F31): a commit that failed after staging leaves the bytes on
+    // disk matching the seal while `HEAD` names an older tree, and deploy and tag would then
+    // publish that older tree. A clean worktree after the commit is the evidence that the reviewed
+    // bytes are *in* the commit rather than beside it.
+    const published = await effects.verifyPublication();
+    if (!published.ok) {
+      effects.log(`cannot publish: ${published.detail}`);
+      objective = {
+        kind: 'review',
+        headline: 'The commit does not hold the tree that was reviewed.',
+        reason:
+          `the panel judged this tree, but ${published.detail}. Nothing may be deployed or tagged on a commit ` +
+          'that does not contain the reviewed bytes, so the ship is withheld and the gates run again',
+        findings: [published.detail],
+      };
+      await closeIteration(iterationNumber, ['ship:publication'], score, passing.size);
+      continue;
+    }
     const advanced = evaluateIteration(state, passing, { commit, collected });
     if (advanced.action === 'advance') saveState(meeseeksDir, advanced.state);
 
@@ -2843,7 +2869,14 @@ export async function driveRun(options) {
       const driftedBeforeShip = specificationDrift();
       if (driftedBeforeShip !== null) return driftedBeforeShip;
       effects.event?.({ kind: 'ship', iteration: iterationNumber });
-      await effects.ship(iterationNumber);
+      try {
+        await effects.ship(iterationNumber);
+      } catch (error) {
+        // A tag that could not be written is not a ship (REVIEW F31). `SHIPPED` is a claim about an
+        // artifact somebody can go and look at, so a failure here ends the run rather than
+        // decorating it.
+        return finish('ABORTED', `the ship could not be published: ${/** @type {Error} */ (error).message}`);
+      }
       return finish('SHIPPED', `panel unanimous on ${requiredIds.length} requirement(s)`);
     }
 
@@ -6766,17 +6799,74 @@ export async function main(argv, io = {}) {
         // commit that predates the stanza, which would quietly un-ignore the ratchet and
         // start committing it again.
         ensureMeeseeksIgnored(cwd);
-        await shell('git', ['add', '-A'], { cwd });
-        await shell('git', ['commit', '--no-verify', '-m', message], { cwd });
-        return (await shell('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim();
+        // **Every step is required to succeed** (REVIEW F31). All three used to run unchecked, and
+        // the sha was then read from `rev-parse` whatever had happened — so a commit that failed
+        // after staging returned the *previous* commit as this iteration's candidate. The working
+        // bytes still matched F14's seal, because the seal hashes the working tree, and deploy and
+        // tag then published an older tree under a `SHIPPED`.
+        const added = await shell('git', ['add', '-A'], { cwd });
+        if (!added.ok) throw new DriverError(`git add failed: ${(added.stderr || added.stdout).trim().slice(0, 400)}`);
+        // Distinguished from a failure rather than inferred from one: `git commit` exits non-zero
+        // when there is nothing staged, which is an ordinary iteration in which the builder changed
+        // nothing, not a fault. Asking git what is staged answers the two apart.
+        const staged = await shell('git', ['diff', '--cached', '--name-only'], { cwd });
+        if (!staged.ok) {
+          throw new DriverError(`git could not list the staged changes: ${(staged.stderr || '').trim().slice(0, 400)}`);
+        }
+        if (staged.stdout.trim() !== '') {
+          const committed = await shell('git', ['commit', '--no-verify', '-m', message], { cwd });
+          if (!committed.ok) {
+            throw new DriverError(
+              `git commit failed: ${(committed.stderr || committed.stdout).trim().slice(0, 400)}. ` +
+                'Nothing may be published on a commit that did not happen',
+            );
+          }
+        }
+        const head = await shell('git', ['rev-parse', 'HEAD'], { cwd });
+        const sha = head.stdout.trim();
+        if (!head.ok || !/^[0-9a-f]{7,}$/.test(sha)) {
+          throw new DriverError(`git could not name HEAD after committing: ${(head.stderr || '').trim().slice(0, 400)}`);
+        }
+        return sha;
+      },
+      // What publication may assert about the tree (REVIEW F31). The seal hashes the *working*
+      // tree; this asks git whether that tree is what is actually committed. A clean worktree after
+      // a commit is the evidence that the reviewed bytes are in the commit rather than beside it.
+      verifyPublication: async () => {
+        const head = await shell('git', ['rev-parse', 'HEAD'], { cwd });
+        if (!head.ok || !/^[0-9a-f]{7,}$/.test(head.stdout.trim())) {
+          return { ok: false, detail: 'git could not name HEAD, so nothing can be said about what would be published' };
+        }
+        const status = await shell('git', ['status', '--porcelain'], { cwd });
+        if (!status.ok) {
+          return { ok: false, detail: 'git could not describe the tree, so its cleanliness at publication is unknown' };
+        }
+        const dirty = status.stdout.split('\n').filter((line) => line.trim() !== '');
+        if (dirty.length > 0) {
+          return {
+            ok: false,
+            detail:
+              `${dirty.length} path(s) are still uncommitted after the iteration commit, so the commit is not the ` +
+              `tree that was reviewed: ${dirty.slice(0, 20).map((line) => line.slice(3)).join(', ')}`,
+          };
+        }
+        return { ok: true, detail: `published ${head.stdout.trim().slice(0, 7)} with a clean tree` };
       },
       diffStat: async () => (await shell('git', ['diff', '--stat', 'HEAD~1'], { cwd })).stdout.trim(),
       ship: async (iteration) => {
         const tag = `meeseeks/iter-${String(iteration).padStart(3, '0')}`;
-        await shell('git', ['tag', '-f', tag], { cwd });
+        // Both tag operations are required (REVIEW F31). A tag that silently failed to be written
+        // leaves a run reporting `SHIPPED` with no artifact identifying what shipped, which is the
+        // audit that could not verify the first `SHIPPED` at all, repeated.
+        const iterationTag = await shell('git', ['tag', '-f', tag], { cwd });
+        if (!iterationTag.ok) {
+          throw new DriverError(
+            `git could not write the iteration tag ${tag}: ${(iterationTag.stderr || '').trim().slice(0, 400)}`,
+          );
+        }
         // Annotated, not bare. An audit of the first SHIPPED found only an unannotated tag and
         // could not verify the claim behind it; a tag that carries no reason is not evidence.
-        await shell(
+        const prize = await shell(
           'git',
           [
             'tag',
@@ -6789,6 +6879,11 @@ export async function main(argv, io = {}) {
           ],
           { cwd },
         );
+        if (!prize.ok) {
+          throw new DriverError(
+            `git could not write the meeseeks/GRAND-PRIZE tag: ${(prize.stderr || '').trim().slice(0, 400)}`,
+          );
+        }
       },
       // Deploy is **not** part of `ship`. It runs before the ship decision so a failure can
       // withhold the tag; see the call site in `driveRun`. The body lives in `runDeploy` so

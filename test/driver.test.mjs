@@ -2031,6 +2031,8 @@ describe('driveRun', () => {
       // The specification is unchanged unless a test says otherwise (REVIEW F12). `driveRun`
       // refuses to run without this rather than assuming it, so the harness states it.
       checkSpecification: () => ({ ok: true, digest: 'sha256:harness', detail: 'PRD.md unchanged' }),
+      // The commit holds the reviewed tree unless a test says otherwise (REVIEW F31).
+      verifyPublication: () => ({ ok: true, detail: 'published with a clean tree' }),
       // A stable candidate identity unless a test says otherwise (REVIEW F14). `driveRun` refuses
       // to run without one rather than assuming the tree stood still.
       workspaceIdentity: () => 'sha256:candidate',
@@ -5499,6 +5501,8 @@ describe('.meeseeks/outcome.json', () => {
       gates: () => ({ ok: true, results: [{ name: 'mutation', ok: true, status: 0, detail: 'no survivors' }] }),
       readTestReports: () => [{ numTotalTests: 1, testResults: [] }],
       checkSpecification: () => ({ ok: true, digest: 'sha256:harness', detail: 'PRD.md unchanged' }),
+      // The commit holds the reviewed tree unless a test says otherwise (REVIEW F31).
+      verifyPublication: () => ({ ok: true, detail: 'published with a clean tree' }),
       // A stable candidate identity unless a test says otherwise (REVIEW F14). `driveRun` refuses
       // to run without one rather than assuming the tree stood still.
       workspaceIdentity: () => 'sha256:candidate',

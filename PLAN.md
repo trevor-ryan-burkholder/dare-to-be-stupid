@@ -2904,7 +2904,25 @@ ratcheted id still takes the reset path; bounded failure evidence names the exac
 identity from items 70/74; and unit plus integration coverage proves no `SHIPPED` path can ignore a
 normalized flaky result. REVIEW F30 owns closure.
 
-### 88. Fail-closed Git publication and exact committed-tree identity — OPEN (REVIEW F31)
+### 88. Fail-closed Git publication and exact committed-tree identity — IMPLEMENTED (0.180.0); REVIEW F31 open pending Codex
+
+**Landed at 0.180.0.** The commit effect requires `git add`, the staged-change lookup, `git commit`
+and `rev-parse HEAD` each to succeed, with its own bounded diagnostic, and distinguishes *nothing
+staged* — an ordinary iteration where the builder changed nothing — from a failure rather than
+inferring one from the other. Both tag operations are required. A new `verifyPublication` effect
+asks git whether the tree it holds is the tree that was reviewed: `HEAD` readable and the worktree
+clean after the commit. `driveRun` requires that effect, routes its failure through the ordinary
+non-shipping path, and turns a failed ship into `ABORTED` rather than letting it escape as a stack
+trace.
+
+Evidence: `test/integration/workspace-seal.integration.test.mjs` — a real `git commit` refusing
+because the index lock exists when it runs, a failed staging step, an unwritable tag, a commit that
+leaves a reviewed path behind, and the benign neighbour where commit, seal, deploy and tag converge
+on a clean tree. **The fixture now commits through production `shell` rather than `execFileSync`**,
+which is the specific reason this file could not catch the hole it was written to guard: the throwing
+call made the ignored-result branch unreachable.
+
+**Original statement:**
 
 **Problem solved:** the ship path runs `git add`, `git commit` and both tag operations without
 requiring any of them to succeed, then reads `HEAD` and can return the *pre-existing* commit as the

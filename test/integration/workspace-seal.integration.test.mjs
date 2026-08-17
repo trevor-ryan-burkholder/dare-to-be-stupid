@@ -114,12 +114,31 @@ async function driveOnce(root, hooks = {}) {
         },
       ],
       checkSpecification: () => ({ ok: true, digest: 'sha256:spec', detail: 'PRD.md unchanged' }),
+      // Real git, asked the real question (REVIEW F31): is the tree this commit holds the tree that
+      // was reviewed?
+      verifyPublication: async () => {
+        const status = await shell('git', ['status', '--porcelain'], { cwd: root });
+        if (!status.ok) return { ok: false, detail: 'git could not describe the tree' };
+        const dirty = status.stdout.split('\n').filter((line) => line.trim() !== '');
+        return dirty.length === 0
+          ? { ok: true, detail: 'clean' }
+          : { ok: false, detail: `${dirty.length} path(s) uncommitted after the commit` };
+      },
       // The real thing, over the real tree.
       workspaceIdentity: () => workspaceHash({ cwd: root, run: shell }),
-      commit: (message) => {
+      // **Production `shell`, not `execFileSync`** (REVIEW F31). `execFileSync` *throws* on a failed
+      // command; `shell` *returns* a result the caller has to inspect. A fixture built on the
+      // throwing one cannot exercise the branch where a failure is silently ignored, which is
+      // exactly why this file did not catch the publication hole it was written to guard.
+      commit: async (message) => {
         committed.push(message);
-        execFileSync('git', ['add', '-A'], { cwd: root, stdio: 'pipe' });
-        execFileSync('git', ['commit', '--no-verify', '-m', message], { cwd: root, stdio: 'pipe' });
+        const added = await shell('git', ['add', '-A'], { cwd: root });
+        if (!added.ok) throw new Error(`git add failed: ${added.stderr}`);
+        const staged = await shell('git', ['diff', '--cached', '--name-only'], { cwd: root });
+        if (staged.stdout.trim() !== '') {
+          const done = await shell('git', ['commit', '--no-verify', '-m', message], { cwd: root });
+          if (!done.ok) throw new Error(`git commit failed: ${done.stderr}`);
+        }
         return git(root, ['rev-parse', 'HEAD']);
       },
       diffStat: () => ' 1 file changed',
@@ -212,5 +231,219 @@ describe('a real write during a real review cannot reach the commit', () => {
     assert.equal(driven.committed.length, 1, driven.committed.join(' | '));
     // And the receipt says which bytes it was about.
     assert.match(String(driven.outcome.workspace), /^sha256:[0-9a-f]{64}$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Git publication must succeed before anything is published (REVIEW F31)
+// ---------------------------------------------------------------------------
+
+/**
+ * Drive one iteration whose commit genuinely fails partway, using real git.
+ *
+ * The failure is injected the way it happens: `git add` succeeds and writes the index, and the
+ * index lock then exists when `git commit` runs, so git refuses for its own reasons rather than
+ * because a double said so. This is the shape the old fixture could not reach, because it committed
+ * through `execFileSync` — which throws — instead of production `shell`, which returns a result the
+ * caller must inspect.
+ *
+ * @param {string} root
+ * @param {{ failOn: 'add' | 'commit' | 'tag' }} options
+ * @returns {Promise<{ outcome: import('../../scripts/driver.mjs').RunOutcome, shipped: number, deploys: number, logs: string[] }>}
+ */
+async function drivePublication(root, options) {
+  /** @type {string[]} */
+  const logs = [];
+  let shipped = 0;
+  let deploys = 0;
+  const lock = path.join(root, '.git', 'index.lock');
+  const outcome = await driveRun({
+    config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
+    meeseeksDir: path.join(root, '.meeseeks'),
+    rootDir: root,
+    requiredIds: ['PRD-1.1'],
+    task: 'build the thing',
+    effects: {
+      build: () => {
+        writeFileSync(path.join(root, 'src', 'built.js'), 'export const built = true;\n');
+        return { ok: true, text: 'built', costUsd: 0, tokens: 1, raw: '' };
+      },
+      review: () => ({
+        ok: true,
+        costUsd: 0,
+        tokens: 1,
+        raw: '',
+        text: JSON.stringify({
+          requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'src/a.js:1', detail: 'found it' }],
+        }),
+      }),
+      realityCheck: () => ({ ok: true, text: 'buildable', costUsd: 0, tokens: 1, raw: '' }),
+      gates: () => ({
+        ok: true,
+        results: [
+          { name: 'lint', ok: true, status: 0, detail: 'passed' },
+          { name: 'mutation', ok: true, status: 0, detail: 'no survivors' },
+        ],
+      }),
+      readTestReports: () => [
+        {
+          numTotalTests: 1,
+          testResults: [
+            { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+          ],
+        },
+      ],
+      checkSpecification: () => ({ ok: true, digest: 'sha256:spec', detail: 'PRD.md unchanged' }),
+      workspaceIdentity: () => workspaceHash({ cwd: root, run: shell }),
+      verifyPublication: async () => {
+        const status = await shell('git', ['status', '--porcelain'], { cwd: root });
+        if (!status.ok) return { ok: false, detail: 'git could not describe the tree' };
+        const dirty = status.stdout.split('\n').filter((line) => line.trim() !== '');
+        return dirty.length === 0
+          ? { ok: true, detail: 'clean' }
+          : { ok: false, detail: `${dirty.length} path(s) uncommitted after the commit` };
+      },
+      commit: async (message) => {
+        if (options.failOn === 'add') writeFileSync(lock, '');
+        const added = await shell('git', ['add', '-A'], { cwd: root });
+        if (!added.ok) throw new Error(`git add failed: ${added.stderr.trim().slice(0, 200)}`);
+        // Real git, refusing for its own reason: the index lock exists when commit runs.
+        if (options.failOn === 'commit') writeFileSync(lock, '');
+        const staged = await shell('git', ['diff', '--cached', '--name-only'], { cwd: root });
+        if (staged.stdout.trim() !== '') {
+          const done = await shell('git', ['commit', '--no-verify', '-m', message], { cwd: root });
+          if (!done.ok) throw new Error(`git commit failed: ${done.stderr.trim().slice(0, 200)}`);
+        }
+        return git(root, ['rev-parse', 'HEAD']);
+      },
+      diffStat: () => ' 1 file changed',
+      deploy: () => {
+        deploys += 1;
+        return { ok: true, detail: 'deployed' };
+      },
+      ship: async () => {
+        if (options.failOn === 'tag') throw new Error('git could not write the iteration tag');
+        shipped += 1;
+      },
+      now: () => '2026-08-17T00:00:00.000Z',
+      log: (line) => logs.push(line),
+    },
+  });
+  return { outcome, shipped, deploys, logs };
+}
+
+describe('a failed git publication cannot reach deploy, tag or SHIPPED', () => {
+  it('does not ship when the commit fails after staging', async () => {
+    const root = repo();
+    const head = git(root, ['rev-parse', 'HEAD']);
+    let outcome;
+    try {
+      outcome = await drivePublication(root, { failOn: 'commit' });
+    } catch (error) {
+      // A commit that could not happen ends the run; whether it surfaces as a thrown effect or a
+      // terminal outcome, the property under test is that nothing was published.
+      outcome = { outcome: { state: 'ABORTED' }, shipped: 0, deploys: 0, logs: [String(error)] };
+    }
+    assert.notEqual(outcome.outcome.state, 'SHIPPED');
+    assert.equal(outcome.shipped, 0, 'a tag was written over a commit that failed');
+    assert.equal(outcome.deploys, 0, 'a deploy ran on a commit that failed');
+    assert.equal(git(root, ['rev-parse', 'HEAD']), head, 'HEAD moved despite the commit failing');
+    assert.equal(git(root, ['tag', '--list']).includes('GRAND-PRIZE'), false);
+  });
+
+  it('does not ship when the staging step itself fails', async () => {
+    const root = repo();
+    const head = git(root, ['rev-parse', 'HEAD']);
+    let shipped = 0;
+    try {
+      const driven = await drivePublication(root, { failOn: 'add' });
+      shipped = driven.shipped;
+      assert.notEqual(driven.outcome.state, 'SHIPPED');
+    } catch {
+      // Thrown effect, same property.
+    }
+    assert.equal(shipped, 0);
+    assert.equal(git(root, ['rev-parse', 'HEAD']), head);
+  });
+
+  it('does not report SHIPPED when the tag cannot be written', async () => {
+    // A tag that failed leaves a run claiming SHIPPED with no artifact anyone can inspect — the
+    // audit that could not verify the first SHIPPED, repeated.
+    const root = repo();
+    const driven = await drivePublication(root, { failOn: 'tag' });
+    assert.equal(driven.outcome.state, 'ABORTED', driven.logs.join('\n').slice(-400));
+    assert.match(driven.outcome.reason, /could not be published/);
+  });
+
+  it('withholds the ship when the tree is still dirty after the commit', async () => {
+    // The seal says the working bytes are the reviewed ones; this says git actually holds them. A
+    // commit that silently left a reviewed path behind is not the reviewed tree.
+    const root = repo();
+    let shipped = 0;
+    const outcome = await driveRun({
+      config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
+      meeseeksDir: path.join(root, '.meeseeks'),
+      rootDir: root,
+      requiredIds: ['PRD-1.1'],
+      task: 'build the thing',
+      effects: {
+        build: () => {
+          writeFileSync(path.join(root, 'src', 'built.js'), 'export const built = true;\n');
+          return { ok: true, text: 'built', costUsd: 0, tokens: 1, raw: '' };
+        },
+        review: () => ({
+          ok: true,
+          costUsd: 0,
+          tokens: 1,
+          raw: '',
+          text: JSON.stringify({
+            requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'src/a.js:1', detail: 'found it' }],
+          }),
+        }),
+        realityCheck: () => ({ ok: true, text: 'buildable', costUsd: 0, tokens: 1, raw: '' }),
+        gates: () => ({ ok: true, results: [{ name: 'mutation', ok: true, status: 0, detail: 'no survivors' }] }),
+        readTestReports: () => [
+          {
+            numTotalTests: 1,
+            testResults: [
+              { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+            ],
+          },
+        ],
+        checkSpecification: () => ({ ok: true, digest: 'sha256:spec', detail: 'PRD.md unchanged' }),
+        workspaceIdentity: () => workspaceHash({ cwd: root, run: shell }),
+        // The real question, answered honestly against a tree that was never fully committed.
+        verifyPublication: async () => {
+          const status = await shell('git', ['status', '--porcelain'], { cwd: root });
+          const dirty = status.stdout.split('\n').filter((line) => line.trim() !== '');
+          return dirty.length === 0
+            ? { ok: true, detail: 'clean' }
+            : { ok: false, detail: `${dirty.length} path(s) uncommitted after the commit` };
+        },
+        // Commits only the tracked change, deliberately leaving the builder's new file behind.
+        commit: async (message) => {
+          await shell('git', ['add', 'src/a.js'], { cwd: root });
+          await shell('git', ['commit', '--no-verify', '--allow-empty', '-m', message], { cwd: root });
+          return git(root, ['rev-parse', 'HEAD']);
+        },
+        diffStat: () => ' 1 file changed',
+        ship: () => {
+          shipped += 1;
+        },
+        now: () => '2026-08-17T00:00:00.000Z',
+        log: () => {},
+      },
+    });
+    assert.notEqual(outcome.state, 'SHIPPED');
+    assert.equal(shipped, 0, 'a tag was written over a tree git did not hold');
+  });
+
+  // The benign neighbour: published commit, sealed identity, deploy and tag all converge.
+  it('ships when the commit really lands and the tree is clean', async () => {
+    const root = repo();
+    const driven = await driveOnce(root);
+    assert.equal(driven.outcome.state, 'SHIPPED', driven.logs.join('\n').slice(-600));
+    assert.equal(driven.shipped, 1);
+    assert.equal(git(root, ['status', '--porcelain']), '', 'the shipped tree was not clean');
   });
 });

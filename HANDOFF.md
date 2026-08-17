@@ -1,6 +1,6 @@
 # START HERE — current handoff, last swept 17 August 2026
 
-**State:** `main` at `0.179.0`. The manifests and package-lock root metadata agree. Measured on the
+**State:** `main` at `0.180.0`. The manifests and package-lock root metadata agree. Measured on the
 current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean; `npm test`
 **2508 pass, 0 fail**; `npm run test:integration` **112 pass, 0 fail**; `npm run release-check`
 **ok**; `MEESEEKS_LIVE=1 npm run test:live` **30 pass, 1 fail** — see the live-tier note below.
@@ -12,8 +12,9 @@ guarantee-strength audit, durable-artifact registry, failure-shape matrix, and e
 negative-guarantee sheet. These are the first implementation gates in `PLAN.md`. Claude Code may
 implement them; Codex owns closure after reviewing the exact repair and its acceptance evidence.
 
-**Implemented, awaiting Codex verification.** Fifteen findings have repairs, merged to `main` at
-`v0.178.0` (fourteen) plus F7 on top. Each
+**Implemented, awaiting Codex verification.** Sixteen findings have repairs. A second Codex pass at
+0.179.0 recorded F31–F37, six of them incomplete repairs of the first fifteen; PLAN items 88–94 own
+them and Gate 0D records the order. Each
 remains **OPEN** in `REVIEW.md` — implementation and passing self-tests are not acceptance, and Codex
 reviews each commit separately:
 
@@ -34,6 +35,7 @@ reviews each commit separately:
 | 0.177.0 | F4 | absolute HTTP deadlines and a bounded body for health and smoke |
 | 0.178.0 | F9 / item 63 | positional `.meeseeks/` git boundary, retiring the filename list |
 | 0.179.0 | F7 / item 61 | process success and envelope success conjoined |
+| 0.180.0 | F31 / item 88 | fail-closed git publication and committed-tree identity |
 
 `PLAN.md` records what landed and where each repair's evidence lives; `DESIGN.md` §3.5, §4 and §11.1
 state the mechanisms.
