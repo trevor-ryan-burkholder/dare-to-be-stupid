@@ -24,9 +24,7 @@ import { after, describe, it } from 'node:test';
 import { readAssumptions } from '../scripts/assumptions.mjs';
 import { MUTATION_CONFIG_CONTENTS } from '../scripts/toolchains/node.mjs';
 import { pinSecurityElement, quarantinePin, readPins, writePins } from '../scripts/pins.mjs';
-import { RUN_LOCK_FILE } from '../scripts/run-lock.mjs';
-import { RUN_ARCHIVE_DIR, RUN_MANIFEST } from '../scripts/run-manifest.mjs';
-import { GATE_SKIP_FILE } from '../scripts/gate-cache.mjs';
+import { RUN_ARCHIVE_DIR } from '../scripts/run-manifest.mjs';
 import { DEFAULT_OWNERSHIP, defaultConfig } from '../scripts/config.mjs';
 import {
   DriverError,
@@ -76,8 +74,6 @@ import {
   claudeArgs,
   formatGateFailure,
   MEESEEKS_IGNORED_PATHS,
-  OUTCOME_FILE,
-  REVIEW_RECORD,
   isColdPhase,
   combinePanel,
   inspectCiWorkflows,
@@ -139,6 +135,23 @@ function seedCitedSources(root) {
     mkdirSync(path.join(root, path.dirname(file)), { recursive: true });
     writeFileSync(path.join(root, file), body, 'utf8');
   }
+}
+
+/**
+ * Does the stanza the driver writes cover this path under `.meeseeks/`?
+ *
+ * A deliberately dumb lexical reading of the two positional rules. It is not a gitignore engine and
+ * does not pretend to be: the proof that **git** agrees is
+ * `test/integration/machine-state-ignore.integration.test.mjs`, which materialises every writer in a
+ * real repository and runs `git add -A`.
+ *
+ * @param {string} relative a path under `.meeseeks/`
+ * @returns {boolean}
+ */
+function ignoresUnderMeeseeks(relative) {
+  const lines = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
+  if (!lines.includes('.meeseeks/*')) return false;
+  return !lines.includes(`!.meeseeks/${relative}`);
 }
 
 after(() => {
@@ -4980,8 +4993,8 @@ describe('recordPanelVerdict', () => {
   });
 
   it('is never tracked by git, so a reset cannot revert the evidence', () => {
-    const ignored = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
-    assert.equal(ignored.includes('.meeseeks/review.json'), true);
+    // Covered positionally since 0.178.0: `.meeseeks/*` reaches this file without naming it.
+    assert.equal(ignoresUnderMeeseeks('review.json'), true);
   });
 });
 
@@ -5089,26 +5102,47 @@ describe('unitGateCommand', () => {
 });
 
 describe('meeseeksIgnoreUpdate', () => {
-  it('ignores the ratchet state in a .gitignore that does not cover it', () => {
+  it('ignores the run state in a .gitignore that does not cover it', () => {
     const updated = meeseeksIgnoreUpdate('node_modules/\n');
     assert.notEqual(updated, null);
-    assert.equal(String(updated).includes('\n.meeseeks/state.json\n'), true);
+    assert.equal(String(updated).includes('\n.meeseeks/*\n'), true);
     assert.equal(String(updated).startsWith('node_modules/\n'), true);
   });
 
   it('leaves the settings file committable, because settings are not machine state', () => {
     // Observed on the first real run: the operator had committed their config, which is a
-    // reasonable thing to want in version control. A blanket ignore fights them.
+    // reasonable thing to want in version control. A blanket ignore fights them, so the positional
+    // rule carries one deliberate negation — and `.meeseeks/*` rather than `.meeseeks/` is what
+    // makes that negation work at all, because git will not descend into an excluded directory.
     const ignored = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
-    assert.equal(ignored.includes('.meeseeks/config.json'), false, 'settings must stay committable');
-    assert.equal(ignored.includes('.meeseeks/state.json'), true, 'machine state must not be');
+    assert.equal(ignored.includes('.meeseeks/*'), true, 'machine state must be ignored');
+    assert.equal(ignored.includes('!.meeseeks/config.json'), true, 'settings must stay committable');
+    assert.equal(ignoresUnderMeeseeks('config.json'), false, 'settings must stay committable');
   });
 
-  it('ignores every machine-state file the driver writes', () => {
-    const ignored = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
-    for (const file of ['.meeseeks/state.json', '.meeseeks/red-evidence.json', '.meeseeks/bloopers.log']) {
-      assert.equal(ignored.includes(file), true, `not ignored: ${file}`);
+  it('ignores every machine-state file the driver writes, by position', () => {
+    // **The rule this test exists to hold is positional** (REVIEW F9). It used to enumerate
+    // filenames, and the enumeration was always behind: `oracle.json`, `capabilities.json` and the
+    // mutation sandbox's `stryker.config.json` were all still trackable when Codex looked, and
+    // every artifact added since had been trackable until somebody remembered the list.
+    for (const file of [
+      'state.json',
+      'red-evidence.json',
+      'bloopers.log',
+      'pins.json',
+      'assumptions.json',
+      'oracle.json',
+      'capabilities.json',
+      'stryker.config.json',
+      'runs/0001/outcome.json',
+    ]) {
+      assert.equal(ignoresUnderMeeseeks(file), true, `not ignored: ${file}`);
     }
+  });
+
+  it('ignores an artifact nobody has invented yet, which is the whole point', () => {
+    assert.equal(ignoresUnderMeeseeks('an-artifact-added-next-year.json'), true);
+    assert.equal(ignoresUnderMeeseeks('some/deeply/nested/thing.bin'), true);
   });
 
   it('adds a newline first when the file does not end in one', () => {
@@ -5116,18 +5150,7 @@ describe('meeseeksIgnoreUpdate', () => {
   });
 
   it('handles an absent .gitignore', () => {
-    assert.equal(String(meeseeksIgnoreUpdate('')).includes('.meeseeks/state.json'), true);
-  });
-
-  it('ignores the pin store, which holds two of the three monotonic properties', () => {
-    // The serious one. `pins.json` carries pinned security elements and cold-passed
-    // requirements, so tracked, a hard reset to lastGoodCommit restores an older copy and a pin
-    // earned since that commit is gone - along with any recorded quarantine, which is what stops
-    // a run shipping over lost protection. Found by running `git ls-files .meeseeks` on a real
-    // repository before deliberately triggering a reset; it was tracked there.
-    const ignored = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
-    assert.equal(ignored.includes('.meeseeks/pins.json'), true);
-    assert.equal(ignored.includes('.meeseeks/assumptions.json'), true);
+    assert.equal(String(meeseeksIgnoreUpdate('')).includes('.meeseeks/*'), true);
   });
 
   it('ignores logs, because a reset destroys the run’s own record of the reset', () => {
@@ -5148,9 +5171,8 @@ describe('meeseeksIgnoreUpdate', () => {
     const updated = meeseeksIgnoreUpdate(old);
     assert.notEqual(updated, null, 'an incomplete stanza was reported as covered');
     const lines = String(updated).split('\n').map((line) => line.trim());
-    assert.equal(lines.includes('.meeseeks/pins.json'), true);
+    assert.equal(lines.includes('.meeseeks/*'), true, 'the positional rule was not added');
     // And it appends only what was missing rather than restating the whole stanza.
-    assert.equal(lines.filter((line) => line === '.meeseeks/state.json').length, 1, 'duplicated an existing entry');
     assert.equal(lines.filter((line) => line === 'node_modules/').length, 1);
   });
 
@@ -5503,21 +5525,16 @@ describe('every .meeseeks artifact the driver writes is ignored by git', () => {
   //
   // So the list is asserted against the constants the writers actually use. An artifact whose
   // name lives in a constant cannot be added without this failing.
-  it('covers every named artifact constant', () => {
-    // RUN_MANIFEST was missing until 0.86.0 and was found the way the previous two were: by
-    // watching a live run leave `?? .meeseeks/run.json` in `git status`, one `git add -A` away from
-    // being tracked. Third instance of the same defect, and the list is still the enumeration
-    // it has always been — the test is what makes it self-correcting, not the list.
-    // RUN_ARCHIVE_DIR is the fifth, and it is a *directory* rather than a file — which is how it
-    // slipped past a list of filenames. Measured in caseH: eight archived files were committed
-    // by `git add -A` and then destroyed by a hard reset to a commit that predated them.
-    for (const name of [OUTCOME_FILE, REVIEW_RECORD, RUN_LOCK_FILE, RUN_MANIFEST, GATE_SKIP_FILE, `${RUN_ARCHIVE_DIR}/`]) {
-      assert.equal(
-        MEESEEKS_IGNORED_PATHS.includes(`.meeseeks/${name}`),
-        true,
-        `.meeseeks/${name} is written by the driver and would be tracked, so a reset would restore an older copy`,
-      );
-    }
+  it('covers every artifact positionally, so no constant needs an entry', () => {
+    // **This test used to assert the enumeration, and that was the defect** (REVIEW F9). Each of
+    // `state.json`, `outcome.json`, `run.json` and the per-run archive was added to the list only
+    // after a live run had already committed it — three of them by the person who had documented
+    // the hazard that morning. `oracle.json`, `capabilities.json` and the mutation sandbox's
+    // `stryker.config.json` were still missing when Codex looked.
+    //
+    // The list is gone. What is asserted now is the position: two lines cover everything under
+    // `.meeseeks/`, including artifacts nobody has invented yet, with one deliberate carve-out.
+    assert.deepStrictEqual(MEESEEKS_IGNORED_PATHS, ['.meeseeks/*', '!.meeseeks/config.json', '*.log']);
   });
 
   it('does not ignore the operator-owned files, which are theirs to commit', () => {
@@ -5735,24 +5752,25 @@ describe('a security id can never be carried past a panel', () => {
 // confirmed from caseH's reflog, where two discarded commits each carried eight files under that
 // path.
 describe('the per-run archive is ignored, or archiving destroys what it preserves', () => {
-  it('ignores the archive directory, not just the files inside it', () => {
-    // A directory entry, because the archive's contents are named per run and a list of
-    // filenames is exactly what it slipped past.
-    assert.equal(MEESEEKS_IGNORED_PATHS.includes(`.meeseeks/${RUN_ARCHIVE_DIR}/`), true);
+  it('ignores the archive directory and everything named inside it', () => {
+    // The archive's contents are named per run, which is exactly what a list of filenames slipped
+    // past. A position covers a directory and its descendants without knowing either.
+    assert.equal(ignoresUnderMeeseeks(`${RUN_ARCHIVE_DIR}/`), true);
+    assert.equal(ignoresUnderMeeseeks(`${RUN_ARCHIVE_DIR}/0007/outcome.json`), true);
   });
 
-  it('writes it into a fresh .gitignore', () => {
-    const updated = String(meeseeksIgnoreUpdate(''));
-    assert.equal(updated.includes(`.meeseeks/${RUN_ARCHIVE_DIR}/`), true, updated);
+  it('covers it in a fresh .gitignore', () => {
+    assert.equal(String(meeseeksIgnoreUpdate('')).includes('.meeseeks/*'), true);
   });
 
-  it('adds it to a .gitignore written by an older build that lacks it', () => {
-    // The self-correcting half. A repository carrying an older stanza must gain the entry
-    // rather than keep an incomplete list forever, which is the defect 0.77.0 already paid for.
+  it('repairs a .gitignore written by an older build that enumerated names', () => {
+    // The self-correcting half. A repository carrying the old enumeration must gain the positional
+    // rule rather than keep an incomplete list forever, which is the defect 0.77.0 already paid for
+    // and F9 found again.
     const older = ['.meeseeks/state.json', '.meeseeks/briefs/', '.meeseeks/outcome.json', 'node_modules/'].join('\n');
     const updated = meeseeksIgnoreUpdate(older);
     assert.notEqual(updated, null, 'an older stanza was left incomplete');
-    assert.equal(String(updated).includes(`.meeseeks/${RUN_ARCHIVE_DIR}/`), true);
+    assert.equal(String(updated).includes('.meeseeks/*'), true);
   });
 });
 

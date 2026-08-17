@@ -544,8 +544,12 @@ describe('the store is written atomically and archived with its run', () => {
 
   it('is ignored by the stanza the driver writes, so `git add -A` cannot stage it', async () => {
     // Tracked, the target's own history would carry the cases the builder is never shown.
+    // Positional since 0.178.0. `oracle.json` was one of the three artifacts REVIEW F9 found still
+    // missing from the enumeration this replaced, and the scratch directory holding the held-out
+    // inputs themselves was never in it at all.
     const stanza = String(meeseeksIgnoreUpdate(''));
-    assert.equal(stanza.includes('.meeseeks/oracle.json'), true, stanza);
-    assert.equal(stanza.includes('.meeseeks/oracle-scratch/'), true, stanza);
+    assert.equal(stanza.includes('.meeseeks/*'), true, stanza);
+    assert.equal(stanza.includes('!.meeseeks/oracle.json'), false, stanza);
+    assert.equal(stanza.includes('!.meeseeks/oracle-scratch'), false, stanza);
   });
 });

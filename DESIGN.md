@@ -787,6 +787,35 @@ Two things stay static, on purpose:
   application, so there is nothing to ask. The gate passes on the static finding and *says
   in its detail line that it did not probe*, rather than reporting a request it never made.
 
+**The machine-state git boundary is positional** (REVIEW F9, implemented at 0.178.0). The driver
+promised to keep its own state out of the target's history and implemented that promise as a
+hand-maintained list of filenames. `state.json`, `outcome.json`, `run.json` and the per-run archive
+were each added *after* a live run had already committed them — three by the person who had
+documented the hazard that morning — and when Codex looked, `oracle.json`, `capabilities.json` and
+the mutation sandbox's `stryker.config.json` were still missing. Every artifact added since had been
+trackable until somebody remembered, and a run that tracks its own `.meeseeks/` also makes the next
+preflight refuse the repository.
+
+Two lines replace the list:
+
+```
+.meeseeks/*
+!.meeseeks/config.json
+```
+
+`.meeseeks/*` rather than `.meeseeks/`, and the difference is load-bearing: git will not descend
+into an excluded *directory*, so a negation for a child of one is inert. Excluding the *contents*
+keeps the carve-out effective. This is the same argument §6 already makes about writes — the rule is
+a position, so an artifact added tomorrow is covered today — and retiring the list made seven
+imports in `driver.mjs` unused, which is what a list being the only consumer of a name looks like.
+
+`config.json` remains the one deliberate exception, because it is the run's settings rather than its
+machine state. **That carve-out and §3.5's tracked-state refusal point in opposite directions**, and
+the interaction is recorded rather than quietly resolved: `git add -A` will stage `config.json` in a
+target that does not otherwise ignore it, after which preflight refuses the repository. Whether the
+settings belong in the deliverable is an operator-owned product decision; `PLAN.md` item 63 carries
+it for Codex.
+
 **Every HTTP attempt has an absolute deadline** (REVIEW F4, implemented at 0.177.0). Both request
 helpers resolved a successful response only on `end`, and the only bound was Node's socket
 *inactivity* timeout — so a server that kept writing a byte every 50 ms was never inactive, the

@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.177.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.178.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.177.0
+## Build order — current traversal at 0.178.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -100,7 +100,8 @@ well. Evidence in `test/health-probe.test.mjs`: a continuously streaming endpoin
 response, an oversized body, a streaming remote check, and the ordinary local and remote responses
 that must still pass.
 
-Then close F9's positional machine-state ignore boundary through item **63**, F10's complete atomic
+F9's positional machine-state ignore boundary through item **63** is **implemented at 0.178.0**;
+`REVIEW.md` F9 stays OPEN until Codex has verified the repair. See item 63 below. Then close F10's complete atomic
 terminal receipt through item **64**, F13's non-shrinking gate roster through item **67**, F17's
 definition-bound test credit through item **71**, F19's bounded decision-artifact reads through item
 **73**, F22's durable exact-tree acceptance receipt through item **76**, F23's inert model
@@ -2109,7 +2110,32 @@ the store in item 63's machine-state boundary, and preserve PRD-only/no-tools Or
 run; interruption cannot produce accepted partial JSON; and target `git add -A` cannot stage the
 store. REVIEW F8 owns closure.
 
-### 63. Make the machine-state Git boundary positional — OPEN (REVIEW F9)
+### 63. Make the machine-state Git boundary positional — IMPLEMENTED (0.178.0); REVIEW F9 open pending Codex
+
+**Landed at 0.178.0.** `MEESEEKS_IGNORED_PATHS` is now `.meeseeks/*`, `!.meeseeks/config.json` and
+`*.log`. `.meeseeks/*` rather than `.meeseeks/` is load-bearing: git will not descend into an
+excluded directory, so a negation for a child of one is inert. Retiring the enumeration made seven
+imports in `driver.mjs` unused, which is what a list being the only consumer of a name looks like.
+The tests that asserted the list now assert the position, including an artifact nobody has invented
+yet, and `test/driver.test.mjs`'s capability-ownership wording follows the implementation.
+
+Evidence: `test/integration/machine-state-ignore.integration.test.mjs` materialises every current
+writer plus two future artifacts in a real repository, runs `git add -A`, and proves only
+`.gitignore`, `README.md` and the deliberate `config.json` carve-out stage — with the three
+artifacts F9 named, and the held-out oracle scratch inputs, among the things that do not. It also
+covers the blanket-`.meeseeks/` neighbour that must not be rewritten and the older enumerated stanza
+that must be repaired. **Staging, not `git check-ignore`**: that command exits 0 when a *pattern*
+matches, and a negation is a pattern, so it reports the carve-out as ignored.
+
+**Recorded for Codex rather than quietly resolved.** The `config.json` carve-out and `DESIGN.md`
+§3.5's tracked-state refusal point in opposite directions: `git add -A` stages `config.json` in a
+target that does not otherwise ignore `.meeseeks/`, and the *next* preflight then refuses the
+repository because Meeseeks tracked its own state directory. F9 asks explicitly to keep the
+operator-edited config trackable, so this slice preserved it. Whether the settings belong in the
+deliverable is an operator-owned product decision, and closing it either way is outside a repair
+that was asked to keep the carve-out.
+
+**What it was for, as originally written:**
 
 **Problem solved:** a filename enumeration omits current Driver artifacts and makes every future
 artifact trackable until somebody remembers to extend the list.

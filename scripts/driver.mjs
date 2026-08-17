@@ -50,7 +50,6 @@ import {
 import { DEFAULT_OWNERSHIP, loadConfig } from './config.mjs';
 import { checkContextBudget, promptGrowthNote, measurePrompt } from './context-budget.mjs';
 import {
-  GATE_SKIP_FILE,
   loadGateCache,
   planGateRun,
   saveGateCache,
@@ -72,7 +71,6 @@ import {
 } from './lessons.mjs';
 import {
   ORACLE_FILE,
-  ORACLE_SCRATCH,
   OracleError,
   oracleMatchesSpecification,
   parseOracleCases,
@@ -82,7 +80,6 @@ import {
 } from './oracle.mjs';
 import { defaultProbe } from './preflight.mjs';
 import {
-  LAUNCH_RECEIPT_FILE,
   admitOutputs,
   buildLaunchReceipt,
   changedPaths,
@@ -92,8 +89,8 @@ import {
   revalidateLaunch,
   writeLaunchReceipt,
 } from './launch.mjs';
-import { RUN_LOCK_FILE, acquireRunLock, releaseRunLock } from './run-lock.mjs';
-import { SPECIFICATION_FILE, captureSpecification, verifySpecification } from './specification.mjs';
+import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
+import { captureSpecification, verifySpecification } from './specification.mjs';
 import { installQualityPlugins } from './plugins.mjs';
 import {
   applyWinner,
@@ -133,7 +130,7 @@ import {
   writePins,
 } from './pins.mjs';
 import { quarantineCorruptFile } from './quarantine.mjs';
-import { RUN_ARCHIVE_DIR, RUN_MANIFEST, archivePreviousRun, buildRunManifest, writeRunManifest } from './run-manifest.mjs';
+import { archivePreviousRun, buildRunManifest, writeRunManifest } from './run-manifest.mjs';
 import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
 import { MUTATION_CONFIG, MUTATION_CONFIG_CONTENTS } from './toolchains/node.mjs';
 import { CONDITIONAL_GATE_OPERATIONS, gatesFor, resolveToolchain } from './toolchains/index.mjs';
@@ -2909,64 +2906,24 @@ export async function driveRun(options) {
  * hard reset. Both files were tracked there.
  */
 export const MEESEEKS_IGNORED_PATHS = [
-  '.meeseeks/state.json',
-  '.meeseeks/lessons.json',
-  '.meeseeks/briefs/',
-  '.meeseeks/red-evidence.json',
-  '.meeseeks/bloopers.log',
-  '.meeseeks/test-report.json',
-  '.meeseeks/e2e-report.json',
-  '.meeseeks/playwright-installed',
-  '.meeseeks/reality-check.md',
-  '.meeseeks/pins.json',
-  '.meeseeks/assumptions.json',
-  '.meeseeks/review.json',
-  // The per-run archive, and the **fifth** instance of this defect — measured, not reasoned.
-  // `archivePreviousRun` moves the previous run's outcome, review, manifest, assumptions and
-  // briefs here so a second run cannot overwrite them. Untracked and un-ignored, `git add -A`
-  // committed all eight files, and the next hard reset — to a commit that predated the archive
-  // — deleted every one. Confirmed in `caseH` from the reflog: `47ff38a` and `8ac3ba5` each
-  // carried eight files under this path, and the reset to `047b680` discarded them.
+  // **Positional, not a list of names** (REVIEW F9). Every artifact this directory has ever gained
+  // was trackable until somebody remembered to add it, and five of them were found the expensive
+  // way — by watching `git add -A` commit run state into the repository under test, then watching a
+  // hard reset restore an older copy of it. `oracle.json`, `capabilities.json` and the mutation
+  // sandbox's `stryker.config.json` were still missing when Codex looked, and a run that tracks its
+  // own `.meeseeks/` also makes the *next* preflight refuse the repository.
   //
-  // **Worse than the four before it.** Those were pollution: an artifact nothing reads back, or
-  // one the driver rewrites next iteration. This directory is the *only* copy of a previous
-  // run's evidence, and archiving exists precisely to make run history forensic. The first time
-  // it ran in anger, the thing it was protecting was destroyed by the mechanism it was
-  // protecting against.
-  `.meeseeks/${RUN_ARCHIVE_DIR}/`,
-  // Added at 0.68.0 and its ignore entry forgotten until 0.77.0, which is §4.3's defect
-  // reproduced by the person who documented it: an artifact tracked by git is restored by
-  // `git reset --hard`, so the record of how a run ended would be replaced by an older run's.
-  '.meeseeks/outcome.json',
-  // The run lock. Tracking it would be worse than pointless: a `git reset --hard` would restore
-  // some other run's pid into the file this run is holding, and the next run would then refuse
-  // to start on the word of a process that has not existed for days.
-  `.meeseeks/${RUN_LOCK_FILE}`,
-  // The launch receipt (REVIEW F26): what the driver observed before it touched anything, and what
-  // each pre-loop phase was allowed to leave. Driver-owned per-run state read back as evidence, so
-  // it belongs here with the others — tracked, a hard reset would restore an older run's receipt
-  // over this one's and the record would describe a launch that never happened.
-  `.meeseeks/${LAUNCH_RECEIPT_FILE}`,
-  // The captured specification revision (REVIEW F12). Tracked, a hard reset would restore an older
-  // run's digest over this one's, and the run would then be checking the working copy against a
-  // document it never captured — which is the drift it exists to catch, wearing the mask of a pass.
-  `.meeseeks/${SPECIFICATION_FILE}`,
-  // The held-out oracle store and the scratch directory its cases are materialised in (REVIEW F8).
-  // Tracked, the target's own history would carry the cases the builder is never shown — the
-  // confidentiality of the only gate judged against the specification rather than the
-  // implementation, leaking through a gitignore omission — and a hard reset would restore a
-  // previous run's store over this one's.
-  `.meeseeks/${ORACLE_FILE}`,
-  `.meeseeks/${ORACLE_SCRATCH}/`,
-  // The run manifest, missing until 0.86.0 — the third instance of this exact defect after
-  // `state.json` and `outcome.json`, and the first found by watching a live run rather than by
-  // reading. `?? .meeseeks/run.json` sat in the target's `git status` one `git add -A` from being
-  // committed into the repository the run is supposed to be shipping.
-  `.meeseeks/${RUN_MANIFEST}`,
-  // The gate-skip cache (R35). Driver-owned per-iteration state read back as a decision — whether
-  // to carry a gate's prior failure — so it belongs with the others: tracked, a hard reset would
-  // restore an older copy and its stale hash could authorise a skip against a tree it never saw.
-  `.meeseeks/${GATE_SKIP_FILE}`,
+  // `.meeseeks/*` rather than `.meeseeks/`, and the difference is the whole reason this works: git
+  // will not descend into an excluded *directory*, so a negation for a child of an excluded
+  // directory is inert. Excluding the *contents* keeps the directory itself visible, which is what
+  // makes the carve-out below effective.
+  //
+  // This is the same argument the guard hook's `.meeseeks/` rule already makes about writes
+  // (DESIGN.md §6): the rule is a position, so an artifact added tomorrow is covered today.
+  '.meeseeks/*',
+  // The one deliberate exception. `config.json` is the run's settings rather than its machine
+  // state, and an operator who wants a run reproducible from the repository may track it.
+  '!.meeseeks/config.json',
   // Not `.meeseeks/` state, and here for a reason measured in dogfood run 4. The operator redirects
   // the run's output into the repository — `DOGFOOD.md` said to — so `git add -A` tracked it, and
   // the hard reset in iteration 2 **reverted the log to its state at `lastGoodCommit`**. That

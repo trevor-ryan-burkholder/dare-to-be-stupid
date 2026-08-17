@@ -450,7 +450,10 @@ describe('the launch receipt is machine state, protected like the rest of it', (
     const { meeseeksIgnoreUpdate } = await import('../scripts/driver.mjs');
     const stanza = meeseeksIgnoreUpdate('');
     assert.notEqual(stanza, null, 'the driver no longer writes an ignore stanza at all');
-    assert.equal(String(stanza).includes(`.meeseeks/${LAUNCH_RECEIPT_FILE}`), true, String(stanza));
+    // Positional since 0.178.0: `.meeseeks/*` reaches this receipt without naming it, which is the
+    // point — the enumeration it replaced was always one artifact behind.
+    assert.equal(String(stanza).includes('.meeseeks/*'), true, String(stanza));
+    assert.equal(String(stanza).includes(`!.meeseeks/${LAUNCH_RECEIPT_FILE}`), false, String(stanza));
   });
 
   it('is archived with the rest of a run\'s per-run artifacts', async () => {
