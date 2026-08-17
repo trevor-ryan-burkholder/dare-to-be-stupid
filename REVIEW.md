@@ -4,18 +4,17 @@
 > Claude Code owns implementation. Do not treat an entry as closed until Codex has reviewed the
 > repair and the relevant verification has passed.
 
-**Reviewed executable baseline:** `be19c9c`; manifests at `0.164.0`. Every commit after that
-baseline through the commit containing this review is documentation-only.
-**Runtime continuity:** shipped JavaScript, hooks, templates, and output styles match `65a14cc`
-(`pre-codex`, 0.161.0). The shipped command and manifests changed through 0.164.0 and were reviewed
-at `be19c9c`; they are not folded into the older runtime label. F1–F30 cite the files at this
-documentation baseline unless a finding explicitly identifies historical evidence, and finding
-status is authoritative only here.
-**Verdict:** **CHANGES REQUESTED** — seventeen high-priority defects and thirteen medium-priority defects
-are open.
+**Reviewed executable baseline:** `12f2004`; manifests at `0.179.0`. This extends the original
+`be19c9c` / 0.164.0 review through the fifteen repair releases recorded in `HANDOFF.md`.
+**Runtime continuity:** F1–F30 retain their original evidence and remain open until Codex verifies
+their repairs. F31–F37 cite the current 0.179.0 tree and record newly exposed failure shapes,
+including incomplete repairs for F1, F2, F7, F14, F16, and F20. Finding status is authoritative
+only here.
+**Verdict:** **CHANGES REQUESTED** — nineteen high-priority defects and eighteen medium-priority
+defects are open.
 
-This remains a read-only review of the Claude-native implementation. The documentation cleanup
-does not implement or close any finding.
+This remains a read-only review of the Claude-native implementation. Recording the extension does
+not implement or close any finding.
 
 ## Open findings
 
@@ -1245,6 +1244,231 @@ not default to pass.
   stability-only path.
 - The stability result binds item 70's attempt and item 74's contained report identity. PLAN item 87 owns
   closure.
+
+### F31 — HIGH: failed Git publication steps can still produce `SHIPPED`
+
+**Status:** OPEN
+**Affected:** `scripts/driver.mjs:2732-2752`, `scripts/driver.mjs:6769-6791`,
+`test/integration/workspace-seal.integration.test.mjs:119-123`
+
+The ship path invokes `git add`, `git commit`, and tag creation without requiring those commands
+to succeed. It then reads `HEAD` and can return the pre-existing commit as though it were the new
+candidate. The final workspace seal only rehashes the working tree. If commit fails after staging,
+the working bytes still equal the reviewed identity while the commit and tag can identify an older
+tree that does not contain those bytes.
+
+The integration helper uses `execFileSync` for commit, which throws on failure and therefore does
+not exercise production `shell` semantics, where a failed command returns a result that the caller
+must inspect.
+
+**Impact:** a run can deploy or tag an old commit and record `SHIPPED` for changes that were never
+committed. This defeats F14's exact-reviewed-tree guarantee at the final publication boundary.
+
+**Required resolution:**
+
+- Require success from add, commit, commit lookup, and every tag operation; preserve their bounded
+  failure diagnostics.
+- After commit, prove the new commit tree matches the sealed reviewed workspace and require the
+  ordinary worktree/index cleanliness appropriate to publication.
+- Route every failure through the existing non-shipping terminal path. Do not accept an unchanged
+  `HEAD` merely because the workspace hash still matches.
+
+**Acceptance evidence:**
+
+- A real-Git integration fixture makes commit fail after staging and proves deploy, tag, and
+  `SHIPPED` are unreachable.
+- Separate add, commit, lookup, and tag failures retain distinct diagnostics.
+- The successful neighbour proves the published commit tree, reviewed workspace identity, deploy
+  input, tag, and terminal receipt all converge. PLAN item 88 owns closure.
+
+### F32 — HIGH: a report that could not be cleared remains eligible as current evidence
+
+**Status:** OPEN
+**Affected:** `scripts/driver.mjs:6319-6320`, report collection after gate execution
+
+Before a test gate runs, `clearReports` returns paths it could not remove. The Driver logs those
+`stuck` paths but still executes the gate and later lets `collectReports` accept any regular file
+at the configured report location. If a locked or otherwise unremovable old passing report remains
+and the command exits successfully without replacing it, stale evidence receives the new attempt's
+authority.
+
+Existing tests cover successful removal, not the refusal shape where an old report survives.
+
+**Impact:** stale passing evidence can earn ratchet credit, satisfy report-backed gates, or confirm a
+scoped restoration. This reopens the exact evidence-laundering class F16 was intended to close.
+
+**Required resolution:**
+
+- Treat every uncleared configured report path as a failed attempt before report-consuming authority
+  can be assigned.
+- Refuse collection for that attempt even if the command exits zero; name the stuck paths in bounded
+  diagnostics.
+- Preserve successful cleanup and the no-report neighbour without weakening item 70's attempt
+  identity.
+
+**Acceptance evidence:**
+
+- Unit coverage forces report removal failure and proves the old report cannot be parsed or banked.
+- A real-filesystem integration case, including a Windows locked-file case where available, proves
+  an exit-zero gate cannot relabel the surviving report as fresh.
+- The ordinary replace-and-collect path remains green. PLAN item 89 owns closure.
+
+### F33 — MEDIUM: one timed-out Panel child can kill its concurrent reviewers
+
+**Status:** OPEN
+**Affected:** `scripts/driver.mjs:2515-2517`, `scripts/driver.mjs:4623-4633`,
+`test/integration/shell-termination.integration.test.mjs:324-350`
+
+The Panel starts reviewers concurrently with `Promise.all`. Each `shell` call snapshots the
+process-group population before spawn and, during cleanup, sweeps group members absent from that
+snapshot. Reviewer A can take its snapshot before reviewers B and C exist; if A later times out or
+overflows, its subtraction sweep can classify those legitimate siblings as leaked descendants and
+kill them.
+
+The current bystander test starts the bystander before the target's snapshot. It proves preservation
+of an older process, not a concurrent sibling born after that snapshot.
+
+**Impact:** one reviewer failure can manufacture failures in the remaining cold reviewers, erase
+their evidence, and make Panel reliability depend on spawn and cleanup timing.
+
+**Required resolution:**
+
+- Scope cleanup to descendants or an owned process group for the target invocation, or otherwise
+  exclude active sibling children from the sweep.
+- Keep resistant-child and leaked-descendant cleanup from F2; fixing sibling ownership must not
+  restore orphan processes.
+
+**Acceptance evidence:**
+
+- A tier-2 test starts two concurrent real `shell` calls. The first times out after the second is
+  born; the second survives and completes while the first child and its descendants are gone.
+- Reversed start/completion order and overflow exercise the same ownership rule.
+- The Panel still combines completed results in declared reviewer order. PLAN item 90 owns closure.
+
+### F34 — MEDIUM: a crashed stale-lock reclaimer can permanently block acquisition
+
+**Status:** OPEN
+**Affected:** `scripts/run-lock.mjs:227-265`, `test/run-lock.test.mjs:186-207`
+
+Stale-lock takeover derives its arbitration-directory name from the stale lock's ownership token. If
+the reclaimer dies after creating that directory but before removing or replacing the stale lock, the
+same stale token remains. Every later contender computes the same path, receives `EEXIST`, and
+treats it as evidence of a live reclaimer. No surviving owner can clear the abandoned arbitration
+directory.
+
+The existing “orphan” unit case uses a directory derived from a different token, based on the
+assumption that the same token will not recur. A crash in the takeover window makes that assumption
+false.
+
+**Impact:** one killed recovery attempt can turn an otherwise reclaimable stale lock into a
+permanent denial of service requiring manual filesystem repair. This is an incomplete F1 repair.
+
+**Required resolution:**
+
+- Give the takeover claim its own verifiable, reclaimable owner identity and liveness rule, or use an
+  atomic primitive whose abandoned state can be distinguished safely.
+- Preserve exactly-one-winner behavior and prevent a late old reclaimer from deleting a newer
+  owner's lock or takeover claim.
+
+**Acceptance evidence:**
+
+- A tier-2 fault-injection test kills the reclaimer after it acquires takeover arbitration but before
+  it replaces the stale lock, then proves a later cohort has exactly one winner.
+- Live-contender and benign-orphan neighbours remain distinguishable.
+- Token mismatch and delayed cleanup cannot clear the winner. PLAN item 91 owns closure.
+
+### F35 — MEDIUM: nonexistent test files can receive durable ratchet credit
+
+**Status:** OPEN
+**Affected:** `scripts/reporters/shared.mjs:115-120`,
+`test/reporter-paths.test.mjs:177-182`
+
+When `realpathSync` fails, reporter normalization deliberately falls back to a lexically contained
+relative path. A runner can therefore report a passing test file that does not exist in the
+repository, and Meeseeks can bank its ID. The current unit test explicitly accepts that behavior.
+
+Lexical containment closes the external-path half of F20 but does not prove the definition is part
+of the candidate or reproducible from a clean clone.
+
+**Impact:** the monotonic ratchet can retain credit for a test definition no later checkout can
+execute or inspect. A forged or transient virtual path can become durable acceptance evidence.
+
+**Required resolution:**
+
+- Require an accepted file-backed identity to resolve to an existing contained regular file before
+  it earns ratchet credit.
+- If a supported runner genuinely emits virtual/generated tests, design a separate reproducible
+  identity and content digest rather than silently treating a missing file as repository evidence.
+
+**Acceptance evidence:**
+
+- Nonexistent, directory, symlink-race, and deleted-after-report definitions fail closed without
+  credit.
+- Valid contained Windows and POSIX paths retain stable IDs.
+- A clean-clone tier-2 test resolves and executes or inspects every banked definition. PLAN item 92
+  owns closure.
+
+### F36 — MEDIUM: successful Claude children discard guard-denial evidence
+
+**Status:** OPEN
+**Affected:** `scripts/driver.mjs:4894-4900`, `scripts/driver.mjs:5157-5163`,
+`test/driver.test.mjs:1649-1657`
+
+The real shell result returns an empty `stderr` whenever the child exits zero. `spawnClaude`
+searches that field for `meeseeks-guard: denied` diagnostics so it can carry them into the next
+brief. A Claude process can encounter a denied tool call, recover, and still exit successfully; on
+that path the Driver erases the denial before `spawnClaude` can preserve it.
+
+The current test injects denial text only through a failed synthetic shell result and therefore
+bypasses the successful production path.
+
+**Impact:** a guard can stop a prohibited write while the loop loses the only repairable explanation.
+The next Builder may repeat the same denied action, silently degrading both progress and forensic
+evidence. This is an unclosed part of F7's stated every-path visibility contract.
+
+**Required resolution:**
+
+- Preserve bounded stderr for Claude invocations regardless of exit status, or return guard-denial
+  diagnostics through a distinct bounded channel.
+- Keep ordinary successful stderr from becoming styled output or decision evidence; only the
+  intended denial signal feeds the brief.
+
+**Acceptance evidence:**
+
+- A tier-2 child exits zero after writing a guard-denial line to stderr; `spawnClaude` returns
+  success and preserves the denial for the next brief.
+- Clean successful stderr and failed-envelope neighbours retain their documented behavior.
+- Because this crosses `spawnClaude` and the external CLI contract, run the mandatory paid tier-3
+  guard canary. PLAN item 93 owns closure.
+
+### F37 — MEDIUM: health-probe cleanup skips descendants after the shell leader exits
+
+**Status:** OPEN
+**Affected:** `scripts/health-probe.mjs:470-489`
+
+The probe's `stop` function returns after destroying pipes when the direct child already has an
+`exitCode` or `signalCode`. It does not signal the captured process group in that branch. A shell
+can background the application and exit immediately; the probe fails because its leader ended, but
+the background server remains alive and can keep listening.
+
+This POSIX lifetime hole is distinct from F11's unproven Windows descendant cleanup.
+
+**Impact:** a failed health check can leak a live server into later gates or runs. That server can
+occupy the assigned port, mutate the workspace, and contaminate subsequent health evidence.
+
+**Required resolution:**
+
+- Clean the owned process group even when its leader has already exited, while defending against
+  process-group/PID reuse before signalling.
+- Preserve bounded stop behavior and the successful long-running-server neighbour.
+
+**Acceptance evidence:**
+
+- A tier-2 fixture runs a shell equivalent to `node server & exit 0`, observes the failed probe,
+  and proves the background server and its listener are gone.
+- Cooperative exit, timeout, and already-empty group cases settle without killing unrelated
+  processes.
+- Windows evidence remains owned separately by F11/item 65. PLAN item 94 owns closure.
 
 ## Audit coverage maps
 
