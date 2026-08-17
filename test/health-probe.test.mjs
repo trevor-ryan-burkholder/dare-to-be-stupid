@@ -16,6 +16,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
+import { clearInterval, setInterval } from 'node:timers';
 
 import {
   detectBoundPort,
@@ -26,6 +27,7 @@ import {
   portContractHint,
   portIsOccupied,
   probeHealth,
+  runSmoke,
 } from '../scripts/health-probe.mjs';
 
 /** @type {string[]} */
@@ -378,5 +380,131 @@ describe('judgeSmokeResponse', () => {
 
   it('names what it got when it fails, so the failure is actionable', () => {
     assert.match(judgeSmokeResponse({ status: 503, body: '' }, 200).detail, /503/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// An HTTP attempt has an absolute deadline (REVIEW F4)
+// ---------------------------------------------------------------------------
+
+describe('a response that never ends is bounded by the probe deadline', () => {
+  it('fails a continuously streaming health endpoint within the configured deadline', async () => {
+    // The measured defect: both request helpers resolved only on `end`, and the only bound was
+    // Node's socket *inactivity* timeout — so a server writing a byte every 50 ms was never
+    // inactive, the promise never settled, and the probe never got to look at its own clock. The
+    // next bound outwards is `gateTimeoutMs`, 45 minutes, and with no outer ceiling, none.
+    const cwd = makeTempDir();
+    writeFileSync(
+      path.join(cwd, 'server.mjs'),
+      [
+        "import http from 'node:http';",
+        'const server = http.createServer((request, response) => {',
+        '  response.writeHead(200);',
+        '  setInterval(() => response.write("."), 50);',
+        '});',
+        'server.listen(Number(process.env.PORT), "127.0.0.1");',
+      ].join('\n'),
+      'utf8',
+    );
+    const started = Date.now();
+    const outcome = await probeHealth({ command: 'node server.mjs', path: '/health', timeout: 3000, cwd });
+    const elapsed = Date.now() - started;
+    assert.equal(outcome.ok, false, outcome.detail);
+    assert.equal(elapsed < 3000 + 8000, true, `the probe ran for ${elapsed}ms against a 3000ms deadline`);
+  });
+
+  it('reads a response the server abandons as a failed attempt, not as silence', async () => {
+    // `aborted`, `error` and a premature `close` were all unhandled, so a server that wrote headers
+    // and then dropped the socket left the promise unsettled forever.
+    const cwd = makeTempDir();
+    writeFileSync(
+      path.join(cwd, 'server.mjs'),
+      [
+        "import http from 'node:http';",
+        'const server = http.createServer((request, response) => {',
+        '  response.writeHead(200, { "content-length": "100" });',
+        '  response.write("partial");',
+        '  setTimeout(() => response.socket?.destroy(), 30);',
+        '});',
+        'server.listen(Number(process.env.PORT), "127.0.0.1");',
+      ].join('\n'),
+      'utf8',
+    );
+    const outcome = await probeHealth({ command: 'node server.mjs', path: '/health', timeout: 2500, cwd });
+    assert.equal(outcome.ok, false, outcome.detail);
+  });
+
+  it('bounds an oversized body while receiving it, and still reports the response', async () => {
+    // The body is a diagnostic and 500 characters is all anyone reads; accumulating megabytes and
+    // slicing afterwards is a second failure hiding behind the first.
+    const cwd = makeTempDir();
+    writeFileSync(
+      path.join(cwd, 'server.mjs'),
+      [
+        "import http from 'node:http';",
+        'const big = "x".repeat(1024 * 1024);',
+        'const server = http.createServer((request, response) => {',
+        '  response.writeHead(200);',
+        '  for (let i = 0; i < 8; i += 1) response.write(big);',
+        '  response.end();',
+        '});',
+        'server.listen(Number(process.env.PORT), "127.0.0.1");',
+      ].join('\n'),
+      'utf8',
+    );
+    const outcome = await probeHealth({ command: 'node server.mjs', path: '/health', timeout: 15_000, cwd });
+    assert.equal(outcome.ok, true, outcome.detail);
+    assert.equal(outcome.detail.length < 2000, true, `the detail carried ${outcome.detail.length} characters`);
+  });
+});
+
+describe('the remote smoke check has the same deadline', () => {
+  it('fails a streaming remote response within its timeout', async () => {
+    /** @type {NodeJS.Timeout[]} */
+    const writers = [];
+    const server = http.createServer((request, response) => {
+      response.writeHead(200);
+      // Tracked so the suite can stop them: an interval that outlives its test keeps the whole
+      // test process alive, which is the same class of leak this file is about.
+      writers.push(setInterval(() => response.write('.'), 50));
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(undefined)));
+    const { port } = /** @type {{ port: number }} */ (server.address());
+    try {
+      const started = Date.now();
+      const outcome = await runSmoke({
+        url: `http://127.0.0.1:${port}`,
+        checks: [{ path: '/health', status: 200 }],
+        timeout: 1500,
+      });
+      const elapsed = Date.now() - started;
+      assert.equal(outcome.ok, false, outcome.detail);
+      assert.equal(elapsed < 1500 + 8000, true, `the smoke check ran for ${elapsed}ms against a 1500ms timeout`);
+    } finally {
+      for (const writer of writers) clearInterval(writer);
+      server.closeAllConnections?.();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  // The benign neighbour: an ordinary remote response must still pass, or the deadline has replaced
+  // the check rather than bounded it.
+  it('still passes an ordinary remote response', async () => {
+    const server = http.createServer((request, response) => {
+      response.writeHead(200);
+      response.end('OK');
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(undefined)));
+    const { port } = /** @type {{ port: number }} */ (server.address());
+    try {
+      const outcome = await runSmoke({
+        url: `http://127.0.0.1:${port}`,
+        checks: [{ path: '/health', status: 200 }],
+        timeout: 3000,
+      });
+      assert.equal(outcome.ok, true, outcome.detail);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });

@@ -77,35 +77,109 @@ function freePort() {
 }
 
 /**
- * One request. Resolves with the outcome and never rejects, because a refused connection is
+ * How much of a response body is ever kept, and the cap is applied *while receiving* (REVIEW F4).
+ *
+ * The body is a diagnostic — it goes into a failure message — so 500 characters is all anyone reads.
+ * Accumulating megabytes and slicing afterwards means a server that streams forever also fills
+ * memory forever, which is a second failure hiding behind the first.
+ */
+const MAX_BODY_BYTES = 64 * 1024;
+
+/**
+ * One HTTP attempt with an absolute wall-clock deadline (REVIEW F4).
+ *
+ * **The old deadline was not a deadline.** Both request helpers resolved a successful response only
+ * on `end`, and the only bound was Node's socket *inactivity* timeout — so a server that kept
+ * writing a byte every 50 ms was never inactive, the request promise never settled, and the outer
+ * probe loop never got to look at its own clock. Measured: a health endpoint that sent `200` and
+ * then wrote forever was not bounded by the configured probe deadline at all; when the fixture was
+ * killed, Node reported an unsettled top-level await instead of a probe result. The next bound
+ * outwards is `gateTimeoutMs` — **45 minutes** — and with no outer ceiling, none.
+ *
+ * So the timer here is absolute and covers the whole attempt, headers and body alike, and
+ * `aborted`, `error` and a premature `close` are ordinary failed attempts rather than silence. A
+ * request that is destroyed settles; that is the entire point.
+ *
+ * @param {{
+ *   get: () => import('node:http').ClientRequest,
+ *   deadlineMs: number,
+ *   describe: string,
+ * }} options
+ * @returns {Promise<{ ok: boolean, status: number, body: string, error: string }>}
+ */
+function attempt(options) {
+  return new Promise((resolve) => {
+    let settled = false;
+    /** @type {import('node:http').ClientRequest | null} */
+    let request = null;
+    /** @param {{ ok: boolean, status: number, body: string, error: string }} result */
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      // Destroyed on every path out, including the successful one: a response that ended still
+      // leaves a socket this probe has no further use for.
+      request?.destroy();
+      resolve(result);
+    };
+    const timer = setTimeout(
+      () => settle({ ok: false, status: 0, body: '', error: `${options.describe} exceeded ${options.deadlineMs}ms` }),
+      options.deadlineMs,
+    );
+    try {
+      request = options.get();
+    } catch (error) {
+      settle({ ok: false, status: 0, body: '', error: String(error) });
+      return;
+    }
+    request.on('response', (response) => {
+      /** @type {Buffer[]} */
+      const chunks = [];
+      let bytes = 0;
+      response.on('data', (chunk) => {
+        // Capped as it arrives. Past the cap the bytes are dropped rather than buffered, and the
+        // response is still read to completion so an ordinary short body is unaffected.
+        if (bytes >= MAX_BODY_BYTES) return;
+        const buffer = Buffer.from(chunk);
+        chunks.push(buffer.subarray(0, MAX_BODY_BYTES - bytes));
+        bytes += buffer.length;
+      });
+      response.on('end', () =>
+        settle({
+          ok: true,
+          status: response.statusCode ?? 0,
+          body: Buffer.concat(chunks).toString('utf8').slice(0, 500),
+          error: '',
+        }),
+      );
+      // A response that stops without ending has not answered. Reporting it as a failed attempt is
+      // what lets the poll loop try again or give up on its own clock.
+      response.on('aborted', () =>
+        settle({ ok: false, status: 0, body: '', error: `${options.describe} was aborted before it ended` }),
+      );
+      response.on('error', (error) => settle({ ok: false, status: 0, body: '', error: error.message }));
+      response.on('close', () => {
+        settle({ ok: false, status: 0, body: '', error: `${options.describe} closed before it ended` });
+      });
+    });
+    request.on('timeout', () => settle({ ok: false, status: 0, body: '', error: 'request timed out' }));
+    request.on('error', (error) => settle({ ok: false, status: 0, body: '', error: error.message }));
+  });
+}
+
+/**
+ * One local request. Resolves with the outcome and never rejects, because a refused connection is
  * the expected answer while a server is still starting.
  *
- * @param {{ port: number, path: string }} options
+ * @param {{ port: number, path: string, deadlineMs?: number }} options
  * @returns {Promise<{ ok: boolean, status: number, body: string, error: string }>}
  */
 function requestOnce(options) {
-  return new Promise((resolve) => {
-    const request = http.get(
-      { host: '127.0.0.1', port: options.port, path: options.path, timeout: 2_000 },
-      (response) => {
-        /** @type {Buffer[]} */
-        const chunks = [];
-        response.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-        response.on('end', () =>
-          resolve({
-            ok: true,
-            status: response.statusCode ?? 0,
-            body: Buffer.concat(chunks).toString('utf8').slice(0, 500),
-            error: '',
-          }),
-        );
-      },
-    );
-    request.on('timeout', () => {
-      request.destroy();
-      resolve({ ok: false, status: 0, body: '', error: 'request timed out' });
-    });
-    request.on('error', (error) => resolve({ ok: false, status: 0, body: '', error: error.message }));
+  const deadlineMs = typeof options.deadlineMs === 'number' && options.deadlineMs > 0 ? options.deadlineMs : 2_000;
+  return attempt({
+    get: () => http.get({ host: '127.0.0.1', port: options.port, path: options.path, timeout: deadlineMs }),
+    deadlineMs,
+    describe: `${options.path} on port ${options.port}`,
   });
 }
 
@@ -304,35 +378,17 @@ export function judgeSmokeResponse(response, expected) {
  * @returns {Promise<{ ok: boolean, status: number, body: string, error: string }>}
  */
 function requestUrl(base, path_, timeout) {
-  return new Promise((resolve) => {
-    /** @type {URL} */
-    let target;
-    try {
-      target = new URL(path_, base);
-    } catch (error) {
-      resolve({ ok: false, status: 0, body: '', error: `bad url: ${String(error)}` });
-      return;
-    }
-    const client = target.protocol === 'https:' ? https : http;
-    const request = client.get(target, { timeout }, (response) => {
-      /** @type {Buffer[]} */
-      const chunks = [];
-      response.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-      response.on('end', () =>
-        resolve({
-          ok: true,
-          status: response.statusCode ?? 0,
-          body: Buffer.concat(chunks).toString('utf8').slice(0, 500),
-          error: '',
-        }),
-      );
-    });
-    request.on('timeout', () => {
-      request.destroy();
-      resolve({ ok: false, status: 0, body: '', error: 'request timed out' });
-    });
-    request.on('error', (error) => resolve({ ok: false, status: 0, body: '', error: error.message }));
-  });
+  /** @type {URL} */
+  let target;
+  try {
+    target = new URL(path_, base);
+  } catch (error) {
+    return Promise.resolve({ ok: false, status: 0, body: '', error: `bad url: ${String(error)}` });
+  }
+  const client = target.protocol === 'https:' ? https : http;
+  // The remote smoke check gets the same absolute deadline as the local one. A host that streams
+  // forever is a host that streams forever whichever side of the network it is on.
+  return attempt({ get: () => client.get(target, { timeout }), deadlineMs: timeout, describe: `${path_}` });
 }
 
 /**
@@ -515,7 +571,14 @@ export async function probeHealth(options) {
       // The two masters are reconciled the other way now: `--port` lets the *driver or operator*
       // name a fixed port, which is a contract neither the application nor its stdout can forge,
       // and `portContractHint` below still teaches an app that ignored `PORT` exactly what to fix.
-      last = await requestOnce({ port, path: options.path });
+      // Bounded by the attempt's own ceiling *and* by what is left of the probe's, so a server
+      // that streams forever cannot spend more than the deadline the operator configured
+      // (REVIEW F4).
+      last = await requestOnce({
+        port,
+        path: options.path,
+        deadlineMs: Math.max(1, Math.min(2_000, deadline - Date.now())),
+      });
       if (last.ok) {
         // Re-checked after the response, not only before the request. A start command that died
         // while the request was in flight cannot be the thing that answered it, and accepting the

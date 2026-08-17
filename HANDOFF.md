@@ -1,8 +1,8 @@
 # START HERE — current handoff, last swept 17 August 2026
 
-**State:** branch `claude/f1-atomic-run-lock` at `0.176.0`, ahead of `main` at `0.164.0`. The
+**State:** branch `claude/f1-atomic-run-lock` at `0.177.0`, ahead of `main` at `0.164.0`. The
 manifests and package-lock root metadata agree. Measured on the current tree with Node 24.14.1:
-`npm run lint` and `npm run typecheck` clean; `npm test` **2493 pass, 0 fail**;
+`npm run lint` and `npm run typecheck` clean; `npm test` **2498 pass, 0 fail**;
 `npm run test:integration` **99 pass, 0 fail**; `npm run release-check` **ok**. No paid live test
 was invoked.
 
@@ -13,7 +13,7 @@ guarantee-strength audit, durable-artifact registry, failure-shape matrix, and e
 negative-guarantee sheet. These are the first implementation gates in `PLAN.md`. Claude Code may
 implement them; Codex owns closure after reviewing the exact repair and its acceptance evidence.
 
-**Implemented, awaiting Codex verification.** Twelve findings have repairs on this branch. Each
+**Implemented, awaiting Codex verification.** Thirteen findings have repairs on this branch. Each
 remains **OPEN** in `REVIEW.md` — implementation and passing self-tests are not acceptance, and Codex
 reviews each commit separately:
 
@@ -31,6 +31,7 @@ reviews each commit separately:
 | 0.174.0 | F18 / item 72 | every child envelope conserved into ceilings and receipts |
 | 0.175.0 | F20 / item 74 | repository-contained reporter identities |
 | 0.176.0 | F30 / item 87 | normalized flaky results as a failed deterministic gate |
+| 0.177.0 | F4 | absolute HTTP deadlines and a bounded body for health and smoke |
 
 `PLAN.md` records what landed and where each repair's evidence lives; `DESIGN.md` §3.5, §4 and §11.1
 state the mechanisms.

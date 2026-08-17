@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.176.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.177.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.176.0
+## Build order — current traversal at 0.177.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -91,13 +91,22 @@ policy rather than only pre-approving named tools. F28/item **83** establishes a
 measured product-wide Claude Code compatibility policy and one-CLI-per-run identity. All close before
 feature fan-out.
 
-**Gate 0C — remaining external review defects.** Close F4's absolute HTTP deadline/body cap, F9's
-positional machine-state ignore boundary through item **63**, F10's complete atomic terminal
-receipt through item **64**, F13's non-shrinking gate roster through item **67**, F17's
-definition-bound test credit through item **71**, F19's bounded decision-artifact reads through
-item **73**, F20's contained reporter identities through item **74** (**implemented at 0.175.0**; REVIEW F20 open pending Codex), F22's durable exact-tree
-acceptance receipt through item **76**, F23's inert model configuration through item **78**, and
-F24's hidden PRD checkpoint through item **79**. F11 may share F2's process-lifecycle
+**Gate 0C — remaining external review defects.** F4's absolute HTTP deadline and bounded body are
+**implemented at 0.177.0**; `REVIEW.md` F4 stays OPEN until Codex has verified the repair. Every
+attempt in `scripts/health-probe.mjs` now carries a wall-clock deadline bounded by what remains of
+the probe's own, treats response `aborted`, response `error` and a premature `close` as failed
+attempts, caps the body while receiving it, and applies all of that to the remote smoke check as
+well. Evidence in `test/health-probe.test.mjs`: a continuously streaming endpoint, an abandoned
+response, an oversized body, a streaming remote check, and the ordinary local and remote responses
+that must still pass.
+
+Then close F9's positional machine-state ignore boundary through item **63**, F10's complete atomic
+terminal receipt through item **64**, F13's non-shrinking gate roster through item **67**, F17's
+definition-bound test credit through item **71**, F19's bounded decision-artifact reads through item
+**73**, F22's durable exact-tree acceptance receipt through item **76**, F23's inert model
+configuration through item **78**, and F24's hidden PRD checkpoint through item **79**. F20's
+contained reporter identities through item **74** are **implemented at 0.175.0**, with REVIEW F20
+open pending Codex. F11 may share F2's process-lifecycle
 implementation, but retains its own platform evidence.
 
 **Gate 0 dependency edges.** The A/B/C groups classify priority and external evidence; they are not

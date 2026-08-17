@@ -787,6 +787,23 @@ Two things stay static, on purpose:
   application, so there is nothing to ask. The gate passes on the static finding and *says
   in its detail line that it did not probe*, rather than reporting a request it never made.
 
+**Every HTTP attempt has an absolute deadline** (REVIEW F4, implemented at 0.177.0). Both request
+helpers resolved a successful response only on `end`, and the only bound was Node's socket
+*inactivity* timeout — so a server that kept writing a byte every 50 ms was never inactive, the
+request promise never settled, and the outer probe loop never reached its own clock. Measured: a
+health endpoint that sent `200` and then wrote forever was not bounded by the configured probe
+deadline at all, and killing the fixture produced an unsettled top-level await instead of a result.
+The next bound outwards is `gateTimeoutMs` — **45 minutes** — and without an outer ceiling, none. A
+nominal 30-second check could stall an unattended iteration indefinitely.
+
+The timer now covers the whole attempt, headers and body alike, and is the smaller of the
+per-attempt ceiling and what remains of the probe's own deadline. Response `aborted`, response
+`error` and a premature `close` are ordinary failed attempts rather than silence, so the poll loop
+either retries or gives up on its own clock. The body is capped **while receiving** rather than
+accumulated and sliced afterwards, because a server that streams forever otherwise fills memory
+forever — a second failure hiding behind the first. The remote smoke check uses the same mechanism:
+a host that streams forever does so whichever side of the network it is on.
+
 **The probe answers on the port it assigned, and on no other** (REVIEW F3, repaired at 0.168.0).
 Between 0.113.0 and that version it followed the port the application's own *stdout* announced,
 which settled the Tallyho smoke's two-masters conflict — the probe demanding an honoured ephemeral
