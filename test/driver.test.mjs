@@ -1911,6 +1911,9 @@ describe('driveRun', () => {
       // The specification is unchanged unless a test says otherwise (REVIEW F12). `driveRun`
       // refuses to run without this rather than assuming it, so the harness states it.
       checkSpecification: () => ({ ok: true, digest: 'sha256:harness', detail: 'PRD.md unchanged' }),
+      // A stable candidate identity unless a test says otherwise (REVIEW F14). `driveRun` refuses
+      // to run without one rather than assuming the tree stood still.
+      workspaceIdentity: () => 'sha256:candidate',
       commit: () => 'commit1',
       diffStat: () => ' 1 file changed',
       ship: () => {},
@@ -1959,6 +1962,154 @@ describe('driveRun', () => {
     });
     return { outcome, meeseeksDir, root };
   }
+
+  // -------------------------------------------------------------------------
+  // A verdict is sealed to the bytes it was formed over (REVIEW F14)
+  // -------------------------------------------------------------------------
+  describe('a verdict cannot authorise bytes no reviewer saw', () => {
+    const greenTest = () => [
+      {
+        numTotalTests: 1,
+        testResults: [
+          { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+        ],
+      },
+    ];
+
+    /**
+     * A workspace identity that changes on the nth read, standing in for a background writer.
+     *
+     * One iteration reads it four times: the capture before the panel, the recheck after it, the
+     * recheck before the commit, and the proof after it. These tests run a single iteration so the
+     * position is exactly the boundary being aimed at.
+     *
+     * @param {number} changesOnRead 1-based read after which the tree reads differently
+     * @returns {{ identity: () => string, reads: () => number }}
+     */
+    const writerAt = (changesOnRead) => {
+      let reads = 0;
+      return {
+        identity: () => {
+          reads += 1;
+          return reads < changesOnRead ? 'sha256:reviewed' : 'sha256:changed';
+        },
+        reads: () => reads,
+      };
+    };
+
+    it('refuses to run at all without a way to identify the workspace', async () => {
+      const root = makeTempDir();
+      await assert.rejects(
+        () =>
+          driveRun({
+            config: { ...defaultConfig(), maxIterations: 1, reviewers: ['correctness'] },
+            meeseeksDir: path.join(root, '.meeseeks'),
+            rootDir: root,
+            requiredIds: ['PRD-1.1'],
+            task: 'build the thing',
+            effects: /** @type {any} */ ({ ...effectsWith({}), workspaceIdentity: undefined }),
+          }),
+        /cannot be sealed to the bytes/,
+      );
+    });
+
+    it('commits nothing when the tree changes while the panel is reading it', async () => {
+      // Codex's reproduction: the reviewer read `reviewed bytes`, a concurrent write changed them,
+      // and the loop committed the later bytes and returned SHIPPED. The second read here is the
+      // recheck after the panel returns.
+      const writer = writerAt(2);
+      let commits = 0;
+      let shipped = 0;
+      const { outcome } = await run({
+        readTestReports: greenTest,
+        workspaceIdentity: writer.identity,
+        commit: () => {
+          commits += 1;
+          return 'commit1';
+        },
+        ship: () => {
+          shipped += 1;
+        },
+      }, { maxIterations: 1 });
+      assert.notEqual(outcome.state, 'SHIPPED');
+      assert.equal(commits, 0, 'bytes no reviewer saw were committed under that verdict');
+      assert.equal(shipped, 0);
+    });
+
+    it('commits nothing when the tree changes between the panel and the commit', async () => {
+      // Reads: capture, after-panel, pre-commit. The writer fires on the third.
+      const writer = writerAt(3);
+      let commits = 0;
+      const { outcome } = await run({
+        readTestReports: greenTest,
+        workspaceIdentity: writer.identity,
+        commit: () => {
+          commits += 1;
+          return 'commit1';
+        },
+      }, { maxIterations: 1 });
+      assert.notEqual(outcome.state, 'SHIPPED');
+      assert.equal(commits, 0, 'the commit ran on a tree the panel had not judged');
+    });
+
+    it('withholds the ship when the tree changes as the commit lands', async () => {
+      // The commit exists — the work is banked — but it is not the reviewed tree, so it cannot
+      // carry that verdict to a deploy or a tag.
+      const writer = writerAt(4);
+      let commits = 0;
+      let shipped = 0;
+      const { outcome } = await run({
+        readTestReports: greenTest,
+        workspaceIdentity: writer.identity,
+        commit: () => {
+          commits += 1;
+          return 'commit1';
+        },
+        ship: () => {
+          shipped += 1;
+        },
+      }, { maxIterations: 1 });
+      assert.notEqual(outcome.state, 'SHIPPED');
+      assert.equal(commits >= 1, true, 'the work was not banked at all');
+      assert.equal(shipped, 0, 'a tag was written over a tree nobody reviewed');
+    });
+
+    it('does not review at all when the workspace cannot be identified', async () => {
+      // Uncertainty is not a pass: a tree that cannot be hashed cannot have a verdict sealed to it.
+      let reviews = 0;
+      const { outcome } = await run({
+        readTestReports: greenTest,
+        workspaceIdentity: () => null,
+        review: () => {
+          reviews += 1;
+          return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
+        },
+      }, { maxIterations: 1 });
+      assert.notEqual(outcome.state, 'SHIPPED');
+      assert.equal(reviews, 0, 'a panel was paid for on a tree nobody could name');
+    });
+
+    it('records which bytes the verdict was about, in the panel record and the outcome', async () => {
+      const { outcome, meeseeksDir } = await run({ readTestReports: greenTest });
+      assert.equal(outcome.workspace, 'sha256:candidate');
+      const record = JSON.parse(readFileSync(path.join(meeseeksDir, 'review.json'), 'utf8'));
+      assert.equal(record.panels[0].workspace, 'sha256:candidate');
+    });
+
+    // The benign neighbour. A seal that discarded every verdict would be a product that cannot
+    // ship, which is a worse failure than the one it prevents.
+    it('ships when the tree stands still, which is every ordinary iteration', async () => {
+      let shipped = 0;
+      const { outcome } = await run({
+        readTestReports: greenTest,
+        ship: () => {
+          shipped += 1;
+        },
+      });
+      assert.equal(outcome.state, 'SHIPPED');
+      assert.equal(shipped, 1);
+    });
+  });
 
   // -------------------------------------------------------------------------
   // The specification a run is judged against cannot move under it (REVIEW F12)
@@ -4890,6 +5041,9 @@ describe('.meeseeks/outcome.json', () => {
       gates: () => ({ ok: true, results: [{ name: 'mutation', ok: true, status: 0, detail: 'no survivors' }] }),
       readTestReports: () => [{ numTotalTests: 1, testResults: [] }],
       checkSpecification: () => ({ ok: true, digest: 'sha256:harness', detail: 'PRD.md unchanged' }),
+      // A stable candidate identity unless a test says otherwise (REVIEW F14). `driveRun` refuses
+      // to run without one rather than assuming the tree stood still.
+      workspaceIdentity: () => 'sha256:candidate',
       commit: () => 'commit1',
       diffStat: () => ' 1 file changed',
       ship: () => {},

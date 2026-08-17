@@ -20,7 +20,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -105,6 +105,36 @@ describe('workspaceHash against real git', () => {
     writeFileSync(path.join(root, 'node_modules/dep/index.js'), 'module.exports = 1;\n');
     const afterMachineState = await workspaceHash({ cwd: root, run });
     assert.equal(afterMachineState, before);
+  });
+
+  // The three below are the boundary REVIEW F14 needs proved before this hash can be reused as a
+  // *candidate workspace identity*: a verdict sealed to it must not survive a deletion, a symlink
+  // retarget, or a path that cannot be read.
+  it('changes when a tracked source file is deleted', async () => {
+    const { root, run } = repo();
+    const before = await workspaceHash({ cwd: root, run });
+    rmSync(path.join(root, 'src/index.js'));
+    // git still lists the path from the index, and reading it fails, so the tree is one this
+    // cannot claim to have measured. `null` never matches, which is the fail-closed direction.
+    assert.equal(await workspaceHash({ cwd: root, run }), null);
+    assert.notEqual(before, null);
+  });
+
+  it('changes when a symlink is retargeted at different bytes', { skip: process.platform === 'win32' }, async () => {
+    const { root, run } = repo();
+    writeFileSync(path.join(root, 'a.txt'), 'one\n');
+    writeFileSync(path.join(root, 'b.txt'), 'two\n');
+    symlinkSync(path.join(root, 'a.txt'), path.join(root, 'link.txt'));
+    const before = await workspaceHash({ cwd: root, run });
+    rmSync(path.join(root, 'link.txt'));
+    symlinkSync(path.join(root, 'b.txt'), path.join(root, 'link.txt'));
+    assert.notEqual(await workspaceHash({ cwd: root, run }), before);
+  });
+
+  it('reads a symlink to nowhere as an unmeasurable tree rather than as an empty file', { skip: process.platform === 'win32' }, async () => {
+    const { root, run } = repo();
+    symlinkSync(path.join(root, 'does-not-exist.txt'), path.join(root, 'dangling.txt'));
+    assert.equal(await workspaceHash({ cwd: root, run }), null);
   });
 
   it('returns null when git cannot run — uncertainty, not an empty tree', async () => {

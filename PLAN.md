@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.171.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.172.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.171.0
+## Build order — current traversal at 0.172.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -64,7 +64,9 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
 - **F8 / item 62:** bind held-out Oracle cases to that run and specification revision —
   **implemented at 0.171.0**; `REVIEW.md` F8 stays OPEN until Codex has verified the repair. See
   item 62 below.
-- **F14 / item 68:** commit and tag only the exact workspace identity gated and reviewed.
+- **F14 / item 68:** commit and tag only the exact workspace identity gated and reviewed —
+  **implemented at 0.172.0**; `REVIEW.md` F14 stays OPEN until Codex has verified the repair. See
+  item 68 below.
 - **F16 / item 70:** accept only fresh successful test reports from the current gate attempt.
 - **F30 / item 87:** reject every normalized flaky test result before Panel or `SHIPPED`,
   after items 70 and 74 bind the report.
@@ -2182,7 +2184,27 @@ because one detector returned false on a later tree.
 removal is visible and independently justified, temporary experiments do not create permanent
 unsatisfiable gates, and roster-diff tests cover both directions.
 
-### 68. Seal Panel verdicts to an exact workspace identity — OPEN (REVIEW F14)
+### 68. Seal Panel verdicts to an exact workspace identity — IMPLEMENTED (0.172.0); REVIEW F14 open pending Codex
+
+**Landed at 0.172.0.** `driveRun` captures `workspaceHash`'s identity after the gates and before the
+first reviewer, rechecks it after every panel, immediately before the commit and once the commit has
+landed, and records it in `review.json` and `outcome.json`. Drift discards the verdict and commits
+nothing; drift found after the commit banks the work but withholds the deploy and the tag. An
+unhashable tree never matches, and `driveRun` refuses to start without a way to identify the
+workspace.
+
+**The existing hash was reused only after its boundary was proved**, as this item required:
+`test/integration/gate-cache.integration.test.mjs` now covers deletion, symlink retarget and a
+dangling symlink alongside the tracked-edit, untracked-addition and ignored-state cases it already
+had. Evidence for the seal itself: `test/driver.test.mjs`'s suite (a writer at each of the four
+boundaries, an unidentifiable tree, the recorded identity, the missing effect, and the ordinary ship)
+and `test/integration/workspace-seal.integration.test.mjs`, which drives `driveRun` against a real
+repository with the real hash while a canned reviewer writes into the tree it is reviewing —
+tracked edit, untracked addition, deletion and symlink retarget, beside an ignored-state write that
+must not fire and an ordinary iteration that ships.
+
+**Race/component landing** already re-enters this loop through the main tree, so its verdicts are
+sealed by the same capture; nothing in the race path commits under a panel of its own.
 
 **Problem solved:** `git add -A` after Panel can commit bytes that appeared after reviewers read
 the tree.

@@ -812,6 +812,31 @@ Three properties replace it:
   rather than a skip — so this is the ownership evidence a probe can actually establish, and it is
   described as that rather than as proof.
 
+**A verdict is sealed to the bytes it was formed over** (REVIEW F14, implemented at 0.172.0).
+Gates and the Panel inspect the live working tree, and the loop then ran `git add -A` and committed
+whatever bytes existed at that later moment. Codex had a reviewer read `src/a.js` as `reviewed
+bytes`, a concurrent write change it to `changed after review`, and `driveRun` commit the latter and
+return `SHIPPED` — a cold verdict authorising code no reviewer and no deterministic gate ever saw.
+That needs no hostile double: a successful Builder can leave background descendants, and an
+operator's editor writes to the same tree.
+
+The identity is `workspaceHash`'s — tracked files plus untracked-but-not-ignored ones, hashed from
+their real bytes, which is the same first-party view the gate cache already trusts to decide whether
+a deterministic gate may be skipped. It is captured **after the gates and before the first
+reviewer**, and rechecked after every panel, immediately before the commit, and again once the
+commit has landed. Any drift discards the verdict, commits nothing, and sends the iteration back
+through the gates; a drift discovered after the commit leaves the work banked but withholds the
+deploy and the tag, because that commit is not the reviewed tree. The identity is recorded in
+`review.json` and `outcome.json`, so a record says what was decided *and* what it was decided over.
+
+Two fail-closed edges: a tree that cannot be hashed — a deletion, a broken symlink, an unreadable
+path — collapses the identity to `null`, which never matches, including another `null`, because two
+things nobody could measure are not evidence of being the same thing; and `driveRun` refuses to
+start without a way to identify the workspace at all. Ignored paths stay outside the seal by the
+same argument the gate cache makes: `.meeseeks/` is driver-owned machine state the driver writes
+during every review, and a seal that fired on its own bookkeeping would discard every verdict this
+product forms.
+
 **The specification a run is judged against is captured once and cannot move** (REVIEW F12,
 implemented at 0.170.0). The Driver read `PRD.md`, derived `requiredIds`, and kept only those
 strings; the Builder holds unrestricted repository writes and the cold Panel is told to read the

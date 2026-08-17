@@ -630,7 +630,8 @@ export const OUTCOME_FILE = 'outcome.json';
  *
  * @param {string} meeseeksDir
  * @param {{ iteration: number, verdict: string, requireUnanimous: boolean, requiredIds: string[],
- *           failing: string[], reviewers: unknown[], advisories: unknown[] }} entry
+ *           failing: string[], reviewers: unknown[], advisories: unknown[],
+ *           workspace?: string | null }} entry
  * @returns {string} the path written
  */
 export function recordPanelVerdict(meeseeksDir, entry) {
@@ -1564,6 +1565,7 @@ export function repeatedRegressionNote(counts, regressions) {
  *   gates: () => { ok: boolean, results: GateResult[] } | Promise<{ ok: boolean, results: GateResult[] }>,
  *   shipTimeMutation?: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
  *   checkSpecification: () => { ok: boolean, digest: string, detail: string },
+ *   workspaceIdentity: () => string | null | Promise<string | null>,
  *   readTestReports: () => unknown[],
  *   commit: (message: string) => string | Promise<string>,
  *   diffStat: () => string | Promise<string>,
@@ -1578,7 +1580,8 @@ export function repeatedRegressionNote(counts, regressions) {
 /**
  * @typedef {{
  *   state: TerminalState, reason: string, iterations: number,
- *   spentTokens: number, costUsd: number, passing: string[]
+ *   spentTokens: number, costUsd: number, passing: string[],
+ *   workspace: string | null
  * }} RunOutcome
  */
 
@@ -1621,12 +1624,43 @@ export async function driveRun(options) {
   // whether a candidate satisfies a specification; a loop that cannot say *which* specification it
   // is judging has nothing to decide. An absent check would have to mean "assume unchanged", which
   // is the defect itself with a shrug attached.
+  if (typeof effects.workspaceIdentity !== 'function') {
+    throw new DriverError(
+      'driveRun was given no way to identify the candidate workspace. A verdict that cannot be sealed to the ' +
+        'bytes it was formed over authorises whatever happens to be on disk later (REVIEW F14).',
+    );
+  }
   if (typeof effects.checkSpecification !== 'function') {
     throw new DriverError(
       'driveRun was given no way to check the specification revision. A run that cannot establish which ' +
         'PRD it is judging cannot judge anything (DESIGN.md §4, REVIEW F12).',
     );
   }
+
+  /**
+   * Seal a verdict to the bytes it was formed over (REVIEW F14).
+   *
+   * **The defect this closes was reproduced end to end.** Gates and the Panel inspect the live
+   * working tree; after the Panel returned, the loop ran `git add -A` and committed whatever bytes
+   * existed at that later moment. A reviewer read `src/a.js` as `reviewed bytes`, a concurrent
+   * write changed it to `changed after review`, and `driveRun` committed the latter and returned
+   * `SHIPPED` — a cold verdict authorising code no reviewer and no deterministic gate ever saw.
+   * That does not need a hostile double: a successful Builder can leave background descendants,
+   * and an operator's editor or tooling writes to the same tree.
+   *
+   * The identity is `workspaceHash`'s: tracked files plus untracked-but-not-ignored ones, hashed
+   * from their real bytes. A deletion, a symlink retarget or an unreadable path collapses it to
+   * `null`, and `null` never matches — including another `null`, because two things nobody could
+   * measure are not evidence of being the same thing.
+   *
+   * @param {string | null} sealed the identity the verdict was formed over
+   * @returns {Promise<boolean>} true when the tree is still those bytes
+   */
+  const workspaceStillMatches = async (sealed) => {
+    if (sealed === null) return false;
+    const current = await effects.workspaceIdentity();
+    return current !== null && current === sealed;
+  };
 
   /**
    * Has the specification moved under this run?
@@ -1730,6 +1764,17 @@ export async function driveRun(options) {
   const lessonsAttempted = new Set();
 
   /**
+   * The workspace identity the current panel is being formed over (REVIEW F14).
+   *
+   * Captured after the gates and before the first reviewer, rechecked after every panel and
+   * immediately before the commit, and proved again once the commit has landed. Loop-scoped rather
+   * than iteration-scoped so `finish` can record which bytes the terminal verdict belongs to.
+   *
+   * @type {string | null}
+   */
+  let reviewedWorkspace = null;
+
+  /**
    * @param {TerminalState} state
    * @param {string} reason
    * @returns {RunOutcome}
@@ -1742,6 +1787,10 @@ export async function driveRun(options) {
       spentTokens: progress.spentTokens,
       costUsd: progress.spentUsd,
       passing: loadState(meeseeksDir).passing,
+      // The workspace identity the last panel was sealed to (REVIEW F14). `null` on every run that
+      // never reached a panel, which is the honest answer rather than an empty string that would
+      // read as an identity nobody can look up.
+      workspace: reviewedWorkspace,
     };
     // Every terminal path funnels through here, so this is the one door that a state added
     // later cannot forget — the same argument the context budget uses for living inside
@@ -2408,8 +2457,43 @@ export async function driveRun(options) {
       return { done: true, reports: collected };
     };
 
+    // The bytes this panel is about (REVIEW F14). Captured after the gates and before the first
+    // reviewer, so everything downstream — every verdict, the commit, the tag — is sealed to one
+    // measurable tree rather than to whatever happens to be on disk when it is asked.
+    reviewedWorkspace = await effects.workspaceIdentity();
+    if (reviewedWorkspace === null) {
+      // Uncertainty is not a pass. A tree that cannot be hashed is a tree whose verdict cannot be
+      // sealed, and shipping one would be exactly the false completion this seals against.
+      effects.log('cannot review: the candidate workspace could not be identified, so a verdict could not be sealed to it');
+      objective = {
+        kind: 'review',
+        headline: 'The workspace could not be read as a single set of bytes.',
+        reason:
+          'the gates passed, but the candidate tree could not be hashed — a deleted file, an unreadable path or a ' +
+          'broken symlink — so no verdict could be sealed to it. A review of bytes nobody can name authorises ' +
+          'whatever is on disk afterwards',
+        findings: ['the candidate workspace could not be identified'],
+      };
+      await closeIteration(iterationNumber, ['ship:workspace-identity'], score, passing.size);
+      continue;
+    }
+
     const first = await runPanel(plan.assignments);
     if (!first.done) return first.outcome;
+    if (!(await workspaceStillMatches(reviewedWorkspace))) {
+      effects.log('the candidate workspace changed while the panel was reading it; the verdict is discarded');
+      objective = {
+        kind: 'review',
+        headline: 'The tree changed underneath the panel. Nothing was committed.',
+        reason:
+          'the workspace the reviewers read is not the workspace that exists now, so their verdict is about bytes ' +
+          'that are gone. Something wrote to the tree while the panel ran — a background process the last build ' +
+          'left behind is the usual cause. The verdict is discarded and the gates run again from scratch',
+        findings: ['the candidate workspace changed during review'],
+      };
+      await closeIteration(iterationNumber, ['ship:workspace-drift'], score, passing.size);
+      continue;
+    }
     /** @type {ReviewerReport[]} */
     // The carried report gets the same boundary. A carry is a pre-filter, never a substitute for
     // the panel (DESIGN.md §4.3), and a requirement carried on a citation whose file has since
@@ -2426,6 +2510,19 @@ export async function driveRun(options) {
       effects.log(`panel carry: ${plan.carried.length} requirement(s) were carried, and the full panel now runs before any ship`);
       const full = await runPanel(panelPlan.assignments);
       if (!full.done) return full.outcome;
+      if (!(await workspaceStillMatches(reviewedWorkspace))) {
+        effects.log('the candidate workspace changed while the full panel was reading it; the verdict is discarded');
+        objective = {
+          kind: 'review',
+          headline: 'The tree changed underneath the panel. Nothing was committed.',
+          reason:
+            'the workspace the reviewers read is not the workspace that exists now, so their verdict is about bytes ' +
+            'that are gone. The verdict is discarded and the gates run again from scratch',
+          findings: ['the candidate workspace changed during review'],
+        };
+        await closeIteration(iterationNumber, ['ship:workspace-drift'], score, passing.size);
+        continue;
+      }
       reports = full.reports;
       panel = combinePanel(reports, { requireUnanimous: config.requireUnanimous, requiredIds });
     } else if (plan.narrowed) {
@@ -2435,6 +2532,9 @@ export async function driveRun(options) {
     // Written before anything acts on it, so a record exists whichever way the run then goes.
     recordPanelVerdict(meeseeksDir, {
       iteration: iterationNumber,
+      // Which bytes this verdict is about (REVIEW F14). Without it the record says what was decided
+      // and not what it was decided over, which is half a receipt.
+      workspace: reviewedWorkspace,
       verdict: panel.verdict,
       requireUnanimous: config.requireUnanimous,
       requiredIds,
@@ -2516,12 +2616,44 @@ export async function driveRun(options) {
       }
     }
 
+    // Immediately before the commit, because the commit is the moment the bytes stop being a
+    // working tree and start being the run's claim about what was reviewed (REVIEW F14).
+    if (!(await workspaceStillMatches(reviewedWorkspace))) {
+      effects.log('the candidate workspace changed between the panel and the commit; nothing was committed');
+      objective = {
+        kind: 'review',
+        headline: 'The tree changed between the review and the commit. Nothing was committed.',
+        reason:
+          'the panel judged one set of bytes and a different set was about to be committed under its verdict. ' +
+          'Nothing was staged, and the gates run again from scratch',
+        findings: ['the candidate workspace changed before the commit'],
+      };
+      await closeIteration(iterationNumber, ['ship:workspace-drift'], score, passing.size);
+      continue;
+    }
+
     // ---- Phase 6: ship, or bank the progress and hand the findings back ---
     const commit = await effects.commit(
       panel.verdict === 'pass'
         ? `meeseeks: iteration ${iterationNumber}`
         : `meeseeks: iteration ${iterationNumber} (review outstanding)`,
     );
+    // After the commit, prove the tree that landed is the tree that was reviewed. The commit
+    // stages the whole working tree, so a working tree still matching the sealed identity is the
+    // committed tree matching it — which is what a deploy and a tag are about to assert.
+    if (!(await workspaceStillMatches(reviewedWorkspace))) {
+      effects.log('the workspace changed as the commit landed; this commit is not the reviewed tree and will not ship');
+      objective = {
+        kind: 'review',
+        headline: 'The tree changed as the commit landed, so the commit is not what was reviewed.',
+        reason:
+          'the commit exists, but its bytes are not the bytes the panel judged, so it cannot carry that verdict to ' +
+          'a deploy or a tag. The gates run again from scratch against whatever is there now',
+        findings: ['the committed tree is not the reviewed workspace'],
+      };
+      await closeIteration(iterationNumber, ['ship:workspace-drift'], score, passing.size);
+      continue;
+    }
     const advanced = evaluateIteration(state, passing, { commit, collected });
     if (advanced.action === 'advance') saveState(meeseeksDir, advanced.state);
 
@@ -6494,6 +6626,11 @@ export async function main(argv, io = {}) {
       // record lives where the run may not edit it, and reading it back is what makes the check a
       // check rather than a memory of one.
       checkSpecification: () => verifySpecification({ meeseeksDir, root: cwd }),
+      // The candidate's bytes, from git's own view of the working tree (REVIEW F14). The gate cache
+      // already needed exactly this pair — tracked plus untracked-not-ignored, hashed from real
+      // bytes — so the identity a verdict is sealed to is the one the repository already trusts to
+      // decide whether a deterministic gate may be skipped.
+      workspaceIdentity: () => workspaceHash({ cwd, run: shell }),
       readTestReports: () =>
         reportFiles(cwd)
           .filter((file) => existsSync(file))
