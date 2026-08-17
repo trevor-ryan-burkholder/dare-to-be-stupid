@@ -812,6 +812,29 @@ Three properties replace it:
   rather than a skip — so this is the ownership evidence a probe can actually establish, and it is
   described as that rather than as proof.
 
+**A retried test is not a passing test** (REVIEW F30, implemented at 0.176.0). The Playwright
+parser preserves the runner's whole-test `flaky` status deliberately, and the ratchet refuses to
+credit it deliberately — a test that failed and then passed has proved nothing, and admitting it
+would arm a hard reset that fires on noise. Nothing turned that refusal into a *failure*. Playwright
+exits zero when every test is expected or flaky, so a **newly** flaky test — one with no earlier
+ratchet identity to regress against — left every gate green and could reach the Panel and `SHIPPED`
+while the run's own normalised evidence said the test had failed before it retried. Whether an
+unstable test blocked a ship depended on whether the instability appeared before or after the
+ratchet first saw it.
+
+The reports are now parsed **once**, before anything scores or logs a gate, and the records are
+collapsed across every accepted report by worst status: an id that passed in the unit report and was
+flaky in the e2e one is flaky, because two runners disagreeing about one test is not evidence that it
+passes. Any remaining `flaky` id adds one deterministic failed `test-stability` result, whose detail
+names the ids sorted and bounded so the Builder receives a repairable objective rather than a wall of
+text.
+
+Three boundaries hold around it. `skipped` and `todo` are untouched — they are absences, not
+unstable passes. A previously ratcheted id that turns flaky keeps its stronger treatment: it is
+absent from the passing set, so it is a regression and a reset, not merely a gate failure. And
+observing flakiness may still satisfy RED-before-GREEN history, because it shows a test *can* fail;
+it never supplies current passing evidence.
+
 **A ratchet id names a file inside the candidate** (REVIEW F20, implemented at 0.175.0).
 `toPosixRelative` resolved a reported file and subtracted the root without ever asking whether the
 answer was inside it, so a Vitest-shaped passing result naming `/tmp/outside.test.js` under root

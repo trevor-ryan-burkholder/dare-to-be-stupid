@@ -1970,6 +1970,164 @@ describe('driveRun', () => {
   }
 
   // -------------------------------------------------------------------------
+  // A retried test is not a passing test (REVIEW F30)
+  // -------------------------------------------------------------------------
+  describe('a normalized flaky result fails the iteration', () => {
+    /**
+     * Playwright-shaped output whose paths are inside the tree being judged.
+     *
+     * The report has to name files in *this* candidate — since 0.175.0 a reported path outside the
+     * repository is refused outright — so the root is created first and handed to the builder,
+     * which is why these drive `driveRun` directly rather than through the shared harness.
+     *
+     * @param {string} root
+     * @param {{ status: string, title: string }[]} results
+     * @returns {unknown}
+     */
+    const playwrightish = (root, results) => ({
+      config: { rootDir: root, projects: [{ name: 'chromium' }] },
+      suites: [
+        {
+          title: 'a suite',
+          specs: results.map((entry) => ({
+            title: entry.title,
+            file: path.join(root, 'tests', 'checkout.spec.js'),
+            ok: true,
+            tests: [{ projectName: 'chromium', status: entry.status, results: [{ status: 'passed' }] }],
+          })),
+          suites: [],
+        },
+      ],
+    });
+
+    /**
+     * Every command gate green, which is what Playwright's own exit code produces when every test
+     * is expected or flaky. The stability decision has to come from the *report*, not the code.
+     */
+    const allGreen = () => ({
+      ok: true,
+      results: [
+        { name: 'lint', ok: true, status: 0, detail: 'passed' },
+        { name: 'unit', ok: true, status: 0, detail: 'passed' },
+        { name: 'mutation', ok: true, status: 0, detail: 'no survivors' },
+      ],
+    });
+
+    /**
+     * @param {(root: string) => unknown[]} makeReports
+     * @param {{ seedPassing?: string[], overrides?: Partial<import('../scripts/driver.mjs').Effects> }} [options]
+     * @returns {Promise<{ outcome: import('../scripts/driver.mjs').RunOutcome, logs: string[], shipped: number, reviews: number }>}
+     */
+    async function driveFlaky(makeReports, options = {}) {
+      const root = makeTempDir();
+      seedCitedSources(root);
+      const meeseeksDir = path.join(root, '.meeseeks');
+      if ((options.seedPassing ?? []).length > 0) {
+        const git = (/** @type {string[]} */ args) =>
+          execFileSync('git', args, { cwd: root, stdio: 'pipe' }).toString().trim();
+        git(['init', '--quiet']);
+        git(['config', 'user.email', 'driver@example.invalid']);
+        git(['config', 'user.name', 'Driver Test']);
+        writeFileSync(path.join(root, 'app.txt'), 'good\n', 'utf8');
+        git(['add', 'app.txt']);
+        git(['commit', '--quiet', '-m', 'good state']);
+        saveState(meeseeksDir, {
+          version: 1,
+          iteration: 1,
+          passing: options.seedPassing ?? [],
+          lastGoodCommit: git(['rev-parse', 'HEAD']),
+        });
+      }
+      /** @type {string[]} */
+      const logs = [];
+      let shipped = 0;
+      let reviews = 0;
+      const outcome = await driveRun({
+        config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
+        meeseeksDir,
+        rootDir: root,
+        requiredIds: ['PRD-1.1'],
+        task: 'build the thing',
+        effects: effectsWith({
+          log: (line) => logs.push(line),
+          gates: allGreen,
+          readTestReports: () => makeReports(root),
+          review: () => {
+            reviews += 1;
+            return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
+          },
+          ship: () => {
+            shipped += 1;
+          },
+          ...options.overrides,
+        }),
+      });
+      return { outcome, logs, shipped, reviews };
+    }
+
+    it('cannot ship a newly flaky test, even with every command gate green', async () => {
+      // The finding, end to end: the id has no earlier ratchet identity to regress against, so
+      // before this there was nothing at all to stop it reaching the Panel and `SHIPPED`.
+      const driven = await driveFlaky((root) => [
+        playwrightish(root, [
+          { status: 'expected', title: 'sums line items' },
+          { status: 'flaky', title: 'is flaky on purpose' },
+        ]),
+      ]);
+      assert.notEqual(driven.outcome.state, 'SHIPPED');
+      assert.equal(driven.shipped, 0, 'a flaky test reached a ship');
+      assert.equal(driven.reviews, 0, 'a panel was paid for on an iteration whose own evidence said a test failed');
+      const all = driven.logs.join('\n');
+      assert.equal(all.includes('test-stability'), true, all.slice(-900));
+      assert.equal(all.includes('is flaky on purpose'), true, all.slice(-900));
+    });
+
+    // The benign neighbour, and the one that decides whether this is a gate or a wall.
+    it('ships a clean report where every test is expected', async () => {
+      const driven = await driveFlaky((root) => [playwrightish(root, [{ status: 'expected', title: 'sums line items' }])]);
+      assert.equal(driven.outcome.state, 'SHIPPED', driven.logs.join('\n').slice(-900));
+      assert.equal(driven.shipped, 1);
+    });
+
+    it('leaves a skipped test alone, because an absence is not an unstable pass', async () => {
+      const driven = await driveFlaky((root) => [
+        playwrightish(root, [
+          { status: 'expected', title: 'sums line items' },
+          { status: 'skipped', title: 'not written yet' },
+        ]),
+      ]);
+      assert.equal(driven.outcome.state, 'SHIPPED', 'a skipped test was treated as instability');
+      assert.equal(driven.shipped, 1);
+    });
+
+    it('resolves an id that passed in one report and was flaky in another to flaky', async () => {
+      // Two runners disagreeing about one test is not evidence that it passes, so the records are
+      // collapsed across every accepted report by worst status rather than per report.
+      const driven = await driveFlaky((root) => [
+        playwrightish(root, [{ status: 'expected', title: 'sums line items' }]),
+        playwrightish(root, [{ status: 'flaky', title: 'sums line items' }]),
+      ]);
+      assert.notEqual(driven.outcome.state, 'SHIPPED');
+      assert.equal(driven.shipped, 0);
+      assert.equal(driven.logs.join('\n').includes('test-stability'), true, driven.logs.join('\n').slice(-900));
+    });
+
+    it('still takes the regression path when an already-ratcheted id turns flaky', async () => {
+      // The stronger existing behaviour, preserved: a protected id that becomes flaky is absent
+      // from the passing set, so it is a regression and a reset — not merely a gate failure.
+      const driven = await driveFlaky(
+        (root) => [playwrightish(root, [{ status: 'flaky', title: 'sums line items' }])],
+        {
+          seedPassing: ['tests/checkout.spec.js::a suite > sums line items::chromium'],
+          overrides: { changedFiles: () => [] },
+        },
+      );
+      assert.notEqual(driven.outcome.state, 'SHIPPED');
+      assert.equal(driven.logs.join('\n').includes('regression'), true, driven.logs.join('\n').slice(-900));
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Every envelope that was bought is charged exactly once (REVIEW F18)
   // -------------------------------------------------------------------------
   describe('spend is conserved across a parallel panel', () => {

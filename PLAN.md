@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.175.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.176.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.175.0
+## Build order — current traversal at 0.176.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -71,7 +71,8 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
   **implemented at 0.173.0**; `REVIEW.md` F16 stays OPEN until Codex has verified the repair. See
   item 70 below.
 - **F30 / item 87:** reject every normalized flaky test result before Panel or `SHIPPED`,
-  after items 70 and 74 bind the report.
+  after items 70 and 74 bind the report — **implemented at 0.176.0**; `REVIEW.md` F30 stays OPEN
+  until Codex has verified the repair. See item 87 below.
 - **F18 / item 72:** conserve every completed child envelope into ceilings and terminal receipts —
   **implemented at 0.174.0**; `REVIEW.md` F18 stays OPEN until Codex has verified the repair. See
   item 72 below.
@@ -2801,7 +2802,24 @@ malformed finding evidence all terminate fail-closed without orphan descendants;
 distinguishes reproduced, rejected, unresolved, and unattempted coverage; and a measured pilot
 improves incremental defect discovery or morning acceptance enough to justify its added cost.
 
-### 87. Treat normalized flaky tests as a failed deterministic gate — OPEN (REVIEW F30)
+### 87. Treat normalized flaky tests as a failed deterministic gate — IMPLEMENTED (0.176.0); REVIEW F30 open pending Codex
+
+**Landed at 0.176.0**, after items 70 (0.173.0) and 74 (0.175.0) had established the fresh attempt
+and the contained report identity this decision consumes. Reports are parsed once, before anything
+scores or logs a gate, and collapsed across every accepted report by worst status; any remaining
+`flaky` id adds one deterministic failed `test-stability` result naming the ids sorted and bounded to
+twenty with the remainder counted. `skipped`/`todo` are untouched, a previously ratcheted id turning
+flaky still takes the regression/reset path, and RED-before-GREEN history is unchanged.
+
+Evidence: `test/stability-gate.test.mjs` — the **real committed Playwright fixture** collapsed into
+genuine `flaky` and `passed` ids, turned into a failed gate that names them and not the skipped
+neighbours, plus the bounding and sorting rules; and `test/driver.test.mjs`'s loop-level suite — a
+newly flaky test with every command gate green reaches neither Panel nor ship, a clean expected
+report still ships, a skipped neighbour still ships, a pass-in-one-report/flaky-in-another id
+resolves to flaky, and an already-ratcheted id turning flaky still takes the regression path.
+
+**Item 67 still owes this a place in the non-shrinking roster**, as PLAN's dependency edge says; that
+is item 67's slice.
 
 **Problem solved:** Playwright reports a test that failed and then passed on retry as `flaky`, while
 the runner can still exit zero. Meeseeks correctly excludes that status from ratchet credit but does

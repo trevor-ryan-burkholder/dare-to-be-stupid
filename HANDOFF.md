@@ -1,8 +1,8 @@
 # START HERE — current handoff, last swept 17 August 2026
 
-**State:** branch `claude/f1-atomic-run-lock` at `0.175.0`, ahead of `main` at `0.164.0`. The
+**State:** branch `claude/f1-atomic-run-lock` at `0.176.0`, ahead of `main` at `0.164.0`. The
 manifests and package-lock root metadata agree. Measured on the current tree with Node 24.14.1:
-`npm run lint` and `npm run typecheck` clean; `npm test` **2480 pass, 0 fail**;
+`npm run lint` and `npm run typecheck` clean; `npm test` **2493 pass, 0 fail**;
 `npm run test:integration` **99 pass, 0 fail**; `npm run release-check` **ok**. No paid live test
 was invoked.
 
@@ -13,18 +13,36 @@ guarantee-strength audit, durable-artifact registry, failure-shape matrix, and e
 negative-guarantee sheet. These are the first implementation gates in `PLAN.md`. Claude Code may
 implement them; Codex owns closure after reviewing the exact repair and its acceptance evidence.
 
-**Implemented, awaiting Codex verification:** F1's atomic run lock (0.165.0), F26/item 81's
-launch revalidation and pre-loop output admission (0.166.0), F2's bounded terminate/force/sweep
-(0.167.0), F3's assigned-port health contract (0.168.0), and F6/item 60's resolved reviewer
-citations (0.169.0), F12/item 66's immutable specification revision (0.170.0), and F8/item 62's
-per-run, specification-bound Oracle store (0.171.0), and F14/item 68's workspace-sealed verdicts
-(0.172.0), F16/item 70's attempt-bound test reports (0.173.0), and F18/item 72's conserved child
-spend (0.174.0), and F20/item 74's repository-contained reporter identities (0.175.0). All eleven
-findings remain OPEN in
-`REVIEW.md` — implementation and passing self-tests are not acceptance. `PLAN.md` records what
-landed and where its evidence lives; `DESIGN.md` §3.5, §4 and §11.1 state the mechanisms.
+**Implemented, awaiting Codex verification.** Twelve findings have repairs on this branch. Each
+remains **OPEN** in `REVIEW.md` — implementation and passing self-tests are not acceptance, and Codex
+reviews each commit separately:
 
-**Paid live tier:** not rerun for this documentation-only cleanup. At 0.161.0 an intermediate
+| version | finding | what landed |
+|---|---|---|
+| 0.165.0 | F1 | atomic run-lock acquisition with ownership tokens |
+| 0.166.0 | F26 / item 81 | launch revalidation and declared pre-loop output admission |
+| 0.167.0 | F2 | bounded terminate/force/sweep on timeout and output cap |
+| 0.168.0 | F3 | health success bound to the spawned application's assigned port |
+| 0.169.0 | F6 / item 60 | reviewer citations resolved against the reviewed tree |
+| 0.170.0 | F12 / item 66 | immutable specification revision, checked at gate and ship |
+| 0.171.0 | F8 / item 62 | per-run, specification-bound, atomically written Oracle store |
+| 0.172.0 | F14 / item 68 | verdicts sealed to an exact workspace identity |
+| 0.173.0 | F16 / item 70 | test reports bound to the attempt that produced them |
+| 0.174.0 | F18 / item 72 | every child envelope conserved into ceilings and receipts |
+| 0.175.0 | F20 / item 74 | repository-contained reporter identities |
+| 0.176.0 | F30 / item 87 | normalized flaky results as a failed deterministic gate |
+
+`PLAN.md` records what landed and where each repair's evidence lives; `DESIGN.md` §3.5, §4 and §11.1
+state the mechanisms.
+
+**F7 / item 61 is not started, and is blocked rather than deferred.** Its repair is inside
+`spawnClaude`, and both REVIEW F7's acceptance and this repository's own tier rules make the paid
+tier-3 `claude -p` child contract mandatory for a change there. That expenditure was not authorised,
+and landing it on unit evidence that cannot see the contract it changes is the argv defect exactly.
+
+**Paid live tier:** not invoked on this branch, and nothing here required it — every repair above is
+Driver-side, and none touched `spawnClaude`, `claudeArgs`, envelope parsing, or a template's output
+contract. At 0.161.0 an intermediate
 `CI=1` change failed one live test and was reverted before release; the shipped change was
 toolchain-guidance prose. The full chronology and earlier successful live measurements are in
 the archived handoff.
@@ -34,7 +52,7 @@ the archived handoff.
 1. Close the locally implementable high-priority defects: F1–F3, F6/item 60, F7/item 61,
    F12/item 66, F8/item 62, F14/item 68, F16/item 70, F18/item 72, and F26/item 81. **F1 (0.165.0),
    F26/item 81 (0.166.0), F2 (0.167.0), F3 (0.168.0), F6/item 60 (0.169.0), F12/item 66 (0.170.0)
-   F8/item 62 (0.171.0), F14/item 68 (0.172.0), F16/item 70 (0.173.0), F18/item 72 (0.174.0) and F20/item 74 (0.175.0) are implemented and awaiting Codex verification. **F7/item 61 is blocked**: its acceptance makes
+   F8/item 62 (0.171.0), F14/item 68 (0.172.0), F16/item 70 (0.173.0), F18/item 72 (0.174.0), F20/item 74 (0.175.0) and F30/item 87 (0.176.0) are implemented and awaiting Codex verification. **F7/item 61 is blocked**: its acceptance makes
    the paid tier-3 `claude -p` child contract mandatory, and that expenditure is unauthorised.** Item 81
    followed F1 so launch revalidation and pre-loop output admission occur under the atomic owner.
    Item 66 supplies the specification identity consumed by items 62 and 68; F2 includes the

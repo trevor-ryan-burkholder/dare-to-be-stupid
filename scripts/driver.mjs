@@ -105,7 +105,7 @@ import {
   stallHypothesis,
   sweepRaceWorktrees,
 } from './race.mjs';
-import { parseReport } from './reporters/index.mjs';
+import { collapseByWorstStatus, parseReport } from './reporters/index.mjs';
 import { clearReports, collectReports } from './reports.mjs';
 import {
   evaluateIteration,
@@ -833,6 +833,53 @@ function mutationCoverageHint(gateName, detail) {
     'test — so zero tests ran and Stryker aborted. The configuration is fine; the repair is unit tests ' +
     'covering the changed code (an e2e test does not count here: mutation runs the unit runner only).'
   );
+}
+
+/**
+ * How many flaky ids a stability failure names before it starts counting instead of listing.
+ *
+ * Bounded because this text reaches the builder's brief: a repair objective naming four hundred
+ * tests is not a repair objective.
+ */
+export const STABILITY_ID_LIMIT = 20;
+
+/**
+ * One deterministic gate result for tests that failed and then passed on a retry (REVIEW F30).
+ *
+ * **The hole this fills is an asymmetry nobody would have chosen.** The Playwright parser preserves
+ * the runner's whole-test `flaky` status on purpose, and the ratchet refuses to credit it on
+ * purpose — a test that failed and then passed has proved nothing, and admitting it would arm a
+ * hard reset that fires on noise. But nothing turned that refusal into a *failure*. Playwright
+ * exits zero when every test is expected or flaky, so a **newly** flaky test — one with no earlier
+ * ratchet identity to regress against — left every gate green and could reach the Panel and
+ * `SHIPPED`, while the run's own normalised evidence said the test had failed before it retried.
+ * Acceptance depended on whether the instability appeared before or after the ratchet first saw the
+ * test, which is not a property anyone would defend out loud.
+ *
+ * A previously ratcheted id becoming flaky keeps the stronger treatment it already had: it is
+ * absent from the passing set, so it is a regression and a reset, not merely a gate failure.
+ *
+ * `skipped` and `todo` are untouched. They are absences, not unstable passes, and reinterpreting
+ * them here would fail every suite with a pending test in it.
+ *
+ * @param {Iterable<string>} flakyIds normalised ids whose worst status this attempt was `flaky`
+ * @returns {GateResult | null} null when nothing was flaky
+ */
+export function stabilityGateResult(flakyIds) {
+  const ids = [...new Set(flakyIds)].sort();
+  if (ids.length === 0) return null;
+  const named = ids.slice(0, STABILITY_ID_LIMIT);
+  const more = ids.length - named.length;
+  return {
+    name: 'test-stability',
+    ok: false,
+    status: 1,
+    detail:
+      `${ids.length} test(s) in this attempt's reports failed and then passed on a retry, which is not a passing ` +
+      'result: nothing here shows the current implementation satisfies them reliably. Make them deterministic — ' +
+      'fix the race, the timing assumption or the shared state — or delete them. ' +
+      `${named.join(', ')}${more > 0 ? ` and ${more} more` : ''}`,
+  };
 }
 
 /**
@@ -2116,7 +2163,57 @@ export async function driveRun(options) {
     if (driftedBeforeGates !== null) return driftedBeforeGates;
 
     // ---- Phase 3: gates -------------------------------------------------
-    const gateOutcome = await effects.gates();
+    const commandGateOutcome = await effects.gates();
+
+    // ---- Phase 3b: the reports, read once (REVIEW F16, F20, F30) --------
+    //
+    // Parsed here rather than in Phase 4, because what they contain has to reach the *gate* results
+    // before anything scores, logs or judges them. Each accepted report is parsed once and the
+    // records are collapsed across all of them by worst status, so an id that passed in the unit
+    // report and was flaky in the e2e one is flaky: two runners disagreeing about one test is not
+    // evidence that it passes.
+    /** @type {Set<string>} */
+    let passing;
+    /** @type {Set<string>} */
+    const flaky = new Set();
+    // How many tests the reports contained at all, whatever their status. The ratchet needs it
+    // to tell "the runner collected nothing" from "everything failed", which are the same input
+    // — an empty passing set — and opposite conclusions. Run 6 reset 75 ids over the first.
+    let collected = 0;
+    try {
+      if (config.extractTests) {
+        // Every runner's report contributes ids. A repo with both a unit suite and an
+        // e2e suite has two, and the ratchet must hold both or it protects half the work.
+        /** @type {import('./reporters/index.mjs').TestRecord[]} */
+        const records = [];
+        for (const report of effects.readTestReports()) {
+          const parsed = parseReport(report, { rootDir });
+          collected += parsed.tests.length;
+          records.push(...parsed.tests);
+        }
+        passing = new Set();
+        for (const [id, status] of collapseByWorstStatus(records)) {
+          if (status === 'passed') passing.add(id);
+          else if (status === 'flaky') flaky.add(id);
+        }
+      } else {
+        passing = new Set(loadState(meeseeksDir).passing);
+        // Not report-derived, so it is not a collection failure and must not read as one.
+        collected = passing.size;
+      }
+    } catch (error) {
+      // An unreadable report is not evidence that nothing regressed.
+      return finish('ABORTED', `test report could not be read: ${/** @type {Error} */ (error).message}`);
+    }
+
+    // A retry that eventually passed is not a pass (REVIEW F30). Playwright exits zero when every
+    // test is expected or flaky, so without this a newly flaky test — one with no earlier ratchet
+    // identity to regress against — left every gate green and could reach the Panel and `SHIPPED`.
+    const stability = stabilityGateResult(flaky);
+    const gateOutcome =
+      stability === null
+        ? commandGateOutcome
+        : { ok: false, results: [...commandGateOutcome.results, stability] };
     const score = gateScore(gateOutcome.results);
     lastGateTotal = gateOutcome.results.length;
     lastGateShare = lastGateTotal === 0 ? 0 : score / lastGateTotal;
@@ -2146,31 +2243,6 @@ export async function driveRun(options) {
     if (stuckGates !== '') effects.log(`stuck gate: ${stuckGates}`);
 
     // ---- Phase 4: ratchet ----------------------------------------------
-    /** @type {Set<string>} */
-    let passing;
-    // How many tests the reports contained at all, whatever their status. The ratchet needs it
-    // to tell "the runner collected nothing" from "everything failed", which are the same input
-    // — an empty passing set — and opposite conclusions. Run 6 reset 75 ids over the first.
-    let collected = 0;
-    try {
-      if (config.extractTests) {
-        // Every runner's report contributes ids. A repo with both a unit suite and an
-        // e2e suite has two, and the ratchet must hold both or it protects half the work.
-        passing = new Set();
-        for (const report of effects.readTestReports()) {
-          collected += parseReport(report, { rootDir }).tests.length;
-          for (const id of extractTestIds(report, { rootDir })) passing.add(id);
-        }
-      } else {
-        passing = new Set(loadState(meeseeksDir).passing);
-        // Not report-derived, so it is not a collection failure and must not read as one.
-        collected = passing.size;
-      }
-    } catch (error) {
-      // An unreadable report is not evidence that nothing regressed.
-      return finish('ABORTED', `test report could not be read: ${/** @type {Error} */ (error).message}`);
-    }
-
     const state = loadState(meeseeksDir);
     const decision = evaluateIteration(state, passing, { commit: null, collected });
 
