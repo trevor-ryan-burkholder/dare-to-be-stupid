@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.172.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.173.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.172.0
+## Build order — current traversal at 0.173.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -67,7 +67,9 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
 - **F14 / item 68:** commit and tag only the exact workspace identity gated and reviewed —
   **implemented at 0.172.0**; `REVIEW.md` F14 stays OPEN until Codex has verified the repair. See
   item 68 below.
-- **F16 / item 70:** accept only fresh successful test reports from the current gate attempt.
+- **F16 / item 70:** accept only fresh successful test reports from the current gate attempt —
+  **implemented at 0.173.0**; `REVIEW.md` F16 stays OPEN until Codex has verified the repair. See
+  item 70 below.
 - **F30 / item 87:** reject every normalized flaky test result before Panel or `SHIPPED`,
   after items 70 and 74 bind the report.
 - **F18 / item 72:** conserve every completed child envelope into ceilings and terminal receipts.
@@ -2232,7 +2234,24 @@ denial is insufficient when arbitrary code can read the same path.
 terminal policy, and eval interpretation consistently state the narrower guarantee. The Oracle
 author and Panel remain independently contextualized.
 
-### 70. Make test reports fresh, successful, and attempt-bound — OPEN (REVIEW F16)
+### 70. Make test reports fresh, successful, and attempt-bound — IMPLEMENTED (0.173.0); REVIEW F16 open pending Codex
+
+**Landed at 0.173.0.** `gateTree` clears the toolchain's declared report paths before every attempt,
+and `scripts/reports.mjs` reads back only regular files present afterwards — so absence means the
+attempt produced nothing, and a directory or symlink at a report path is refused rather than
+followed. The scoped restore now reads its verification gate's result before reading anything it
+produced; a unit gate that failed or did not run has verified nothing and the run falls through to
+the whole-tree reset.
+
+Evidence: `test/reports.test.mjs` (clear-then-collect, a missing report named rather than silently
+dropped, directory and symlink refusals, and the cleared-and-not-rewritten case) and
+`test/driver.test.mjs`'s scoped-restore suite — the exact reproduction, a report-less verification,
+a passing verification whose test did not come back, and the benign restore that holds.
+
+**Note on the wording of the finding.** "Unique attempt identity" was implemented as *clear then
+require presence* rather than as per-attempt paths, which the finding offers as the alternative and
+which needs no toolchain change; the mixed-attempt case is closed by construction, because a path
+present after a clear cannot be a previous attempt's.
 
 **Problem solved:** reused report paths and an ignored verification-gate result let stale passing
 bytes confirm a failed scoped restore.

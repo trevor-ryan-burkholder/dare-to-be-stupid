@@ -106,6 +106,7 @@ import {
   sweepRaceWorktrees,
 } from './race.mjs';
 import { parseReport } from './reporters/index.mjs';
+import { clearReports, collectReports } from './reports.mjs';
 import {
   evaluateIteration,
   extractTestIds,
@@ -2221,11 +2222,25 @@ export async function driveRun(options) {
         restorePaths({ cwd: rootDir, commit: decision.target, paths: scoped });
         try {
           const back = new Set();
-          await effects.gates();
-          for (const report of effects.readTestReports()) {
-            for (const id of extractTestIds(report, { rootDir })) back.add(id);
+          // **The verification gate's result is read, not discarded** (REVIEW F16). It used to be
+          // awaited and thrown away, and the reports were then trusted whatever it had said — so a
+          // unit gate that failed and wrote nothing left the *previous* attempt's passing report
+          // to confirm the restore. Measured: the Driver logged `scoped restore held`, skipped the
+          // full reset, and left `src/core.js` containing `broken`. A restore nothing verified is a
+          // failed restore, and a gate that did not pass has verified nothing.
+          const verification = await effects.gates();
+          const verifiedUnit = verification.results.find((result) => result.name === 'unit');
+          if (verifiedUnit?.ok !== true) {
+            effects.log(
+              `scoped restore not verified: the unit gate ${verifiedUnit === undefined ? 'did not run' : 'failed'} ` +
+                'after the restore, so nothing it produced can show the regressed tests came back',
+            );
+          } else {
+            for (const report of effects.readTestReports()) {
+              for (const id of extractTestIds(report, { rootDir })) back.add(id);
+            }
+            scopedHeld = decision.regressions.every((id) => back.has(id));
           }
-          scopedHeld = decision.regressions.every((id) => back.has(id));
         } catch {
           // An unreadable report cannot confirm a restore. Fall through to the full reset.
           scopedHeld = false;
@@ -6199,6 +6214,13 @@ export async function main(argv, io = {}) {
    */
   const gateTree = async (dir) => {
     const treeStateDir = path.join(dir, '.meeseeks');
+    // **Before anything runs** (REVIEW F16). The expected report paths are fixed, so a gate that
+    // crashes, times out, or fails before writing leaves the *previous* attempt's report on disk
+    // and everything downstream reads it as this attempt's evidence — which is how a failed
+    // verification gate once confirmed a scoped restore that had not held. Removing them first
+    // makes absence mean "this attempt produced nothing" rather than something to infer.
+    const stuck = clearReports(reportFiles(dir)).stuck;
+    for (const file of stuck) write(verbatim(`could not clear the previous report at ${path.relative(dir, file)}`));
     // Arming is a question about the code, so it is asked where the code is, every
     // iteration. Resolving it once at provisioning time asked it of a repository holding a
     // PRD and nothing else, so the answer was always "no frontend" and the design gate never
@@ -6631,10 +6653,17 @@ export async function main(argv, io = {}) {
       // bytes — so the identity a verdict is sealed to is the one the repository already trusts to
       // decide whether a deterministic gate may be skipped.
       workspaceIdentity: () => workspaceHash({ cwd, run: shell }),
-      readTestReports: () =>
-        reportFiles(cwd)
-          .filter((file) => existsSync(file))
-          .map((file) => readFileSync(file, 'utf8')),
+      // Only what this attempt produced, and only from regular files (REVIEW F16). `gateTree`
+      // cleared these paths before the gates ran, so a path that is here now was written by the
+      // attempt just finished; one that is a directory or a symlink is refused rather than read,
+      // because reading whatever it resolves to would be guessing.
+      readTestReports: () => {
+        const collected = collectReports(reportFiles(cwd));
+        for (const file of collected.irregular) {
+          write(verbatim(`ignoring ${path.relative(cwd, file)}: a report path that is not a regular file is not a report`));
+        }
+        return collected.contents;
+      },
       commit: async (message) => {
         // Re-asserted here rather than once before the loop: a hard reset can land on a
         // commit that predates the stanza, which would quietly un-ignore the ratchet and

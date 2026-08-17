@@ -812,6 +812,26 @@ Three properties replace it:
   rather than a skip — so this is the ownership evidence a probe can actually establish, and it is
   described as that rather than as proof.
 
+**A report is evidence only if this attempt produced it** (REVIEW F16, implemented at 0.173.0).
+The expected report paths are fixed — the toolchain declares them and every attempt writes to the
+same ones — so a gate that crashed, timed out, or failed before writing left the *previous*
+attempt's report on disk, and everything downstream read it as this attempt's. Codex reproduced the
+worst instance against the ratchet's only permitted escape from a regression: the scoped restore
+re-ran the gates, **discarded the result**, and trusted whatever report bytes existed. A failing unit
+gate that wrote nothing let the previous passing report confirm the restore; the Driver logged
+`scoped restore held`, skipped the full reset, and left `src/core.js` containing `broken`.
+
+`gateTree` now removes the declared report paths before an attempt runs, and `scripts/reports.mjs`
+reads back only regular files that are there afterwards. Absence therefore *means* "this attempt
+produced nothing" rather than being inferred — no clock, nonce or mtime comparison is involved,
+because mtime granularity is a filesystem property and a freshness test that can be wrong on a
+coarse one is worse than none. A path that exists but is a directory or a symlink is refused rather
+than read: it is not evidence, and following it would be reading whatever somebody else arranged.
+
+The scoped restore reads its verification gate's **result** before it reads anything that gate
+produced. A unit gate that failed, or that did not run at all, has verified nothing, and the run
+falls through to the whole-tree reset exactly as it did before the narrow one existed.
+
 **A verdict is sealed to the bytes it was formed over** (REVIEW F14, implemented at 0.172.0).
 Gates and the Panel inspect the live working tree, and the loop then ran `git add -A` and committed
 whatever bytes existed at that later moment. Codex had a reviewer read `src/a.js` as `reviewed
@@ -1665,6 +1685,7 @@ meeseeks/
 │   ├── integrity.mjs             # gate-integrity: no-op gates, weak assertions (§4)
 │   ├── evidence.mjs              # resolves reviewer citations against the reviewed tree (§4)
 │   ├── specification.mjs         # .meeseeks/specification.json: the revision a run is held to (§4)
+│   ├── reports.mjs               # per-attempt test-report freshness (§4)
 │   ├── preflight.mjs             # the thirteen checks run before a run starts (§3.5)
 │   ├── launch.mjs                # .meeseeks/launch.json: the driver's own launch observation
 │   │                             #   and each pre-loop phase's declared output contract (§3.5)

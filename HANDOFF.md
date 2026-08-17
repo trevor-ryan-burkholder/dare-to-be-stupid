@@ -1,8 +1,8 @@
 # START HERE — current handoff, last swept 17 August 2026
 
-**State:** branch `claude/f1-atomic-run-lock` at `0.172.0`, ahead of `main` at `0.164.0`. The
+**State:** branch `claude/f1-atomic-run-lock` at `0.173.0`, ahead of `main` at `0.164.0`. The
 manifests and package-lock root metadata agree. Measured on the current tree with Node 24.14.1:
-`npm run lint` and `npm run typecheck` clean; `npm test` **2445 pass, 0 fail**;
+`npm run lint` and `npm run typecheck` clean; `npm test` **2459 pass, 0 fail**;
 `npm run test:integration` **92 pass, 0 fail**; `npm run release-check` **ok**. No paid live test
 was invoked.
 
@@ -18,7 +18,7 @@ launch revalidation and pre-loop output admission (0.166.0), F2's bounded termin
 (0.167.0), F3's assigned-port health contract (0.168.0), and F6/item 60's resolved reviewer
 citations (0.169.0), F12/item 66's immutable specification revision (0.170.0), and F8/item 62's
 per-run, specification-bound Oracle store (0.171.0), and F14/item 68's workspace-sealed verdicts
-(0.172.0). All eight findings remain OPEN in
+(0.172.0), and F16/item 70's attempt-bound test reports (0.173.0). All nine findings remain OPEN in
 `REVIEW.md` — implementation and passing self-tests are not acceptance. `PLAN.md` records what
 landed and where its evidence lives; `DESIGN.md` §3.5, §4 and §11.1 state the mechanisms.
 
@@ -32,7 +32,7 @@ the archived handoff.
 1. Close the locally implementable high-priority defects: F1–F3, F6/item 60, F7/item 61,
    F12/item 66, F8/item 62, F14/item 68, F16/item 70, F18/item 72, and F26/item 81. **F1 (0.165.0),
    F26/item 81 (0.166.0), F2 (0.167.0), F3 (0.168.0), F6/item 60 (0.169.0), F12/item 66 (0.170.0)
-   F8/item 62 (0.171.0) and F14/item 68 (0.172.0) are implemented and awaiting Codex verification. **F7/item 61 is blocked**: its acceptance makes
+   F8/item 62 (0.171.0), F14/item 68 (0.172.0) and F16/item 70 (0.173.0) are implemented and awaiting Codex verification. **F7/item 61 is blocked**: its acceptance makes
    the paid tier-3 `claude -p` child contract mandatory, and that expenditure is unauthorised.** Item 81
    followed F1 so launch revalidation and pre-loop output admission occur under the atomic owner.
    Item 66 supplies the specification identity consumed by items 62 and 68; F2 includes the

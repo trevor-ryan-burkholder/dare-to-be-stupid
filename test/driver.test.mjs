@@ -1942,7 +1942,13 @@ describe('driveRun', () => {
       git(['config', 'user.email', 'driver@example.invalid']);
       git(['config', 'user.name', 'Driver Test']);
       writeFileSync(path.join(root, 'app.txt'), 'good\n', 'utf8');
-      git(['add', 'app.txt']);
+      // A source/test pair in the good commit, because the scoped restore checks paths *out of*
+      // that commit and `git checkout <sha> -- path` refuses a path the commit never had.
+      mkdirSync(path.join(root, 'src'), { recursive: true });
+      mkdirSync(path.join(root, 'test'), { recursive: true });
+      writeFileSync(path.join(root, 'src', 'core.js'), 'export const core = "good";\n', 'utf8');
+      writeFileSync(path.join(root, 'test', 'core.test.js'), '// keeps working\n', 'utf8');
+      git(['add', 'app.txt', 'src/core.js', 'test/core.test.js']);
       git(['commit', '--quiet', '-m', 'good state']);
       saveState(meeseeksDir, {
         version: 1,
@@ -1962,6 +1968,92 @@ describe('driveRun', () => {
     });
     return { outcome, meeseeksDir, root };
   }
+
+  // -------------------------------------------------------------------------
+  // A scoped restore cannot confirm itself from a stale report (REVIEW F16)
+  // -------------------------------------------------------------------------
+  describe('the scoped restore is verified by a gate that actually passed', () => {
+    const PROTECTED = 'test/core.test.js::keeps working';
+    const WITHOUT_IT = {
+      numTotalTests: 1,
+      testResults: [
+        { name: 'test/other.test.js', assertionResults: [{ ancestorTitles: [], title: 'fine', status: 'passed' }] },
+      ],
+    };
+    const WITH_IT = {
+      numTotalTests: 1,
+      testResults: [
+        { name: 'test/core.test.js', assertionResults: [{ ancestorTitles: [], title: 'keeps working', status: 'passed' }] },
+      ],
+    };
+
+    /**
+     * One iteration that regresses the protected test, then attempts a scoped restore whose
+     * verification gate answers however the test says.
+     *
+     * @param {{ verificationUnitOk: boolean, reportsAfter: unknown[] }} options
+     * @returns {Promise<string[]>} the log
+     */
+    async function restoreWith(options) {
+      /** @type {string[]} */
+      const logs = [];
+      let gateCalls = 0;
+      await run(
+        {
+          log: (line) => logs.push(line),
+          changedFiles: () => ['src/core.js', 'test/core.test.js'],
+          gates: () => {
+            gateCalls += 1;
+            // The first call is the iteration's own gate run; the second is the scoped restore's
+            // verification. Only the second one's answer is under test.
+            const unitOk = gateCalls === 1 ? true : options.verificationUnitOk;
+            return {
+              ok: unitOk,
+              results: [
+                { name: 'unit', ok: unitOk, status: unitOk ? 0 : 1, detail: unitOk ? 'passed' : 'failed' },
+                { name: 'mutation', ok: true, status: 0, detail: 'no survivors' },
+              ],
+            };
+          },
+          readTestReports: () => (gateCalls <= 1 ? [WITHOUT_IT] : options.reportsAfter),
+        },
+        { maxIterations: 1 },
+        [PROTECTED],
+      );
+      return logs;
+    }
+
+    it('does not hold on a stale passing report when the verification gate failed', async () => {
+      // Codex's reproduction. The verification gate fails and writes nothing; the previous
+      // attempt's passing report is still readable; before this repair the Driver logged
+      // `scoped restore held`, skipped the full reset, and left the broken source in place.
+      const logs = await restoreWith({ verificationUnitOk: false, reportsAfter: [WITH_IT] });
+      const all = logs.join('\n');
+      assert.equal(all.includes('scoped restore held'), false, all.slice(-900));
+      assert.equal(all.includes('scoped restore not verified'), true, all.slice(-900));
+    });
+
+    it('does not hold when the verification gate produced no report at all', async () => {
+      const logs = await restoreWith({ verificationUnitOk: false, reportsAfter: [] });
+      assert.equal(logs.join('\n').includes('scoped restore held'), false, logs.join('\n').slice(-900));
+    });
+
+    it('still refuses when the verification gate passed but the test did not come back', async () => {
+      // The pre-existing half of the rule, kept: a verified restore that did not restore anything
+      // is a failed restore.
+      const logs = await restoreWith({ verificationUnitOk: true, reportsAfter: [WITHOUT_IT] });
+      const all = logs.join('\n');
+      assert.equal(all.includes('scoped restore held'), false, all.slice(-900));
+      assert.equal(all.includes('did not return the failing test'), true, all.slice(-900));
+    });
+
+    // The benign neighbour. A scoped restore that can never hold is a scoped restore that does not
+    // exist, and the whole-tree reset it avoids threw away two 7.5M-token builder spends in ship1.
+    it('holds when the verification gate passed and the test came back', async () => {
+      const logs = await restoreWith({ verificationUnitOk: true, reportsAfter: [WITH_IT] });
+      assert.equal(logs.join('\n').includes('scoped restore held'), true, logs.join('\n').slice(-900));
+    });
+  });
 
   // -------------------------------------------------------------------------
   // A verdict is sealed to the bytes it was formed over (REVIEW F14)
