@@ -787,6 +787,31 @@ Two things stay static, on purpose:
   application, so there is nothing to ask. The gate passes on the static finding and *says
   in its detail line that it did not probe*, rather than reporting a request it never made.
 
+**The probe answers on the port it assigned, and on no other** (REVIEW F3, repaired at 0.168.0).
+Between 0.113.0 and that version it followed the port the application's own *stdout* announced,
+which settled the Tallyho smoke's two-masters conflict — the probe demanding an honoured ephemeral
+`PORT` while a Playwright `webServer` config wanted a fixed URL — by promoting a hint to evidence.
+The reproduction is unambiguous: a decoy HTTP server was started locally, and a probe child that
+opened no socket at all and merely printed the decoy's URL was reported healthy. Printed output
+establishes no ownership of a listener, and this is a required ship gate, so that was a false pass
+against the nothing-defaults-to-pass invariant.
+
+Three properties replace it:
+
+- **Only the assigned port is polled.** An application that ignores `PORT` fails, and
+  `portContractHint` still tells it exactly what to fix — the half of the old behaviour worth
+  keeping, and the half that turned a stall into one repair iteration.
+- **The two masters are reconciled the other way.** `--port` lets the *driver or operator* name a
+  fixed port. That is a contract neither the application nor its stdout can forge, and an app that
+  binds a fixed port passes when it is the port it was told to answer on.
+- **The port must be free before the application starts, and the child must still be alive when it
+  answers.** A stale development server holding the port would answer every request, so a child
+  that exited or never bound could pass through it; the probe asks first and refuses rather than
+  measuring somebody else's server. Nothing portable ties a socket to a process tree — `lsof` and
+  `ss` are optional binaries with per-platform flags, and a gate that cannot run is a failure
+  rather than a skip — so this is the ownership evidence a probe can actually establish, and it is
+  described as that rather than as proof.
+
 **Reviewer parser rules (unchanged, still non-negotiable):**
 - Default `fail`. `pass` requires the reviewer to *personally locate* the code and cite
   `path/file.ts:LINE`. "Probably exists" / "structure suggests it" = fail.

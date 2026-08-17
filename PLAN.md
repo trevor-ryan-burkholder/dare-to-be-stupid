@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.167.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.168.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.167.0
+## Build order — current traversal at 0.168.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -42,7 +42,13 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
   `test/integration/shell-termination.integration.test.mjs` — a resistant child and its descendants
   under both paths, a cooperative child that does not pay the grace, and the stale-sweep regression
   the escalation itself introduced. `DESIGN.md` §11.1 states the mechanism.
-- **F3:** prevent an unrelated local listener from satisfying the health gate.
+- **F3:** prevent an unrelated local listener from satisfying the health gate — **implemented at
+  0.168.0**; `REVIEW.md` F3 stays OPEN until Codex has verified the repair. The probe polls only the
+  assigned port, refuses a port something was already answering on, re-checks that the child is
+  alive when the response arrives, and keeps `portContractHint` as the teaching diagnosis; `--port`
+  is the driver/operator-owned contract that replaces the announced-port fallback. Evidence:
+  `test/health-probe.test.mjs` — the decoy reproduction, the inverted two-masters test, the fixed
+  port named by the driver, and the pre-existing listener a dead child cannot borrow.
 - **F6 / item 60:** resolve every passing reviewer citation to a contained, existing line before
   Panel combination.
 - **F7 / item 61:** require both process success and envelope success from every Claude role.

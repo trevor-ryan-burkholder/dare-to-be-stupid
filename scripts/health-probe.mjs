@@ -165,6 +165,42 @@ export function detectBoundPort(output) {
 }
 
 /**
+ * Is something already answering on this port?
+ *
+ * **The half of ownership a probe can actually establish** (REVIEW F3). Nothing portable ties a
+ * listening socket to a process tree — `lsof` and `ss` are optional binaries with different flags
+ * on every platform, and a gate that cannot run is a failure rather than a skip, so making the
+ * health gate depend on one would trade a false pass for an unrunnable gate. What *is* portable is
+ * asking, before the application starts, whether the port it is about to be given is already
+ * occupied. If it is, no later response on that port can be attributed to the application, and the
+ * probe refuses rather than measuring somebody else's server.
+ *
+ * A connection that is refused, or that never completes, means nothing is listening. Anything else
+ * — including a socket that accepts and says nothing — counts as occupied, because the question is
+ * whether the port is free, not whether whatever holds it is well.
+ *
+ * @param {number} port
+ * @param {number} [timeoutMs]
+ * @returns {Promise<boolean>}
+ */
+export function portIsOccupied(port, timeoutMs = 500) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host: '127.0.0.1' });
+    let settled = false;
+    /** @param {boolean} answer */
+    const done = (answer) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(answer);
+    };
+    socket.setTimeout(timeoutMs, () => done(false));
+    socket.once('connect', () => done(true));
+    socket.once('error', () => done(false));
+  });
+}
+
+/**
  * When the application's own output names a different port than the probe polled, say the
  * contract out loud.
  *
@@ -411,6 +447,21 @@ export async function probeHealth(options) {
   }
   const port = options.port !== undefined && options.port > 0 ? options.port : await freePort();
 
+  // **Before anything starts** (REVIEW F3). A stale development server, a leaked grandchild from a
+  // previous iteration or an unrelated service already holding this port would answer every later
+  // request, and a child that then exited or failed to bind would sail through a required ship
+  // gate on somebody else's health endpoint. Asked here rather than inferred later, because after
+  // the application starts the two are indistinguishable from the outside.
+  if (await portIsOccupied(port)) {
+    return {
+      ok: false,
+      detail:
+        `port ${port} was already answering before the start command ran, so nothing answering there ` +
+        'afterwards could be attributed to the application under test. Stop whatever is holding it ' +
+        '(a leaked development server from an earlier run is the usual cause) and try again.',
+    };
+  }
+
   const child = spawn(options.command, {
     cwd: options.cwd,
     shell: true,
@@ -450,21 +501,34 @@ export async function probeHealth(options) {
             `Output: ${output.join('').trim().slice(-500) || '(none)'}`,
         };
       }
-      // Probe the port the application actually bound when its own output announces one, and
-      // the assigned port otherwise. The Tallyho smoke's fourth machine finding is why: the
-      // probe demands "honor ephemeral PORT" while a Playwright webServer config wants a fixed
-      // URL, and the two masters had builders oscillating the start script between
-      // `-p ${PORT:-3210}` and `-p 3210` across six iterations, failing whichever gate ran
-      // next. An app that honors PORT keeps the conflict-free ephemeral port; an app that
-      // binds its own fixed port is now probed where it actually listens; only an app that
-      // says nothing still fails — with the contract hint below naming what happened.
-      const target = detectBoundPort(output.join('')) ?? port;
-      last = await requestOnce({ port: target, path: options.path });
+      // **The assigned port, and only the assigned port** (REVIEW F3). Between 0.113.0 and this
+      // version the probe followed the port the application's own *output* announced, to settle
+      // the Tallyho smoke's fourth machine finding: the probe demanded "honor ephemeral PORT"
+      // while a Playwright `webServer` config wanted a fixed URL, and builders oscillated the
+      // start script between `-p ${PORT:-3210}` and `-p 3210` across six iterations.
+      //
+      // That fix promoted a hint to evidence, and the reproduction is unambiguous: a decoy HTTP
+      // server was started locally, and a probe child that opened no socket at all — it only
+      // printed the decoy's URL and stayed alive — was reported healthy. Printed output
+      // establishes no ownership of a listener, and this is a required ship gate.
+      //
+      // The two masters are reconciled the other way now: `--port` lets the *driver or operator*
+      // name a fixed port, which is a contract neither the application nor its stdout can forge,
+      // and `portContractHint` below still teaches an app that ignored `PORT` exactly what to fix.
+      last = await requestOnce({ port, path: options.path });
       if (last.ok) {
-        const judged = judgeHealthResponse(last);
-        return target === port
-          ? judged
-          : { ...judged, detail: `${judged.detail} (on port ${target}, announced by the application; PORT=${port} was set but not honored)` };
+        // Re-checked after the response, not only before the request. A start command that died
+        // while the request was in flight cannot be the thing that answered it, and accepting the
+        // response would let a startup failure race a listener into a pass.
+        if (exited !== null) {
+          return {
+            ok: false,
+            detail:
+              `${options.path} answered on port ${port}, but the start command had already exited with code ` +
+              `${exited}, so the response was not its own. Output: ${output.join('').trim().slice(-500) || '(none)'}`,
+          };
+        }
+        return judgeHealthResponse(last);
       }
       await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
     }
