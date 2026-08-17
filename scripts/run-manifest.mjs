@@ -31,6 +31,7 @@ import path from 'node:path';
 
 import { ASSUMPTIONS_FILE } from './assumptions.mjs';
 import { LAUNCH_RECEIPT_FILE } from './launch.mjs';
+import { SPECIFICATION_FILE } from './specification.mjs';
 
 /** Driver-owned. Protected by the `.meeseeks/**` invariant (§6) with no rule of its own. */
 export const RUN_MANIFEST = 'run.json';
@@ -86,6 +87,9 @@ const PER_RUN_ARTIFACTS = [
   // observation and pre-loop staging — so a second run would otherwise overwrite the only copy of
   // the first one's provenance, which is the exact failure archiving exists to prevent.
   LAUNCH_RECEIPT_FILE,
+  // The captured specification revision (REVIEW F12): per-run by construction, and the record a
+  // later reader needs in order to say which document that run was judged against.
+  SPECIFICATION_FILE,
 ];
 
 /** The manifest's own schema version, bumped when a field's meaning changes. */

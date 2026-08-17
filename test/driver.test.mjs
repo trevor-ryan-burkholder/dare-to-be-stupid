@@ -1908,6 +1908,9 @@ describe('driveRun', () => {
         ],
       }),
       readTestReports: () => [{ numTotalTests: 1, testResults: [] }],
+      // The specification is unchanged unless a test says otherwise (REVIEW F12). `driveRun`
+      // refuses to run without this rather than assuming it, so the harness states it.
+      checkSpecification: () => ({ ok: true, digest: 'sha256:harness', detail: 'PRD.md unchanged' }),
       commit: () => 'commit1',
       diffStat: () => ' 1 file changed',
       ship: () => {},
@@ -1956,6 +1959,128 @@ describe('driveRun', () => {
     });
     return { outcome, meeseeksDir, root };
   }
+
+  // -------------------------------------------------------------------------
+  // The specification a run is judged against cannot move under it (REVIEW F12)
+  // -------------------------------------------------------------------------
+  describe('specification drift ends the run instead of being judged', () => {
+    const drifted = {
+      ok: false,
+      digest: 'sha256:captured',
+      detail: 'PRD.md has changed since this run captured it: sha256:captured became sha256:other.',
+    };
+
+    it('refuses to run at all without a way to check the revision', async () => {
+      // Fail-closed, and refused rather than defaulted: a loop that cannot say which specification
+      // it is judging has nothing to decide, and "assume unchanged" is the defect with a shrug.
+      const root = makeTempDir();
+      await assert.rejects(
+        () =>
+          driveRun({
+            config: { ...defaultConfig(), maxIterations: 1, reviewers: ['correctness'] },
+            meeseeksDir: path.join(root, '.meeseeks'),
+            rootDir: root,
+            requiredIds: ['PRD-1.1'],
+            task: 'build the thing',
+            // Deliberately not an `Effects`: the point is what happens when a caller omits it.
+            effects: /** @type {any} */ ({ ...effectsWith({}), checkSpecification: undefined }),
+          }),
+        /cannot establish which/,
+      );
+    });
+
+    it('ends before the gates when the specification moved during the build', async () => {
+      // Codex's reproduction, driven through the loop: the builder kept every requirement id and
+      // changed the text. Nothing downstream may treat that tree as this run's candidate.
+      let gates = 0;
+      let reviews = 0;
+      let shipped = 0;
+      const { outcome } = await run({
+        checkSpecification: () => drifted,
+        gates: () => {
+          gates += 1;
+          return { ok: true, results: [{ name: 'mutation', ok: true, status: 0, detail: 'no survivors' }] };
+        },
+        review: () => {
+          reviews += 1;
+          return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
+        },
+        ship: () => {
+          shipped += 1;
+        },
+      });
+      assert.equal(outcome.state, 'ABORTED');
+      assert.match(outcome.reason, /specification changed under this run/);
+      assert.equal(gates, 0, 'a gate ran against a specification the run did not start against');
+      assert.equal(reviews, 0, 'a panel was paid for on a moved finish line');
+      assert.equal(shipped, 0);
+    });
+
+    it('says out loud what changed and what to do about it', async () => {
+      /** @type {string[]} */
+      const logs = [];
+      await run({ checkSpecification: () => drifted, log: (line) => logs.push(line) });
+      assert.equal(logs.some((line) => line.includes('has changed since this run captured it')), true, logs.join('\n'));
+    });
+
+    it('withholds the ship when the drift only appears at the terminal boundary', async () => {
+      // Everything between the pre-gate check and the ship — the panel's own reads, the deploy,
+      // the ship-time mutation gate — runs beside a tree somebody could write to.
+      let checks = 0;
+      let shipped = 0;
+      const { outcome } = await run({
+        readTestReports: () => [
+          {
+            numTotalTests: 1,
+            testResults: [
+              { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+            ],
+          },
+        ],
+        checkSpecification: () => {
+          checks += 1;
+          return checks === 1 ? { ok: true, digest: 'sha256:captured', detail: 'PRD.md unchanged' } : drifted;
+        },
+        ship: () => {
+          shipped += 1;
+        },
+      });
+      assert.equal(outcome.state, 'ABORTED');
+      assert.equal(shipped, 0, 'the ship effect ran on a specification that had moved');
+    });
+
+    it('ends the run when the revision cannot be checked at all', async () => {
+      // An unreadable record is not evidence that nothing changed.
+      const { outcome } = await run({
+        checkSpecification: () => {
+          throw new Error('.meeseeks/specification.json could not be read as JSON');
+        },
+      });
+      assert.equal(outcome.state, 'ABORTED');
+      assert.match(outcome.reason, /could not be checked/);
+    });
+
+    // The benign neighbour. A check that ended every run would be indistinguishable from a
+    // product that does not work.
+    it('ships normally while the specification stays put', async () => {
+      let shipped = 0;
+      const { outcome } = await run({
+        readTestReports: () => [
+          {
+            numTotalTests: 1,
+            testResults: [
+              { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+            ],
+          },
+        ],
+        ship: () => {
+          shipped += 1;
+        },
+      });
+      assert.equal(outcome.state, 'SHIPPED');
+      assert.equal(shipped, 1);
+    });
+  });
 
   // -------------------------------------------------------------------------
   // Reviewer evidence must resolve against the tree that was reviewed (REVIEW F6)
@@ -4764,6 +4889,7 @@ describe('.meeseeks/outcome.json', () => {
       realityCheck: () => ({ ...ok, text: 'buildable' }),
       gates: () => ({ ok: true, results: [{ name: 'mutation', ok: true, status: 0, detail: 'no survivors' }] }),
       readTestReports: () => [{ numTotalTests: 1, testResults: [] }],
+      checkSpecification: () => ({ ok: true, digest: 'sha256:harness', detail: 'PRD.md unchanged' }),
       commit: () => 'commit1',
       diffStat: () => ' 1 file changed',
       ship: () => {},

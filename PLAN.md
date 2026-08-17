@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.169.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.170.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.169.0
+## Build order — current traversal at 0.170.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -52,8 +52,15 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
 - **F6 / item 60:** resolve every passing reviewer citation to a contained, existing line before
   Panel combination — **implemented at 0.169.0**; `REVIEW.md` F6 stays OPEN until Codex has
   verified the repair. See item 60 below.
-- **F7 / item 61:** require both process success and envelope success from every Claude role.
-- **F12 / item 66:** bind every role and terminal decision to one immutable specification revision.
+- **F7 / item 61:** require both process success and envelope success from every Claude role —
+  **not started; blocked on authorised paid live evidence.** The repair changes `spawnClaude`, and
+  both REVIEW F7's acceptance and this repository's own tier rules make the paid tier-3 `claude -p`
+  child contract mandatory for that file. Implementing it without that evidence would ship a change
+  to the one function whose contract belongs to another binary, which is the argv defect exactly.
+  Left for a session with the expenditure authorised; it may share that spend with F2's live check.
+- **F12 / item 66:** bind every role and terminal decision to one immutable specification revision —
+  **implemented at 0.170.0**; `REVIEW.md` F12 stays OPEN until Codex has verified the repair. See
+  item 66 below.
 - **F8 / item 62:** bind held-out Oracle cases to that run and specification revision.
 - **F14 / item 68:** commit and tag only the exact workspace identity gated and reviewed.
 - **F16 / item 70:** accept only fresh successful test reports from the current gate attempt.
@@ -2036,7 +2043,13 @@ and Windows-shaped neighbour; an integration case proves fake evidence cannot re
 and any parser/template contract change receives the required paid live check. This may batch with
 item 40, but F6 closure remains independently reviewer-owned.
 
-### 61. Conjoin Claude process and envelope success — OPEN (REVIEW F7)
+### 61. Conjoin Claude process and envelope success — OPEN, BLOCKED (REVIEW F7; needs authorised paid live evidence)
+
+**Blocked, not deferred.** The repair is entirely inside `spawnClaude`, and `CLAUDE.md`'s tier rules
+plus REVIEW F7's own acceptance both make `npm run test:live` mandatory for a change there. That
+spend was not authorised in the session that implemented F1, F26, F2, F3, F6 and F12, so the slice
+was left unstarted rather than landed on unit evidence that cannot see the contract it would be
+changing. Nothing else in Gate 0A depends on it.
 
 **Problem solved:** `spawnClaude` can reinterpret a failed process as a successful role result when
 failed stdout contains a success-shaped Claude envelope.
@@ -2104,7 +2117,29 @@ POSIX process-group path.
 three disappear within the bound while an unrelated process survives; POSIX cleanup and successful
 health probes remain green. A POSIX-only result cannot close REVIEW F11.
 
-### 66. Bind the run to an immutable specification revision — OPEN (REVIEW F12)
+### 66. Bind the run to an immutable specification revision — IMPLEMENTED (0.170.0); REVIEW F12 open pending Codex
+
+**Landed at 0.170.0** in `scripts/specification.mjs`. The Driver captures the canonical revision
+after the PRD commit and before the Oracle, design, Builder or Panel reads it, recording file,
+digest and size in `.meeseeks/specification.json` — archived and ignored with the rest of the
+per-run state. The capture returns its own bytes, so `requiredIds` derive from the digested
+document. `driveRun` checks the working copy against that revision before the gates and again before
+a ship, and refuses to start at all without a way to check; drift ends the run `ABORTED` naming both
+digests and asking for a new run, and nothing is repaired or reverted.
+
+Evidence: `test/specification.test.mjs` (digest sensitivity to one byte, fail-closed reads, the
+same-id text mutation, deletion, and the benign neighbours — other files, and a differently named
+specification), `test/driver.test.mjs`'s loop-level suite (drift before gates spawns no gate and no
+panel; drift at the ship boundary withholds the ship; an unreadable revision aborts; the clean case
+still ships; a missing effect refuses), and
+`test/integration/specification.integration.test.mjs` (a real Builder child rewriting `PRD.md`
+through the real `main`, beside one that rewrites everything else and proceeds).
+
+**Still owed to F12 by later items:** giving Panel and terminal receipts the canonical revision as
+their *input* rather than only checking the working copy is item **85**'s reviewer-supply contract,
+which PLAN already sequences after this item. **REVIEW F12 owns closure.**
+
+**What it was for, as originally written:**
 
 **Problem solved:** Builder can change `PRD.md` under stable requirement IDs and have Panel judge
 the changed finish line.

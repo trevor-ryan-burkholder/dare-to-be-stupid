@@ -84,6 +84,7 @@ import {
   writeLaunchReceipt,
 } from './launch.mjs';
 import { RUN_LOCK_FILE, acquireRunLock, releaseRunLock } from './run-lock.mjs';
+import { SPECIFICATION_FILE, captureSpecification, verifySpecification } from './specification.mjs';
 import { installQualityPlugins } from './plugins.mjs';
 import {
   applyWinner,
@@ -1553,6 +1554,7 @@ export function repeatedRegressionNote(counts, regressions) {
  *   securityEscalation?: (pin: import('./pins.mjs').SecurityPin) => ClaudeResult | Promise<ClaudeResult>,
  *   gates: () => { ok: boolean, results: GateResult[] } | Promise<{ ok: boolean, results: GateResult[] }>,
  *   shipTimeMutation?: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
+ *   checkSpecification: () => { ok: boolean, digest: string, detail: string },
  *   readTestReports: () => unknown[],
  *   commit: (message: string) => string | Promise<string>,
  *   diffStat: () => string | Promise<string>,
@@ -1605,6 +1607,41 @@ export function repeatedRegressionNote(counts, regressions) {
  */
 export async function driveRun(options) {
   const { config, meeseeksDir, rootDir, requiredIds, effects } = options;
+
+  // **Required, not optional, and refused rather than defaulted** (REVIEW F12). This loop decides
+  // whether a candidate satisfies a specification; a loop that cannot say *which* specification it
+  // is judging has nothing to decide. An absent check would have to mean "assume unchanged", which
+  // is the defect itself with a shrug attached.
+  if (typeof effects.checkSpecification !== 'function') {
+    throw new DriverError(
+      'driveRun was given no way to check the specification revision. A run that cannot establish which ' +
+        'PRD it is judging cannot judge anything (DESIGN.md §4, REVIEW F12).',
+    );
+  }
+
+  /**
+   * Has the specification moved under this run?
+   *
+   * Asked at the two boundaries F12 names: after the builder has written, before the gates and the
+   * panel see the tree, and again immediately before a ship. The first catches drift on the
+   * iteration that caused it; the second is the terminal boundary, because a ship is a claim about
+   * a specific document.
+   *
+   * @returns {RunOutcome | null} a terminal outcome when the specification has drifted
+   */
+  const specificationDrift = () => {
+    /** @type {{ ok: boolean, digest: string, detail: string }} */
+    let checked;
+    try {
+      checked = effects.checkSpecification();
+    } catch (error) {
+      // An unreadable record is not evidence that nothing changed.
+      return finish('ABORTED', `the specification revision could not be checked: ${/** @type {Error} */ (error).message}`);
+    }
+    if (checked.ok) return null;
+    effects.log(checked.detail);
+    return finish('ABORTED', `the specification changed under this run: ${checked.detail}`);
+  };
 
   // Settled before anything is spawned. An id no reviewer owns cannot be judged, and a
   // panel that cannot judge every id cannot produce a pass — finding that out after paying
@@ -2011,6 +2048,13 @@ export async function driveRun(options) {
         effects.log(`recorded ${declared.assumptions.length} assumption(s) for the audit`);
       }
     }
+
+    // The specification, before anything judges the tree (REVIEW F12). Placed after the build and
+    // the race rather than inside either, because both write to the repository and either could
+    // have moved the finish line — and placed before the gates so no gate result, ratchet credit
+    // or panel verdict is ever attributed to a document the run did not start against.
+    const driftedBeforeGates = specificationDrift();
+    if (driftedBeforeGates !== null) return driftedBeforeGates;
 
     // ---- Phase 3: gates -------------------------------------------------
     const gateOutcome = await effects.gates();
@@ -2556,6 +2600,11 @@ export async function driveRun(options) {
         continue;
       }
       if (deployed.detail !== 'no deploy configured') effects.log(deployed.detail);
+      // The terminal boundary. A ship is a claim about a specific document, and everything
+      // between the pre-gate check and here — the panel's own reads, the deploy, the ship-time
+      // mutation gate — has had the opportunity to run beside a writer.
+      const driftedBeforeShip = specificationDrift();
+      if (driftedBeforeShip !== null) return driftedBeforeShip;
       effects.event?.({ kind: 'ship', iteration: iterationNumber });
       await effects.ship(iterationNumber);
       return finish('SHIPPED', `panel unanimous on ${requiredIds.length} requirement(s)`);
@@ -2658,6 +2707,10 @@ export const MEESEEKS_IGNORED_PATHS = [
   // it belongs here with the others — tracked, a hard reset would restore an older run's receipt
   // over this one's and the record would describe a launch that never happened.
   `.meeseeks/${LAUNCH_RECEIPT_FILE}`,
+  // The captured specification revision (REVIEW F12). Tracked, a hard reset would restore an older
+  // run's digest over this one's, and the run would then be checking the working copy against a
+  // document it never captured — which is the drift it exists to catch, wearing the mask of a pass.
+  `.meeseeks/${SPECIFICATION_FILE}`,
   // The run manifest, missing until 0.86.0 — the third instance of this exact defect after
   // `state.json` and `outcome.json`, and the first found by watching a live run rather than by
   // reading. `?? .meeseeks/run.json` sat in the target's `git status` one `git add -A` from being
@@ -5528,7 +5581,29 @@ export async function main(argv, io = {}) {
     return releasing(0);
   }
 
-  const prd = readFileSync(prdPath, 'utf8');
+  // ---- The specification this run is held to (DESIGN.md §4, REVIEW F12) --
+  //
+  // Captured here: after the PRD is committed and *before* the oracle, the design phase, the
+  // builder or the panel has read a line of it. Stable requirement ids do not preserve stable
+  // intent — a builder that rewrote `PRD-1.1`'s text while keeping its id moved the finish line,
+  // and an independent panel then faithfully certified the wrong specification, which is measured
+  // rather than imagined.
+  //
+  // The bytes come back from the capture rather than from a second read, so `requiredIds` are
+  // derived from exactly the document that was digested. Two reads of one path is how an identity
+  // becomes a coincidence.
+  /** @type {{ revision: import('./specification.mjs').SpecificationRevision, contents: string }} */
+  let specification;
+  try {
+    specification = captureSpecification({ meeseeksDir, root: cwd, file: path.relative(cwd, prdPath) });
+  } catch (error) {
+    write(verbatim(/** @type {Error} */ (error).message));
+    write(stamp('ABORTED', { mode }));
+    return releasing(1);
+  }
+  write(verbatim(`specification: ${specification.revision.file} at ${specification.revision.digest}`));
+
+  const prd = specification.contents;
   const requiredIds = requiredIdsFor(prd);
 
   // ---- Phase 0b: the held-out oracle (A3) -------------------------------
@@ -6380,6 +6455,10 @@ export async function main(argv, io = {}) {
         return { ok: gated.ok, results: gated.results };
       },
       shipTimeMutation: () => shipTimeMutation(cwd, meeseeksDir, runStartCommit, config.gateTimeoutMs),
+      // The captured revision, re-read from `.meeseeks/` each time rather than closed over. The
+      // record lives where the run may not edit it, and reading it back is what makes the check a
+      // check rather than a memory of one.
+      checkSpecification: () => verifySpecification({ meeseeksDir, root: cwd }),
       readTestReports: () =>
         reportFiles(cwd)
           .filter((file) => existsSync(file))

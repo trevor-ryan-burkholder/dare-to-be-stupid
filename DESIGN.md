@@ -812,6 +812,30 @@ Three properties replace it:
   rather than a skip — so this is the ownership evidence a probe can actually establish, and it is
   described as that rather than as proof.
 
+**The specification a run is judged against is captured once and cannot move** (REVIEW F12,
+implemented at 0.170.0). The Driver read `PRD.md`, derived `requiredIds`, and kept only those
+strings; the Builder holds unrestricted repository writes and the cold Panel is told to read the
+*live* file. Codex replaced the text of `PRD-1.1` with an easier requirement, kept the id, and
+watched gates pass, the report pass, and `driveRun` return `SHIPPED` — an independent Panel
+faithfully certifying the wrong specification. Stable ids do not preserve stable intent.
+
+`scripts/specification.mjs` captures the canonical revision after the PRD commit and before the
+Oracle, the design phase, the Builder or the Panel has read a line of it, recording file, digest and
+size in `.meeseeks/specification.json`. The digest is of the **exact bytes**, because a byte that no
+parser would notice still changes the document a reviewer reads. The capture hands its bytes back,
+so `requiredIds` are derived from the document that was digested rather than from a second read of a
+path — two reads is how an identity becomes a coincidence.
+
+`driveRun` then checks the working copy against that revision at two boundaries: after the build and
+the race and **before the gates**, so no gate result, ratchet credit or panel verdict is ever
+attributed to a document the run did not start against; and immediately **before a ship**, because a
+ship is a claim about a specific document and the panel's own reads, the deploy and the ship-time
+mutation gate all run beside a writer. Drift ends the run `ABORTED` with an operator-facing message
+naming both digests and asking for a new run against the revised objective — never a silent repair,
+because the changed file may be exactly what the operator wants. The check is a **required** effect:
+`driveRun` refuses to start without one, since "assume unchanged" is the defect with a shrug
+attached. Only the captured file is bound; documentation, design documents and source stay editable.
+
 **A citation is resolved against the tree that was reviewed** (REVIEW F6, repaired at 0.169.0).
 The parser establishes that evidence is *shaped* like `path/file.ts:LINE`; until this version
 nothing established that it pointed at anything. Codex's reproduction is one line: a report citing
@@ -1592,6 +1616,7 @@ meeseeks/
 │   ├── run-manifest.mjs          # .meeseeks/run.json, and archiving the last run (§7.1, §7.2)
 │   ├── integrity.mjs             # gate-integrity: no-op gates, weak assertions (§4)
 │   ├── evidence.mjs              # resolves reviewer citations against the reviewed tree (§4)
+│   ├── specification.mjs         # .meeseeks/specification.json: the revision a run is held to (§4)
 │   ├── preflight.mjs             # the thirteen checks run before a run starts (§3.5)
 │   ├── launch.mjs                # .meeseeks/launch.json: the driver's own launch observation
 │   │                             #   and each pre-loop phase's declared output contract (§3.5)
