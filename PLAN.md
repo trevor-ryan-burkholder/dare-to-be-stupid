@@ -89,6 +89,21 @@ policy rather than only pre-approving named tools. F28/item **83** establishes a
 measured product-wide Claude Code compatibility policy and one-CLI-per-run identity. All close before
 feature fan-out.
 
+**Gate 0D — repair gaps found by the second Codex pass (items 88–94).** F31–F37 record failure
+shapes newly exposed at 0.179.0, six of them incomplete repairs of earlier findings: F31→F14,
+F32→F16, F33→F2, F34→F1, F35→F20, F36→F7. F37 is pre-existing. Order is by severity and then by
+shared machinery: **88** and **89** are the two HIGHs and both fail open at an authority boundary;
+**91** then repairs lock arbitration; **90** and **94** share one process-lifetime state machine and
+land together; **92** and **93** close the reporter-identity and denial-visibility gaps, and 93
+carries a mandatory tier-3 run.
+
+**The common cause is worth recording once.** Four of the seven survived because the tests written
+with the original repair *confirmed the design instead of attacking it*: a fixture that committed
+through `execFileSync`, which throws where production `shell` returns; a bystander started before the
+snapshot that was supposed to threaten it; a benign-orphan case using a different token from the one
+that recurs; and denial text injected only through a failed result. A hostile test that assumes the
+mechanism it is testing is not a hostile test.
+
 **Gate 0C — remaining external review defects.** F4's absolute HTTP deadline and bounded body are
 **implemented at 0.177.0**; `REVIEW.md` F4 stays OPEN until Codex has verified the repair. Every
 attempt in `scripts/health-probe.mjs` now carries a wall-clock deadline bounded by what remains of
@@ -2888,6 +2903,132 @@ neighbours retain their existing semantics; duplicate pass+flaky records resolve
 ratcheted id still takes the reset path; bounded failure evidence names the exact attempt/report
 identity from items 70/74; and unit plus integration coverage proves no `SHIPPED` path can ignore a
 normalized flaky result. REVIEW F30 owns closure.
+
+### 88. Fail-closed Git publication and exact committed-tree identity — OPEN (REVIEW F31)
+
+**Problem solved:** the ship path runs `git add`, `git commit` and both tag operations without
+requiring any of them to succeed, then reads `HEAD` and can return the *pre-existing* commit as the
+candidate. F14's seal only rehashes the working tree, so after a failed commit the working bytes
+still match the reviewed identity while `HEAD` names an older tree that does not contain them — and
+deploy and tag then publish that older tree under a `SHIPPED`.
+
+Require success from add, commit, the commit lookup and every tag operation, each with its own
+bounded diagnostic. After the commit, prove the published state corresponds to the sealed reviewed
+workspace: the worktree must be clean at publication and the sealed hash must still match. Route
+every failure through the existing non-shipping terminal path; an unchanged `HEAD` is not made
+acceptable by a matching workspace hash. `test/integration/workspace-seal.integration.test.mjs`
+commits through `execFileSync`, which *throws*, so it cannot exercise production `shell` semantics
+where a failed command returns a result the caller must inspect — the fixture must use the real
+runner.
+
+**Done when:** a real-Git fixture makes commit fail after staging and proves deploy, tag and
+`SHIPPED` are unreachable; add, commit, lookup and tag failures keep distinct diagnostics; and the
+successful neighbour proves the published commit, sealed workspace identity, deploy input, tag and
+terminal receipt all converge. REVIEW F31 owns closure.
+
+### 89. Refuse uncleared report paths before they can be banked — OPEN (REVIEW F32)
+
+**Problem solved:** `clearReports` already returns the paths it could not remove, and the Driver
+logs them and runs the gate anyway. `collectReports` then accepts any regular file at a configured
+report path, so a locked or otherwise unremovable old passing report becomes this attempt's
+evidence when the command exits zero without replacing it — the exact laundering class item 70 was
+built to close, re-entering through the branch item 70 did not treat as a failure.
+
+Treat every uncleared configured report path as a failed attempt before any report-consuming
+authority is assigned, refusing collection for that attempt even on a zero exit, and name the stuck
+paths in bounded diagnostics. Preserve successful cleanup and the no-report neighbour without
+weakening item 70's attempt identity.
+
+**Done when:** unit coverage forces removal failure and proves the survivor cannot be parsed or
+banked; a real-filesystem integration case proves an exit-zero gate cannot relabel it fresh; and the
+ordinary replace-and-collect path stays green. REVIEW F32 owns closure.
+
+### 90. Keep process cleanup off concurrent sibling children — OPEN (REVIEW F33)
+
+**Problem solved:** the Panel starts reviewers under `Promise.all`, and every `shell` call snapshots
+the process-group population *before* its own spawn and later kills group members absent from that
+snapshot. Reviewer A can snapshot before B and C exist, so A timing out or overflowing sweeps its
+legitimate siblings as leaked descendants — one reviewer failure manufacturing failures in the cold
+reviewers whose independence is the point. The existing bystander test starts the bystander *before*
+the snapshot, so it proves preservation of an older process and not of a concurrent sibling.
+
+Scope cleanup to the invocation's own descendants or an owned group, or otherwise exclude active
+sibling children, without restoring the orphan leak item F2 closed.
+
+**Done when:** a tier-2 test starts two concurrent real `shell` calls where the first times out after
+the second is born, and the second survives and completes while the first child and its descendants
+are gone; reversed order and the overflow path exercise the same rule; and the Panel still combines
+completed results in declared reviewer order. REVIEW F33 owns closure.
+
+### 91. Make crashed stale-lock arbitration reclaimable — OPEN (REVIEW F34)
+
+**Problem solved:** the takeover directory is named from the *stale* lock's token, and item F1's
+argument that orphans are inert assumed the stale lock always gets replaced. If the reclaimer dies
+after creating that directory and before replacing the lock, the same stale token persists, so every
+later contender computes the same path, receives `EEXIST`, and reads it as a live reclaimer. Nothing
+can clear it. One killed recovery turns a reclaimable stale lock into a permanent denial of service.
+`test/run-lock.test.mjs`'s "benign orphan" case uses a *different* token and therefore assumes
+exactly what fails.
+
+Give the takeover claim its own verifiable, reclaimable owner identity and liveness rule, or use an
+atomic primitive whose abandoned state is safely distinguishable. Preserve exactly-one-winner and
+prevent a late reclaimer from deleting a newer owner's lock or claim.
+
+**Done when:** a tier-2 fault-injection test kills the reclaimer between arbitration and replacement
+and proves a later cohort still has exactly one winner; live-contender and benign-orphan neighbours
+stay distinguishable; and token mismatch and delayed cleanup cannot clear the winner. REVIEW F34
+owns closure.
+
+### 92. Require reproducible existing test definitions before ratchet credit — OPEN (REVIEW F35)
+
+**Problem solved:** reporter normalisation falls back to a lexically contained relative path when
+`realpathSync` fails, so a runner naming a file that does not exist can still bank a passing id —
+and `test/reporter-paths.test.mjs` explicitly asserts that behaviour. Lexical containment closed
+F20's external-path half but does not prove the definition is part of the candidate or reproducible
+from a clean clone, so the monotonic ratchet can hold credit for a test no checkout can execute.
+
+Require an accepted file-backed identity to resolve to an existing contained regular file before it
+earns credit. If a supported runner genuinely emits virtual or generated tests, that needs a separate
+reproducible identity and content digest rather than treating a missing file as repository evidence —
+**establish which runners actually do this from the committed fixtures rather than assuming.**
+
+**Done when:** nonexistent, directory, symlink-race and deleted-after-report definitions fail closed
+without credit; valid contained Windows and POSIX paths keep stable ids; and a clean-clone tier-2
+test resolves every banked definition. REVIEW F35 owns closure.
+
+### 93. Preserve guard denials from successful children — OPEN (REVIEW F36; needs tier 3)
+
+**Problem solved:** `shell` returns an empty `stderr` whenever a command exits zero, and
+`spawnClaude` searches exactly that field for `meeseeks-guard: denied` lines. A Claude child can hit
+a denied tool call, recover, and exit successfully — and the denial is erased before it can reach the
+next brief. The Builder then repeats the denied action with no explanation available, which loses
+both progress and the forensic record. `test/driver.test.mjs` injects denial text only through a
+*failed* synthetic result, bypassing the production success path entirely.
+
+Preserve bounded stderr for Claude invocations regardless of exit status, or carry denials through a
+distinct bounded channel. Ordinary successful stderr must not become styled output or decision
+evidence; only the denial signal feeds the brief.
+
+**Done when:** a tier-2 child exits zero after writing a denial line and `spawnClaude` returns success
+while preserving it; clean-stderr and failed-envelope neighbours are unchanged; and the mandatory
+paid tier-3 guard canary has been run, because this crosses `spawnClaude` and the external CLI
+contract. REVIEW F36 owns closure.
+
+### 94. Clean health-probe descendants after the shell leader exits — OPEN (REVIEW F37)
+
+**Problem solved:** the probe's `stop` returns after destroying pipes whenever the direct child
+already has an `exitCode` or `signalCode`, without signalling the captured process group. A start
+command that backgrounds the application and exits immediately therefore fails the probe *and* leaves
+the server listening — occupying the assigned port, mutating the workspace and contaminating later
+health evidence. This is a POSIX lifetime hole, distinct from F11's unproven Windows cleanup.
+
+Clean the owned process group even when its leader has exited, defending against group/PID reuse
+before signalling, and preserve bounded stop behaviour and the long-running-server neighbour.
+
+**Done when:** a tier-2 fixture runs the equivalent of `node server & exit 0`, observes the failed
+probe, and proves the background server and its listener are gone; cooperative exit, timeout and
+already-empty group settle without killing unrelated processes; and Windows evidence stays owned by
+F11/item 65. REVIEW F37 owns closure.
 
 ## Observations recorded rather than repaired
 
