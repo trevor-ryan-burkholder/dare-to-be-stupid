@@ -2448,10 +2448,22 @@ export async function driveRun(options) {
       );
       /** @type {ReviewerReport[]} */
       const collected = [];
+      // **Conserve first, adjudicate second** (REVIEW F18). Every reviewer runs to completion
+      // under `Promise.all`, so every envelope has been *bought* by the time this loop starts —
+      // but charging and deciding used to happen together, so an early failure or ceiling exit
+      // returned with the later reviewers' spend never recorded. Measured: three reviewers
+      // returning 10/20/30 tokens and $1/$2/$3 after a 100-token, $0.01 builder reported an
+      // ABORTED outcome of 110 tokens and $1.01, omitting 50 tokens and $5 that had been paid.
+      //
+      // Charging in array order keeps the per-index answer identical to the old interleaved one:
+      // `charges[i]` is the cumulative verdict through reviewer `i`, which is exactly what the
+      // combined loop computed there. Declared-order adjudication is unchanged, and a later
+      // reviewer still gains no verdict authority from having been charged.
+      const charges = settled.map((result) => charge(result));
       for (let i = 0; i < assignments.length; i += 1) {
         const { reviewer, ids } = assignments[i];
         const result = settled[i];
-        const exhausted = charge(result);
+        const exhausted = charges[i];
         // A reviewer that died is not a reviewer that found problems. Scoring it as a
         // failing audit would hand the builder "output could not be parsed" as though it
         // were a finding, and burn the remaining iterations against a wall.
@@ -5805,6 +5817,15 @@ export async function main(argv, io = {}) {
     if (!authored.ok) {
       write(verbatim(`oracle authoring failed: ${authored.raw.slice(0, 800)}`));
       write(stamp('ABORTED', { mode }));
+      return releasing(1);
+    }
+    // **Charged before it is parsed** (REVIEW F18). The oracle author is a paid `claude -p` child
+    // like any other, and its result went from `runChild` straight to the parser without ever
+    // reaching `chargePreLoop` — so its tokens and dollars were absent from `alreadySpent`, from
+    // every ceiling the loop then checked, and from the final bill. A run could begin below a
+    // token ceiling that pre-loop work had already crossed.
+    if (chargePreLoop(authored)) {
+      preLoopBudgetEnd('oracle authoring');
       return releasing(1);
     }
     try {

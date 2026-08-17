@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.173.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.174.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.173.0
+## Build order — current traversal at 0.174.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -72,7 +72,9 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
   item 70 below.
 - **F30 / item 87:** reject every normalized flaky test result before Panel or `SHIPPED`,
   after items 70 and 74 bind the report.
-- **F18 / item 72:** conserve every completed child envelope into ceilings and terminal receipts.
+- **F18 / item 72:** conserve every completed child envelope into ceilings and terminal receipts —
+  **implemented at 0.174.0**; `REVIEW.md` F18 stays OPEN until Codex has verified the repair. See
+  item 72 below.
 - **F29 / item 85:** keep candidate-tree instructions out of reviewer authority; candidate files
   remain evidence, while binding review inputs come from identified immutable sources.
 
@@ -2278,7 +2280,26 @@ deterministic normalization or conservatively revalidate.
 without deleting history, and a weakened replacement cannot ship on its predecessor's ratchet
 identity.
 
-### 72. Conserve every child result in budget accounting — OPEN (REVIEW F18)
+### 72. Conserve every child result in budget accounting — IMPLEMENTED (0.174.0); REVIEW F18 open pending Codex
+
+**Landed at 0.174.0.** The Oracle author is charged through `chargePreLoop` before its output is
+parsed, so its spend reaches `alreadySpent` and every ceiling downstream. The parallel Panel charges
+every settled envelope in array order and *then* adjudicates in declared order against the
+per-index cumulative answer — identical decisions, nothing uncharged, and no later reviewer gaining
+verdict authority from having been charged.
+
+Evidence: `test/driver.test.mjs` — REVIEW F18's reproduction now reports exactly **160 tokens and
+$6.01**, beside a success path that does not double-charge; and
+`test/integration/spend-conservation.integration.test.mjs`, which drives the real `main` with a
+distinct sentinel per phase and balances `.meeseeks/outcome.json` against the sum of every envelope
+handed out, with and without the Oracle, plus a ceiling case proving pre-loop Oracle spend now stops
+a run before it pays for a builder.
+
+**On `handedOutUsd`:** it is `main`'s running total across pre-loop *and* loop children, while
+`driveRun`'s progress is the loop's total seeded with `alreadySpent`. With both holes closed the two
+are the same ledger reached from two ends rather than two opinions; the integration test asserts
+that balance end to end. Unifying them into one object is a refactor this finding does not require
+and item 76's acceptance receipt is the natural place for it.
 
 **Problem solved:** Oracle-author spend and later settled reviewers after an ordered early exit do
 not reach durable progress, ceilings, or the final bill.

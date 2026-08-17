@@ -812,6 +812,24 @@ Three properties replace it:
   rather than a skip — so this is the ownership evidence a probe can actually establish, and it is
   described as that rather than as proof.
 
+**Every envelope the run bought is charged exactly once** (REVIEW F18, implemented at 0.174.0).
+Two holes sat in the seam between "a child returned" and "the run knows it". The Oracle author's
+result went from `runChild` straight to the parser without ever reaching `chargePreLoop`, so its
+spend was absent from `alreadySpent`, from every ceiling the loop then checked, and from the final
+bill — a run could begin below a token ceiling that pre-loop work had already crossed. And the
+parallel Panel charged and adjudicated in one pass, so an early failure returned with later
+reviewers' spend unrecorded even though every one of them had completed and been paid for: measured,
+three reviewers returning 10/20/30 tokens and $1/$2/$3 after a 100-token builder produced an
+`ABORTED` receipt of 110 tokens and $1.01.
+
+The Panel now **conserves first and adjudicates second**: every settled envelope is charged in array
+order, then declared-order adjudication runs against the per-index cumulative answer, which is
+exactly what the interleaved loop computed. A later reviewer gains no verdict authority from having
+been charged. The Oracle author is charged before it is parsed, like every other pre-loop phase.
+
+The property to hold onto is the balance: the terminal receipt equals the sum of every envelope any
+phase returned, whichever phases a run reaches.
+
 **A report is evidence only if this attempt produced it** (REVIEW F16, implemented at 0.173.0).
 The expected report paths are fixed — the toolchain declares them and every attempt writes to the
 same ones — so a gate that crashed, timed out, or failed before writing left the *previous*

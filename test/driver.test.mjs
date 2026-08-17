@@ -1970,6 +1970,85 @@ describe('driveRun', () => {
   }
 
   // -------------------------------------------------------------------------
+  // Every envelope that was bought is charged exactly once (REVIEW F18)
+  // -------------------------------------------------------------------------
+  describe('spend is conserved across a parallel panel', () => {
+    it('reports every reviewer that completed, even when an earlier one failed', async () => {
+      // Codex's reproduction, to the cent. Three reviewers return 10/20/30 tokens and $1/$2/$3
+      // after a 100-token, $0.01 builder, and the first one fails. All three promises settle —
+      // every one of those envelopes was paid for — but charging and deciding happened together,
+      // so the ABORTED outcome reported 110 tokens and $1.01 and omitted 50 tokens and $5.
+      let reviews = 0;
+      const usage = [
+        { tokens: 10, costUsd: 1, ok: false },
+        { tokens: 20, costUsd: 2, ok: true },
+        { tokens: 30, costUsd: 3, ok: true },
+      ];
+      const { outcome } = await run(
+        {
+          build: () => ({ ok: true, text: 'built', costUsd: 0.01, tokens: 100, raw: '' }),
+          // A green test, so the iteration actually reaches a panel rather than ending earlier for
+          // a reason that has nothing to do with accounting.
+          readTestReports: () => [
+            {
+              numTotalTests: 1,
+              testResults: [
+                { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+              ],
+            },
+          ],
+          review: () => {
+            const next = usage[reviews];
+            reviews += 1;
+            return {
+              ok: next.ok,
+              text: JSON.stringify({ requirements: [GOOD_ENTRY] }),
+              costUsd: next.costUsd,
+              tokens: next.tokens,
+              raw: 'reviewer output',
+            };
+          },
+        },
+        { maxIterations: 1, reviewers: ['correctness', 'security', 'design'] },
+        [],
+        // One required id per reviewer, so all three are actually convened: a panel member that
+        // owns nothing is refused before it can spend anything.
+        ['PRD-1.1', 'DoD-2-security', 'DoD-5-design'],
+      );
+      assert.equal(reviews, 3, 'the panel did not actually run three reviewers');
+      assert.equal(outcome.spentTokens, 160, `tokens: ${outcome.spentTokens}`);
+      assert.equal(Number(outcome.costUsd.toFixed(2)), 6.01, `cost: ${outcome.costUsd}`);
+    });
+
+    it('does not double-charge a panel that succeeds', async () => {
+      // The other direction, and the one a conservation fix breaks if it is written carelessly.
+      const { outcome } = await run(
+        {
+          build: () => ({ ok: true, text: 'built', costUsd: 0.01, tokens: 100, raw: '' }),
+          review: () => ({
+            ok: true,
+            text: JSON.stringify({ requirements: [GOOD_ENTRY] }),
+            costUsd: 2,
+            tokens: 20,
+            raw: '',
+          }),
+          readTestReports: () => [
+            {
+              numTotalTests: 1,
+              testResults: [
+                { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+              ],
+            },
+          ],
+        },
+        { maxIterations: 1 },
+      );
+      assert.equal(outcome.spentTokens, 120, `tokens: ${outcome.spentTokens}`);
+      assert.equal(Number(outcome.costUsd.toFixed(2)), 2.01, `cost: ${outcome.costUsd}`);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // A scoped restore cannot confirm itself from a stale report (REVIEW F16)
   // -------------------------------------------------------------------------
   describe('the scoped restore is verified by a gate that actually passed', () => {
