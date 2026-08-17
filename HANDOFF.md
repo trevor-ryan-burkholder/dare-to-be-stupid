@@ -1,10 +1,10 @@
 # START HERE — current handoff, last swept 17 August 2026
 
-**State:** `main` at `0.164.0`. The manifests and package-lock root metadata agree. Measured
-on the current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean;
-`npm test` **2307 pass, 0 fail**;
-`npm run test:integration` **51 pass, 0 fail**; `npm run release-check` **ok**. These commands
-were rerun after the documentation repair; no paid live test was invoked.
+**State:** branch `claude/f1-atomic-run-lock` at `0.178.0`, ahead of `main` at `0.164.0`. The
+manifests and package-lock root metadata agree. Measured on the current tree with Node 24.14.1:
+`npm run lint` and `npm run typecheck` clean; `npm test` **2498 pass, 0 fail**;
+`npm run test:integration` **105 pass, 0 fail**; `npm run release-check` **ok**. No paid live test
+was invoked.
 
 **External review:** `REVIEW.md` is **CHANGES REQUESTED** with seventeen high-priority defects
 (F1–F3, F5–F8, F12, F14, F16, F18, F25–F30) and thirteen medium-priority defects
@@ -13,7 +13,38 @@ guarantee-strength audit, durable-artifact registry, failure-shape matrix, and e
 negative-guarantee sheet. These are the first implementation gates in `PLAN.md`. Claude Code may
 implement them; Codex owns closure after reviewing the exact repair and its acceptance evidence.
 
-**Paid live tier:** not rerun for this documentation-only cleanup. At 0.161.0 an intermediate
+**Implemented, awaiting Codex verification.** Fourteen findings have repairs on this branch. Each
+remains **OPEN** in `REVIEW.md` — implementation and passing self-tests are not acceptance, and Codex
+reviews each commit separately:
+
+| version | finding | what landed |
+|---|---|---|
+| 0.165.0 | F1 | atomic run-lock acquisition with ownership tokens |
+| 0.166.0 | F26 / item 81 | launch revalidation and declared pre-loop output admission |
+| 0.167.0 | F2 | bounded terminate/force/sweep on timeout and output cap |
+| 0.168.0 | F3 | health success bound to the spawned application's assigned port |
+| 0.169.0 | F6 / item 60 | reviewer citations resolved against the reviewed tree |
+| 0.170.0 | F12 / item 66 | immutable specification revision, checked at gate and ship |
+| 0.171.0 | F8 / item 62 | per-run, specification-bound, atomically written Oracle store |
+| 0.172.0 | F14 / item 68 | verdicts sealed to an exact workspace identity |
+| 0.173.0 | F16 / item 70 | test reports bound to the attempt that produced them |
+| 0.174.0 | F18 / item 72 | every child envelope conserved into ceilings and receipts |
+| 0.175.0 | F20 / item 74 | repository-contained reporter identities |
+| 0.176.0 | F30 / item 87 | normalized flaky results as a failed deterministic gate |
+| 0.177.0 | F4 | absolute HTTP deadlines and a bounded body for health and smoke |
+| 0.178.0 | F9 / item 63 | positional `.meeseeks/` git boundary, retiring the filename list |
+
+`PLAN.md` records what landed and where each repair's evidence lives; `DESIGN.md` §3.5, §4 and §11.1
+state the mechanisms.
+
+**F7 / item 61 is not started, and is blocked rather than deferred.** Its repair is inside
+`spawnClaude`, and both REVIEW F7's acceptance and this repository's own tier rules make the paid
+tier-3 `claude -p` child contract mandatory for a change there. That expenditure was not authorised,
+and landing it on unit evidence that cannot see the contract it changes is the argv defect exactly.
+
+**Paid live tier:** not invoked on this branch, and nothing here required it — every repair above is
+Driver-side, and none touched `spawnClaude`, `claudeArgs`, envelope parsing, or a template's output
+contract. At 0.161.0 an intermediate
 `CI=1` change failed one live test and was reverted before release; the shipped change was
 toolchain-guidance prose. The full chronology and earlier successful live measurements are in
 the archived handoff.
@@ -21,8 +52,11 @@ the archived handoff.
 ## Current implementation order
 
 1. Close the locally implementable high-priority defects: F1–F3, F6/item 60, F7/item 61,
-   F12/item 66, F8/item 62, F14/item 68, F16/item 70, F18/item 72, and F26/item 81. Item 81
-   follows F1 so launch revalidation and pre-loop output admission occur under the atomic owner.
+   F12/item 66, F8/item 62, F14/item 68, F16/item 70, F18/item 72, and F26/item 81. **F1 (0.165.0),
+   F26/item 81 (0.166.0), F2 (0.167.0), F3 (0.168.0), F6/item 60 (0.169.0), F12/item 66 (0.170.0)
+   F8/item 62 (0.171.0), F14/item 68 (0.172.0), F16/item 70 (0.173.0), F18/item 72 (0.174.0), F20/item 74 (0.175.0) and F30/item 87 (0.176.0) are implemented and awaiting Codex verification. **F7/item 61 is blocked**: its acceptance makes
+   the paid tier-3 `claude -p` child contract mandatory, and that expenditure is unauthorised.** Item 81
+   followed F1 so launch revalidation and pre-loop output admission occur under the atomic owner.
    Item 66 supplies the specification identity consumed by items 62 and 68; F2 includes the
    resistant output-cap path. F30/item 87 is also high priority, but it lands only after item 70
    here and F20/item 74 in step 3 bind the accepted report; item 67 must retain the resulting

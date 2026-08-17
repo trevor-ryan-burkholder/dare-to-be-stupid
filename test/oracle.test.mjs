@@ -11,7 +11,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -23,12 +23,21 @@ import {
   judgeOracleRelation,
   parseOracleCases,
   parseRelation,
+  oracleMatchesSpecification,
   readOracle,
   resolveArtifactCommand,
   runOracle,
   writeOracle,
 } from '../scripts/oracle.mjs';
-import { PHASE_PERMISSIONS, claudeArgs, oracleGate, staticGates } from '../scripts/driver.mjs';
+import { PHASE_PERMISSIONS, claudeArgs, meeseeksIgnoreUpdate, oracleGate, staticGates } from '../scripts/driver.mjs';
+import { archivePreviousRun } from '../scripts/run-manifest.mjs';
+
+/**
+ * The specification a store is bound to (REVIEW F8). Since 0.171.0 an oracle carries the digest of
+ * the PRD its cases were authored from, and reading it without one — or with a different one — is a
+ * failed gate rather than a reused store.
+ */
+const SPEC = 'sha256:0000000000000000000000000000000000000000000000000000000000000001';
 import { defaultConfig } from '../scripts/config.mjs';
 
 /** @type {string[]} */
@@ -64,7 +73,7 @@ describe('the oracle store', () => {
     // The one shape that reads exactly like an oracle everything passed.
     const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
     mkdirSync(meeseeksDir, { recursive: true });
-    const result = await runOracle({ meeseeksDir, root: '/repo', command: ['node', 'bin.js'], run: () => ({ ok: true, status: 0, stdout: '', stderr: '' }) });
+    const result = await runOracle({ meeseeksDir, root: '/repo', command: ['node', 'bin.js'], specification: SPEC, run: () => ({ ok: true, status: 0, stdout: '', stderr: '' }) });
     assert.equal(result.ok, false);
     assert.match(result.detail, /never authored/);
   });
@@ -73,17 +82,17 @@ describe('the oracle store', () => {
     const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
     mkdirSync(meeseeksDir, { recursive: true });
     writeFileSync(path.join(meeseeksDir, 'oracle.json'), '{ not json', 'utf8');
-    assert.equal((await runOracle({ meeseeksDir, root: '/r', command: ['node'], run: () => ({ ok: true, status: 0, stdout: '', stderr: '' }) })).ok, false);
+    assert.equal((await runOracle({ meeseeksDir, root: '/r', command: ['node'], specification: SPEC, run: () => ({ ok: true, status: 0, stdout: '', stderr: '' }) })).ok, false);
   });
 
   it('refuses to write an empty oracle', () => {
-    assert.throws(() => writeOracle(path.join(makeTempDir(), '.meeseeks'), []), OracleError);
+    assert.throws(() => writeOracle(path.join(makeTempDir(), '.meeseeks'), [], { specification: SPEC }), OracleError);
   });
 
   it('round-trips what it wrote', () => {
     const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
-    writeOracle(meeseeksDir, [aCase()]);
-    const read = readOracle(meeseeksDir);
+    writeOracle(meeseeksDir, [aCase()], { specification: SPEC });
+    const read = readOracle(meeseeksDir, { specification: SPEC });
     assert.equal(read.length, 1);
     assert.equal(read[0].expectStdout, '{"columns":[]}');
     assert.deepStrictEqual(read[0].argv, ['in.csv']);
@@ -159,8 +168,8 @@ describe('running the cases', () => {
   /** @param {import('../scripts/oracle.mjs').OracleCase[]} cases @param {(cwd: string) => { ok: boolean, status: number, stdout: string, stderr: string }} responder */
   async function runWith(cases, responder) {
     const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
-    writeOracle(meeseeksDir, cases);
-    return await runOracle({ meeseeksDir, root: '/repo', command: ['node', 'dist/bin.js'], run: (_c, _a, o) => responder(o.cwd) });
+    writeOracle(meeseeksDir, cases, { specification: SPEC });
+    return await runOracle({ meeseeksDir, root: '/repo', command: ['node', 'dist/bin.js'], specification: SPEC, run: (_c, _a, o) => responder(o.cwd) });
   }
 
   it('materialises each case\'s files and runs in that directory', async () => {
@@ -183,11 +192,12 @@ describe('running the cases', () => {
 
   it('cleans its scratch directory up, so one case cannot see the previous one\'s files', async () => {
     const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
-    writeOracle(meeseeksDir, [aCase({ id: 'A', files: [{ path: 'only-a.csv', content: 'x' }] }), aCase({ id: 'B', files: [] })]);
+    writeOracle(meeseeksDir, [aCase({ id: 'A', files: [{ path: 'only-a.csv', content: 'x' }] }), aCase({ id: 'B', files: [] })], { specification: SPEC });
     /** @type {string[][]} */
     const listings = [];
     await runOracle({
       meeseeksDir,
+      specification: SPEC,
       root: '/repo',
       command: ['node'],
       run: (_c, _a, o) => {
@@ -387,11 +397,12 @@ describe('metamorphic relations', () => {
         files: [{ path: 'in.csv', content: 'v\n1\n2\n' }],
         relation: { kind: 'same-stdout', files: [{ path: 'in.csv', content: 'v\n2\n1\n' }], argv: ['in.csv'] },
       }),
-    ]);
+    ], { specification: SPEC });
     /** @type {string[][]} */
     const invocations = [];
     const result = await runOracle({
       meeseeksDir,
+      specification: SPEC,
       root: path.dirname(meeseeksDir),
       command: ['node', 'cli.js'],
       run: (_c, args) => {
@@ -412,10 +423,11 @@ describe('metamorphic relations', () => {
         expectStdout: null,
         relation: { kind: 'same-stdout', files: [{ path: 'in.csv', content: 'v\n2\n1\n' }], argv: ['in.csv'] },
       }),
-    ]);
+    ], { specification: SPEC });
     let call = 0;
     const result = await runOracle({
       meeseeksDir,
+      specification: SPEC,
       root: path.dirname(meeseeksDir),
       command: ['node', 'cli.js'],
       run: () => ({ ok: true, status: 0, stdout: call++ === 0 ? '{"mean":0}' : '{"mean":0.333}', stderr: '' }),
@@ -429,5 +441,115 @@ describe('metamorphic relations', () => {
       () => parseOracleCases('```json\n{"cases":[{"id":"X","files":[],"argv":["a"],"why":"w"}]}\n```'),
       /asserts neither an exit code, nor stdout, nor a relation/,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The store belongs to one run and one specification (REVIEW F8)
+// ---------------------------------------------------------------------------
+
+describe('the oracle store is bound to the specification it was authored from', () => {
+  const OTHER = 'sha256:0000000000000000000000000000000000000000000000000000000000000002';
+
+  it('refuses cases authored from a different specification', async () => {
+    // The defect: the store survived into the next run, so held-out cases written from a previous
+    // PRD could execute against a new objective and report a clean pass over nothing — the one
+    // gate whose entire value is independence, quietly judging something else.
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    writeOracle(meeseeksDir, [aCase()], { specification: SPEC });
+    assert.throws(() => readOracle(meeseeksDir, { specification: OTHER }), /authored from specification/);
+  });
+
+  it('refuses a store that records no specification at all', async () => {
+    // Every store written before 0.171.0. Nothing can attribute it, so nothing may reuse it.
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    mkdirSync(meeseeksDir, { recursive: true });
+    writeFileSync(path.join(meeseeksDir, 'oracle.json'), JSON.stringify({ version: 1, cases: [aCase()] }), 'utf8');
+    assert.throws(() => readOracle(meeseeksDir, { specification: SPEC }), /records no specification/);
+  });
+
+  it('refuses to read when the caller names no specification', async () => {
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    writeOracle(meeseeksDir, [aCase()], { specification: SPEC });
+    assert.throws(() => readOracle(meeseeksDir, { specification: '' }), /which specification is current/);
+  });
+
+  it('refuses to write a store it cannot attribute', async () => {
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    assert.throws(() => writeOracle(meeseeksDir, [aCase()], { specification: '' }), /no specification identity/);
+  });
+
+  // The benign neighbour: the matching case must still read, or the gate is unusable.
+  it('reads its own cases back when the specification matches', async () => {
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    writeOracle(meeseeksDir, [aCase()], { specification: SPEC });
+    assert.equal(readOracle(meeseeksDir, { specification: SPEC }).length, 1);
+  });
+
+  it('answers oracleMatchesSpecification for every reason a store is unusable', async () => {
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    assert.equal(oracleMatchesSpecification(meeseeksDir, SPEC), false, 'an absent store matched');
+    writeOracle(meeseeksDir, [aCase()], { specification: SPEC });
+    assert.equal(oracleMatchesSpecification(meeseeksDir, SPEC), true);
+    assert.equal(oracleMatchesSpecification(meeseeksDir, OTHER), false, 'a foreign store matched');
+    writeFileSync(path.join(meeseeksDir, 'oracle.json'), '{not json', 'utf8');
+    assert.equal(oracleMatchesSpecification(meeseeksDir, SPEC), false, 'a corrupt store matched');
+  });
+
+  it('runs no case when the store belongs to another specification', async () => {
+    // Through the gate rather than the reader, because a failed read that still executed cases
+    // would be the same defect one layer down.
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    writeOracle(meeseeksDir, [aCase()], { specification: SPEC });
+    let invocations = 0;
+    const result = await runOracle({
+      meeseeksDir,
+      root: '/repo',
+      command: ['node', 'bin.js'],
+      specification: OTHER,
+      run: () => {
+        invocations += 1;
+        return { ok: true, status: 0, stdout: '', stderr: '' };
+      },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(invocations, 0);
+  });
+});
+
+describe('the store is written atomically and archived with its run', () => {
+  it('leaves no temporary file behind', async () => {
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    writeOracle(meeseeksDir, [aCase()], { specification: SPEC });
+    assert.equal(existsSync(path.join(meeseeksDir, 'oracle.json.tmp')), false);
+  });
+
+  it('never accepts a half-written temporary as the store', async () => {
+    // A kill before the rename leaves the old complete store, or none — never partial JSON whose
+    // mere existence stops the driver re-authoring, which is what the direct write allowed.
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    writeOracle(meeseeksDir, [aCase()], { specification: SPEC });
+    writeFileSync(path.join(meeseeksDir, 'oracle.json.tmp'), '{"version":2,"cases":[', 'utf8');
+    assert.equal(readOracle(meeseeksDir, { specification: SPEC }).length, 1);
+  });
+
+  it('is archived with the run that authored it, so the next run finds nothing to reuse', async () => {
+    const meeseeksDir = path.join(makeTempDir(), '.meeseeks');
+    writeOracle(meeseeksDir, [aCase()], { specification: SPEC });
+    const archived = archivePreviousRun(meeseeksDir);
+    assert.notEqual(archived, null, 'the store was not archived at all');
+    assert.equal(existsSync(path.join(meeseeksDir, 'oracle.json')), false, 'the store survived into the next run');
+    assert.equal(existsSync(path.join(String(archived), 'oracle.json')), true, 'the previous run lost its store');
+  });
+
+  it('is ignored by the stanza the driver writes, so `git add -A` cannot stage it', async () => {
+    // Tracked, the target's own history would carry the cases the builder is never shown.
+    // Positional since 0.178.0. `oracle.json` was one of the three artifacts REVIEW F9 found still
+    // missing from the enumeration this replaced, and the scratch directory holding the held-out
+    // inputs themselves was never in it at all.
+    const stanza = String(meeseeksIgnoreUpdate(''));
+    assert.equal(stanza.includes('.meeseeks/*'), true, stanza);
+    assert.equal(stanza.includes('!.meeseeks/oracle.json'), false, stanza);
+    assert.equal(stanza.includes('!.meeseeks/oracle-scratch'), false, stanza);
   });
 });

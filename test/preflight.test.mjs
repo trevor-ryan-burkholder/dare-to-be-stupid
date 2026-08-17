@@ -28,7 +28,7 @@ import {
   formatPreflight,
   runPreflight,
 } from '../scripts/preflight.mjs';
-import { RUN_LOCK_FILE, claimRunLock } from '../scripts/run-lock.mjs';
+import { RUN_LOCK_FILE, acquireRunLock } from '../scripts/run-lock.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -353,7 +353,7 @@ describe('checkNoConcurrentRun', () => {
 
   it('blocks when the recorded driver is still alive, and names its pid', () => {
     const meeseeksDir = makeMeeseeksDir();
-    claimRunLock(meeseeksDir, { pid: 4242, startedAt: '2026-08-13T10:00:00.000Z' });
+    acquireRunLock(meeseeksDir, { pid: 4242, startedAt: '2026-08-13T10:00:00.000Z' });
     const result = checkNoConcurrentRun(meeseeksDir, { isAlive: () => true, self: 1 });
     assert.equal(result.ok, false);
     assert.equal(result.blocking, true);
@@ -366,7 +366,7 @@ describe('checkNoConcurrentRun', () => {
   // rather than the exotic one.
   it('treats a lock whose process is gone as stale, and lets the run start', () => {
     const meeseeksDir = makeMeeseeksDir();
-    claimRunLock(meeseeksDir, { pid: 4242, startedAt: '2026-08-13T10:00:00.000Z' });
+    acquireRunLock(meeseeksDir, { pid: 4242, startedAt: '2026-08-13T10:00:00.000Z' });
     const result = checkNoConcurrentRun(meeseeksDir, { isAlive: () => false, self: 1 });
     assert.equal(result.ok, true);
     assert.equal(result.detail.includes('stale'), true, result.detail);
@@ -374,7 +374,7 @@ describe('checkNoConcurrentRun', () => {
 
   it('does not block a process on its own lock', () => {
     const meeseeksDir = makeMeeseeksDir();
-    claimRunLock(meeseeksDir, { pid: 99, startedAt: 'x' });
+    acquireRunLock(meeseeksDir, { pid: 99, startedAt: 'x' });
     assert.equal(checkNoConcurrentRun(meeseeksDir, { isAlive: () => true, self: 99 }).ok, true);
   });
 

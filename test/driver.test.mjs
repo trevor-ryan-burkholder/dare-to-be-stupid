@@ -24,9 +24,7 @@ import { after, describe, it } from 'node:test';
 import { readAssumptions } from '../scripts/assumptions.mjs';
 import { MUTATION_CONFIG_CONTENTS } from '../scripts/toolchains/node.mjs';
 import { pinSecurityElement, quarantinePin, readPins, writePins } from '../scripts/pins.mjs';
-import { RUN_LOCK_FILE } from '../scripts/run-lock.mjs';
-import { RUN_ARCHIVE_DIR, RUN_MANIFEST } from '../scripts/run-manifest.mjs';
-import { GATE_SKIP_FILE } from '../scripts/gate-cache.mjs';
+import { RUN_ARCHIVE_DIR } from '../scripts/run-manifest.mjs';
 import { DEFAULT_OWNERSHIP, defaultConfig } from '../scripts/config.mjs';
 import {
   DriverError,
@@ -76,8 +74,6 @@ import {
   claudeArgs,
   formatGateFailure,
   MEESEEKS_IGNORED_PATHS,
-  OUTCOME_FILE,
-  REVIEW_RECORD,
   isColdPhase,
   combinePanel,
   inspectCiWorkflows,
@@ -110,6 +106,52 @@ function makeTempDir() {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-driver-'));
   temporaryDirs.push(dir);
   return dir;
+}
+
+/**
+ * Files the canned reviewers in this suite cite, written into a candidate tree.
+ *
+ * Since 0.169.0 a passing citation is resolved against the repository under review (REVIEW F6), so
+ * a fixture reviewer that cites `src/a.ts:1` in a tree with no `src/a.ts` is correctly flipped to
+ * `fail`. Seeding the files is what a real reviewed repository would have; the hostile locations
+ * get their own tests in `test/evidence.test.mjs` rather than being smuggled in here.
+ */
+const CITED_SOURCES = [
+  'a.ts',
+  'src/a.ts',
+  'src/a.mjs',
+  'src/b.ts',
+  'src/foo.ts',
+  'src/moved.ts',
+  'src/api/admin.ts',
+  'tests/a.test.js',
+  'tests/perf.test.js',
+];
+
+/** @param {string} root */
+function seedCitedSources(root) {
+  const body = `${Array.from({ length: 200 }, (_, index) => `const line${index + 1} = ${index + 1};`).join('\n')}\n`;
+  for (const file of CITED_SOURCES) {
+    mkdirSync(path.join(root, path.dirname(file)), { recursive: true });
+    writeFileSync(path.join(root, file), body, 'utf8');
+  }
+}
+
+/**
+ * Does the stanza the driver writes cover this path under `.meeseeks/`?
+ *
+ * A deliberately dumb lexical reading of the two positional rules. It is not a gitignore engine and
+ * does not pretend to be: the proof that **git** agrees is
+ * `test/integration/machine-state-ignore.integration.test.mjs`, which materialises every writer in a
+ * real repository and runs `git add -A`.
+ *
+ * @param {string} relative a path under `.meeseeks/`
+ * @returns {boolean}
+ */
+function ignoresUnderMeeseeks(relative) {
+  const lines = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
+  if (!lines.includes('.meeseeks/*')) return false;
+  return !lines.includes(`!.meeseeks/${relative}`);
 }
 
 after(() => {
@@ -1879,6 +1921,12 @@ describe('driveRun', () => {
         ],
       }),
       readTestReports: () => [{ numTotalTests: 1, testResults: [] }],
+      // The specification is unchanged unless a test says otherwise (REVIEW F12). `driveRun`
+      // refuses to run without this rather than assuming it, so the harness states it.
+      checkSpecification: () => ({ ok: true, digest: 'sha256:harness', detail: 'PRD.md unchanged' }),
+      // A stable candidate identity unless a test says otherwise (REVIEW F14). `driveRun` refuses
+      // to run without one rather than assuming the tree stood still.
+      workspaceIdentity: () => 'sha256:candidate',
       commit: () => 'commit1',
       diffStat: () => ' 1 file changed',
       ship: () => {},
@@ -1896,6 +1944,7 @@ describe('driveRun', () => {
    */
   async function run(overrides, configOverrides = {}, seedPassing = [], requiredIds = ['PRD-1.1'], unitCommand = 'npx vitest run --reporter=json') {
     const root = makeTempDir();
+    seedCitedSources(root);
     const meeseeksDir = path.join(root, '.meeseeks');
     if (seedPassing.length > 0) {
       // A seeded ratchet means a reset is reachable, and the reset really shells out to
@@ -1906,7 +1955,13 @@ describe('driveRun', () => {
       git(['config', 'user.email', 'driver@example.invalid']);
       git(['config', 'user.name', 'Driver Test']);
       writeFileSync(path.join(root, 'app.txt'), 'good\n', 'utf8');
-      git(['add', 'app.txt']);
+      // A source/test pair in the good commit, because the scoped restore checks paths *out of*
+      // that commit and `git checkout <sha> -- path` refuses a path the commit never had.
+      mkdirSync(path.join(root, 'src'), { recursive: true });
+      mkdirSync(path.join(root, 'test'), { recursive: true });
+      writeFileSync(path.join(root, 'src', 'core.js'), 'export const core = "good";\n', 'utf8');
+      writeFileSync(path.join(root, 'test', 'core.test.js'), '// keeps working\n', 'utf8');
+      git(['add', 'app.txt', 'src/core.js', 'test/core.test.js']);
       git(['commit', '--quiet', '-m', 'good state']);
       saveState(meeseeksDir, {
         version: 1,
@@ -1926,6 +1981,662 @@ describe('driveRun', () => {
     });
     return { outcome, meeseeksDir, root };
   }
+
+  // -------------------------------------------------------------------------
+  // A retried test is not a passing test (REVIEW F30)
+  // -------------------------------------------------------------------------
+  describe('a normalized flaky result fails the iteration', () => {
+    /**
+     * Playwright-shaped output whose paths are inside the tree being judged.
+     *
+     * The report has to name files in *this* candidate — since 0.175.0 a reported path outside the
+     * repository is refused outright — so the root is created first and handed to the builder,
+     * which is why these drive `driveRun` directly rather than through the shared harness.
+     *
+     * @param {string} root
+     * @param {{ status: string, title: string }[]} results
+     * @returns {unknown}
+     */
+    const playwrightish = (root, results) => ({
+      config: { rootDir: root, projects: [{ name: 'chromium' }] },
+      suites: [
+        {
+          title: 'a suite',
+          specs: results.map((entry) => ({
+            title: entry.title,
+            file: path.join(root, 'tests', 'checkout.spec.js'),
+            ok: true,
+            tests: [{ projectName: 'chromium', status: entry.status, results: [{ status: 'passed' }] }],
+          })),
+          suites: [],
+        },
+      ],
+    });
+
+    /**
+     * Every command gate green, which is what Playwright's own exit code produces when every test
+     * is expected or flaky. The stability decision has to come from the *report*, not the code.
+     */
+    const allGreen = () => ({
+      ok: true,
+      results: [
+        { name: 'lint', ok: true, status: 0, detail: 'passed' },
+        { name: 'unit', ok: true, status: 0, detail: 'passed' },
+        { name: 'mutation', ok: true, status: 0, detail: 'no survivors' },
+      ],
+    });
+
+    /**
+     * @param {(root: string) => unknown[]} makeReports
+     * @param {{ seedPassing?: string[], overrides?: Partial<import('../scripts/driver.mjs').Effects> }} [options]
+     * @returns {Promise<{ outcome: import('../scripts/driver.mjs').RunOutcome, logs: string[], shipped: number, reviews: number }>}
+     */
+    async function driveFlaky(makeReports, options = {}) {
+      const root = makeTempDir();
+      seedCitedSources(root);
+      const meeseeksDir = path.join(root, '.meeseeks');
+      if ((options.seedPassing ?? []).length > 0) {
+        const git = (/** @type {string[]} */ args) =>
+          execFileSync('git', args, { cwd: root, stdio: 'pipe' }).toString().trim();
+        git(['init', '--quiet']);
+        git(['config', 'user.email', 'driver@example.invalid']);
+        git(['config', 'user.name', 'Driver Test']);
+        writeFileSync(path.join(root, 'app.txt'), 'good\n', 'utf8');
+        git(['add', 'app.txt']);
+        git(['commit', '--quiet', '-m', 'good state']);
+        saveState(meeseeksDir, {
+          version: 1,
+          iteration: 1,
+          passing: options.seedPassing ?? [],
+          lastGoodCommit: git(['rev-parse', 'HEAD']),
+        });
+      }
+      /** @type {string[]} */
+      const logs = [];
+      let shipped = 0;
+      let reviews = 0;
+      const outcome = await driveRun({
+        config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
+        meeseeksDir,
+        rootDir: root,
+        requiredIds: ['PRD-1.1'],
+        task: 'build the thing',
+        effects: effectsWith({
+          log: (line) => logs.push(line),
+          gates: allGreen,
+          readTestReports: () => makeReports(root),
+          review: () => {
+            reviews += 1;
+            return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
+          },
+          ship: () => {
+            shipped += 1;
+          },
+          ...options.overrides,
+        }),
+      });
+      return { outcome, logs, shipped, reviews };
+    }
+
+    it('cannot ship a newly flaky test, even with every command gate green', async () => {
+      // The finding, end to end: the id has no earlier ratchet identity to regress against, so
+      // before this there was nothing at all to stop it reaching the Panel and `SHIPPED`.
+      const driven = await driveFlaky((root) => [
+        playwrightish(root, [
+          { status: 'expected', title: 'sums line items' },
+          { status: 'flaky', title: 'is flaky on purpose' },
+        ]),
+      ]);
+      assert.notEqual(driven.outcome.state, 'SHIPPED');
+      assert.equal(driven.shipped, 0, 'a flaky test reached a ship');
+      assert.equal(driven.reviews, 0, 'a panel was paid for on an iteration whose own evidence said a test failed');
+      const all = driven.logs.join('\n');
+      assert.equal(all.includes('test-stability'), true, all.slice(-900));
+      assert.equal(all.includes('is flaky on purpose'), true, all.slice(-900));
+    });
+
+    // The benign neighbour, and the one that decides whether this is a gate or a wall.
+    it('ships a clean report where every test is expected', async () => {
+      const driven = await driveFlaky((root) => [playwrightish(root, [{ status: 'expected', title: 'sums line items' }])]);
+      assert.equal(driven.outcome.state, 'SHIPPED', driven.logs.join('\n').slice(-900));
+      assert.equal(driven.shipped, 1);
+    });
+
+    it('leaves a skipped test alone, because an absence is not an unstable pass', async () => {
+      const driven = await driveFlaky((root) => [
+        playwrightish(root, [
+          { status: 'expected', title: 'sums line items' },
+          { status: 'skipped', title: 'not written yet' },
+        ]),
+      ]);
+      assert.equal(driven.outcome.state, 'SHIPPED', 'a skipped test was treated as instability');
+      assert.equal(driven.shipped, 1);
+    });
+
+    it('resolves an id that passed in one report and was flaky in another to flaky', async () => {
+      // Two runners disagreeing about one test is not evidence that it passes, so the records are
+      // collapsed across every accepted report by worst status rather than per report.
+      const driven = await driveFlaky((root) => [
+        playwrightish(root, [{ status: 'expected', title: 'sums line items' }]),
+        playwrightish(root, [{ status: 'flaky', title: 'sums line items' }]),
+      ]);
+      assert.notEqual(driven.outcome.state, 'SHIPPED');
+      assert.equal(driven.shipped, 0);
+      assert.equal(driven.logs.join('\n').includes('test-stability'), true, driven.logs.join('\n').slice(-900));
+    });
+
+    it('still takes the regression path when an already-ratcheted id turns flaky', async () => {
+      // The stronger existing behaviour, preserved: a protected id that becomes flaky is absent
+      // from the passing set, so it is a regression and a reset — not merely a gate failure.
+      const driven = await driveFlaky(
+        (root) => [playwrightish(root, [{ status: 'flaky', title: 'sums line items' }])],
+        {
+          seedPassing: ['tests/checkout.spec.js::a suite > sums line items::chromium'],
+          overrides: { changedFiles: () => [] },
+        },
+      );
+      assert.notEqual(driven.outcome.state, 'SHIPPED');
+      assert.equal(driven.logs.join('\n').includes('regression'), true, driven.logs.join('\n').slice(-900));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Every envelope that was bought is charged exactly once (REVIEW F18)
+  // -------------------------------------------------------------------------
+  describe('spend is conserved across a parallel panel', () => {
+    it('reports every reviewer that completed, even when an earlier one failed', async () => {
+      // Codex's reproduction, to the cent. Three reviewers return 10/20/30 tokens and $1/$2/$3
+      // after a 100-token, $0.01 builder, and the first one fails. All three promises settle —
+      // every one of those envelopes was paid for — but charging and deciding happened together,
+      // so the ABORTED outcome reported 110 tokens and $1.01 and omitted 50 tokens and $5.
+      let reviews = 0;
+      const usage = [
+        { tokens: 10, costUsd: 1, ok: false },
+        { tokens: 20, costUsd: 2, ok: true },
+        { tokens: 30, costUsd: 3, ok: true },
+      ];
+      const { outcome } = await run(
+        {
+          build: () => ({ ok: true, text: 'built', costUsd: 0.01, tokens: 100, raw: '' }),
+          // A green test, so the iteration actually reaches a panel rather than ending earlier for
+          // a reason that has nothing to do with accounting.
+          readTestReports: () => [
+            {
+              numTotalTests: 1,
+              testResults: [
+                { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+              ],
+            },
+          ],
+          review: () => {
+            const next = usage[reviews];
+            reviews += 1;
+            return {
+              ok: next.ok,
+              text: JSON.stringify({ requirements: [GOOD_ENTRY] }),
+              costUsd: next.costUsd,
+              tokens: next.tokens,
+              raw: 'reviewer output',
+            };
+          },
+        },
+        { maxIterations: 1, reviewers: ['correctness', 'security', 'design'] },
+        [],
+        // One required id per reviewer, so all three are actually convened: a panel member that
+        // owns nothing is refused before it can spend anything.
+        ['PRD-1.1', 'DoD-2-security', 'DoD-5-design'],
+      );
+      assert.equal(reviews, 3, 'the panel did not actually run three reviewers');
+      assert.equal(outcome.spentTokens, 160, `tokens: ${outcome.spentTokens}`);
+      assert.equal(Number(outcome.costUsd.toFixed(2)), 6.01, `cost: ${outcome.costUsd}`);
+    });
+
+    it('does not double-charge a panel that succeeds', async () => {
+      // The other direction, and the one a conservation fix breaks if it is written carelessly.
+      const { outcome } = await run(
+        {
+          build: () => ({ ok: true, text: 'built', costUsd: 0.01, tokens: 100, raw: '' }),
+          review: () => ({
+            ok: true,
+            text: JSON.stringify({ requirements: [GOOD_ENTRY] }),
+            costUsd: 2,
+            tokens: 20,
+            raw: '',
+          }),
+          readTestReports: () => [
+            {
+              numTotalTests: 1,
+              testResults: [
+                { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+              ],
+            },
+          ],
+        },
+        { maxIterations: 1 },
+      );
+      assert.equal(outcome.spentTokens, 120, `tokens: ${outcome.spentTokens}`);
+      assert.equal(Number(outcome.costUsd.toFixed(2)), 2.01, `cost: ${outcome.costUsd}`);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // A scoped restore cannot confirm itself from a stale report (REVIEW F16)
+  // -------------------------------------------------------------------------
+  describe('the scoped restore is verified by a gate that actually passed', () => {
+    const PROTECTED = 'test/core.test.js::keeps working';
+    const WITHOUT_IT = {
+      numTotalTests: 1,
+      testResults: [
+        { name: 'test/other.test.js', assertionResults: [{ ancestorTitles: [], title: 'fine', status: 'passed' }] },
+      ],
+    };
+    const WITH_IT = {
+      numTotalTests: 1,
+      testResults: [
+        { name: 'test/core.test.js', assertionResults: [{ ancestorTitles: [], title: 'keeps working', status: 'passed' }] },
+      ],
+    };
+
+    /**
+     * One iteration that regresses the protected test, then attempts a scoped restore whose
+     * verification gate answers however the test says.
+     *
+     * @param {{ verificationUnitOk: boolean, reportsAfter: unknown[] }} options
+     * @returns {Promise<string[]>} the log
+     */
+    async function restoreWith(options) {
+      /** @type {string[]} */
+      const logs = [];
+      let gateCalls = 0;
+      await run(
+        {
+          log: (line) => logs.push(line),
+          changedFiles: () => ['src/core.js', 'test/core.test.js'],
+          gates: () => {
+            gateCalls += 1;
+            // The first call is the iteration's own gate run; the second is the scoped restore's
+            // verification. Only the second one's answer is under test.
+            const unitOk = gateCalls === 1 ? true : options.verificationUnitOk;
+            return {
+              ok: unitOk,
+              results: [
+                { name: 'unit', ok: unitOk, status: unitOk ? 0 : 1, detail: unitOk ? 'passed' : 'failed' },
+                { name: 'mutation', ok: true, status: 0, detail: 'no survivors' },
+              ],
+            };
+          },
+          readTestReports: () => (gateCalls <= 1 ? [WITHOUT_IT] : options.reportsAfter),
+        },
+        { maxIterations: 1 },
+        [PROTECTED],
+      );
+      return logs;
+    }
+
+    it('does not hold on a stale passing report when the verification gate failed', async () => {
+      // Codex's reproduction. The verification gate fails and writes nothing; the previous
+      // attempt's passing report is still readable; before this repair the Driver logged
+      // `scoped restore held`, skipped the full reset, and left the broken source in place.
+      const logs = await restoreWith({ verificationUnitOk: false, reportsAfter: [WITH_IT] });
+      const all = logs.join('\n');
+      assert.equal(all.includes('scoped restore held'), false, all.slice(-900));
+      assert.equal(all.includes('scoped restore not verified'), true, all.slice(-900));
+    });
+
+    it('does not hold when the verification gate produced no report at all', async () => {
+      const logs = await restoreWith({ verificationUnitOk: false, reportsAfter: [] });
+      assert.equal(logs.join('\n').includes('scoped restore held'), false, logs.join('\n').slice(-900));
+    });
+
+    it('still refuses when the verification gate passed but the test did not come back', async () => {
+      // The pre-existing half of the rule, kept: a verified restore that did not restore anything
+      // is a failed restore.
+      const logs = await restoreWith({ verificationUnitOk: true, reportsAfter: [WITHOUT_IT] });
+      const all = logs.join('\n');
+      assert.equal(all.includes('scoped restore held'), false, all.slice(-900));
+      assert.equal(all.includes('did not return the failing test'), true, all.slice(-900));
+    });
+
+    // The benign neighbour. A scoped restore that can never hold is a scoped restore that does not
+    // exist, and the whole-tree reset it avoids threw away two 7.5M-token builder spends in ship1.
+    it('holds when the verification gate passed and the test came back', async () => {
+      const logs = await restoreWith({ verificationUnitOk: true, reportsAfter: [WITH_IT] });
+      assert.equal(logs.join('\n').includes('scoped restore held'), true, logs.join('\n').slice(-900));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // A verdict is sealed to the bytes it was formed over (REVIEW F14)
+  // -------------------------------------------------------------------------
+  describe('a verdict cannot authorise bytes no reviewer saw', () => {
+    const greenTest = () => [
+      {
+        numTotalTests: 1,
+        testResults: [
+          { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+        ],
+      },
+    ];
+
+    /**
+     * A workspace identity that changes on the nth read, standing in for a background writer.
+     *
+     * One iteration reads it four times: the capture before the panel, the recheck after it, the
+     * recheck before the commit, and the proof after it. These tests run a single iteration so the
+     * position is exactly the boundary being aimed at.
+     *
+     * @param {number} changesOnRead 1-based read after which the tree reads differently
+     * @returns {{ identity: () => string, reads: () => number }}
+     */
+    const writerAt = (changesOnRead) => {
+      let reads = 0;
+      return {
+        identity: () => {
+          reads += 1;
+          return reads < changesOnRead ? 'sha256:reviewed' : 'sha256:changed';
+        },
+        reads: () => reads,
+      };
+    };
+
+    it('refuses to run at all without a way to identify the workspace', async () => {
+      const root = makeTempDir();
+      await assert.rejects(
+        () =>
+          driveRun({
+            config: { ...defaultConfig(), maxIterations: 1, reviewers: ['correctness'] },
+            meeseeksDir: path.join(root, '.meeseeks'),
+            rootDir: root,
+            requiredIds: ['PRD-1.1'],
+            task: 'build the thing',
+            effects: /** @type {any} */ ({ ...effectsWith({}), workspaceIdentity: undefined }),
+          }),
+        /cannot be sealed to the bytes/,
+      );
+    });
+
+    it('commits nothing when the tree changes while the panel is reading it', async () => {
+      // Codex's reproduction: the reviewer read `reviewed bytes`, a concurrent write changed them,
+      // and the loop committed the later bytes and returned SHIPPED. The second read here is the
+      // recheck after the panel returns.
+      const writer = writerAt(2);
+      let commits = 0;
+      let shipped = 0;
+      const { outcome } = await run({
+        readTestReports: greenTest,
+        workspaceIdentity: writer.identity,
+        commit: () => {
+          commits += 1;
+          return 'commit1';
+        },
+        ship: () => {
+          shipped += 1;
+        },
+      }, { maxIterations: 1 });
+      assert.notEqual(outcome.state, 'SHIPPED');
+      assert.equal(commits, 0, 'bytes no reviewer saw were committed under that verdict');
+      assert.equal(shipped, 0);
+    });
+
+    it('commits nothing when the tree changes between the panel and the commit', async () => {
+      // Reads: capture, after-panel, pre-commit. The writer fires on the third.
+      const writer = writerAt(3);
+      let commits = 0;
+      const { outcome } = await run({
+        readTestReports: greenTest,
+        workspaceIdentity: writer.identity,
+        commit: () => {
+          commits += 1;
+          return 'commit1';
+        },
+      }, { maxIterations: 1 });
+      assert.notEqual(outcome.state, 'SHIPPED');
+      assert.equal(commits, 0, 'the commit ran on a tree the panel had not judged');
+    });
+
+    it('withholds the ship when the tree changes as the commit lands', async () => {
+      // The commit exists — the work is banked — but it is not the reviewed tree, so it cannot
+      // carry that verdict to a deploy or a tag.
+      const writer = writerAt(4);
+      let commits = 0;
+      let shipped = 0;
+      const { outcome } = await run({
+        readTestReports: greenTest,
+        workspaceIdentity: writer.identity,
+        commit: () => {
+          commits += 1;
+          return 'commit1';
+        },
+        ship: () => {
+          shipped += 1;
+        },
+      }, { maxIterations: 1 });
+      assert.notEqual(outcome.state, 'SHIPPED');
+      assert.equal(commits >= 1, true, 'the work was not banked at all');
+      assert.equal(shipped, 0, 'a tag was written over a tree nobody reviewed');
+    });
+
+    it('does not review at all when the workspace cannot be identified', async () => {
+      // Uncertainty is not a pass: a tree that cannot be hashed cannot have a verdict sealed to it.
+      let reviews = 0;
+      const { outcome } = await run({
+        readTestReports: greenTest,
+        workspaceIdentity: () => null,
+        review: () => {
+          reviews += 1;
+          return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
+        },
+      }, { maxIterations: 1 });
+      assert.notEqual(outcome.state, 'SHIPPED');
+      assert.equal(reviews, 0, 'a panel was paid for on a tree nobody could name');
+    });
+
+    it('records which bytes the verdict was about, in the panel record and the outcome', async () => {
+      const { outcome, meeseeksDir } = await run({ readTestReports: greenTest });
+      assert.equal(outcome.workspace, 'sha256:candidate');
+      const record = JSON.parse(readFileSync(path.join(meeseeksDir, 'review.json'), 'utf8'));
+      assert.equal(record.panels[0].workspace, 'sha256:candidate');
+    });
+
+    // The benign neighbour. A seal that discarded every verdict would be a product that cannot
+    // ship, which is a worse failure than the one it prevents.
+    it('ships when the tree stands still, which is every ordinary iteration', async () => {
+      let shipped = 0;
+      const { outcome } = await run({
+        readTestReports: greenTest,
+        ship: () => {
+          shipped += 1;
+        },
+      });
+      assert.equal(outcome.state, 'SHIPPED');
+      assert.equal(shipped, 1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // The specification a run is judged against cannot move under it (REVIEW F12)
+  // -------------------------------------------------------------------------
+  describe('specification drift ends the run instead of being judged', () => {
+    const drifted = {
+      ok: false,
+      digest: 'sha256:captured',
+      detail: 'PRD.md has changed since this run captured it: sha256:captured became sha256:other.',
+    };
+
+    it('refuses to run at all without a way to check the revision', async () => {
+      // Fail-closed, and refused rather than defaulted: a loop that cannot say which specification
+      // it is judging has nothing to decide, and "assume unchanged" is the defect with a shrug.
+      const root = makeTempDir();
+      await assert.rejects(
+        () =>
+          driveRun({
+            config: { ...defaultConfig(), maxIterations: 1, reviewers: ['correctness'] },
+            meeseeksDir: path.join(root, '.meeseeks'),
+            rootDir: root,
+            requiredIds: ['PRD-1.1'],
+            task: 'build the thing',
+            // Deliberately not an `Effects`: the point is what happens when a caller omits it.
+            effects: /** @type {any} */ ({ ...effectsWith({}), checkSpecification: undefined }),
+          }),
+        /cannot establish which/,
+      );
+    });
+
+    it('ends before the gates when the specification moved during the build', async () => {
+      // Codex's reproduction, driven through the loop: the builder kept every requirement id and
+      // changed the text. Nothing downstream may treat that tree as this run's candidate.
+      let gates = 0;
+      let reviews = 0;
+      let shipped = 0;
+      const { outcome } = await run({
+        checkSpecification: () => drifted,
+        gates: () => {
+          gates += 1;
+          return { ok: true, results: [{ name: 'mutation', ok: true, status: 0, detail: 'no survivors' }] };
+        },
+        review: () => {
+          reviews += 1;
+          return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
+        },
+        ship: () => {
+          shipped += 1;
+        },
+      });
+      assert.equal(outcome.state, 'ABORTED');
+      assert.match(outcome.reason, /specification changed under this run/);
+      assert.equal(gates, 0, 'a gate ran against a specification the run did not start against');
+      assert.equal(reviews, 0, 'a panel was paid for on a moved finish line');
+      assert.equal(shipped, 0);
+    });
+
+    it('says out loud what changed and what to do about it', async () => {
+      /** @type {string[]} */
+      const logs = [];
+      await run({ checkSpecification: () => drifted, log: (line) => logs.push(line) });
+      assert.equal(logs.some((line) => line.includes('has changed since this run captured it')), true, logs.join('\n'));
+    });
+
+    it('withholds the ship when the drift only appears at the terminal boundary', async () => {
+      // Everything between the pre-gate check and the ship — the panel's own reads, the deploy,
+      // the ship-time mutation gate — runs beside a tree somebody could write to.
+      let checks = 0;
+      let shipped = 0;
+      const { outcome } = await run({
+        readTestReports: () => [
+          {
+            numTotalTests: 1,
+            testResults: [
+              { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+            ],
+          },
+        ],
+        checkSpecification: () => {
+          checks += 1;
+          return checks === 1 ? { ok: true, digest: 'sha256:captured', detail: 'PRD.md unchanged' } : drifted;
+        },
+        ship: () => {
+          shipped += 1;
+        },
+      });
+      assert.equal(outcome.state, 'ABORTED');
+      assert.equal(shipped, 0, 'the ship effect ran on a specification that had moved');
+    });
+
+    it('ends the run when the revision cannot be checked at all', async () => {
+      // An unreadable record is not evidence that nothing changed.
+      const { outcome } = await run({
+        checkSpecification: () => {
+          throw new Error('.meeseeks/specification.json could not be read as JSON');
+        },
+      });
+      assert.equal(outcome.state, 'ABORTED');
+      assert.match(outcome.reason, /could not be checked/);
+    });
+
+    // The benign neighbour. A check that ended every run would be indistinguishable from a
+    // product that does not work.
+    it('ships normally while the specification stays put', async () => {
+      let shipped = 0;
+      const { outcome } = await run({
+        readTestReports: () => [
+          {
+            numTotalTests: 1,
+            testResults: [
+              { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+            ],
+          },
+        ],
+        ship: () => {
+          shipped += 1;
+        },
+      });
+      assert.equal(outcome.state, 'SHIPPED');
+      assert.equal(shipped, 1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Reviewer evidence must resolve against the tree that was reviewed (REVIEW F6)
+  // -------------------------------------------------------------------------
+  describe('a success-shaped report with unreal evidence cannot reach the ship effect', () => {
+    /** @param {string} evidence @returns {Promise<{ state: string, shipped: number, reason: string }>} */
+    async function shipAttemptCiting(evidence) {
+      let shipped = 0;
+      const { outcome } = await run({
+        // A green test really passing is the ordinary shipping condition; without it the ship is
+        // withheld for a reason that has nothing to do with evidence, and the neighbour below
+        // would pass for the wrong reason.
+        readTestReports: () => [
+          {
+            numTotalTests: 1,
+            testResults: [
+              { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+            ],
+          },
+        ],
+        review: () => ({
+          ok: true,
+          costUsd: 0.01,
+          tokens: 100,
+          raw: '',
+          text: JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence, detail: 'found it' }] }),
+        }),
+        ship: () => {
+          shipped += 1;
+        },
+      });
+      return { state: outcome.state, shipped, reason: outcome.reason };
+    }
+
+    it('does not ship on a citation whose file is not in the repository', async () => {
+      // Codex's reproduction, driven through the whole loop rather than through the parser: the
+      // report is unanimous, well-formed and cites `does/not/exist.ts:999999`. Before the
+      // boundary this reached `SHIPPED` with the ship effect called.
+      const attempt = await shipAttemptCiting('does/not/exist.ts:999999');
+      assert.notEqual(attempt.state, 'SHIPPED');
+      assert.equal(attempt.shipped, 0, 'the ship effect ran on evidence that does not exist');
+    });
+
+    it('does not ship on a citation whose line is past the end of a real file', async () => {
+      const attempt = await shipAttemptCiting('src/a.ts:999999');
+      assert.notEqual(attempt.state, 'SHIPPED');
+      assert.equal(attempt.shipped, 0);
+    });
+
+    it('does not ship on a citation that traverses out of the repository', async () => {
+      const attempt = await shipAttemptCiting('../../etc/passwd:1');
+      assert.notEqual(attempt.state, 'SHIPPED');
+      assert.equal(attempt.shipped, 0);
+    });
+
+    // The benign neighbour, and the one that matters most: a resolver that refused real evidence
+    // would turn every honest review into a stall, which is a worse product than the defect.
+    it('still ships on a citation that resolves to a real, non-empty line', async () => {
+      const attempt = await shipAttemptCiting('src/a.ts:1');
+      assert.equal(attempt.state, 'SHIPPED', attempt.reason);
+      assert.equal(attempt.shipped, 1);
+    });
+  });
 
   // The deploy command was the only call in the driver bounded by nothing. `tokenCeiling` and
   // `costCeiling` bind children that return, and `runSmoke` carries its own deadline, so a
@@ -2077,6 +2788,7 @@ describe('driveRun', () => {
      */
     async function runWithSpend(alreadySpent, overrides = {}) {
       const root = makeTempDir();
+      seedCitedSources(root);
       let builders = 0;
       const outcome = await driveRun({
         config: { ...defaultConfig(), maxIterations: 4, tokenCeiling: 2_000_000, reviewers: ['correctness'] },
@@ -2154,6 +2866,7 @@ describe('driveRun', () => {
     /** @param {string} text what the builder's final message says */
     async function runWithBuilderSaying(text) {
       const root = makeTempDir();
+      seedCitedSources(root);
       const meeseeksDir = path.join(root, '.meeseeks');
       const outcome = await driveRun({
         config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
@@ -2246,6 +2959,7 @@ describe('driveRun', () => {
      */
     async function runWithPins(pins, overrides) {
       const root = makeTempDir();
+      seedCitedSources(root);
       const meeseeksDir = path.join(root, '.meeseeks');
       writePins(meeseeksDir, pins);
       const outcome = await driveRun({
@@ -4279,8 +4993,8 @@ describe('recordPanelVerdict', () => {
   });
 
   it('is never tracked by git, so a reset cannot revert the evidence', () => {
-    const ignored = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
-    assert.equal(ignored.includes('.meeseeks/review.json'), true);
+    // Covered positionally since 0.178.0: `.meeseeks/*` reaches this file without naming it.
+    assert.equal(ignoresUnderMeeseeks('review.json'), true);
   });
 });
 
@@ -4388,26 +5102,47 @@ describe('unitGateCommand', () => {
 });
 
 describe('meeseeksIgnoreUpdate', () => {
-  it('ignores the ratchet state in a .gitignore that does not cover it', () => {
+  it('ignores the run state in a .gitignore that does not cover it', () => {
     const updated = meeseeksIgnoreUpdate('node_modules/\n');
     assert.notEqual(updated, null);
-    assert.equal(String(updated).includes('\n.meeseeks/state.json\n'), true);
+    assert.equal(String(updated).includes('\n.meeseeks/*\n'), true);
     assert.equal(String(updated).startsWith('node_modules/\n'), true);
   });
 
   it('leaves the settings file committable, because settings are not machine state', () => {
     // Observed on the first real run: the operator had committed their config, which is a
-    // reasonable thing to want in version control. A blanket ignore fights them.
+    // reasonable thing to want in version control. A blanket ignore fights them, so the positional
+    // rule carries one deliberate negation — and `.meeseeks/*` rather than `.meeseeks/` is what
+    // makes that negation work at all, because git will not descend into an excluded directory.
     const ignored = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
-    assert.equal(ignored.includes('.meeseeks/config.json'), false, 'settings must stay committable');
-    assert.equal(ignored.includes('.meeseeks/state.json'), true, 'machine state must not be');
+    assert.equal(ignored.includes('.meeseeks/*'), true, 'machine state must be ignored');
+    assert.equal(ignored.includes('!.meeseeks/config.json'), true, 'settings must stay committable');
+    assert.equal(ignoresUnderMeeseeks('config.json'), false, 'settings must stay committable');
   });
 
-  it('ignores every machine-state file the driver writes', () => {
-    const ignored = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
-    for (const file of ['.meeseeks/state.json', '.meeseeks/red-evidence.json', '.meeseeks/bloopers.log']) {
-      assert.equal(ignored.includes(file), true, `not ignored: ${file}`);
+  it('ignores every machine-state file the driver writes, by position', () => {
+    // **The rule this test exists to hold is positional** (REVIEW F9). It used to enumerate
+    // filenames, and the enumeration was always behind: `oracle.json`, `capabilities.json` and the
+    // mutation sandbox's `stryker.config.json` were all still trackable when Codex looked, and
+    // every artifact added since had been trackable until somebody remembered the list.
+    for (const file of [
+      'state.json',
+      'red-evidence.json',
+      'bloopers.log',
+      'pins.json',
+      'assumptions.json',
+      'oracle.json',
+      'capabilities.json',
+      'stryker.config.json',
+      'runs/0001/outcome.json',
+    ]) {
+      assert.equal(ignoresUnderMeeseeks(file), true, `not ignored: ${file}`);
     }
+  });
+
+  it('ignores an artifact nobody has invented yet, which is the whole point', () => {
+    assert.equal(ignoresUnderMeeseeks('an-artifact-added-next-year.json'), true);
+    assert.equal(ignoresUnderMeeseeks('some/deeply/nested/thing.bin'), true);
   });
 
   it('adds a newline first when the file does not end in one', () => {
@@ -4415,18 +5150,7 @@ describe('meeseeksIgnoreUpdate', () => {
   });
 
   it('handles an absent .gitignore', () => {
-    assert.equal(String(meeseeksIgnoreUpdate('')).includes('.meeseeks/state.json'), true);
-  });
-
-  it('ignores the pin store, which holds two of the three monotonic properties', () => {
-    // The serious one. `pins.json` carries pinned security elements and cold-passed
-    // requirements, so tracked, a hard reset to lastGoodCommit restores an older copy and a pin
-    // earned since that commit is gone - along with any recorded quarantine, which is what stops
-    // a run shipping over lost protection. Found by running `git ls-files .meeseeks` on a real
-    // repository before deliberately triggering a reset; it was tracked there.
-    const ignored = String(meeseeksIgnoreUpdate('')).split('\n').map((line) => line.trim());
-    assert.equal(ignored.includes('.meeseeks/pins.json'), true);
-    assert.equal(ignored.includes('.meeseeks/assumptions.json'), true);
+    assert.equal(String(meeseeksIgnoreUpdate('')).includes('.meeseeks/*'), true);
   });
 
   it('ignores logs, because a reset destroys the run’s own record of the reset', () => {
@@ -4447,9 +5171,8 @@ describe('meeseeksIgnoreUpdate', () => {
     const updated = meeseeksIgnoreUpdate(old);
     assert.notEqual(updated, null, 'an incomplete stanza was reported as covered');
     const lines = String(updated).split('\n').map((line) => line.trim());
-    assert.equal(lines.includes('.meeseeks/pins.json'), true);
+    assert.equal(lines.includes('.meeseeks/*'), true, 'the positional rule was not added');
     // And it appends only what was missing rather than restating the whole stanza.
-    assert.equal(lines.filter((line) => line === '.meeseeks/state.json').length, 1, 'duplicated an existing entry');
     assert.equal(lines.filter((line) => line === 'node_modules/').length, 1);
   });
 
@@ -4668,6 +5391,10 @@ describe('.meeseeks/outcome.json', () => {
       realityCheck: () => ({ ...ok, text: 'buildable' }),
       gates: () => ({ ok: true, results: [{ name: 'mutation', ok: true, status: 0, detail: 'no survivors' }] }),
       readTestReports: () => [{ numTotalTests: 1, testResults: [] }],
+      checkSpecification: () => ({ ok: true, digest: 'sha256:harness', detail: 'PRD.md unchanged' }),
+      // A stable candidate identity unless a test says otherwise (REVIEW F14). `driveRun` refuses
+      // to run without one rather than assuming the tree stood still.
+      workspaceIdentity: () => 'sha256:candidate',
       commit: () => 'commit1',
       diffStat: () => ' 1 file changed',
       ship: () => {},
@@ -4798,21 +5525,16 @@ describe('every .meeseeks artifact the driver writes is ignored by git', () => {
   //
   // So the list is asserted against the constants the writers actually use. An artifact whose
   // name lives in a constant cannot be added without this failing.
-  it('covers every named artifact constant', () => {
-    // RUN_MANIFEST was missing until 0.86.0 and was found the way the previous two were: by
-    // watching a live run leave `?? .meeseeks/run.json` in `git status`, one `git add -A` away from
-    // being tracked. Third instance of the same defect, and the list is still the enumeration
-    // it has always been — the test is what makes it self-correcting, not the list.
-    // RUN_ARCHIVE_DIR is the fifth, and it is a *directory* rather than a file — which is how it
-    // slipped past a list of filenames. Measured in caseH: eight archived files were committed
-    // by `git add -A` and then destroyed by a hard reset to a commit that predated them.
-    for (const name of [OUTCOME_FILE, REVIEW_RECORD, RUN_LOCK_FILE, RUN_MANIFEST, GATE_SKIP_FILE, `${RUN_ARCHIVE_DIR}/`]) {
-      assert.equal(
-        MEESEEKS_IGNORED_PATHS.includes(`.meeseeks/${name}`),
-        true,
-        `.meeseeks/${name} is written by the driver and would be tracked, so a reset would restore an older copy`,
-      );
-    }
+  it('covers every artifact positionally, so no constant needs an entry', () => {
+    // **This test used to assert the enumeration, and that was the defect** (REVIEW F9). Each of
+    // `state.json`, `outcome.json`, `run.json` and the per-run archive was added to the list only
+    // after a live run had already committed it — three of them by the person who had documented
+    // the hazard that morning. `oracle.json`, `capabilities.json` and the mutation sandbox's
+    // `stryker.config.json` were still missing when Codex looked.
+    //
+    // The list is gone. What is asserted now is the position: two lines cover everything under
+    // `.meeseeks/`, including artifacts nobody has invented yet, with one deliberate carve-out.
+    assert.deepStrictEqual(MEESEEKS_IGNORED_PATHS, ['.meeseeks/*', '!.meeseeks/config.json', '*.log']);
   });
 
   it('does not ignore the operator-owned files, which are theirs to commit', () => {
@@ -5030,24 +5752,25 @@ describe('a security id can never be carried past a panel', () => {
 // confirmed from caseH's reflog, where two discarded commits each carried eight files under that
 // path.
 describe('the per-run archive is ignored, or archiving destroys what it preserves', () => {
-  it('ignores the archive directory, not just the files inside it', () => {
-    // A directory entry, because the archive's contents are named per run and a list of
-    // filenames is exactly what it slipped past.
-    assert.equal(MEESEEKS_IGNORED_PATHS.includes(`.meeseeks/${RUN_ARCHIVE_DIR}/`), true);
+  it('ignores the archive directory and everything named inside it', () => {
+    // The archive's contents are named per run, which is exactly what a list of filenames slipped
+    // past. A position covers a directory and its descendants without knowing either.
+    assert.equal(ignoresUnderMeeseeks(`${RUN_ARCHIVE_DIR}/`), true);
+    assert.equal(ignoresUnderMeeseeks(`${RUN_ARCHIVE_DIR}/0007/outcome.json`), true);
   });
 
-  it('writes it into a fresh .gitignore', () => {
-    const updated = String(meeseeksIgnoreUpdate(''));
-    assert.equal(updated.includes(`.meeseeks/${RUN_ARCHIVE_DIR}/`), true, updated);
+  it('covers it in a fresh .gitignore', () => {
+    assert.equal(String(meeseeksIgnoreUpdate('')).includes('.meeseeks/*'), true);
   });
 
-  it('adds it to a .gitignore written by an older build that lacks it', () => {
-    // The self-correcting half. A repository carrying an older stanza must gain the entry
-    // rather than keep an incomplete list forever, which is the defect 0.77.0 already paid for.
+  it('repairs a .gitignore written by an older build that enumerated names', () => {
+    // The self-correcting half. A repository carrying the old enumeration must gain the positional
+    // rule rather than keep an incomplete list forever, which is the defect 0.77.0 already paid for
+    // and F9 found again.
     const older = ['.meeseeks/state.json', '.meeseeks/briefs/', '.meeseeks/outcome.json', 'node_modules/'].join('\n');
     const updated = meeseeksIgnoreUpdate(older);
     assert.notEqual(updated, null, 'an older stanza was left incomplete');
-    assert.equal(String(updated).includes(`.meeseeks/${RUN_ARCHIVE_DIR}/`), true);
+    assert.equal(String(updated).includes('.meeseeks/*'), true);
   });
 });
 
@@ -5341,5 +6064,56 @@ describe('findHealthPath sees filesystem-declared routes', () => {
     // Next writes `.next/types/app/.../route.ts` type stubs; a stale one must not stand in for
     // the deleted source route.
     assert.equal(detectTree(['.next/types/app/api/health/route.ts']), null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The run lock is released on every path out (DESIGN.md §3.5, REVIEW F1)
+// ---------------------------------------------------------------------------
+
+describe('every exit between acquiring the run lock and the loop gives the repository back', () => {
+  // **Why a source scan rather than fourteen behavioural tests.** The lock is now taken before
+  // the `.gitignore` write, before the archive and before the first paid child, which puts a
+  // dozen pre-loop refusals downstream of it: a failed PRD child, an unreadable capability
+  // declaration, `--confirm-prd` succeeding, a component aborting. Each one is an exit, and each
+  // one must release. Behavioural tests can prove the paths that exist today; nothing in them
+  // notices the fifteenth `return` somebody adds next month, and a lock leaked by a normal exit
+  // refuses the *next* run for no reason.
+  //
+  // This project's own rule about enumeration applies: the guard hook's positional `.meeseeks/`
+  // rule exists because a list of names defaulted every new artifact to unprotected. So the
+  // property asserted here is positional too — inside this region of `main`, an exit code is
+  // returned through `releasing` or it is a defect.
+  const source = readFileSync(new URL('../scripts/driver.mjs', import.meta.url), 'utf8').split('\n');
+
+  /** @returns {{ from: number, to: number }} */
+  const lockOwnedRegion = () => {
+    const helper = source.findIndex((line) => line.includes('const releasing = (code) =>'));
+    assert.notEqual(helper, -1, 'main no longer defines the releasing helper this rule is about');
+    // The helper's own `return code;` is not an exit from `main`, so the region starts after it.
+    const from = source.findIndex((line, index) => index > helper && line === '  };');
+    // `let outcome;` is the line before the try whose finally releases the lock. Everything from
+    // there on is already covered, including the ABORTED return inside its catch.
+    const to = source.findIndex((line) => line === '  let outcome;');
+    assert.equal(from > 0 && to > from, true, `could not delimit the lock-owned region (${from}..${to})`);
+    return { from, to };
+  };
+
+  it('returns every exit code through releasing()', () => {
+    const { from, to } = lockOwnedRegion();
+    const escaped = [];
+    for (let index = from; index < to; index += 1) {
+      const line = source[index];
+      if (/return\s+-?\d+\s*;/.test(line)) escaped.push(`${index + 1}: ${line.trim()}`);
+    }
+    assert.deepStrictEqual(escaped, [], `these exits leak the run lock instead of releasing it:\n${escaped.join('\n')}`);
+  });
+
+  it('finds the exits it is scanning, so a rule that matched nothing cannot pass', () => {
+    // The scan's own benign neighbour. A region with no `releasing(...)` calls in it would
+    // satisfy the assertion above while proving nothing at all.
+    const { from, to } = lockOwnedRegion();
+    const released = source.slice(from, to).filter((line) => /return releasing\(-?\d+\);/.test(line));
+    assert.equal(released.length >= 10, true, `expected the pre-loop phases to have many exits, found ${released.length}`);
   });
 });

@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.164.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.178.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,26 +18,64 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.164.0
+## Build order — current traversal at 0.178.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
 
-- **F1:** acquire the repository lock atomically before any work.
-- **F26 / item 81:** after that lock, revalidate launch safety and admit only declared pre-loop phase outputs.
+- **F1:** acquire the repository lock atomically before any work — **implemented at 0.165.0**;
+  `REVIEW.md` F1 stays OPEN until Codex has verified the repair. Winning is an exclusive create,
+  stale recovery is a serialized explicit retry, each acquisition carries an ownership token only
+  its owner may clear, and the driver acquires before the `.gitignore` write, the archive, the
+  first child, the install and every commit (`DESIGN.md` §3.5). Evidence:
+  `test/integration/run-lock.integration.test.mjs` races six real processes at one directory —
+  free and stale — and drives the real `main`; the same race against the 0.164.0 semantics
+  produced six winners out of six.
+- **F26 / item 81:** after that lock, revalidate launch safety and admit only declared pre-loop phase
+  outputs — **implemented at 0.166.0**; `REVIEW.md` F26 stays OPEN until Codex has verified the
+  repair. See item 81 below for what landed.
 - **F2:** make timeout and output-cap termination force and settle after a bounded SIGTERM grace
-  period.
-- **F3:** prevent an unrelated local listener from satisfying the health gate.
+  period — **implemented at 0.167.0**; `REVIEW.md` F2 stays OPEN until Codex has verified the
+  repair. `shell` now escalates `SIGTERM` → five-second grace → `SIGKILL`, settles without waiting
+  for a cooperative exit, sweeps descendants on the output-cap path as well as the ceiling, and
+  keeps the first termination's verdict. Evidence:
+  `test/integration/shell-termination.integration.test.mjs` — a resistant child and its descendants
+  under both paths, a cooperative child that does not pay the grace, and the stale-sweep regression
+  the escalation itself introduced. `DESIGN.md` §11.1 states the mechanism.
+- **F3:** prevent an unrelated local listener from satisfying the health gate — **implemented at
+  0.168.0**; `REVIEW.md` F3 stays OPEN until Codex has verified the repair. The probe polls only the
+  assigned port, refuses a port something was already answering on, re-checks that the child is
+  alive when the response arrives, and keeps `portContractHint` as the teaching diagnosis; `--port`
+  is the driver/operator-owned contract that replaces the announced-port fallback. Evidence:
+  `test/health-probe.test.mjs` — the decoy reproduction, the inverted two-masters test, the fixed
+  port named by the driver, and the pre-existing listener a dead child cannot borrow.
 - **F6 / item 60:** resolve every passing reviewer citation to a contained, existing line before
-  Panel combination.
-- **F7 / item 61:** require both process success and envelope success from every Claude role.
-- **F12 / item 66:** bind every role and terminal decision to one immutable specification revision.
-- **F8 / item 62:** bind held-out Oracle cases to that run and specification revision.
-- **F14 / item 68:** commit and tag only the exact workspace identity gated and reviewed.
-- **F16 / item 70:** accept only fresh successful test reports from the current gate attempt.
+  Panel combination — **implemented at 0.169.0**; `REVIEW.md` F6 stays OPEN until Codex has
+  verified the repair. See item 60 below.
+- **F7 / item 61:** require both process success and envelope success from every Claude role —
+  **not started; blocked on authorised paid live evidence.** The repair changes `spawnClaude`, and
+  both REVIEW F7's acceptance and this repository's own tier rules make the paid tier-3 `claude -p`
+  child contract mandatory for that file. Implementing it without that evidence would ship a change
+  to the one function whose contract belongs to another binary, which is the argv defect exactly.
+  Left for a session with the expenditure authorised; it may share that spend with F2's live check.
+- **F12 / item 66:** bind every role and terminal decision to one immutable specification revision —
+  **implemented at 0.170.0**; `REVIEW.md` F12 stays OPEN until Codex has verified the repair. See
+  item 66 below.
+- **F8 / item 62:** bind held-out Oracle cases to that run and specification revision —
+  **implemented at 0.171.0**; `REVIEW.md` F8 stays OPEN until Codex has verified the repair. See
+  item 62 below.
+- **F14 / item 68:** commit and tag only the exact workspace identity gated and reviewed —
+  **implemented at 0.172.0**; `REVIEW.md` F14 stays OPEN until Codex has verified the repair. See
+  item 68 below.
+- **F16 / item 70:** accept only fresh successful test reports from the current gate attempt —
+  **implemented at 0.173.0**; `REVIEW.md` F16 stays OPEN until Codex has verified the repair. See
+  item 70 below.
 - **F30 / item 87:** reject every normalized flaky test result before Panel or `SHIPPED`,
-  after items 70 and 74 bind the report.
-- **F18 / item 72:** conserve every completed child envelope into ceilings and terminal receipts.
+  after items 70 and 74 bind the report — **implemented at 0.176.0**; `REVIEW.md` F30 stays OPEN
+  until Codex has verified the repair. See item 87 below.
+- **F18 / item 72:** conserve every completed child envelope into ceilings and terminal receipts —
+  **implemented at 0.174.0**; `REVIEW.md` F18 stays OPEN until Codex has verified the repair. See
+  item 72 below.
 - **F29 / item 85:** keep candidate-tree instructions out of reviewer authority; candidate files
   remain evidence, while binding review inputs come from identified immutable sources.
 
@@ -53,13 +91,23 @@ policy rather than only pre-approving named tools. F28/item **83** establishes a
 measured product-wide Claude Code compatibility policy and one-CLI-per-run identity. All close before
 feature fan-out.
 
-**Gate 0C — remaining external review defects.** Close F4's absolute HTTP deadline/body cap, F9's
-positional machine-state ignore boundary through item **63**, F10's complete atomic terminal
-receipt through item **64**, F13's non-shrinking gate roster through item **67**, F17's
-definition-bound test credit through item **71**, F19's bounded decision-artifact reads through
-item **73**, F20's contained reporter identities through item **74**, F22's durable exact-tree
-acceptance receipt through item **76**, F23's inert model configuration through item **78**, and
-F24's hidden PRD checkpoint through item **79**. F11 may share F2's process-lifecycle
+**Gate 0C — remaining external review defects.** F4's absolute HTTP deadline and bounded body are
+**implemented at 0.177.0**; `REVIEW.md` F4 stays OPEN until Codex has verified the repair. Every
+attempt in `scripts/health-probe.mjs` now carries a wall-clock deadline bounded by what remains of
+the probe's own, treats response `aborted`, response `error` and a premature `close` as failed
+attempts, caps the body while receiving it, and applies all of that to the remote smoke check as
+well. Evidence in `test/health-probe.test.mjs`: a continuously streaming endpoint, an abandoned
+response, an oversized body, a streaming remote check, and the ordinary local and remote responses
+that must still pass.
+
+F9's positional machine-state ignore boundary through item **63** is **implemented at 0.178.0**;
+`REVIEW.md` F9 stays OPEN until Codex has verified the repair. See item 63 below. Then close F10's complete atomic
+terminal receipt through item **64**, F13's non-shrinking gate roster through item **67**, F17's
+definition-bound test credit through item **71**, F19's bounded decision-artifact reads through item
+**73**, F22's durable exact-tree acceptance receipt through item **76**, F23's inert model
+configuration through item **78**, and F24's hidden PRD checkpoint through item **79**. F20's
+contained reporter identities through item **74** are **implemented at 0.175.0**, with REVIEW F20
+open pending Codex. F11 may share F2's process-lifecycle
 implementation, but retains its own platform evidence.
 
 **Gate 0 dependency edges.** The A/B/C groups classify priority and external evidence; they are not
@@ -1978,7 +2026,27 @@ its receipt and still
 goes through the ordinary shipped-file version bump and required live tier before release. A failed or
 inconclusive experiment closes the item without changing the production path.
 
-### 60. Resolve reviewer evidence before accepting a pass — OPEN (REVIEW F6)
+### 60. Resolve reviewer evidence before accepting a pass — IMPLEMENTED (0.169.0); REVIEW F6 open pending Codex
+
+**Landed at 0.169.0** in `scripts/evidence.mjs`, applied by `resolveReportEvidence` between
+`parseReviewerReport` and `combinePanel` — to every panel report and to the carried report. A
+passing citation must resolve inside the exact candidate root to a readable regular file and a
+positive, in-range, non-blank line; absolute paths, `..` traversal, directories and symlinks
+escaping the root are refused, the last by comparing after `realpathSync`. An entry that does not
+resolve becomes `fail` before it can be counted, recorded, pinned or carried; an actionable advisory
+whose location does not resolve stops being actionable. The parser stays pure and the line number
+stays a locator, with content identity still the durable pin.
+
+Evidence: `test/evidence.test.mjs` (every hostile location in REVIEW F6's list beside a benign
+neighbour, including a Windows-shaped citation resolving on a POSIX root) and
+`test/driver.test.mjs`'s loop-level pair — a unanimous report citing `does/not/exist.ts:999999`
+cannot reach the ship effect, while a report citing a real line still ships.
+
+**No paid live check is due for this slice.** `templates/reviewer-system.md` and the reviewer output
+contract are unchanged; the repair is entirely on the Driver's side of the parse. If this is later
+batched with item 40, item 40's own contract change carries the tier-3 requirement.
+
+**What it was for, as originally written:**
 
 **Problem solved:** the current Panel contract accepts evidence-shaped text even when the cited file
 or line does not exist. That permits a hallucinated or stale citation to participate in `SHIPPED`.
@@ -1994,7 +2062,13 @@ and Windows-shaped neighbour; an integration case proves fake evidence cannot re
 and any parser/template contract change receives the required paid live check. This may batch with
 item 40, but F6 closure remains independently reviewer-owned.
 
-### 61. Conjoin Claude process and envelope success — OPEN (REVIEW F7)
+### 61. Conjoin Claude process and envelope success — OPEN, BLOCKED (REVIEW F7; needs authorised paid live evidence)
+
+**Blocked, not deferred.** The repair is entirely inside `spawnClaude`, and `CLAUDE.md`'s tier rules
+plus REVIEW F7's own acceptance both make `npm run test:live` mandatory for a change there. That
+spend was not authorised in the session that implemented F1, F26, F2, F3, F6 and F12, so the slice
+was left unstarted rather than landed on unit evidence that cannot see the contract it would be
+changing. Nothing else in Gate 0A depends on it.
 
 **Problem solved:** `spawnClaude` can reinterpret a failed process as a successful role result when
 failed stdout contains a success-shaped Claude envelope.
@@ -2008,7 +2082,21 @@ termination/failure representation with F2 instead of adding another parallel st
 with a valid success envelope; normal success and `is_error:true` keep their meanings; and the
 mandatory paid tier-3 check observes the production `claude -p` contract. REVIEW F7 owns closure.
 
-### 62. Bind the Oracle store to one run and one PRD — OPEN (REVIEW F8)
+### 62. Bind the Oracle store to one run and one PRD — IMPLEMENTED (0.171.0); REVIEW F8 open pending Codex
+
+**Landed at 0.171.0.** `.meeseeks/oracle.json` is now archived with its run (`PER_RUN_ARTIFACTS`),
+carries the item-66 specification digest it was authored from, is written temp-and-rename, and is
+ignored along with `.meeseeks/oracle-scratch/`. `readOracle` refuses a store authored from another
+revision or recording none, and executes no case when it does; the Driver authors fresh whenever
+there is no store *for this specification*, saying so when it replaces a foreign one. PRD-only,
+no-tools authoring is untouched.
+
+Evidence: `test/oracle.test.mjs` — foreign digest, absent digest, caller with no digest, refusal to
+write an unattributable store, the matching benign neighbour, `oracleMatchesSpecification` across
+every unusable shape, no case executed on a mismatch, no temporary left behind, a half-written
+temporary never accepted, archival moving the store, and the ignore stanza covering both paths.
+
+**What it was for, as originally written:**
 
 **Problem solved:** `.meeseeks/oracle.json` currently survives previous-run archival, so a new
 objective can reuse held-out cases written for an old PRD.
@@ -2022,7 +2110,32 @@ the store in item 63's machine-state boundary, and preserve PRD-only/no-tools Or
 run; interruption cannot produce accepted partial JSON; and target `git add -A` cannot stage the
 store. REVIEW F8 owns closure.
 
-### 63. Make the machine-state Git boundary positional — OPEN (REVIEW F9)
+### 63. Make the machine-state Git boundary positional — IMPLEMENTED (0.178.0); REVIEW F9 open pending Codex
+
+**Landed at 0.178.0.** `MEESEEKS_IGNORED_PATHS` is now `.meeseeks/*`, `!.meeseeks/config.json` and
+`*.log`. `.meeseeks/*` rather than `.meeseeks/` is load-bearing: git will not descend into an
+excluded directory, so a negation for a child of one is inert. Retiring the enumeration made seven
+imports in `driver.mjs` unused, which is what a list being the only consumer of a name looks like.
+The tests that asserted the list now assert the position, including an artifact nobody has invented
+yet, and `test/driver.test.mjs`'s capability-ownership wording follows the implementation.
+
+Evidence: `test/integration/machine-state-ignore.integration.test.mjs` materialises every current
+writer plus two future artifacts in a real repository, runs `git add -A`, and proves only
+`.gitignore`, `README.md` and the deliberate `config.json` carve-out stage — with the three
+artifacts F9 named, and the held-out oracle scratch inputs, among the things that do not. It also
+covers the blanket-`.meeseeks/` neighbour that must not be rewritten and the older enumerated stanza
+that must be repaired. **Staging, not `git check-ignore`**: that command exits 0 when a *pattern*
+matches, and a negation is a pattern, so it reports the carve-out as ignored.
+
+**Recorded for Codex rather than quietly resolved.** The `config.json` carve-out and `DESIGN.md`
+§3.5's tracked-state refusal point in opposite directions: `git add -A` stages `config.json` in a
+target that does not otherwise ignore `.meeseeks/`, and the *next* preflight then refuses the
+repository because Meeseeks tracked its own state directory. F9 asks explicitly to keep the
+operator-edited config trackable, so this slice preserved it. Whether the settings belong in the
+deliverable is an operator-owned product decision, and closing it either way is outside a repair
+that was asked to keep the carve-out.
+
+**What it was for, as originally written:**
 
 **Problem solved:** a filename enumeration omits current Driver artifacts and makes every future
 artifact trackable until somebody remembers to extend the list.
@@ -2062,7 +2175,29 @@ POSIX process-group path.
 three disappear within the bound while an unrelated process survives; POSIX cleanup and successful
 health probes remain green. A POSIX-only result cannot close REVIEW F11.
 
-### 66. Bind the run to an immutable specification revision — OPEN (REVIEW F12)
+### 66. Bind the run to an immutable specification revision — IMPLEMENTED (0.170.0); REVIEW F12 open pending Codex
+
+**Landed at 0.170.0** in `scripts/specification.mjs`. The Driver captures the canonical revision
+after the PRD commit and before the Oracle, design, Builder or Panel reads it, recording file,
+digest and size in `.meeseeks/specification.json` — archived and ignored with the rest of the
+per-run state. The capture returns its own bytes, so `requiredIds` derive from the digested
+document. `driveRun` checks the working copy against that revision before the gates and again before
+a ship, and refuses to start at all without a way to check; drift ends the run `ABORTED` naming both
+digests and asking for a new run, and nothing is repaired or reverted.
+
+Evidence: `test/specification.test.mjs` (digest sensitivity to one byte, fail-closed reads, the
+same-id text mutation, deletion, and the benign neighbours — other files, and a differently named
+specification), `test/driver.test.mjs`'s loop-level suite (drift before gates spawns no gate and no
+panel; drift at the ship boundary withholds the ship; an unreadable revision aborts; the clean case
+still ships; a missing effect refuses), and
+`test/integration/specification.integration.test.mjs` (a real Builder child rewriting `PRD.md`
+through the real `main`, beside one that rewrites everything else and proceeds).
+
+**Still owed to F12 by later items:** giving Panel and terminal receipts the canonical revision as
+their *input* rather than only checking the working copy is item **85**'s reviewer-supply contract,
+which PLAN already sequences after this item. **REVIEW F12 owns closure.**
+
+**What it was for, as originally written:**
 
 **Problem solved:** Builder can change `PRD.md` under stable requirement IDs and have Panel judge
 the changed finish line.
@@ -2089,7 +2224,27 @@ because one detector returned false on a later tree.
 removal is visible and independently justified, temporary experiments do not create permanent
 unsatisfiable gates, and roster-diff tests cover both directions.
 
-### 68. Seal Panel verdicts to an exact workspace identity — OPEN (REVIEW F14)
+### 68. Seal Panel verdicts to an exact workspace identity — IMPLEMENTED (0.172.0); REVIEW F14 open pending Codex
+
+**Landed at 0.172.0.** `driveRun` captures `workspaceHash`'s identity after the gates and before the
+first reviewer, rechecks it after every panel, immediately before the commit and once the commit has
+landed, and records it in `review.json` and `outcome.json`. Drift discards the verdict and commits
+nothing; drift found after the commit banks the work but withholds the deploy and the tag. An
+unhashable tree never matches, and `driveRun` refuses to start without a way to identify the
+workspace.
+
+**The existing hash was reused only after its boundary was proved**, as this item required:
+`test/integration/gate-cache.integration.test.mjs` now covers deletion, symlink retarget and a
+dangling symlink alongside the tracked-edit, untracked-addition and ignored-state cases it already
+had. Evidence for the seal itself: `test/driver.test.mjs`'s suite (a writer at each of the four
+boundaries, an unidentifiable tree, the recorded identity, the missing effect, and the ordinary ship)
+and `test/integration/workspace-seal.integration.test.mjs`, which drives `driveRun` against a real
+repository with the real hash while a canned reviewer writes into the tree it is reviewing —
+tracked edit, untracked addition, deletion and symlink retarget, beside an ignored-state write that
+must not fire and an ordinary iteration that ships.
+
+**Race/component landing** already re-enters this loop through the main tree, so its verdicts are
+sealed by the same capture; nothing in the race path commits under a panel of its own.
 
 **Problem solved:** `git add -A` after Panel can commit bytes that appeared after reviewers read
 the tree.
@@ -2117,7 +2272,24 @@ denial is insufficient when arbitrary code can read the same path.
 terminal policy, and eval interpretation consistently state the narrower guarantee. The Oracle
 author and Panel remain independently contextualized.
 
-### 70. Make test reports fresh, successful, and attempt-bound — OPEN (REVIEW F16)
+### 70. Make test reports fresh, successful, and attempt-bound — IMPLEMENTED (0.173.0); REVIEW F16 open pending Codex
+
+**Landed at 0.173.0.** `gateTree` clears the toolchain's declared report paths before every attempt,
+and `scripts/reports.mjs` reads back only regular files present afterwards — so absence means the
+attempt produced nothing, and a directory or symlink at a report path is refused rather than
+followed. The scoped restore now reads its verification gate's result before reading anything it
+produced; a unit gate that failed or did not run has verified nothing and the run falls through to
+the whole-tree reset.
+
+Evidence: `test/reports.test.mjs` (clear-then-collect, a missing report named rather than silently
+dropped, directory and symlink refusals, and the cleared-and-not-rewritten case) and
+`test/driver.test.mjs`'s scoped-restore suite — the exact reproduction, a report-less verification,
+a passing verification whose test did not come back, and the benign restore that holds.
+
+**Note on the wording of the finding.** "Unique attempt identity" was implemented as *clear then
+require presence* rather than as per-attempt paths, which the finding offers as the alternative and
+which needs no toolchain change; the mixed-attempt case is closed by construction, because a path
+present after a clear cannot be a previous attempt's.
 
 **Problem solved:** reused report paths and an ignored verification-gate result let stale passing
 bytes confirm a failed scoped restore.
@@ -2144,7 +2316,26 @@ deterministic normalization or conservatively revalidate.
 without deleting history, and a weakened replacement cannot ship on its predecessor's ratchet
 identity.
 
-### 72. Conserve every child result in budget accounting — OPEN (REVIEW F18)
+### 72. Conserve every child result in budget accounting — IMPLEMENTED (0.174.0); REVIEW F18 open pending Codex
+
+**Landed at 0.174.0.** The Oracle author is charged through `chargePreLoop` before its output is
+parsed, so its spend reaches `alreadySpent` and every ceiling downstream. The parallel Panel charges
+every settled envelope in array order and *then* adjudicates in declared order against the
+per-index cumulative answer — identical decisions, nothing uncharged, and no later reviewer gaining
+verdict authority from having been charged.
+
+Evidence: `test/driver.test.mjs` — REVIEW F18's reproduction now reports exactly **160 tokens and
+$6.01**, beside a success path that does not double-charge; and
+`test/integration/spend-conservation.integration.test.mjs`, which drives the real `main` with a
+distinct sentinel per phase and balances `.meeseeks/outcome.json` against the sum of every envelope
+handed out, with and without the Oracle, plus a ceiling case proving pre-loop Oracle spend now stops
+a run before it pays for a builder.
+
+**On `handedOutUsd`:** it is `main`'s running total across pre-loop *and* loop children, while
+`driveRun`'s progress is the loop's total seeded with `alreadySpent`. With both holes closed the two
+are the same ledger reached from two ends rather than two opinions; the integration test asserts
+that balance end to end. Unifying them into one object is a refactor this finding does not require
+and item 76's acceptance receipt is the natural place for it.
 
 **Problem solved:** Oracle-author spend and later settled reviewers after an ordered early exit do
 not reach durable progress, ceilings, or the final bill.
@@ -2174,7 +2365,25 @@ sizes, documenting any configurable escape.
 blob hashes with bounded memory; valid boundary neighbors work; and a refusal leaves the atomic
 terminal evidence required by item 64.
 
-### 74. Require repository-contained reporter identities — OPEN (REVIEW F20)
+### 74. Require repository-contained reporter identities — IMPLEMENTED (0.175.0); REVIEW F20 open pending Codex
+
+**Landed at 0.175.0** in `scripts/reporters/shared.mjs`, so both reporters inherit it from the one
+place ids are constructed. Containment is proved lexically and, when the path exists, through
+`realpath`; drive-qualified and UNC prefixes are refused by shape on every platform; a nonexistent
+generated path is accepted on the lexical rule alone as a stated policy; and the returned id stays
+the lexical relative path, so no existing identity changed.
+
+Evidence: `test/reporter-paths.test.mjs` (the vitest reproduction and its Playwright equivalent,
+traversal, drive-qualified, UNC, case-variant root, the root itself, an empty name, symlink escape
+and its in-repo neighbour, an unresolvable root, and the deterministic-identity set — spaces,
+Unicode, padded filenames, separators, absolute-inside, and a nonexistent generated path) and
+`test/integration/reporter-paths.integration.test.mjs`, which clones a real repository and proves
+every banked identity is a file the clone contains, refuses a real outside file, refuses the
+*origin's* copy when the clone is under review, and refuses a whole report over one bad record.
+
+**Coordination with item 71** (F17's definition digest) is still owed: this establishes that the
+accepted path is contained, and item 71 will bind it to the definition receiving current credit.
+That is item 71's slice, and this one does not pre-empt it.
 
 **Problem solved:** Vitest or Playwright can name an absolute/traversing file and bank a passing
 ratchet ID for a test definition absent from the deliverable.
@@ -2342,7 +2551,22 @@ invocation still loads it and reaches a deliberately safe preflight refusal; the
 actual CLI/plugin identities; and an unsupported or unobservable control fails acceptance rather
 than falling back to prompt wording. REVIEW F25 owns closure.
 
-### 81. Bind preflight and document phases to declared repository changes — OPEN (REVIEW F26)
+### 81. Bind preflight and document phases to declared repository changes — IMPLEMENTED (0.166.0); REVIEW F26 open pending Codex
+
+**Landed at 0.166.0** in `scripts/launch.mjs`, wired into `main` immediately after F1's run lock.
+`revalidateLaunch` reuses preflight's clean-tree, positional tracked-state, non-production remote,
+effective-config, agent-surface and requested-sandbox checks and reports every failure at once; a
+refusal names the observed HEAD and writes nothing. Each pre-loop document phase commits an
+enumerated path list, and the allowlist is **read from the template that declares it**
+(`<!-- meeseeks:declared-outputs ... -->`) rather than restated in a script — which also keeps
+`PRODUCT.md` out of every shipped script, as `test/capabilities.test.mjs` requires. Provisioning is a
+separate commit with no template contract. `.meeseeks/launch.json` records HEAD, check names and
+verdicts, and each phase's declared and staged paths, bounded and free of contents or check
+sentences. Evidence: `test/launch.test.mjs` and `test/integration/launch.integration.test.mjs`
+(dirty tree, production remote, unsafe agent surface, hostile PRD and design neighbours, the benign
+full conditional design output, and a source rule that no pre-loop phase uses `git add -A`). The
+requested-sandbox refusal is proven at tier 1 with an injected probe, because whether `bwrap` exists
+is a property of the machine running the suite. **REVIEW F26 owns closure and remains open.**
 
 **Problem solved:** supported launch runs preflight in one interactive Claude tool call and starts
 the Driver in a later call. Claude Code's `allowed-tools` field pre-approves the two intended Bash
@@ -2613,7 +2837,24 @@ malformed finding evidence all terminate fail-closed without orphan descendants;
 distinguishes reproduced, rejected, unresolved, and unattempted coverage; and a measured pilot
 improves incremental defect discovery or morning acceptance enough to justify its added cost.
 
-### 87. Treat normalized flaky tests as a failed deterministic gate — OPEN (REVIEW F30)
+### 87. Treat normalized flaky tests as a failed deterministic gate — IMPLEMENTED (0.176.0); REVIEW F30 open pending Codex
+
+**Landed at 0.176.0**, after items 70 (0.173.0) and 74 (0.175.0) had established the fresh attempt
+and the contained report identity this decision consumes. Reports are parsed once, before anything
+scores or logs a gate, and collapsed across every accepted report by worst status; any remaining
+`flaky` id adds one deterministic failed `test-stability` result naming the ids sorted and bounded to
+twenty with the remainder counted. `skipped`/`todo` are untouched, a previously ratcheted id turning
+flaky still takes the regression/reset path, and RED-before-GREEN history is unchanged.
+
+Evidence: `test/stability-gate.test.mjs` — the **real committed Playwright fixture** collapsed into
+genuine `flaky` and `passed` ids, turned into a failed gate that names them and not the skipped
+neighbours, plus the bounding and sorting rules; and `test/driver.test.mjs`'s loop-level suite — a
+newly flaky test with every command gate green reaches neither Panel nor ship, a clean expected
+report still ships, a skipped neighbour still ships, a pass-in-one-report/flaky-in-another id
+resolves to flaky, and an already-ratcheted id turning flaky still takes the regression path.
+
+**Item 67 still owes this a place in the non-shrinking roster**, as PLAN's dependency edge says; that
+is item 67's slice.
 
 **Problem solved:** Playwright reports a test that failed and then passed on retry as `flaky`, while
 the runner can still exit zero. Meeseeks correctly excludes that status from ratchet credit but does

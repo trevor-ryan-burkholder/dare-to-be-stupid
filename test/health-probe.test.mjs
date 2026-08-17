@@ -11,11 +11,24 @@
 
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import http from 'node:http';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
+import { clearInterval, setInterval } from 'node:timers';
 
-import { detectBoundPort, judgeHealthResponse, judgeSmokeResponse, parseProbeArgs, parseSmokeArgs, portContractHint, probeHealth } from '../scripts/health-probe.mjs';
+import {
+  detectBoundPort,
+  judgeHealthResponse,
+  judgeSmokeResponse,
+  parseProbeArgs,
+  parseSmokeArgs,
+  portContractHint,
+  portIsOccupied,
+  probeHealth,
+  runSmoke,
+} from '../scripts/health-probe.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -30,6 +43,22 @@ function makeTempDir() {
 after(() => {
   for (const dir of temporaryDirs) rmSync(dir, { recursive: true, force: true });
 });
+
+/**
+ * A port nothing is listening on, for the tests that need the probe to be *told* one.
+ *
+ * @returns {Promise<number>}
+ */
+function freePortForTest() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = /** @type {{ port: number }} */ (server.address());
+      server.close(() => resolve(port));
+    });
+  });
+}
 
 /**
  * Write a one-file server and return the command that starts it.
@@ -135,6 +164,25 @@ describe('parseProbeArgs', () => {
   });
 });
 
+describe('portIsOccupied', () => {
+  it('says so when something is listening', async () => {
+    const server = net.createServer();
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(undefined)));
+    const { port } = /** @type {{ port: number }} */ (server.address());
+    try {
+      assert.equal(await portIsOccupied(port), true);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  // The benign neighbour. Reporting every port occupied would refuse every run, which is not
+  // what fail-closed means here: the question is whether *this* port is free.
+  it('says a free port is free', async () => {
+    assert.equal(await portIsOccupied(await freePortForTest()), false);
+  });
+});
+
 describe('probeHealth', () => {
   it('passes when the application really answers', async () => {
     const { cwd, command } = serverThat('response.writeHead(200); response.end("OK");');
@@ -142,13 +190,14 @@ describe('probeHealth', () => {
     assert.equal(outcome.ok, true, outcome.detail);
   });
 
-  it('passes when the app ignores PORT but announces the port it bound (the two-masters case)', async () => {
-    // The Tallyho smoke's fourth machine finding: the probe demanded "honor ephemeral PORT"
-    // while the target's Playwright webServer wanted a fixed URL, and builders oscillated the
-    // start script between the two across six iterations. The probe now polls the port the
-    // app's own output announces when it disagrees with the assigned one. This server binds an
-    // OS-assigned port of its own choosing and prints it Next-style; PORT is deliberately not
-    // consulted.
+  it('fails an app that ignores PORT, however loudly it announces where it went (REVIEW F3)', async () => {
+    // **This test used to assert the opposite, and that is the finding.** Between 0.113.0 and
+    // 0.168.0 the probe followed the port the application's own output announced, which settled
+    // the Tallyho smoke's two-masters conflict by promoting a hint to evidence. Printed output
+    // establishes no ownership of a listener; the decoy test below is what that costs.
+    //
+    // The app is still told exactly what to fix, which is the half of the old behaviour worth
+    // keeping.
     const cwd = makeTempDir();
     writeFileSync(
       path.join(cwd, 'server.mjs'),
@@ -161,9 +210,78 @@ describe('probeHealth', () => {
       ].join('\n'),
       'utf8',
     );
-    const outcome = await probeHealth({ command: 'node server.mjs', path: '/health', timeout: 15_000, cwd });
+    const outcome = await probeHealth({ command: 'node server.mjs', path: '/health', timeout: 4000, cwd });
+    assert.equal(outcome.ok, false, outcome.detail);
+    assert.equal(outcome.detail.includes('must honor the PORT environment variable'), true, outcome.detail);
+  });
+
+  it('fails a probe child that opened no socket and only printed a decoy URL (REVIEW F3)', async () => {
+    // The verified reproduction, exactly. A decoy HTTP server answers correctly; the child under
+    // test binds nothing at all and merely prints the decoy's address, then stays alive. The old
+    // probe reported `ok: true` with "health endpoint answered 200 ... announced by the
+    // application" — a false pass in a required ship gate, with the application never started.
+    const decoy = http.createServer((request, response) => {
+      response.writeHead(200);
+      response.end('OK');
+    });
+    await new Promise((resolve) => decoy.listen(0, '127.0.0.1', () => resolve(undefined)));
+    const decoyPort = /** @type {{ port: number }} */ (decoy.address()).port;
+    try {
+      const cwd = makeTempDir();
+      writeFileSync(
+        path.join(cwd, 'liar.mjs'),
+        [
+          `console.log('- Local: http://localhost:${decoyPort}');`,
+          'setTimeout(() => {}, 600_000);',
+        ].join('\n'),
+        'utf8',
+      );
+      const outcome = await probeHealth({ command: 'node liar.mjs', path: '/health', timeout: 3000, cwd });
+      assert.equal(outcome.ok, false, outcome.detail);
+      assert.equal(outcome.detail.includes('did not answer'), true, outcome.detail);
+    } finally {
+      await new Promise((resolve) => decoy.close(resolve));
+    }
+  });
+
+  it('passes an app on a fixed port when the driver names that port, which stdout cannot forge', async () => {
+    // How the two masters are reconciled now. `--port` is a contract owned by the driver or the
+    // operator; an application that binds a fixed port passes when it is the port it was told to
+    // poll, and no announcement is involved in the decision.
+    const fixed = await freePortForTest();
+    const cwd = makeTempDir();
+    writeFileSync(
+      path.join(cwd, 'server.mjs'),
+      [
+        "import http from 'node:http';",
+        'const server = http.createServer((request, response) => { response.writeHead(200); response.end("OK"); });',
+        `server.listen(${fixed}, "127.0.0.1");`,
+      ].join('\n'),
+      'utf8',
+    );
+    const outcome = await probeHealth({ command: 'node server.mjs', path: '/health', timeout: 15_000, cwd, port: fixed });
     assert.equal(outcome.ok, true, outcome.detail);
-    assert.equal(outcome.detail.includes('announced by the application'), true, 'the fallback path was not the one that passed');
+  });
+
+  it('refuses a port something was already answering on, so a dead child cannot borrow it', async () => {
+    // F3's third acceptance line. A stale development server holding the port would answer every
+    // request, and a child that exited or failed to bind would pass through it. Asked before the
+    // application starts, because afterwards the two are indistinguishable from outside.
+    const squatter = http.createServer((request, response) => {
+      response.writeHead(200);
+      response.end('OK');
+    });
+    await new Promise((resolve) => squatter.listen(0, '127.0.0.1', () => resolve(undefined)));
+    const held = /** @type {{ port: number }} */ (squatter.address()).port;
+    try {
+      const cwd = makeTempDir();
+      writeFileSync(path.join(cwd, 'dies.mjs'), 'process.exit(1);\n', 'utf8');
+      const outcome = await probeHealth({ command: 'node dies.mjs', path: '/health', timeout: 5000, cwd, port: held });
+      assert.equal(outcome.ok, false, outcome.detail);
+      assert.equal(outcome.detail.includes('already answering'), true, outcome.detail);
+    } finally {
+      await new Promise((resolve) => squatter.close(resolve));
+    }
   });
 
   it('fails when the route exists in the source but answers 404', async () => {
@@ -262,5 +380,131 @@ describe('judgeSmokeResponse', () => {
 
   it('names what it got when it fails, so the failure is actionable', () => {
     assert.match(judgeSmokeResponse({ status: 503, body: '' }, 200).detail, /503/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// An HTTP attempt has an absolute deadline (REVIEW F4)
+// ---------------------------------------------------------------------------
+
+describe('a response that never ends is bounded by the probe deadline', () => {
+  it('fails a continuously streaming health endpoint within the configured deadline', async () => {
+    // The measured defect: both request helpers resolved only on `end`, and the only bound was
+    // Node's socket *inactivity* timeout — so a server writing a byte every 50 ms was never
+    // inactive, the promise never settled, and the probe never got to look at its own clock. The
+    // next bound outwards is `gateTimeoutMs`, 45 minutes, and with no outer ceiling, none.
+    const cwd = makeTempDir();
+    writeFileSync(
+      path.join(cwd, 'server.mjs'),
+      [
+        "import http from 'node:http';",
+        'const server = http.createServer((request, response) => {',
+        '  response.writeHead(200);',
+        '  setInterval(() => response.write("."), 50);',
+        '});',
+        'server.listen(Number(process.env.PORT), "127.0.0.1");',
+      ].join('\n'),
+      'utf8',
+    );
+    const started = Date.now();
+    const outcome = await probeHealth({ command: 'node server.mjs', path: '/health', timeout: 3000, cwd });
+    const elapsed = Date.now() - started;
+    assert.equal(outcome.ok, false, outcome.detail);
+    assert.equal(elapsed < 3000 + 8000, true, `the probe ran for ${elapsed}ms against a 3000ms deadline`);
+  });
+
+  it('reads a response the server abandons as a failed attempt, not as silence', async () => {
+    // `aborted`, `error` and a premature `close` were all unhandled, so a server that wrote headers
+    // and then dropped the socket left the promise unsettled forever.
+    const cwd = makeTempDir();
+    writeFileSync(
+      path.join(cwd, 'server.mjs'),
+      [
+        "import http from 'node:http';",
+        'const server = http.createServer((request, response) => {',
+        '  response.writeHead(200, { "content-length": "100" });',
+        '  response.write("partial");',
+        '  setTimeout(() => response.socket?.destroy(), 30);',
+        '});',
+        'server.listen(Number(process.env.PORT), "127.0.0.1");',
+      ].join('\n'),
+      'utf8',
+    );
+    const outcome = await probeHealth({ command: 'node server.mjs', path: '/health', timeout: 2500, cwd });
+    assert.equal(outcome.ok, false, outcome.detail);
+  });
+
+  it('bounds an oversized body while receiving it, and still reports the response', async () => {
+    // The body is a diagnostic and 500 characters is all anyone reads; accumulating megabytes and
+    // slicing afterwards is a second failure hiding behind the first.
+    const cwd = makeTempDir();
+    writeFileSync(
+      path.join(cwd, 'server.mjs'),
+      [
+        "import http from 'node:http';",
+        'const big = "x".repeat(1024 * 1024);',
+        'const server = http.createServer((request, response) => {',
+        '  response.writeHead(200);',
+        '  for (let i = 0; i < 8; i += 1) response.write(big);',
+        '  response.end();',
+        '});',
+        'server.listen(Number(process.env.PORT), "127.0.0.1");',
+      ].join('\n'),
+      'utf8',
+    );
+    const outcome = await probeHealth({ command: 'node server.mjs', path: '/health', timeout: 15_000, cwd });
+    assert.equal(outcome.ok, true, outcome.detail);
+    assert.equal(outcome.detail.length < 2000, true, `the detail carried ${outcome.detail.length} characters`);
+  });
+});
+
+describe('the remote smoke check has the same deadline', () => {
+  it('fails a streaming remote response within its timeout', async () => {
+    /** @type {NodeJS.Timeout[]} */
+    const writers = [];
+    const server = http.createServer((request, response) => {
+      response.writeHead(200);
+      // Tracked so the suite can stop them: an interval that outlives its test keeps the whole
+      // test process alive, which is the same class of leak this file is about.
+      writers.push(setInterval(() => response.write('.'), 50));
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(undefined)));
+    const { port } = /** @type {{ port: number }} */ (server.address());
+    try {
+      const started = Date.now();
+      const outcome = await runSmoke({
+        url: `http://127.0.0.1:${port}`,
+        checks: [{ path: '/health', status: 200 }],
+        timeout: 1500,
+      });
+      const elapsed = Date.now() - started;
+      assert.equal(outcome.ok, false, outcome.detail);
+      assert.equal(elapsed < 1500 + 8000, true, `the smoke check ran for ${elapsed}ms against a 1500ms timeout`);
+    } finally {
+      for (const writer of writers) clearInterval(writer);
+      server.closeAllConnections?.();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  // The benign neighbour: an ordinary remote response must still pass, or the deadline has replaced
+  // the check rather than bounded it.
+  it('still passes an ordinary remote response', async () => {
+    const server = http.createServer((request, response) => {
+      response.writeHead(200);
+      response.end('OK');
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(undefined)));
+    const { port } = /** @type {{ port: number }} */ (server.address());
+    try {
+      const outcome = await runSmoke({
+        url: `http://127.0.0.1:${port}`,
+        checks: [{ path: '/health', status: 200 }],
+        timeout: 3000,
+      });
+      assert.equal(outcome.ok, true, outcome.detail);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });

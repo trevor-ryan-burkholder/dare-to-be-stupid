@@ -27,7 +27,7 @@
  * it positionally. The same move applies here, and the deferral no longer holds.
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 /** @typedef {{ path: string, content: string }} OracleFile */
@@ -102,8 +102,15 @@ export function parseRelation(id, value) {
 /** The store, driver-owned by §6's positional rule. */
 export const ORACLE_FILE = 'oracle.json';
 
-/** Where cases are materialised. Inside `.meeseeks/` so a builder cannot pre-create the inputs. */
-const SCRATCH = 'oracle-scratch';
+/**
+ * Where cases are materialised. Inside `.meeseeks/` so a builder cannot pre-create the inputs.
+ *
+ * Exported since 0.171.0 so the machine-state ignore boundary can name it: it is written inside the
+ * target and `git add -A` would otherwise stage a directory containing the held-out inputs
+ * themselves, which is the confidentiality of the whole gate leaking through a gitignore omission.
+ */
+export const ORACLE_SCRATCH = 'oracle-scratch';
+const SCRATCH = ORACLE_SCRATCH;
 
 /** Thrown when the oracle cannot be trusted. Never caught into a pass. */
 export class OracleError extends Error {
@@ -198,24 +205,84 @@ export function parseOracleCases(text) {
   throw new OracleError('no parseable json block of oracle cases was returned');
 }
 
+/** The store's schema version. Bumped to 2 when the specification identity became required. */
+const ORACLE_VERSION = 2;
+
 /**
+ * Write the held-out cases, bound to the specification they were authored from (REVIEW F8).
+ *
+ * **Two faults are closed here and they are separate.** The store used to carry no identity at all,
+ * so a second run in the same repository could execute cases written from a *previous* PRD and
+ * report a clean pass that established nothing about the current objective — the one gate whose
+ * entire value is independence, quietly judging something else. And it was written with a direct
+ * `writeFileSync`, so a kill mid-write left a corrupt file whose mere existence stopped the driver
+ * re-authoring. Temp-and-rename gives the reader either the old complete store or the new one, the
+ * same discipline the ratchet, the pins and the run lock already take.
+ *
+ * The identity is required rather than defaulted: an oracle that cannot say which specification it
+ * came from cannot be reused safely, and a store nobody can attribute is the defect with a version
+ * number attached.
+ *
  * @param {string} meeseeksDir
  * @param {OracleCase[]} cases
+ * @param {{ specification: string }} options the digest of the specification these cases came from
  * @returns {string} the path written
  */
-export function writeOracle(meeseeksDir, cases) {
+export function writeOracle(meeseeksDir, cases, options) {
   if (cases.length === 0) throw new OracleError('refusing to write an empty oracle');
+  const specification = typeof options?.specification === 'string' ? options.specification : '';
+  if (specification === '') {
+    throw new OracleError(
+      'refusing to write an oracle with no specification identity: a store that cannot say which PRD it was ' +
+        'authored from can be reused against a different one (REVIEW F8).',
+    );
+  }
   mkdirSync(meeseeksDir, { recursive: true });
   const file = path.join(meeseeksDir, ORACLE_FILE);
-  writeFileSync(file, `${JSON.stringify({ version: 1, cases }, null, 2)}\n`, 'utf8');
+  const temporary = `${file}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify({ version: ORACLE_VERSION, specification, cases }, null, 2)}\n`, 'utf8');
+  renameSync(temporary, file);
   return file;
 }
 
 /**
+ * Does a store on disk belong to this specification?
+ *
+ * Answers `false` for every reason a store might not be usable — absent, corrupt, unattributed, or
+ * authored from something else — because the caller's question is "may I reuse this", and every one
+ * of those answers is no. The caller re-authors; it does not repair.
+ *
  * @param {string} meeseeksDir
+ * @param {string} specification
+ * @returns {boolean}
+ */
+export function oracleMatchesSpecification(meeseeksDir, specification) {
+  try {
+    readOracle(meeseeksDir, { specification });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Read the held-out cases, and refuse any that were not authored from this specification.
+ *
+ * Every refusal here is a failed gate rather than a skipped one: an oracle that cannot be read is
+ * the one shape that reads exactly like an oracle everything passed.
+ *
+ * @param {string} meeseeksDir
+ * @param {{ specification: string }} options the digest the caller is judging against
  * @returns {OracleCase[]}
  */
-export function readOracle(meeseeksDir) {
+export function readOracle(meeseeksDir, options) {
+  const wanted = typeof options?.specification === 'string' ? options.specification : '';
+  if (wanted === '') {
+    throw new OracleError(
+      'the oracle was asked to judge without being told which specification is current, so it cannot prove its ' +
+        'cases belong to this objective (REVIEW F8).',
+    );
+  }
   const file = path.join(meeseeksDir, ORACLE_FILE);
   if (!existsSync(file)) throw new OracleError('no held-out cases: the oracle was never authored');
   /** @type {unknown} */
@@ -225,7 +292,21 @@ export function readOracle(meeseeksDir) {
   } catch (error) {
     throw new OracleError(`the oracle store will not parse: ${/** @type {Error} */ (error).message}`);
   }
-  const list = /** @type {Record<string, unknown>} */ (parsed)?.cases;
+  const record = /** @type {Record<string, unknown>} */ (parsed);
+  const specification = typeof record?.specification === 'string' ? record.specification : '';
+  if (specification === '') {
+    throw new OracleError(
+      'the oracle store records no specification, so nothing can prove its cases were authored from the PRD this ' +
+        'run is judging. Delete it and let the run author a fresh one.',
+    );
+  }
+  if (specification !== wanted) {
+    throw new OracleError(
+      `the oracle store was authored from specification ${specification} and this run is judging ${wanted}. ` +
+        'Held-out cases written for a different objective establish nothing about this one.',
+    );
+  }
+  const list = record?.cases;
   if (!Array.isArray(list) || list.length === 0) throw new OracleError('the oracle store holds no cases');
   return list.map(requireCase);
 }
@@ -337,7 +418,7 @@ export function resolveArtifactCommand(root) {
  * Run every held-out case against the built artifact.
  *
  * @param {{
- *   meeseeksDir: string, root: string, command: string[],
+ *   meeseeksDir: string, root: string, command: string[], specification?: string,
  *   run: (command: string, args: string[], options: { cwd: string }) =>
  *     { ok: boolean, status: number, stdout: string, stderr: string }
  *     | Promise<{ ok: boolean, status: number, stdout: string, stderr: string }>,
@@ -348,7 +429,7 @@ export async function runOracle(options) {
   /** @type {OracleCase[]} */
   let cases;
   try {
-    cases = readOracle(options.meeseeksDir);
+    cases = readOracle(options.meeseeksDir, { specification: options.specification ?? '' });
   } catch (error) {
     // Missing, unparseable or empty all fail. An oracle that cannot be read is the one shape
     // that reads exactly like an oracle everything passed.

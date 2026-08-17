@@ -142,3 +142,5 @@ Numbered too, and testable too. Latency budgets, data retention, accessibility l
   That is the architect's phase, and deciding it here forecloses it badly.
 - No requirement that cannot be observed from outside the program.
 - No "should" where you mean "must". The auditor reads them the same way, so pick one.
+
+<!-- meeseeks:declared-outputs PRD.md -->

@@ -277,8 +277,35 @@ claim that the repository snapshot seals the host. Each PRD/design phase then ha
 output-path allowlist and refuses unexpected changes before staging only those
 paths. It never uses a broad phase `git add -A` to absorb an unattributed edit. This matters because
 Claude Code `allowed-tools` pre-approves matching tools but does not remove the rest of the launcher's
-tool pool, and the document children intentionally hold Write/Edit. Current 0.164.0 does not enforce
-this boundary; REVIEW F26 / PLAN item 81 own it. F14 separately owns final reviewed-tree identity.
+tool pool, and the document children intentionally hold Write/Edit. F14 separately owns final
+reviewed-tree identity.
+
+**How it is enforced, since 0.166.0** (`scripts/launch.mjs`). Immediately after the run lock and
+before the `.gitignore` write, the previous run's archive, the first child, the install and every
+commit, the Driver re-runs preflight's own clean-tree, positional tracked-state, non-production
+remote, effective-config, agent-surface and requested-sandbox checks — *reused*, not reimplemented,
+because a second answer to "is this remote production-shaped" eventually disagrees with the first
+one quietly. Every check runs even after one fails, so an operator with three problems learns all
+three now. A refusal names the observed HEAD and each failing check, and writes nothing at all:
+repository bytes are preserved, and so is the previous run's receipt, which the archive has not yet
+moved.
+
+Each pre-loop document phase then commits an **enumerated** path list rather than `git add -A`. What
+it may leave is read from the template that declares it — `<!-- meeseeks:declared-outputs ... -->`
+in `prd-author.md`, `improve-author.md` and `architect.md` — so a template that changes what it
+writes changes what is admitted in the same edit, and no shipped script restates the architect's
+output table. It is an allowlist and never a required set: `docs/openapi.yaml` is conditional. Any
+other tracked or untracked path ends the run, and refusing stages, resets, cleans and removes
+nothing, because the surprise may be the operator's. The oracle author holds no tools and is held to
+leaving the tree exactly as it found it. Quality-plugin provisioning is a separate commit with no
+template contract — it writes whatever the tools it installs write — and its paths are enumerated,
+staged by name and recorded rather than predicted. `.meeseeks/launch.json` records the observed HEAD,
+each check's name and verdict, and each phase's declared and staged paths, bounded to 50 entries with
+the remainder counted; it carries no file contents and no check sentence, because `safe-remote`'s
+sentence quotes the remote URL and that is where an embedded credential would be.
+
+`REVIEW.md` F26 records the defect and its acceptance evidence, and remains open until Codex has
+verified the repair.
 
 **Preflight verifies (hard-fails with a fix hint if missing):**
 
@@ -330,10 +357,41 @@ because run 14 was sent `SIGTERM` and did not die before run 15 launched. Run 15
 and nothing may be concluded from its log. §13.6's re-entrancy guard does not cover this and never
 did: it refuses a *nested* run, a builder invoking the slash command, which is a different failure.
 
-**0.164.0 does not yet satisfy that requirement.** It checks and claims separately, and claims
-only after PRD/design work and a commit. `REVIEW.md` F1 is the release-blocking implementation
-gap; this section states the required end state rather than laundering the current race into the
-specification.
+**How it is acquired, since 0.165.0.** Winning is an exclusive create — `O_CREAT | O_EXCL` on
+`.meeseeks/lock.json` — and that is the only way to win: no path in `run-lock.mjs` writes the lock
+over an existing one. Through 0.164.0 it read the file in one call and overwrote it in another, so
+two contenders that both observed an absent lock both succeeded; measured against six real
+processes racing one directory, all six "won". The same race with the exclusive create yields
+exactly one, every round.
+
+Stale recovery is an explicit retry and never part of the claim. A lock is reclaimed only after its
+recorded owner has been established dead, and only by the one contender that first wins a second
+atomic operation: `mkdir` on `.meeseeks/lock.json.takeover-<hash of the stale token>`. Without that
+serialization, two contenders reading one dead lock would each remove it and each create their own,
+which is the original defect wearing a different hat. Inside the takeover the lock is read again, so
+a straggler that arrives after somebody else has already reclaimed the repository refuses instead of
+deleting a live lock. The takeover directory is named from the stale token, so it is single-use — an
+orphan left by a crash can never block a later takeover — and an empty directory is invisible to
+git, so it cannot be swept into a commit the way five earlier `.meeseeks/` artifacts were.
+
+The token is what makes ownership enforceable: `releaseRunLock` removes the file only when the token
+on disk is the one it was handed, so a losing contender, an aborting run, and a process that never
+acquired anything all fail to clear the winner's lock. A lock carrying no token cannot be reasoned
+about in either direction and is therefore refused rather than reclaimed — the only file that can be
+in that state was written by a driver before 0.165.0, which by definition is no longer running.
+
+The driver acquires it immediately after the refusals that touch nothing — the re-entrancy guard,
+config load, argument parsing, the tracked-state check, and the components/`--give-them-the-box`
+rule — and before everything with a side effect: the `.gitignore` write, the previous run's archive,
+the first child, the quality-plugin install, and every commit. Those cheap refusals stay upstream on
+purpose. A run that was never going to start should not take the repository from one that was, and
+the nesting refusal in particular must keep its own message, because a nested run held off by the
+*parent's* lock would report the wrong reason and would refuse under `--give-them-the-box` the very
+thing that flag exists to permit. It is released by its owner on every path out, including the
+pre-loop refusals, which is enforced positionally rather than by a list somebody has to remember.
+
+`REVIEW.md` F1 records the defect and its acceptance evidence, and remains open until Codex has
+verified the repair.
 
 Living under `.meeseeks/` means §6's positional rule already protects it — a process marked
 `MEESEEKS_RUNNING` may not write there at any depth, so a builder cannot forge or clear it.
@@ -729,6 +787,233 @@ Two things stay static, on purpose:
   application, so there is nothing to ask. The gate passes on the static finding and *says
   in its detail line that it did not probe*, rather than reporting a request it never made.
 
+**The machine-state git boundary is positional** (REVIEW F9, implemented at 0.178.0). The driver
+promised to keep its own state out of the target's history and implemented that promise as a
+hand-maintained list of filenames. `state.json`, `outcome.json`, `run.json` and the per-run archive
+were each added *after* a live run had already committed them — three by the person who had
+documented the hazard that morning — and when Codex looked, `oracle.json`, `capabilities.json` and
+the mutation sandbox's `stryker.config.json` were still missing. Every artifact added since had been
+trackable until somebody remembered, and a run that tracks its own `.meeseeks/` also makes the next
+preflight refuse the repository.
+
+Two lines replace the list:
+
+```
+.meeseeks/*
+!.meeseeks/config.json
+```
+
+`.meeseeks/*` rather than `.meeseeks/`, and the difference is load-bearing: git will not descend
+into an excluded *directory*, so a negation for a child of one is inert. Excluding the *contents*
+keeps the carve-out effective. This is the same argument §6 already makes about writes — the rule is
+a position, so an artifact added tomorrow is covered today — and retiring the list made seven
+imports in `driver.mjs` unused, which is what a list being the only consumer of a name looks like.
+
+`config.json` remains the one deliberate exception, because it is the run's settings rather than its
+machine state. **That carve-out and §3.5's tracked-state refusal point in opposite directions**, and
+the interaction is recorded rather than quietly resolved: `git add -A` will stage `config.json` in a
+target that does not otherwise ignore it, after which preflight refuses the repository. Whether the
+settings belong in the deliverable is an operator-owned product decision; `PLAN.md` item 63 carries
+it for Codex.
+
+**Every HTTP attempt has an absolute deadline** (REVIEW F4, implemented at 0.177.0). Both request
+helpers resolved a successful response only on `end`, and the only bound was Node's socket
+*inactivity* timeout — so a server that kept writing a byte every 50 ms was never inactive, the
+request promise never settled, and the outer probe loop never reached its own clock. Measured: a
+health endpoint that sent `200` and then wrote forever was not bounded by the configured probe
+deadline at all, and killing the fixture produced an unsettled top-level await instead of a result.
+The next bound outwards is `gateTimeoutMs` — **45 minutes** — and without an outer ceiling, none. A
+nominal 30-second check could stall an unattended iteration indefinitely.
+
+The timer now covers the whole attempt, headers and body alike, and is the smaller of the
+per-attempt ceiling and what remains of the probe's own deadline. Response `aborted`, response
+`error` and a premature `close` are ordinary failed attempts rather than silence, so the poll loop
+either retries or gives up on its own clock. The body is capped **while receiving** rather than
+accumulated and sliced afterwards, because a server that streams forever otherwise fills memory
+forever — a second failure hiding behind the first. The remote smoke check uses the same mechanism:
+a host that streams forever does so whichever side of the network it is on.
+
+**The probe answers on the port it assigned, and on no other** (REVIEW F3, repaired at 0.168.0).
+Between 0.113.0 and that version it followed the port the application's own *stdout* announced,
+which settled the Tallyho smoke's two-masters conflict — the probe demanding an honoured ephemeral
+`PORT` while a Playwright `webServer` config wanted a fixed URL — by promoting a hint to evidence.
+The reproduction is unambiguous: a decoy HTTP server was started locally, and a probe child that
+opened no socket at all and merely printed the decoy's URL was reported healthy. Printed output
+establishes no ownership of a listener, and this is a required ship gate, so that was a false pass
+against the nothing-defaults-to-pass invariant.
+
+Three properties replace it:
+
+- **Only the assigned port is polled.** An application that ignores `PORT` fails, and
+  `portContractHint` still tells it exactly what to fix — the half of the old behaviour worth
+  keeping, and the half that turned a stall into one repair iteration.
+- **The two masters are reconciled the other way.** `--port` lets the *driver or operator* name a
+  fixed port. That is a contract neither the application nor its stdout can forge, and an app that
+  binds a fixed port passes when it is the port it was told to answer on.
+- **The port must be free before the application starts, and the child must still be alive when it
+  answers.** A stale development server holding the port would answer every request, so a child
+  that exited or never bound could pass through it; the probe asks first and refuses rather than
+  measuring somebody else's server. Nothing portable ties a socket to a process tree — `lsof` and
+  `ss` are optional binaries with per-platform flags, and a gate that cannot run is a failure
+  rather than a skip — so this is the ownership evidence a probe can actually establish, and it is
+  described as that rather than as proof.
+
+**A retried test is not a passing test** (REVIEW F30, implemented at 0.176.0). The Playwright
+parser preserves the runner's whole-test `flaky` status deliberately, and the ratchet refuses to
+credit it deliberately — a test that failed and then passed has proved nothing, and admitting it
+would arm a hard reset that fires on noise. Nothing turned that refusal into a *failure*. Playwright
+exits zero when every test is expected or flaky, so a **newly** flaky test — one with no earlier
+ratchet identity to regress against — left every gate green and could reach the Panel and `SHIPPED`
+while the run's own normalised evidence said the test had failed before it retried. Whether an
+unstable test blocked a ship depended on whether the instability appeared before or after the
+ratchet first saw it.
+
+The reports are now parsed **once**, before anything scores or logs a gate, and the records are
+collapsed across every accepted report by worst status: an id that passed in the unit report and was
+flaky in the e2e one is flaky, because two runners disagreeing about one test is not evidence that it
+passes. Any remaining `flaky` id adds one deterministic failed `test-stability` result, whose detail
+names the ids sorted and bounded so the Builder receives a repairable objective rather than a wall of
+text.
+
+Three boundaries hold around it. `skipped` and `todo` are untouched — they are absences, not
+unstable passes. A previously ratcheted id that turns flaky keeps its stronger treatment: it is
+absent from the passing set, so it is a regression and a reset, not merely a gate failure. And
+observing flakiness may still satisfy RED-before-GREEN history, because it shows a test *can* fail;
+it never supplies current passing evidence.
+
+**A ratchet id names a file inside the candidate** (REVIEW F20, implemented at 0.175.0).
+`toPosixRelative` resolved a reported file and subtracted the root without ever asking whether the
+answer was inside it, so a Vitest-shaped passing result naming `/tmp/outside.test.js` under root
+`/repo` became the id `../tmp/outside.test.js::suite > works` — durable credit for a test whose
+defining file is not part of the candidate and which a clean clone could never reproduce. A
+misconfigured `include`, a globally installed fixture or a monorepo layout is enough; no hostile
+runner is required.
+
+Containment is now proved twice, because one check cannot see what the other can: **lexically** on
+the resolved path, which catches `..`, an absolute path outside the root and a case-variant root;
+and **through `realpath`** when the path exists, which is the only way to see a symlink inside the
+repository pointing out of it. Drive-qualified and UNC prefixes are refused by shape on every
+platform, because a report is a document that can have been written anywhere and a POSIX
+`path.resolve` would fold `C:\x` into an ordinary filename. A path that does **not** exist is
+accepted on the lexical rule alone — runners report virtual and generated files, and a nonexistent
+path cannot be a symlink escape — but it can never be *outside*. The returned id stays the lexical
+relative path, so nothing that already worked changed its identity, and spaces, Unicode, leading and
+trailing whitespace and platform separators are preserved rather than folded.
+
+A report naming an outside file is refused **whole**. Banking the rest would keep exactly the credit
+the refusal exists to withhold.
+
+**Every envelope the run bought is charged exactly once** (REVIEW F18, implemented at 0.174.0).
+Two holes sat in the seam between "a child returned" and "the run knows it". The Oracle author's
+result went from `runChild` straight to the parser without ever reaching `chargePreLoop`, so its
+spend was absent from `alreadySpent`, from every ceiling the loop then checked, and from the final
+bill — a run could begin below a token ceiling that pre-loop work had already crossed. And the
+parallel Panel charged and adjudicated in one pass, so an early failure returned with later
+reviewers' spend unrecorded even though every one of them had completed and been paid for: measured,
+three reviewers returning 10/20/30 tokens and $1/$2/$3 after a 100-token builder produced an
+`ABORTED` receipt of 110 tokens and $1.01.
+
+The Panel now **conserves first and adjudicates second**: every settled envelope is charged in array
+order, then declared-order adjudication runs against the per-index cumulative answer, which is
+exactly what the interleaved loop computed. A later reviewer gains no verdict authority from having
+been charged. The Oracle author is charged before it is parsed, like every other pre-loop phase.
+
+The property to hold onto is the balance: the terminal receipt equals the sum of every envelope any
+phase returned, whichever phases a run reaches.
+
+**A report is evidence only if this attempt produced it** (REVIEW F16, implemented at 0.173.0).
+The expected report paths are fixed — the toolchain declares them and every attempt writes to the
+same ones — so a gate that crashed, timed out, or failed before writing left the *previous*
+attempt's report on disk, and everything downstream read it as this attempt's. Codex reproduced the
+worst instance against the ratchet's only permitted escape from a regression: the scoped restore
+re-ran the gates, **discarded the result**, and trusted whatever report bytes existed. A failing unit
+gate that wrote nothing let the previous passing report confirm the restore; the Driver logged
+`scoped restore held`, skipped the full reset, and left `src/core.js` containing `broken`.
+
+`gateTree` now removes the declared report paths before an attempt runs, and `scripts/reports.mjs`
+reads back only regular files that are there afterwards. Absence therefore *means* "this attempt
+produced nothing" rather than being inferred — no clock, nonce or mtime comparison is involved,
+because mtime granularity is a filesystem property and a freshness test that can be wrong on a
+coarse one is worse than none. A path that exists but is a directory or a symlink is refused rather
+than read: it is not evidence, and following it would be reading whatever somebody else arranged.
+
+The scoped restore reads its verification gate's **result** before it reads anything that gate
+produced. A unit gate that failed, or that did not run at all, has verified nothing, and the run
+falls through to the whole-tree reset exactly as it did before the narrow one existed.
+
+**A verdict is sealed to the bytes it was formed over** (REVIEW F14, implemented at 0.172.0).
+Gates and the Panel inspect the live working tree, and the loop then ran `git add -A` and committed
+whatever bytes existed at that later moment. Codex had a reviewer read `src/a.js` as `reviewed
+bytes`, a concurrent write change it to `changed after review`, and `driveRun` commit the latter and
+return `SHIPPED` — a cold verdict authorising code no reviewer and no deterministic gate ever saw.
+That needs no hostile double: a successful Builder can leave background descendants, and an
+operator's editor writes to the same tree.
+
+The identity is `workspaceHash`'s — tracked files plus untracked-but-not-ignored ones, hashed from
+their real bytes, which is the same first-party view the gate cache already trusts to decide whether
+a deterministic gate may be skipped. It is captured **after the gates and before the first
+reviewer**, and rechecked after every panel, immediately before the commit, and again once the
+commit has landed. Any drift discards the verdict, commits nothing, and sends the iteration back
+through the gates; a drift discovered after the commit leaves the work banked but withholds the
+deploy and the tag, because that commit is not the reviewed tree. The identity is recorded in
+`review.json` and `outcome.json`, so a record says what was decided *and* what it was decided over.
+
+Two fail-closed edges: a tree that cannot be hashed — a deletion, a broken symlink, an unreadable
+path — collapses the identity to `null`, which never matches, including another `null`, because two
+things nobody could measure are not evidence of being the same thing; and `driveRun` refuses to
+start without a way to identify the workspace at all. Ignored paths stay outside the seal by the
+same argument the gate cache makes: `.meeseeks/` is driver-owned machine state the driver writes
+during every review, and a seal that fired on its own bookkeeping would discard every verdict this
+product forms.
+
+**The specification a run is judged against is captured once and cannot move** (REVIEW F12,
+implemented at 0.170.0). The Driver read `PRD.md`, derived `requiredIds`, and kept only those
+strings; the Builder holds unrestricted repository writes and the cold Panel is told to read the
+*live* file. Codex replaced the text of `PRD-1.1` with an easier requirement, kept the id, and
+watched gates pass, the report pass, and `driveRun` return `SHIPPED` — an independent Panel
+faithfully certifying the wrong specification. Stable ids do not preserve stable intent.
+
+`scripts/specification.mjs` captures the canonical revision after the PRD commit and before the
+Oracle, the design phase, the Builder or the Panel has read a line of it, recording file, digest and
+size in `.meeseeks/specification.json`. The digest is of the **exact bytes**, because a byte that no
+parser would notice still changes the document a reviewer reads. The capture hands its bytes back,
+so `requiredIds` are derived from the document that was digested rather than from a second read of a
+path — two reads is how an identity becomes a coincidence.
+
+`driveRun` then checks the working copy against that revision at two boundaries: after the build and
+the race and **before the gates**, so no gate result, ratchet credit or panel verdict is ever
+attributed to a document the run did not start against; and immediately **before a ship**, because a
+ship is a claim about a specific document and the panel's own reads, the deploy and the ship-time
+mutation gate all run beside a writer. Drift ends the run `ABORTED` with an operator-facing message
+naming both digests and asking for a new run against the revised objective — never a silent repair,
+because the changed file may be exactly what the operator wants. The check is a **required** effect:
+`driveRun` refuses to start without one, since "assume unchanged" is the defect with a shrug
+attached. Only the captured file is bound; documentation, design documents and source stay editable.
+
+**A citation is resolved against the tree that was reviewed** (REVIEW F6, repaired at 0.169.0).
+The parser establishes that evidence is *shaped* like `path/file.ts:LINE`; until this version
+nothing established that it pointed at anything. Codex's reproduction is one line: a report citing
+`does/not/exist.ts:999999` parsed with no problems, `parseReviewerReport` returned `pass`, and
+`combinePanel` agreed. Downstream pinning was best-effort by design — a missing file skipped the
+pin, an out-of-range line pinned the whole file — so a hallucinated, stale or traversal-based
+citation could satisfy the cold Panel contract and reach `SHIPPED`. "Evidence required" had become
+"evidence-shaped text required".
+
+`scripts/evidence.mjs` is the boundary, applied by the Driver between parsing and combination, to
+every panel report and to the carried report. A passing citation must resolve, inside the exact
+candidate root, to a readable regular file and a positive, in-range, non-blank line; absolute paths,
+`..` traversal, directories, and symlinks escaping the root are refused, the last of these by
+comparing after `realpathSync` because no string check can see it. An entry that does not resolve
+becomes `fail` before it can be counted, recorded, pinned or carried. Actionable advisory evidence
+gets the same boundary pointed the other way: it cannot flip anything to pass, so an unresolvable
+location stops being actionable rather than being deleted — the harm there is sending the builder to
+a file that is not there.
+
+The parser stays pure, deliberately. It judges a *document*, and every hostile-report test drives
+it; only the Driver knows which tree the document is supposed to describe. And the line number
+remains a **locator** — content identity is still the durable pin (§4.3), so evidence that moved
+down a file has not been lost.
+
 **Reviewer parser rules (unchanged, still non-negotiable):**
 - Default `fail`. `pass` requires the reviewer to *personally locate* the code and cite
   `path/file.ts:LINE`. "Probably exists" / "structure suggests it" = fail.
@@ -1067,6 +1352,29 @@ It is the same assumption, twice.**
 So `.meeseeks/oracle.json` holds executable acceptance cases authored at **Phase 0b** — from the PRD
 alone, **before the design phase and before any code exists.** A child that has seen the code
 cannot write them.
+
+**The store belongs to one run and one specification** (REVIEW F8, implemented at 0.171.0). It used
+to survive into the next run: it was authored only when absent, it was not in the per-run archive
+list, and it was not in the machine-state ignore list either, so a second objective in the same
+repository could execute the first one's held-out cases and report a clean pass that established
+nothing — the one gate whose entire value is independence, quietly judging something else. Its
+writer was a direct overwrite, so a kill mid-write left a corrupt file whose mere existence stopped
+the driver re-authoring.
+
+Four things close it, and each is separately load-bearing:
+
+- **Archived with its run**, so the ordinary second-run case finds nothing to reuse and authors
+  fresh from the current PRD.
+- **Bound to §4's captured specification digest**, which is the independent second proof for a store
+  somebody put back: a store authored from another revision, or one that records no revision at all,
+  is a failed gate rather than a reused one, and no case is executed.
+- **Written temp-and-rename**, so a reader gets the old complete store or the new one and never
+  partial JSON.
+- **Ignored, store and scratch directory both.** Tracked, the target's own history would carry the
+  cases the builder is never shown.
+
+PRD-only, no-tools authoring is unchanged: the repair never re-authors from implementation
+context.
 
 **That requires tool availability to be restricted, not merely unapproved.** Every non-Builder
 role has a closed built-in tool set; Oracle-author has none. Claude Code's `--allowedTools` changes
@@ -1484,7 +1792,12 @@ meeseeks/
 │   ├── assumptions.mjs           # what the builder had to assume (§8.3)
 │   ├── run-manifest.mjs          # .meeseeks/run.json, and archiving the last run (§7.1, §7.2)
 │   ├── integrity.mjs             # gate-integrity: no-op gates, weak assertions (§4)
+│   ├── evidence.mjs              # resolves reviewer citations against the reviewed tree (§4)
+│   ├── specification.mjs         # .meeseeks/specification.json: the revision a run is held to (§4)
+│   ├── reports.mjs               # per-attempt test-report freshness (§4)
 │   ├── preflight.mjs             # the thirteen checks run before a run starts (§3.5)
+│   ├── launch.mjs                # .meeseeks/launch.json: the driver's own launch observation
+│   │                             #   and each pre-loop phase's declared output contract (§3.5)
 │   ├── security-scan.mjs         # the repo's own agent surface, pre-run (§3.6)
 │   ├── config.mjs                # defaults, validation, and the risky-remote words (§10)
 │   ├── configure.mjs             # interactive author for validated config
@@ -2086,6 +2399,33 @@ builder's brief. "Killed after 45 minutes" and "killed after 45 minutes, and it 
 server running" are different diagnoses. Proved against real processes in
 `test/integration/gate-orphan.integration.test.mjs`; no unit test can see it, because what
 happens to an orphan after a kill is the operating system's contract and not ours (§11.1).
+
+**A ceiling that only asked was not a ceiling** (REVIEW F2, repaired at 0.167.0). Until then both
+termination paths sent `SIGTERM` and then waited for a cooperative `exit`. Measured: a child that
+trapped the signal and exited of its own accord one second later was run with `timeoutMs: 100`;
+`shell` reported a timeout and returned after **1,018 ms**. A child that never exits would have
+stalled an unattended run indefinitely underneath a log line promising it had been killed after a
+stated time. The 64MB output cap had the identical shape and the ceiling could not rescue it,
+because overflow owns the verdict and neither branch could force.
+
+Termination is now `SIGTERM`, a bounded grace of **`TERMINATION_GRACE_MS` — five seconds**, then
+`SIGKILL`, and the promise settles whether or not the child ever admits to having exited. The force
+step reaches the descendants through the same subtraction sweep, which the output-cap path now runs
+too. The grace is a constant rather than a config key: a target that needs longer than that to die
+after being asked is the problem the escalation exists for. Three properties hold across it:
+
+- **The first termination to start owns the verdict.** With a grace window either path can now
+  reach the other's, so a ceiling firing inside the cap's grace cannot start a second termination,
+  and output arriving inside the ceiling's grace cannot flip `overflowed`. `timedOut` is what the
+  deploy's operator messaging keys on and must not change meaning in a race nobody can see.
+- **A cooperative child still settles on its own exit**, so the grace is paid only by children that
+  refuse and no ordinary timeout gets five seconds slower.
+- **A settled call sweeps once.** The sweep is an argument to `settle`, so it runs before `settle`
+  can decline a second call — and after a forced kill there is always a second call, because the
+  child's `exit` arrives once the promise has resolved and the *next* command has been spawned.
+  Measured while building this: without the guard, every other `shell` call in a process returned
+  in 14ms with its child killed before it ran a line, because a stale snapshot made an innocent
+  child look like a survivor. Proved in `test/integration/shell-termination.integration.test.mjs`.
 
 **Not covered, and named rather than implied:** a gate killed by the *operator* rather than by
 the ceiling. Ctrl-C reaches the whole group and so takes the leak with it, but `kill` sent to

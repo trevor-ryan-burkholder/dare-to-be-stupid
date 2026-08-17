@@ -50,7 +50,6 @@ import {
 import { DEFAULT_OWNERSHIP, loadConfig } from './config.mjs';
 import { checkContextBudget, promptGrowthNote, measurePrompt } from './context-budget.mjs';
 import {
-  GATE_SKIP_FILE,
   loadGateCache,
   planGateRun,
   saveGateCache,
@@ -59,6 +58,7 @@ import {
 } from './gate-cache.mjs';
 import { applicableGates, gateApplies } from './gate-policy.mjs';
 import { hasMeaningfulHistory, historyContext } from './history.mjs';
+import { resolveCitation } from './evidence.mjs';
 import { blankComments, integrityGate } from './integrity.mjs';
 import {
   addLesson,
@@ -69,9 +69,28 @@ import {
   saveLessons,
   selectLessons,
 } from './lessons.mjs';
-import { OracleError, parseOracleCases, resolveArtifactCommand, runOracle, writeOracle } from './oracle.mjs';
-import { checkNoConcurrentRun, checkStateNotTracked } from './preflight.mjs';
-import { RUN_LOCK_FILE, claimRunLock, clearRunLock } from './run-lock.mjs';
+import {
+  ORACLE_FILE,
+  OracleError,
+  oracleMatchesSpecification,
+  parseOracleCases,
+  resolveArtifactCommand,
+  runOracle,
+  writeOracle,
+} from './oracle.mjs';
+import { defaultProbe } from './preflight.mjs';
+import {
+  admitOutputs,
+  buildLaunchReceipt,
+  changedPaths,
+  declaredOutputs,
+  describeUnexpected,
+  recordPhase,
+  revalidateLaunch,
+  writeLaunchReceipt,
+} from './launch.mjs';
+import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
+import { captureSpecification, verifySpecification } from './specification.mjs';
 import { installQualityPlugins } from './plugins.mjs';
 import {
   applyWinner,
@@ -83,7 +102,8 @@ import {
   stallHypothesis,
   sweepRaceWorktrees,
 } from './race.mjs';
-import { parseReport } from './reporters/index.mjs';
+import { collapseByWorstStatus, parseReport } from './reporters/index.mjs';
+import { clearReports, collectReports } from './reports.mjs';
 import {
   evaluateIteration,
   extractTestIds,
@@ -110,7 +130,7 @@ import {
   writePins,
 } from './pins.mjs';
 import { quarantineCorruptFile } from './quarantine.mjs';
-import { RUN_ARCHIVE_DIR, RUN_MANIFEST, archivePreviousRun, buildRunManifest, writeRunManifest } from './run-manifest.mjs';
+import { archivePreviousRun, buildRunManifest, writeRunManifest } from './run-manifest.mjs';
 import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
 import { MUTATION_CONFIG, MUTATION_CONFIG_CONTENTS } from './toolchains/node.mjs';
 import { CONDITIONAL_GATE_OPERATIONS, gatesFor, resolveToolchain } from './toolchains/index.mjs';
@@ -525,6 +545,55 @@ export function parseReviewerReport(raw, options) {
   return { verdict, requirements, advisories, problems };
 }
 
+/**
+ * Resolve a parsed report's citations against the tree that was actually reviewed (REVIEW F6).
+ *
+ * **The boundary between a document and a repository, and it belongs here rather than in the
+ * parser.** `parseReviewerReport` judges reviewer output and is deliberately pure — it is the piece
+ * every hostile-report test drives, and giving it a filesystem would make those tests depend on a
+ * tree. Only the Driver knows which candidate the reviewer was reading, so only the Driver can ask
+ * whether the citation resolves inside it.
+ *
+ * Applied before combination, so an invalid location cannot be counted, recorded, pinned or
+ * carried. A `pass` whose citation does not resolve becomes a `fail`: "evidence required" has to
+ * mean a location somebody can open, or it means evidence-shaped text.
+ *
+ * An actionable advisory gets the same boundary pointed a different way. Its evidence is a repair
+ * target rather than a compliance claim, so an unresolvable one cannot flip anything to pass — it
+ * would instead send the builder to a file that is not there. It stops being actionable and says
+ * why.
+ *
+ * @param {ReviewerReport} report
+ * @param {{ root: string }} options the exact repository the reviewer read
+ * @returns {ReviewerReport}
+ */
+export function resolveReportEvidence(report, options) {
+  /** @type {string[]} */
+  const problems = [...report.problems];
+  const requirements = report.requirements.map((entry) => {
+    if (entry.status !== 'pass') return entry;
+    const resolution = resolveCitation(options.root, entry.evidence ?? '');
+    if (resolution.ok) return entry;
+    problems.push(
+      `${entry.id} was marked pass citing ${JSON.stringify(entry.evidence)}, which does not resolve: ` +
+        `${resolution.reason}; flipped to fail (DESIGN.md §4, REVIEW F6)`,
+    );
+    return { ...entry, status: /** @type {'fail'} */ ('fail') };
+  });
+  const advisories = report.advisories.map((finding) => {
+    if (!finding.actionable) return finding;
+    const resolution = resolveCitation(options.root, finding.evidence ?? '');
+    if (resolution.ok) return finding;
+    problems.push(
+      `advisory ${finding.id} cited ${JSON.stringify(finding.evidence)}, which does not resolve: ` +
+        `${resolution.reason}; it is recorded but not actionable`,
+    );
+    return { ...finding, actionable: false };
+  });
+  const verdict = requirements.length > 0 && requirements.every((entry) => entry.status === 'pass') ? 'pass' : 'fail';
+  return { verdict, requirements, advisories, problems };
+}
+
 /** Where the panel's verdict is written. Machine state: driver-owned, never tracked. */
 export const REVIEW_RECORD = 'review.json';
 
@@ -559,7 +628,8 @@ export const OUTCOME_FILE = 'outcome.json';
  *
  * @param {string} meeseeksDir
  * @param {{ iteration: number, verdict: string, requireUnanimous: boolean, requiredIds: string[],
- *           failing: string[], reviewers: unknown[], advisories: unknown[] }} entry
+ *           failing: string[], reviewers: unknown[], advisories: unknown[],
+ *           workspace?: string | null }} entry
  * @returns {string} the path written
  */
 export function recordPanelVerdict(meeseeksDir, entry) {
@@ -760,6 +830,53 @@ function mutationCoverageHint(gateName, detail) {
     'test — so zero tests ran and Stryker aborted. The configuration is fine; the repair is unit tests ' +
     'covering the changed code (an e2e test does not count here: mutation runs the unit runner only).'
   );
+}
+
+/**
+ * How many flaky ids a stability failure names before it starts counting instead of listing.
+ *
+ * Bounded because this text reaches the builder's brief: a repair objective naming four hundred
+ * tests is not a repair objective.
+ */
+export const STABILITY_ID_LIMIT = 20;
+
+/**
+ * One deterministic gate result for tests that failed and then passed on a retry (REVIEW F30).
+ *
+ * **The hole this fills is an asymmetry nobody would have chosen.** The Playwright parser preserves
+ * the runner's whole-test `flaky` status on purpose, and the ratchet refuses to credit it on
+ * purpose — a test that failed and then passed has proved nothing, and admitting it would arm a
+ * hard reset that fires on noise. But nothing turned that refusal into a *failure*. Playwright
+ * exits zero when every test is expected or flaky, so a **newly** flaky test — one with no earlier
+ * ratchet identity to regress against — left every gate green and could reach the Panel and
+ * `SHIPPED`, while the run's own normalised evidence said the test had failed before it retried.
+ * Acceptance depended on whether the instability appeared before or after the ratchet first saw the
+ * test, which is not a property anyone would defend out loud.
+ *
+ * A previously ratcheted id becoming flaky keeps the stronger treatment it already had: it is
+ * absent from the passing set, so it is a regression and a reset, not merely a gate failure.
+ *
+ * `skipped` and `todo` are untouched. They are absences, not unstable passes, and reinterpreting
+ * them here would fail every suite with a pending test in it.
+ *
+ * @param {Iterable<string>} flakyIds normalised ids whose worst status this attempt was `flaky`
+ * @returns {GateResult | null} null when nothing was flaky
+ */
+export function stabilityGateResult(flakyIds) {
+  const ids = [...new Set(flakyIds)].sort();
+  if (ids.length === 0) return null;
+  const named = ids.slice(0, STABILITY_ID_LIMIT);
+  const more = ids.length - named.length;
+  return {
+    name: 'test-stability',
+    ok: false,
+    status: 1,
+    detail:
+      `${ids.length} test(s) in this attempt's reports failed and then passed on a retry, which is not a passing ` +
+      'result: nothing here shows the current implementation satisfies them reliably. Make them deterministic — ' +
+      'fix the race, the timing assumption or the shared state — or delete them. ' +
+      `${named.join(', ')}${more > 0 ? ` and ${more} more` : ''}`,
+  };
 }
 
 /**
@@ -1492,6 +1609,8 @@ export function repeatedRegressionNote(counts, regressions) {
  *   securityEscalation?: (pin: import('./pins.mjs').SecurityPin) => ClaudeResult | Promise<ClaudeResult>,
  *   gates: () => { ok: boolean, results: GateResult[] } | Promise<{ ok: boolean, results: GateResult[] }>,
  *   shipTimeMutation?: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
+ *   checkSpecification: () => { ok: boolean, digest: string, detail: string },
+ *   workspaceIdentity: () => string | null | Promise<string | null>,
  *   readTestReports: () => unknown[],
  *   commit: (message: string) => string | Promise<string>,
  *   diffStat: () => string | Promise<string>,
@@ -1506,7 +1625,8 @@ export function repeatedRegressionNote(counts, regressions) {
 /**
  * @typedef {{
  *   state: TerminalState, reason: string, iterations: number,
- *   spentTokens: number, costUsd: number, passing: string[]
+ *   spentTokens: number, costUsd: number, passing: string[],
+ *   workspace: string | null
  * }} RunOutcome
  */
 
@@ -1544,6 +1664,72 @@ export function repeatedRegressionNote(counts, regressions) {
  */
 export async function driveRun(options) {
   const { config, meeseeksDir, rootDir, requiredIds, effects } = options;
+
+  // **Required, not optional, and refused rather than defaulted** (REVIEW F12). This loop decides
+  // whether a candidate satisfies a specification; a loop that cannot say *which* specification it
+  // is judging has nothing to decide. An absent check would have to mean "assume unchanged", which
+  // is the defect itself with a shrug attached.
+  if (typeof effects.workspaceIdentity !== 'function') {
+    throw new DriverError(
+      'driveRun was given no way to identify the candidate workspace. A verdict that cannot be sealed to the ' +
+        'bytes it was formed over authorises whatever happens to be on disk later (REVIEW F14).',
+    );
+  }
+  if (typeof effects.checkSpecification !== 'function') {
+    throw new DriverError(
+      'driveRun was given no way to check the specification revision. A run that cannot establish which ' +
+        'PRD it is judging cannot judge anything (DESIGN.md §4, REVIEW F12).',
+    );
+  }
+
+  /**
+   * Seal a verdict to the bytes it was formed over (REVIEW F14).
+   *
+   * **The defect this closes was reproduced end to end.** Gates and the Panel inspect the live
+   * working tree; after the Panel returned, the loop ran `git add -A` and committed whatever bytes
+   * existed at that later moment. A reviewer read `src/a.js` as `reviewed bytes`, a concurrent
+   * write changed it to `changed after review`, and `driveRun` committed the latter and returned
+   * `SHIPPED` — a cold verdict authorising code no reviewer and no deterministic gate ever saw.
+   * That does not need a hostile double: a successful Builder can leave background descendants,
+   * and an operator's editor or tooling writes to the same tree.
+   *
+   * The identity is `workspaceHash`'s: tracked files plus untracked-but-not-ignored ones, hashed
+   * from their real bytes. A deletion, a symlink retarget or an unreadable path collapses it to
+   * `null`, and `null` never matches — including another `null`, because two things nobody could
+   * measure are not evidence of being the same thing.
+   *
+   * @param {string | null} sealed the identity the verdict was formed over
+   * @returns {Promise<boolean>} true when the tree is still those bytes
+   */
+  const workspaceStillMatches = async (sealed) => {
+    if (sealed === null) return false;
+    const current = await effects.workspaceIdentity();
+    return current !== null && current === sealed;
+  };
+
+  /**
+   * Has the specification moved under this run?
+   *
+   * Asked at the two boundaries F12 names: after the builder has written, before the gates and the
+   * panel see the tree, and again immediately before a ship. The first catches drift on the
+   * iteration that caused it; the second is the terminal boundary, because a ship is a claim about
+   * a specific document.
+   *
+   * @returns {RunOutcome | null} a terminal outcome when the specification has drifted
+   */
+  const specificationDrift = () => {
+    /** @type {{ ok: boolean, digest: string, detail: string }} */
+    let checked;
+    try {
+      checked = effects.checkSpecification();
+    } catch (error) {
+      // An unreadable record is not evidence that nothing changed.
+      return finish('ABORTED', `the specification revision could not be checked: ${/** @type {Error} */ (error).message}`);
+    }
+    if (checked.ok) return null;
+    effects.log(checked.detail);
+    return finish('ABORTED', `the specification changed under this run: ${checked.detail}`);
+  };
 
   // Settled before anything is spawned. An id no reviewer owns cannot be judged, and a
   // panel that cannot judge every id cannot produce a pass — finding that out after paying
@@ -1623,6 +1809,17 @@ export async function driveRun(options) {
   const lessonsAttempted = new Set();
 
   /**
+   * The workspace identity the current panel is being formed over (REVIEW F14).
+   *
+   * Captured after the gates and before the first reviewer, rechecked after every panel and
+   * immediately before the commit, and proved again once the commit has landed. Loop-scoped rather
+   * than iteration-scoped so `finish` can record which bytes the terminal verdict belongs to.
+   *
+   * @type {string | null}
+   */
+  let reviewedWorkspace = null;
+
+  /**
    * @param {TerminalState} state
    * @param {string} reason
    * @returns {RunOutcome}
@@ -1635,6 +1832,10 @@ export async function driveRun(options) {
       spentTokens: progress.spentTokens,
       costUsd: progress.spentUsd,
       passing: loadState(meeseeksDir).passing,
+      // The workspace identity the last panel was sealed to (REVIEW F14). `null` on every run that
+      // never reached a panel, which is the honest answer rather than an empty string that would
+      // read as an identity nobody can look up.
+      workspace: reviewedWorkspace,
     };
     // Every terminal path funnels through here, so this is the one door that a state added
     // later cannot forget — the same argument the context budget uses for living inside
@@ -1951,8 +2152,65 @@ export async function driveRun(options) {
       }
     }
 
+    // The specification, before anything judges the tree (REVIEW F12). Placed after the build and
+    // the race rather than inside either, because both write to the repository and either could
+    // have moved the finish line — and placed before the gates so no gate result, ratchet credit
+    // or panel verdict is ever attributed to a document the run did not start against.
+    const driftedBeforeGates = specificationDrift();
+    if (driftedBeforeGates !== null) return driftedBeforeGates;
+
     // ---- Phase 3: gates -------------------------------------------------
-    const gateOutcome = await effects.gates();
+    const commandGateOutcome = await effects.gates();
+
+    // ---- Phase 3b: the reports, read once (REVIEW F16, F20, F30) --------
+    //
+    // Parsed here rather than in Phase 4, because what they contain has to reach the *gate* results
+    // before anything scores, logs or judges them. Each accepted report is parsed once and the
+    // records are collapsed across all of them by worst status, so an id that passed in the unit
+    // report and was flaky in the e2e one is flaky: two runners disagreeing about one test is not
+    // evidence that it passes.
+    /** @type {Set<string>} */
+    let passing;
+    /** @type {Set<string>} */
+    const flaky = new Set();
+    // How many tests the reports contained at all, whatever their status. The ratchet needs it
+    // to tell "the runner collected nothing" from "everything failed", which are the same input
+    // — an empty passing set — and opposite conclusions. Run 6 reset 75 ids over the first.
+    let collected = 0;
+    try {
+      if (config.extractTests) {
+        // Every runner's report contributes ids. A repo with both a unit suite and an
+        // e2e suite has two, and the ratchet must hold both or it protects half the work.
+        /** @type {import('./reporters/index.mjs').TestRecord[]} */
+        const records = [];
+        for (const report of effects.readTestReports()) {
+          const parsed = parseReport(report, { rootDir });
+          collected += parsed.tests.length;
+          records.push(...parsed.tests);
+        }
+        passing = new Set();
+        for (const [id, status] of collapseByWorstStatus(records)) {
+          if (status === 'passed') passing.add(id);
+          else if (status === 'flaky') flaky.add(id);
+        }
+      } else {
+        passing = new Set(loadState(meeseeksDir).passing);
+        // Not report-derived, so it is not a collection failure and must not read as one.
+        collected = passing.size;
+      }
+    } catch (error) {
+      // An unreadable report is not evidence that nothing regressed.
+      return finish('ABORTED', `test report could not be read: ${/** @type {Error} */ (error).message}`);
+    }
+
+    // A retry that eventually passed is not a pass (REVIEW F30). Playwright exits zero when every
+    // test is expected or flaky, so without this a newly flaky test — one with no earlier ratchet
+    // identity to regress against — left every gate green and could reach the Panel and `SHIPPED`.
+    const stability = stabilityGateResult(flaky);
+    const gateOutcome =
+      stability === null
+        ? commandGateOutcome
+        : { ok: false, results: [...commandGateOutcome.results, stability] };
     const score = gateScore(gateOutcome.results);
     lastGateTotal = gateOutcome.results.length;
     lastGateShare = lastGateTotal === 0 ? 0 : score / lastGateTotal;
@@ -1982,31 +2240,6 @@ export async function driveRun(options) {
     if (stuckGates !== '') effects.log(`stuck gate: ${stuckGates}`);
 
     // ---- Phase 4: ratchet ----------------------------------------------
-    /** @type {Set<string>} */
-    let passing;
-    // How many tests the reports contained at all, whatever their status. The ratchet needs it
-    // to tell "the runner collected nothing" from "everything failed", which are the same input
-    // — an empty passing set — and opposite conclusions. Run 6 reset 75 ids over the first.
-    let collected = 0;
-    try {
-      if (config.extractTests) {
-        // Every runner's report contributes ids. A repo with both a unit suite and an
-        // e2e suite has two, and the ratchet must hold both or it protects half the work.
-        passing = new Set();
-        for (const report of effects.readTestReports()) {
-          collected += parseReport(report, { rootDir }).tests.length;
-          for (const id of extractTestIds(report, { rootDir })) passing.add(id);
-        }
-      } else {
-        passing = new Set(loadState(meeseeksDir).passing);
-        // Not report-derived, so it is not a collection failure and must not read as one.
-        collected = passing.size;
-      }
-    } catch (error) {
-      // An unreadable report is not evidence that nothing regressed.
-      return finish('ABORTED', `test report could not be read: ${/** @type {Error} */ (error).message}`);
-    }
-
     const state = loadState(meeseeksDir);
     const decision = evaluateIteration(state, passing, { commit: null, collected });
 
@@ -2058,11 +2291,25 @@ export async function driveRun(options) {
         restorePaths({ cwd: rootDir, commit: decision.target, paths: scoped });
         try {
           const back = new Set();
-          await effects.gates();
-          for (const report of effects.readTestReports()) {
-            for (const id of extractTestIds(report, { rootDir })) back.add(id);
+          // **The verification gate's result is read, not discarded** (REVIEW F16). It used to be
+          // awaited and thrown away, and the reports were then trusted whatever it had said — so a
+          // unit gate that failed and wrote nothing left the *previous* attempt's passing report
+          // to confirm the restore. Measured: the Driver logged `scoped restore held`, skipped the
+          // full reset, and left `src/core.js` containing `broken`. A restore nothing verified is a
+          // failed restore, and a gate that did not pass has verified nothing.
+          const verification = await effects.gates();
+          const verifiedUnit = verification.results.find((result) => result.name === 'unit');
+          if (verifiedUnit?.ok !== true) {
+            effects.log(
+              `scoped restore not verified: the unit gate ${verifiedUnit === undefined ? 'did not run' : 'failed'} ` +
+                'after the restore, so nothing it produced can show the regressed tests came back',
+            );
+          } else {
+            for (const report of effects.readTestReports()) {
+              for (const id of extractTestIds(report, { rootDir })) back.add(id);
+            }
+            scopedHeld = decision.regressions.every((id) => back.has(id));
           }
-          scopedHeld = decision.regressions.every((id) => back.has(id));
         } catch {
           // An unreadable report cannot confirm a restore. Fall through to the full reset.
           scopedHeld = false;
@@ -2270,10 +2517,22 @@ export async function driveRun(options) {
       );
       /** @type {ReviewerReport[]} */
       const collected = [];
+      // **Conserve first, adjudicate second** (REVIEW F18). Every reviewer runs to completion
+      // under `Promise.all`, so every envelope has been *bought* by the time this loop starts —
+      // but charging and deciding used to happen together, so an early failure or ceiling exit
+      // returned with the later reviewers' spend never recorded. Measured: three reviewers
+      // returning 10/20/30 tokens and $1/$2/$3 after a 100-token, $0.01 builder reported an
+      // ABORTED outcome of 110 tokens and $1.01, omitting 50 tokens and $5 that had been paid.
+      //
+      // Charging in array order keeps the per-index answer identical to the old interleaved one:
+      // `charges[i]` is the cumulative verdict through reviewer `i`, which is exactly what the
+      // combined loop computed there. Declared-order adjudication is unchanged, and a later
+      // reviewer still gains no verdict authority from having been charged.
+      const charges = settled.map((result) => charge(result));
       for (let i = 0; i < assignments.length; i += 1) {
         const { reviewer, ids } = assignments[i];
         const result = settled[i];
-        const exhausted = charge(result);
+        const exhausted = charges[i];
         // A reviewer that died is not a reviewer that found problems. Scoring it as a
         // failing audit would hand the builder "output could not be parsed" as though it
         // were a finding, and burn the remaining iterations against a wall.
@@ -2282,16 +2541,63 @@ export async function driveRun(options) {
         // panel is only unanimous if every member answered, so a partial panel cannot ship.
         if (exhausted) return { done: false, outcome: finish('BUDGET', ceilingReason()) };
         collected.push(
-          parseReviewerReport(result.text, { requiredIds: ids, minConfidence: config.advisory.minConfidence }),
+          // Parsed, then resolved against the candidate tree before anything counts it (REVIEW F6).
+          // The parser establishes that the citation is a location; only this establishes that it
+          // is a location in the repository the reviewer was reading.
+          resolveReportEvidence(
+            parseReviewerReport(result.text, { requiredIds: ids, minConfidence: config.advisory.minConfidence }),
+            { root: rootDir },
+          ),
         );
       }
       return { done: true, reports: collected };
     };
 
+    // The bytes this panel is about (REVIEW F14). Captured after the gates and before the first
+    // reviewer, so everything downstream — every verdict, the commit, the tag — is sealed to one
+    // measurable tree rather than to whatever happens to be on disk when it is asked.
+    reviewedWorkspace = await effects.workspaceIdentity();
+    if (reviewedWorkspace === null) {
+      // Uncertainty is not a pass. A tree that cannot be hashed is a tree whose verdict cannot be
+      // sealed, and shipping one would be exactly the false completion this seals against.
+      effects.log('cannot review: the candidate workspace could not be identified, so a verdict could not be sealed to it');
+      objective = {
+        kind: 'review',
+        headline: 'The workspace could not be read as a single set of bytes.',
+        reason:
+          'the gates passed, but the candidate tree could not be hashed — a deleted file, an unreadable path or a ' +
+          'broken symlink — so no verdict could be sealed to it. A review of bytes nobody can name authorises ' +
+          'whatever is on disk afterwards',
+        findings: ['the candidate workspace could not be identified'],
+      };
+      await closeIteration(iterationNumber, ['ship:workspace-identity'], score, passing.size);
+      continue;
+    }
+
     const first = await runPanel(plan.assignments);
     if (!first.done) return first.outcome;
+    if (!(await workspaceStillMatches(reviewedWorkspace))) {
+      effects.log('the candidate workspace changed while the panel was reading it; the verdict is discarded');
+      objective = {
+        kind: 'review',
+        headline: 'The tree changed underneath the panel. Nothing was committed.',
+        reason:
+          'the workspace the reviewers read is not the workspace that exists now, so their verdict is about bytes ' +
+          'that are gone. Something wrote to the tree while the panel ran — a background process the last build ' +
+          'left behind is the usual cause. The verdict is discarded and the gates run again from scratch',
+        findings: ['the candidate workspace changed during review'],
+      };
+      await closeIteration(iterationNumber, ['ship:workspace-drift'], score, passing.size);
+      continue;
+    }
     /** @type {ReviewerReport[]} */
-    let reports = plan.carried.length === 0 ? first.reports : [...first.reports, carriedReport(plan.carried)];
+    // The carried report gets the same boundary. A carry is a pre-filter, never a substitute for
+    // the panel (DESIGN.md §4.3), and a requirement carried on a citation whose file has since
+    // gone is not carrying evidence — it is carrying a memory of some.
+    let reports =
+      plan.carried.length === 0
+        ? first.reports
+        : [...first.reports, resolveReportEvidence(carriedReport(plan.carried), { root: rootDir })];
     let panel = combinePanel(reports, { requireUnanimous: config.requireUnanimous, requiredIds });
 
     if (plan.narrowed && panel.verdict === 'pass') {
@@ -2300,6 +2606,19 @@ export async function driveRun(options) {
       effects.log(`panel carry: ${plan.carried.length} requirement(s) were carried, and the full panel now runs before any ship`);
       const full = await runPanel(panelPlan.assignments);
       if (!full.done) return full.outcome;
+      if (!(await workspaceStillMatches(reviewedWorkspace))) {
+        effects.log('the candidate workspace changed while the full panel was reading it; the verdict is discarded');
+        objective = {
+          kind: 'review',
+          headline: 'The tree changed underneath the panel. Nothing was committed.',
+          reason:
+            'the workspace the reviewers read is not the workspace that exists now, so their verdict is about bytes ' +
+            'that are gone. The verdict is discarded and the gates run again from scratch',
+          findings: ['the candidate workspace changed during review'],
+        };
+        await closeIteration(iterationNumber, ['ship:workspace-drift'], score, passing.size);
+        continue;
+      }
       reports = full.reports;
       panel = combinePanel(reports, { requireUnanimous: config.requireUnanimous, requiredIds });
     } else if (plan.narrowed) {
@@ -2309,6 +2628,9 @@ export async function driveRun(options) {
     // Written before anything acts on it, so a record exists whichever way the run then goes.
     recordPanelVerdict(meeseeksDir, {
       iteration: iterationNumber,
+      // Which bytes this verdict is about (REVIEW F14). Without it the record says what was decided
+      // and not what it was decided over, which is half a receipt.
+      workspace: reviewedWorkspace,
       verdict: panel.verdict,
       requireUnanimous: config.requireUnanimous,
       requiredIds,
@@ -2390,12 +2712,44 @@ export async function driveRun(options) {
       }
     }
 
+    // Immediately before the commit, because the commit is the moment the bytes stop being a
+    // working tree and start being the run's claim about what was reviewed (REVIEW F14).
+    if (!(await workspaceStillMatches(reviewedWorkspace))) {
+      effects.log('the candidate workspace changed between the panel and the commit; nothing was committed');
+      objective = {
+        kind: 'review',
+        headline: 'The tree changed between the review and the commit. Nothing was committed.',
+        reason:
+          'the panel judged one set of bytes and a different set was about to be committed under its verdict. ' +
+          'Nothing was staged, and the gates run again from scratch',
+        findings: ['the candidate workspace changed before the commit'],
+      };
+      await closeIteration(iterationNumber, ['ship:workspace-drift'], score, passing.size);
+      continue;
+    }
+
     // ---- Phase 6: ship, or bank the progress and hand the findings back ---
     const commit = await effects.commit(
       panel.verdict === 'pass'
         ? `meeseeks: iteration ${iterationNumber}`
         : `meeseeks: iteration ${iterationNumber} (review outstanding)`,
     );
+    // After the commit, prove the tree that landed is the tree that was reviewed. The commit
+    // stages the whole working tree, so a working tree still matching the sealed identity is the
+    // committed tree matching it — which is what a deploy and a tag are about to assert.
+    if (!(await workspaceStillMatches(reviewedWorkspace))) {
+      effects.log('the workspace changed as the commit landed; this commit is not the reviewed tree and will not ship');
+      objective = {
+        kind: 'review',
+        headline: 'The tree changed as the commit landed, so the commit is not what was reviewed.',
+        reason:
+          'the commit exists, but its bytes are not the bytes the panel judged, so it cannot carry that verdict to ' +
+          'a deploy or a tag. The gates run again from scratch against whatever is there now',
+        findings: ['the committed tree is not the reviewed workspace'],
+      };
+      await closeIteration(iterationNumber, ['ship:workspace-drift'], score, passing.size);
+      continue;
+    }
     const advanced = evaluateIteration(state, passing, { commit, collected });
     if (advanced.action === 'advance') saveState(meeseeksDir, advanced.state);
 
@@ -2483,6 +2837,11 @@ export async function driveRun(options) {
         continue;
       }
       if (deployed.detail !== 'no deploy configured') effects.log(deployed.detail);
+      // The terminal boundary. A ship is a claim about a specific document, and everything
+      // between the pre-gate check and here — the panel's own reads, the deploy, the ship-time
+      // mutation gate — has had the opportunity to run beside a writer.
+      const driftedBeforeShip = specificationDrift();
+      if (driftedBeforeShip !== null) return driftedBeforeShip;
       effects.event?.({ kind: 'ship', iteration: iterationNumber });
       await effects.ship(iterationNumber);
       return finish('SHIPPED', `panel unanimous on ${requiredIds.length} requirement(s)`);
@@ -2547,48 +2906,24 @@ export async function driveRun(options) {
  * hard reset. Both files were tracked there.
  */
 export const MEESEEKS_IGNORED_PATHS = [
-  '.meeseeks/state.json',
-  '.meeseeks/lessons.json',
-  '.meeseeks/briefs/',
-  '.meeseeks/red-evidence.json',
-  '.meeseeks/bloopers.log',
-  '.meeseeks/test-report.json',
-  '.meeseeks/e2e-report.json',
-  '.meeseeks/playwright-installed',
-  '.meeseeks/reality-check.md',
-  '.meeseeks/pins.json',
-  '.meeseeks/assumptions.json',
-  '.meeseeks/review.json',
-  // The per-run archive, and the **fifth** instance of this defect — measured, not reasoned.
-  // `archivePreviousRun` moves the previous run's outcome, review, manifest, assumptions and
-  // briefs here so a second run cannot overwrite them. Untracked and un-ignored, `git add -A`
-  // committed all eight files, and the next hard reset — to a commit that predated the archive
-  // — deleted every one. Confirmed in `caseH` from the reflog: `47ff38a` and `8ac3ba5` each
-  // carried eight files under this path, and the reset to `047b680` discarded them.
+  // **Positional, not a list of names** (REVIEW F9). Every artifact this directory has ever gained
+  // was trackable until somebody remembered to add it, and five of them were found the expensive
+  // way — by watching `git add -A` commit run state into the repository under test, then watching a
+  // hard reset restore an older copy of it. `oracle.json`, `capabilities.json` and the mutation
+  // sandbox's `stryker.config.json` were still missing when Codex looked, and a run that tracks its
+  // own `.meeseeks/` also makes the *next* preflight refuse the repository.
   //
-  // **Worse than the four before it.** Those were pollution: an artifact nothing reads back, or
-  // one the driver rewrites next iteration. This directory is the *only* copy of a previous
-  // run's evidence, and archiving exists precisely to make run history forensic. The first time
-  // it ran in anger, the thing it was protecting was destroyed by the mechanism it was
-  // protecting against.
-  `.meeseeks/${RUN_ARCHIVE_DIR}/`,
-  // Added at 0.68.0 and its ignore entry forgotten until 0.77.0, which is §4.3's defect
-  // reproduced by the person who documented it: an artifact tracked by git is restored by
-  // `git reset --hard`, so the record of how a run ended would be replaced by an older run's.
-  '.meeseeks/outcome.json',
-  // The run lock. Tracking it would be worse than pointless: a `git reset --hard` would restore
-  // some other run's pid into the file this run is holding, and the next run would then refuse
-  // to start on the word of a process that has not existed for days.
-  `.meeseeks/${RUN_LOCK_FILE}`,
-  // The run manifest, missing until 0.86.0 — the third instance of this exact defect after
-  // `state.json` and `outcome.json`, and the first found by watching a live run rather than by
-  // reading. `?? .meeseeks/run.json` sat in the target's `git status` one `git add -A` from being
-  // committed into the repository the run is supposed to be shipping.
-  `.meeseeks/${RUN_MANIFEST}`,
-  // The gate-skip cache (R35). Driver-owned per-iteration state read back as a decision — whether
-  // to carry a gate's prior failure — so it belongs with the others: tracked, a hard reset would
-  // restore an older copy and its stale hash could authorise a skip against a tree it never saw.
-  `.meeseeks/${GATE_SKIP_FILE}`,
+  // `.meeseeks/*` rather than `.meeseeks/`, and the difference is the whole reason this works: git
+  // will not descend into an excluded *directory*, so a negation for a child of an excluded
+  // directory is inert. Excluding the *contents* keeps the directory itself visible, which is what
+  // makes the carve-out below effective.
+  //
+  // This is the same argument the guard hook's `.meeseeks/` rule already makes about writes
+  // (DESIGN.md §6): the rule is a position, so an artifact added tomorrow is covered today.
+  '.meeseeks/*',
+  // The one deliberate exception. `config.json` is the run's settings rather than its machine
+  // state, and an operator who wants a run reproducible from the repository may track it.
+  '!.meeseeks/config.json',
   // Not `.meeseeks/` state, and here for a reason measured in dogfood run 4. The operator redirects
   // the run's output into the repository — `DOGFOOD.md` said to — so `git add -A` tracked it, and
   // the hard reset in iteration 2 **reverted the log to its state at `lastGoodCommit`**. That
@@ -3346,7 +3681,7 @@ export async function observabilityGate(cwd, options = {}) {
  *
  * @param {string} cwd
  * @param {string} meeseeksDir
- * @param {{ run?: import('./plugins.mjs').Runner }} [options]
+ * @param {{ run?: import('./plugins.mjs').Runner, specification?: string }} [options]
  * @returns {Promise<GateResult>}
  */
 export async function oracleGate(cwd, meeseeksDir, options = {}) {
@@ -3362,7 +3697,7 @@ export async function oracleGate(cwd, meeseeksDir, options = {}) {
         'or inert passes every other gate here (run 10).',
     };
   }
-  return await runOracle({ meeseeksDir, root: cwd, command, run: options.run ?? shell });
+  return await runOracle({ meeseeksDir, root: cwd, command, specification: options.specification, run: options.run ?? shell });
 }
 
 /**
@@ -3393,7 +3728,10 @@ export function openApiDocument(cwd) {
 
 /**
  * @param {string} cwd
- * @param {{ run?: import('./plugins.mjs').Runner, capabilities?: string[] | null, probeTimeoutMs?: number, meeseeksDir?: string, oracle?: boolean }} [options]
+ * @param {{
+ *   run?: import('./plugins.mjs').Runner, capabilities?: string[] | null, probeTimeoutMs?: number,
+ *   meeseeksDir?: string, oracle?: boolean, specification?: string
+ * }} [options]
  * @returns {Promise<GateResult[]>}
  */
 export async function staticGates(cwd, options = {}) {
@@ -4297,6 +4635,24 @@ function sweepLeakedGroup(before) {
 const MAX_SHELL_BUFFER = 64 * 1024 * 1024;
 
 /**
+ * How long a child has to exit after `SIGTERM` before it is killed outright (REVIEW F2).
+ *
+ * **The defect this bounds was measured.** A child that trapped `SIGTERM` and exited of its own
+ * accord one second later was run with `timeoutMs: 100`; `shell` reported a timeout and returned
+ * after **1,018 ms**. A child that never exits would have defeated the watchdog forever, because
+ * every path out of the ceiling and out of the 64MB cap waited on a cooperative `exit` that a
+ * resistant child simply does not send. The log promised the operator a kill after a stated time
+ * and the promise was not one the code could keep.
+ *
+ * Five seconds, and the number is a judgement rather than a measurement: long enough for a real
+ * gate to flush its reporters and go, short enough that the *documented* bound stays close to the
+ * ceiling the operator actually configured. It is a constant rather than a config key because it
+ * is not a policy anyone should be tuning per target — a target that needs longer than this to
+ * die after being asked is the problem the escalation exists for.
+ */
+export const TERMINATION_GRACE_MS = 5_000;
+
+/**
  * Really shell out. Exported for tier 2 only.
  *
  * Every unit test drives the gate runners through an injected double, which is what makes the
@@ -4356,8 +4712,17 @@ export function shell(command, args, options) {
     let overflowed = false;
     let exited = false;
     let settled = false;
+    // Whether a bounded termination is already in flight. **The first one to start owns the
+    // verdict**, which is the rule that survived adding a grace period: before it, the cap could
+    // only fire before the ceiling, so `exit` checking overflow first was enough. Now that both
+    // paths wait, either could reach the other's window, and `timedOut` is the discriminator
+    // `runDeploy`'s operator messaging keys on — it must not change meaning in a race nobody can
+    // see.
+    let terminating = false;
     /** @type {NodeJS.Timeout | undefined} */
     let timer;
+    /** @type {NodeJS.Timeout | undefined} */
+    let graceTimer;
 
     const text = (/** @type {Buffer[]} */ chunks) => Buffer.concat(chunks).toString('utf8');
 
@@ -4366,6 +4731,7 @@ export function shell(command, args, options) {
       if (settled) return;
       settled = true;
       if (timer !== undefined) clearTimeout(timer);
+      if (graceTimer !== undefined) clearTimeout(graceTimer);
       // Close this side of the pipes. On the timed-out path a leaked descendant may still hold
       // the write end, and the sync teardown dropped its read end exactly like this.
       child.stdout?.destroy();
@@ -4374,7 +4740,15 @@ export function shell(command, args, options) {
       resolve(result);
     };
 
-    const finishTimedOut = () =>
+    const finishTimedOut = () => {
+      // **Guarded before the sweep, not inside `settle`.** The sweep is an argument to `settle`,
+      // so it runs before `settle` can decline a second call — and after a forced kill there is
+      // always a second call, because the child's `exit` event arrives once the promise has
+      // already resolved and the *next* command has been spawned. Measured: with the escalation
+      // added and this guard missing, every other `shell` call in a process returned in 14ms with
+      // its child killed before it could run, because a stale `before` snapshot made that
+      // perfectly innocent child look like a survivor of the previous timeout.
+      if (settled) return;
       settle({
         ok: false,
         // A killed child reports no exit code, so without the flag a timeout arrives as a
@@ -4392,15 +4766,59 @@ export function shell(command, args, options) {
         // here, after the command is done being waited on.
         reaped: sweepLeakedGroup(before),
       });
+    };
 
-    const finishOverflowed = () =>
+    const finishOverflowed = () => {
+      // Same guard, same reason: this one sweeps too now.
+      if (settled) return;
       settle({
         ok: false,
         status: 1,
         stdout: text(outChunks),
         stderr: text(errChunks),
         timedOut: false,
+        // Swept for the same reason the timeout path is: a gate that backgrounded a dev server
+        // and then flooded a stream leaks exactly the same descendants, and the cap is no more
+        // able to reap them than the ceiling was. Absent — rather than empty — when no ceiling
+        // was requested, because `before` is only sampled then: without that pre-image there is
+        // no way to tell this command's survivors from the driver's own processes, and killing
+        // by guess would be worse than reporting honestly that nothing was looked at.
+        ...(before === null ? {} : { reaped: sweepLeakedGroup(before) }),
       });
+    };
+
+    /**
+     * Ask the child to stop, give it a bounded moment, then insist — and settle either way.
+     *
+     * **The bug this replaces was that there was no `then`** (REVIEW F2). Both the ceiling and
+     * the output cap sent `SIGTERM` and waited for a cooperative `exit` that a child which traps
+     * or ignores the signal never sends, so an unattended run could stall forever underneath a
+     * log line promising it had been killed. The escalation is `SIGKILL`, which cannot be caught,
+     * and the settlement does not wait for the child's permission.
+     *
+     * The descendants go with it. `finish` sweeps the process group by subtraction, which is how
+     * this file has always reached a backgrounded grandchild, and `SIGKILL` on the direct child
+     * covers the platform where that sweep cannot run at all.
+     *
+     * @param {() => void} finish the verdict this termination belongs to
+     */
+    const insist = (finish) => {
+      if (terminating) return;
+      terminating = true;
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // Already gone between the decision and the signal; 'exit' has fired or is about to.
+      }
+      graceTimer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // Gone during the grace period after all, which is the outcome this was aiming at.
+        }
+        finish();
+      }, TERMINATION_GRACE_MS);
+    };
 
     /**
      * Collect one stream under the cap; past it, kill the child as `maxBuffer` did.
@@ -4411,7 +4829,9 @@ export function shell(command, args, options) {
      */
     const collect = (stream, chunks, grow) => {
       stream?.on('data', (/** @type {Buffer} */ chunk) => {
-        if (settled || overflowed) return;
+        // `terminating` as well as `overflowed`: output arriving during a ceiling's grace period
+        // must not flip the verdict to overflow after the timeout already claimed it.
+        if (settled || overflowed || terminating) return;
         const total = grow(chunk.length);
         if (total <= MAX_SHELL_BUFFER) {
           chunks.push(chunk);
@@ -4423,11 +4843,7 @@ export function shell(command, args, options) {
           finishOverflowed();
           return;
         }
-        try {
-          child.kill('SIGTERM');
-        } catch {
-          // Already gone between the read and the signal.
-        }
+        insist(finishOverflowed);
       });
     };
     collect(child.stdout, outChunks, (bytes) => (outBytes += bytes));
@@ -4453,11 +4869,12 @@ export function shell(command, args, options) {
       // were waiting on. The ordinary path keeps waiting for 'close' below, because a command
       // is not done being read until both pipes reach EOF.
       //
-      // Overflow is checked FIRST, because whichever fired first owns the verdict and the cap
-      // can only have fired first: it SIGTERMs the child the instant a stream crosses 64MB,
-      // while `timedOut` can still flip true if the ceiling lands inside that SIGTERM-to-exit
-      // window. The sync `execFileSync` reported that doubly-degenerate overlap as a buffer
-      // failure (ok:false, timedOut:false, no sweep), and `timedOut` is the discriminator
+      // Overflow is checked FIRST, because whichever fired first owns the verdict, and `insist`
+      // now guarantees that ordering rather than leaving it to timing: a ceiling that fires
+      // inside the cap's grace window cannot start a second termination, and output arriving
+      // inside the ceiling's grace window cannot flip `overflowed`. So reaching here with
+      // `overflowed` true means the cap claimed it. The sync `execFileSync` reported that
+      // doubly-degenerate overlap as a buffer failure, and `timedOut` is the discriminator
       // `runDeploy`'s operator messaging keys on — it must not change meaning in a race the
       // operator cannot see.
       if (overflowed) finishOverflowed();
@@ -4496,11 +4913,7 @@ export function shell(command, args, options) {
           finishTimedOut();
           return;
         }
-        try {
-          child.kill('SIGTERM');
-        } catch {
-          // Already gone between the check and the signal; 'exit' has fired or is about to.
-        }
+        insist(finishTimedOut);
       }, options.timeoutMs);
     }
   });
@@ -4985,19 +5398,6 @@ export async function main(argv, io = {}) {
   }
   const { input, confirmPrd, improve } = args;
 
-  // The tracked-state refusal, wired to the direct-launch path. The full preflight runs in the
-  // `init` entry point, and an operator launching this file directly — which is how every
-  // dogfood run is launched — never passes through it. Measured within minutes of the check
-  // shipping: a repository with two tracked `.meeseeks` files sailed straight past the check
-  // that names it. **Checked here, before Phase 0, because it is a static property of the
-  // repository** — a first draft placed it beside the lock claim, downstream of the PRD and
-  // design phases, and the refusal arrived only after two children had been paid for.
-  const tracked = await checkStateNotTracked((command, args) => shell(command, args, { cwd }));
-  if (!tracked.ok) {
-    write(verbatim(`${tracked.detail}\n${tracked.fix}`));
-    return 1;
-  }
-
   // Components are nested runs, and the permission to nest is typed, never configured
   // (PLAN item 24). The config says *what* the components are; only `--give-them-the-box` on
   // this session's command line says they may run, because a flag is typed by somebody watching
@@ -5044,6 +5444,96 @@ export async function main(argv, io = {}) {
     write(verbatim(`--give-them-the-box: a ${Math.round(config.deadlineMs / 60_000)}-minute wall clock is armed with it.`));
   }
 
+  // ---- One driver per repository (DESIGN.md §3.5, REVIEW F1) -------------
+  //
+  // **Here, and in one atomic operation.** The previous version checked and claimed in two calls,
+  // and did both of them only after the PRD phase, the design phase, the quality-plugin install
+  // and a commit — so two launches could pass the same check, pay for two authoring phases and
+  // commit over each other before either owned anything. `acquireRunLock` wins by exclusive
+  // create or does not win at all; a stale owner is reclaimed by an explicit serialized retry
+  // rather than by overwriting.
+  //
+  // The position is the other half of the repair. Everything with a side effect is downstream of
+  // this line: the `.gitignore` write, the previous run's archive, every child, every install and
+  // every commit. What is deliberately *upstream* of it is the set of refusals about the
+  // *invocation* rather than the repository — the re-entrancy guard, the config load, argument
+  // parsing and the components/`--give-them-the-box` rule. A run that was never going to start
+  // should not take the repository from one that was, and the nesting refusal in particular must
+  // keep its own message: a nested run held off by the *parent's* lock would report the wrong
+  // reason, and under `--give-them-the-box` it would refuse work that flag exists to permit.
+  // Everything that is a fact about the *repository* is downstream, in the launch revalidation
+  // below, because those facts are only authoritative while somebody owns the tree.
+  //
+  // Preflight checks this too, and that is not redundancy: preflight runs in the `init` entry
+  // point, in a different process, and holds nothing while this one starts. Its answer is operator
+  // feedback. This one is the decision.
+  const runLock = acquireRunLock(meeseeksDir);
+  if (!runLock.ok) {
+    write(verbatim(`${runLock.detail}\n${runLock.fix}`));
+    return 1;
+  }
+
+  /**
+   * Give the repository back, then hand the exit code on.
+   *
+   * Every `return` between here and the loop's own `try`/`finally` goes through this, because
+   * DESIGN.md §3.5 says the lock is released by its owner *on every path out* and the paths out of
+   * the pre-loop phases are numerous — a failed PRD child, an unreadable capability declaration,
+   * `--confirm-prd` succeeding, a component aborting. `test/driver.test.mjs` proves no exit escapes
+   * it, because an enumeration nobody re-checks is how this project loses guarantees.
+   *
+   * @param {number} code
+   * @returns {number}
+   */
+  const releasing = (code) => {
+    releaseRunLock(meeseeksDir, runLock.lock.token);
+    return code;
+  };
+
+  // ---- The authoritative launch observation (DESIGN.md §3.5, REVIEW F26) --
+  //
+  // The command runs `init.mjs` and this file as two separate model-directed Bash calls, and
+  // `allowed-tools` pre-approves the two it names without removing the launcher's other tools. So
+  // preflight's verdict is operator feedback with a shelf life: between it and this line, another
+  // tool call, a concurrent operator or an unrelated process can dirty the tree, repoint the
+  // remote at something production-shaped, drop a hostile hook into the agent surface, or rewrite
+  // the config. Nothing rechecked any of that — before this, the driver's only repeated check was
+  // whether `.meeseeks/` was tracked.
+  //
+  // Reused from `preflight.mjs` rather than reimplemented, because a second answer to "is this
+  // remote production-shaped" eventually disagrees with the first one, quietly.
+  //
+  // **It observes the repository and claims nothing more.** The `claude` binary, its
+  // authentication and the network are mutable host state that this snapshot cannot seal; they
+  // stay ordinary fail-closed failures where they are used.
+  const launch = await revalidateLaunch({
+    cwd,
+    meeseeksDir,
+    sandboxWanted: config.sandbox.enabled,
+    // `defaultProbe` is preflight's own read-only, synchronous shell. Synchronous is right here:
+    // these are a handful of `git` reads at startup, and there is nothing else for this process
+    // to be doing until it knows whether it may proceed.
+    probe: defaultProbe(cwd),
+  });
+  if (!launch.ok) {
+    // Verbatim and unstyled, every failure at once (DESIGN.md §9). The receipt for a refusal is
+    // this text: nothing is written, because writing would be the very thing the refusal is
+    // protecting the repository from.
+    write(verbatim(`launch refused at HEAD ${launch.head === '' ? '(unreadable)' : launch.head}`));
+    for (const failed of launch.failures) write(verbatim(`${failed.name}: ${failed.detail}\n${failed.fix}`));
+    return releasing(1);
+  }
+
+  /**
+   * What this run observed and what each pre-loop phase was allowed to leave behind.
+   *
+   * Rebuilt rather than mutated as phases are admitted, and written after the archive below —
+   * writing it before would put this run's receipt where `archivePreviousRun` is about to move
+   * the *previous* run's, and the archive exists because a second run silently overwriting the
+   * first one's evidence has already happened here.
+   */
+  let receipt = buildLaunchReceipt({ at: new Date().toISOString(), head: launch.head, checks: launch.checks });
+
   // What Phase 0 and Phase 1 cost. These run before `driveRun` exists, so without carrying
   // them the ceiling silently restarts at zero when the loop begins — the defect the first
   // dogfood run exposed, where a design child spent 2,965,864 tokens against a 2,000,000
@@ -5079,8 +5569,12 @@ export async function main(argv, io = {}) {
 
   write(banner({ mode }));
 
-  // Before anything is written, so the very first commit cannot stage machine state.
-  if (ensureMeeseeksIgnored(cwd)) write(verbatim('added meeseeks machine state to .gitignore'));
+  // Before anything is written, so the very first commit cannot stage machine state. Whether it
+  // wrote is carried, because `.gitignore` is then a change in the tree that the PRD phase's
+  // admission would otherwise refuse — and it is admitted only on the run that actually made it,
+  // so a child editing `.gitignore` on any other run is still an unexpected neighbour.
+  const wroteIgnore = ensureMeeseeksIgnored(cwd);
+  if (wroteIgnore) write(verbatim('added meeseeks machine state to .gitignore'));
 
   // Before this run writes any artifact of its own, because the collision it prevents is
   // silent: iteration numbering restarts at 1 every run, so `briefs/iter-001.md` would be
@@ -5092,21 +5586,109 @@ export async function main(argv, io = {}) {
     // Continuing here would destroy the evidence archiving exists to keep, which is a worse
     // outcome than not starting.
     write(verbatim(/** @type {Error} */ (error).message));
-    return 1;
+    return releasing(1);
   }
 
+  // The first thing this run writes of its own, and only now: the archive above has already
+  // moved the previous run's receipt out of the way (DESIGN.md §7.2).
+  writeLaunchReceipt(meeseeksDir, receipt);
+
   /**
-   * Commit what a phase produced.
+   * Commit what a phase produced — and refuse anything it did not declare.
    *
    * An interrupt between phases would otherwise strand the work: the PRD lands untracked,
    * preflight refuses the dirty tree, and the operator cannot simply resume. Observed on
    * the first real run, which was stopped after phase 0 and left `?? PRD.md` behind.
    *
-   * @param {string} message
+   * **The staging list is explicit, and that is the repair (REVIEW F26).** `git add -A` committed
+   * whatever was present at that moment under a message claiming it was Meeseeks document output,
+   * so a launcher edit, a concurrent operator's edit, or an off-contract edit by the document
+   * child itself became trusted phase provenance. The tree is clean at launch — the observation
+   * above insists on it — so every path here belongs to this phase, and a path the phase's
+   * template does not declare ends the run.
+   *
+   * Refusing stages nothing, commits nothing, resets nothing and removes nothing. The surprise
+   * stays on disk because it may be the operator's, and a check that destroys what it objects to
+   * has stopped being a check.
+   *
+   * The allowlist is read from the phase's own template, never restated here, so a template that
+   * changes what it writes changes what is admitted in the same edit. `template: null` means the
+   * phase has no template contract — quality-plugin provisioning writes whatever the tools it
+   * installs write. Those paths are enumerated, staged by name and recorded rather than predicted,
+   * which is still not `git add -A`.
+   *
+   * @param {{ phase: string, message: string, template: string | null, extra?: string[] }} options
+   * @returns {Promise<boolean>} false when the phase left something it does not declare
    */
-  const commitPhase = async (message) => {
-    await shell('git', ['add', '-A'], { cwd });
-    await shell('git', ['commit', '--no-verify', '-m', message], { cwd });
+  const commitPhase = async (options) => {
+    /** @type {string[] | null} */
+    let declared = null;
+    if (options.template !== null) {
+      try {
+        declared = [
+          ...declaredOutputs({ template: template(options.template), name: options.template }),
+          ...(options.extra ?? []),
+        ];
+      } catch (error) {
+        write(verbatim(/** @type {Error} */ (error).message));
+        return false;
+      }
+    }
+    /** @type {string[]} */
+    let changed;
+    try {
+      changed = await changedPaths({ run: (command, args) => shell(command, args, { cwd }), cwd });
+    } catch (error) {
+      // A tree git cannot describe is not an unchanged one, and an exception escaping here would
+      // leave the run lock held and reach the operator as a stack trace instead of a verdict.
+      write(verbatim(/** @type {Error} */ (error).message));
+      return false;
+    }
+    /** @type {string[]} */
+    let staged;
+    if (declared === null) {
+      staged = changed;
+    } else {
+      const decision = admitOutputs({ changed, allowed: declared });
+      if (!decision.ok) {
+        write(verbatim(describeUnexpected({ phase: options.phase, unexpected: decision.unexpected, allowed: declared })));
+        return false;
+      }
+      staged = decision.admitted;
+    }
+    if (staged.length > 0) {
+      // `--` so a path that looks like a revision is still a path.
+      await shell('git', ['add', '--', ...staged], { cwd });
+      await shell('git', ['commit', '--no-verify', '-m', options.message], { cwd });
+    }
+    receipt = recordPhase(receipt, { phase: options.phase, declared, staged });
+    writeLaunchReceipt(meeseeksDir, receipt);
+    return true;
+  };
+
+  /**
+   * A phase that declares no repository output at all, checked without committing anything.
+   *
+   * The oracle author holds no tools and the reality-check retry holds only read tools, so both
+   * should leave the tree exactly as they found it. Asserting that here rather than letting the
+   * next document phase discover it keeps the attribution honest: a stray file is reported
+   * against the phase that produced it.
+   *
+   * @param {string} phase
+   * @returns {Promise<boolean>}
+   */
+  const assertWroteNothing = async (phase) => {
+    /** @type {string[]} */
+    let changed;
+    try {
+      changed = await changedPaths({ run: (command, args) => shell(command, args, { cwd }), cwd });
+    } catch (error) {
+      write(verbatim(/** @type {Error} */ (error).message));
+      return false;
+    }
+    if (changed.length === 0) return true;
+    write(verbatim(describeUnexpected({ phase, unexpected: changed, allowed: [] })));
+    return false;
   };
 
   // ---- Phase 0: ideate --------------------------------------------------
@@ -5125,7 +5707,7 @@ export async function main(argv, io = {}) {
             'Give a PRD or an idea instead.',
         ),
       );
-      return 1;
+      return releasing(1);
     }
     write(verbatim(input === '' ? 'authoring PRD.md from this repository' : `authoring PRD.md from this repository, focused on: ${input}`));
     const authored = await runChild({
@@ -5146,11 +5728,11 @@ export async function main(argv, io = {}) {
     if (!authored.ok) {
       write(verbatim(`improvement authoring failed: ${authored.raw.slice(0, 800)}`));
       write(stamp('ABORTED', { mode }));
-      return 1;
+      return releasing(1);
     }
     if (chargePreLoop(authored)) {
       preLoopBudgetEnd('improvement authoring');
-      return 1;
+      return releasing(1);
     }
     if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
   } else if (input !== '' && existsSync(path.resolve(cwd, input))) {
@@ -5165,7 +5747,7 @@ export async function main(argv, io = {}) {
           : '';
     if (idea === '') {
       write(verbatim('no PRD, no idea, and improvise is disabled. Nothing to build.'));
-      return 1;
+      return releasing(1);
     }
     write(verbatim('authoring PRD.md'));
     const authored = await runChild({
@@ -5179,22 +5761,56 @@ export async function main(argv, io = {}) {
     if (!authored.ok) {
       write(verbatim(`PRD authoring failed: ${authored.raw.slice(0, 800)}`));
       write(stamp('ABORTED', { mode }));
-      return 1;
+      return releasing(1);
     }
     if (chargePreLoop(authored)) {
       preLoopBudgetEnd('PRD authoring');
-      return 1;
+      return releasing(1);
     }
     if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
   }
 
-  await commitPhase(improve ? 'meeseeks: author PRD.md from the existing repository' : 'meeseeks: author PRD.md');
+  // `.gitignore` is admitted only when this run's own `ensureMeeseeksIgnored` wrote it, which is
+  // a driver-owned fact rather than something a child could arrange for itself.
+  if (
+    !(await commitPhase({
+      phase: 'prd',
+      message: improve ? 'meeseeks: author PRD.md from the existing repository' : 'meeseeks: author PRD.md',
+      template: improve ? 'improve-author.md' : 'prd-author.md',
+      extra: wroteIgnore ? ['.gitignore'] : [],
+    }))
+  ) {
+    write(stamp('ABORTED', { mode }));
+    return releasing(1);
+  }
   if (confirmPrd) {
     write(verbatim('PRD.md is written and committed. Review it, then re-run without --confirm-prd.'));
-    return 0;
+    return releasing(0);
   }
 
-  const prd = readFileSync(prdPath, 'utf8');
+  // ---- The specification this run is held to (DESIGN.md §4, REVIEW F12) --
+  //
+  // Captured here: after the PRD is committed and *before* the oracle, the design phase, the
+  // builder or the panel has read a line of it. Stable requirement ids do not preserve stable
+  // intent — a builder that rewrote `PRD-1.1`'s text while keeping its id moved the finish line,
+  // and an independent panel then faithfully certified the wrong specification, which is measured
+  // rather than imagined.
+  //
+  // The bytes come back from the capture rather than from a second read, so `requiredIds` are
+  // derived from exactly the document that was digested. Two reads of one path is how an identity
+  // becomes a coincidence.
+  /** @type {{ revision: import('./specification.mjs').SpecificationRevision, contents: string }} */
+  let specification;
+  try {
+    specification = captureSpecification({ meeseeksDir, root: cwd, file: path.relative(cwd, prdPath) });
+  } catch (error) {
+    write(verbatim(/** @type {Error} */ (error).message));
+    write(stamp('ABORTED', { mode }));
+    return releasing(1);
+  }
+  write(verbatim(`specification: ${specification.revision.file} at ${specification.revision.digest}`));
+
+  const prd = specification.contents;
   const requiredIds = requiredIdsFor(prd);
 
   // ---- Phase 0b: the held-out oracle (A3) -------------------------------
@@ -5209,7 +5825,15 @@ export async function main(argv, io = {}) {
   //
   // Failure to author **ends the run**. A gate armed with nothing would report a clean pass over
   // nothing, and this is the one gate whose entire value is independence.
-  if (config.oracle.enabled && !existsSync(path.join(meeseeksDir, 'oracle.json'))) {
+  // Authored when there is no store *for this specification* (REVIEW F8). The previous run's store
+  // is archived with that run, so the ordinary second-run case finds nothing here and authors
+  // fresh. The digest check is the independent second proof, for the store somebody put back:
+  // held-out cases written for a different objective establish nothing about this one, and the one
+  // gate whose entire value is independence must not quietly judge a different specification.
+  if (config.oracle.enabled && !oracleMatchesSpecification(meeseeksDir, specification.revision.digest)) {
+    if (existsSync(path.join(meeseeksDir, ORACLE_FILE))) {
+      write(verbatim('the held-out oracle on disk does not belong to this specification; authoring a fresh one'));
+    }
     write(verbatim('authoring held-out acceptance cases from the PRD'));
     const authored = await runChild({
       prompt: `${template('oracle-author.md')}\n\n---\n\nPRD.md:\n\n${prd}`,
@@ -5222,17 +5846,33 @@ export async function main(argv, io = {}) {
     if (!authored.ok) {
       write(verbatim(`oracle authoring failed: ${authored.raw.slice(0, 800)}`));
       write(stamp('ABORTED', { mode }));
-      return 1;
+      return releasing(1);
+    }
+    // **Charged before it is parsed** (REVIEW F18). The oracle author is a paid `claude -p` child
+    // like any other, and its result went from `runChild` straight to the parser without ever
+    // reaching `chargePreLoop` — so its tokens and dollars were absent from `alreadySpent`, from
+    // every ceiling the loop then checked, and from the final bill. A run could begin below a
+    // token ceiling that pre-loop work had already crossed.
+    if (chargePreLoop(authored)) {
+      preLoopBudgetEnd('oracle authoring');
+      return releasing(1);
     }
     try {
       const cases = parseOracleCases(authored.text);
-      writeOracle(meeseeksDir, cases);
+      writeOracle(meeseeksDir, cases, { specification: specification.revision.digest });
       write(verbatim(`held out ${cases.length} acceptance case(s); the builder is never shown them`));
     } catch (error) {
       const why = error instanceof OracleError ? error.message : String(error);
       write(verbatim(`oracle authoring returned nothing usable: ${why}`));
       write(stamp('ABORTED', { mode }));
-      return 1;
+      return releasing(1);
+    }
+    // The oracle author holds no tools at all (`PHASE_PERMISSIONS`), so the tree it leaves must be
+    // the tree it found. Checked here rather than left for the design phase to discover, because a
+    // stray file reported against the wrong phase is a wrong answer about who wrote it.
+    if (!(await assertWroteNothing('oracle-author'))) {
+      write(stamp('ABORTED', { mode }));
+      return releasing(1);
     }
   }
 
@@ -5249,7 +5889,7 @@ export async function main(argv, io = {}) {
   if (!designed.ok) {
     write(verbatim(`design phase failed: ${designed.raw.slice(0, 800)}`));
     write(stamp('ABORTED', { mode }));
-    return 1;
+    return releasing(1);
   }
   // Charged, but not an early exit. If this blew the ceiling, `driveRun` ends the run BUDGET
   // on its first `shouldContinue` — after the run manifest has been written, which is an
@@ -5302,7 +5942,7 @@ export async function main(argv, io = {}) {
         ),
       );
       write(stamp('ABORTED', { mode }));
-      return 1;
+      return releasing(1);
     }
   }
 
@@ -5322,26 +5962,18 @@ export async function main(argv, io = {}) {
   };
   write(verbatim(`this project is: ${runCapabilities().join(', ')}`));
 
+  // Committed **before** provisioning, which is the other half of F26's repair. The design child's
+  // contract is `templates/architect.md`'s output table; the quality-plugin install writes whatever
+  // the tools it installs write, and one `git add -A` covering both meant neither had provenance.
+  // Two commits, each staging an enumerated list, and only the first one is held to a template.
+  if (!(await commitPhase({ phase: 'design', message: 'meeseeks: design documents', template: 'architect.md' }))) {
+    write(stamp('ABORTED', { mode }));
+    return releasing(1);
+  }
+
   const provisioning = await installQualityPlugins({ cwd, plugins: config.qualityPlugins, runner: shell });
   for (const warning of provisioning.warnings) write(verbatim(warning));
-
-  await commitPhase('meeseeks: design documents');
-
-  // One driver per repository (DESIGN.md §3.5). Checked here as well as in preflight, because
-  // preflight runs in a *different process* — the `init` entry point — and the operator also
-  // launches this file directly, which is exactly what the two-driver incident on 13 August
-  // 2026 looked like in `ps`. Claimed *before* the component phase rather than beside
-  // `driveRun`: that phase force-removes worktrees, resets `meeseeks/component-*` branches and
-  // fast-forwards this tree, and each of those leans on the lock's one-driver-per-repository
-  // rule — a first draft claimed the lock downstream and ran all of it unprotected. A lock
-  // leaked by a crash between here and release self-heals: `checkNoConcurrentRun` treats a
-  // dead pid's lock as stale.
-  const concurrent = checkNoConcurrentRun(meeseeksDir);
-  if (!concurrent.ok) {
-    write(verbatim(`${concurrent.detail}\n${concurrent.fix}`));
-    return 1;
-  }
-  claimRunLock(meeseeksDir, { pid: process.pid, startedAt: new Date().toISOString() });
+  await commitPhase({ phase: 'quality-plugins', message: 'meeseeks: provision quality plugins', template: null });
 
   // ---- Phase 1c: components — driver-delegated sub-runs in worktrees (PLAN item 24) ------
   //
@@ -5513,8 +6145,7 @@ export async function main(argv, io = {}) {
       const failure = /** @type {Error} */ (error);
       write(verbatim(failure instanceof ComponentError ? failure.message : `${failure.name}: ${failure.message}`));
       write(stamp('ABORTED', { mode }));
-      clearRunLock(meeseeksDir);
-      return 1;
+      return releasing(1);
     }
   }
 
@@ -5633,6 +6264,13 @@ export async function main(argv, io = {}) {
    */
   const gateTree = async (dir) => {
     const treeStateDir = path.join(dir, '.meeseeks');
+    // **Before anything runs** (REVIEW F16). The expected report paths are fixed, so a gate that
+    // crashes, times out, or fails before writing leaves the *previous* attempt's report on disk
+    // and everything downstream reads it as this attempt's evidence — which is how a failed
+    // verification gate once confirmed a scoped restore that had not held. Removing them first
+    // makes absence mean "this attempt produced nothing" rather than something to infer.
+    const stuck = clearReports(reportFiles(dir)).stuck;
+    for (const file of stuck) write(verbatim(`could not clear the previous report at ${path.relative(dir, file)}`));
     // Arming is a question about the code, so it is asked where the code is, every
     // iteration. Resolving it once at provisioning time asked it of a repository holding a
     // PRD and nothing else, so the answer was always "no frontend" and the design gate never
@@ -5780,7 +6418,15 @@ export async function main(argv, io = {}) {
       // demands is filtered by the same capabilities, which is why they are passed in as well
       // as applied outside. Without that, a browserless project could not satisfy `ci` at all.
       ...applicableGates(
-        await staticGates(dir, { run: shell, capabilities, meeseeksDir: treeStateDir, oracle: config.oracle.enabled }),
+        await staticGates(dir, {
+          run: shell,
+          capabilities,
+          meeseeksDir: treeStateDir,
+          oracle: config.oracle.enabled,
+          // Threaded so the held-out gate can refuse cases written from another PRD rather than
+          // reporting a clean pass over them (REVIEW F8).
+          specification: specification.revision.digest,
+        }),
         capabilities,
       ).gates,
       redEvidenceGate(evidence),
@@ -6048,10 +6694,26 @@ export async function main(argv, io = {}) {
         return { ok: gated.ok, results: gated.results };
       },
       shipTimeMutation: () => shipTimeMutation(cwd, meeseeksDir, runStartCommit, config.gateTimeoutMs),
-      readTestReports: () =>
-        reportFiles(cwd)
-          .filter((file) => existsSync(file))
-          .map((file) => readFileSync(file, 'utf8')),
+      // The captured revision, re-read from `.meeseeks/` each time rather than closed over. The
+      // record lives where the run may not edit it, and reading it back is what makes the check a
+      // check rather than a memory of one.
+      checkSpecification: () => verifySpecification({ meeseeksDir, root: cwd }),
+      // The candidate's bytes, from git's own view of the working tree (REVIEW F14). The gate cache
+      // already needed exactly this pair — tracked plus untracked-not-ignored, hashed from real
+      // bytes — so the identity a verdict is sealed to is the one the repository already trusts to
+      // decide whether a deterministic gate may be skipped.
+      workspaceIdentity: () => workspaceHash({ cwd, run: shell }),
+      // Only what this attempt produced, and only from regular files (REVIEW F16). `gateTree`
+      // cleared these paths before the gates ran, so a path that is here now was written by the
+      // attempt just finished; one that is a directory or a symlink is refused rather than read,
+      // because reading whatever it resolves to would be guessing.
+      readTestReports: () => {
+        const collected = collectReports(reportFiles(cwd));
+        for (const file of collected.irregular) {
+          write(verbatim(`ignoring ${path.relative(cwd, file)}: a report path that is not a regular file is not a report`));
+        }
+        return collected.contents;
+      },
       commit: async (message) => {
         // Re-asserted here rather than once before the loop: a hard reset can land on a
         // commit that predates the stanza, which would quietly un-ignore the ratchet and
@@ -6102,7 +6764,7 @@ export async function main(argv, io = {}) {
     // that ended normally would refuse the next run for no reason — and unlike a lock left by a
     // killed driver, that one would not clear itself, because this pid really is alive right up
     // until the process exits.
-    clearRunLock(meeseeksDir);
+    releaseRunLock(meeseeksDir, runLock.lock.token);
   }
 
   write(render({ kind: 'terminal', state: outcome.state }, { mode }));

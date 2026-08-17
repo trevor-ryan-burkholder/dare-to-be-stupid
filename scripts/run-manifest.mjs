@@ -30,6 +30,9 @@ import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'n
 import path from 'node:path';
 
 import { ASSUMPTIONS_FILE } from './assumptions.mjs';
+import { LAUNCH_RECEIPT_FILE } from './launch.mjs';
+import { ORACLE_FILE } from './oracle.mjs';
+import { SPECIFICATION_FILE } from './specification.mjs';
 
 /** Driver-owned. Protected by the `.meeseeks/**` invariant (§6) with no rule of its own. */
 export const RUN_MANIFEST = 'run.json';
@@ -74,7 +77,26 @@ export const RUN_ARCHIVE_DIR = 'runs';
  * they are already transient within a run, and archiving the last one would preserve an
  * arbitrary moment while implying it was the run's.
  */
-const PER_RUN_ARTIFACTS = [RUN_MANIFEST, 'briefs', 'reality-check.md', ASSUMPTIONS_FILE, 'review.json', 'outcome.json'];
+const PER_RUN_ARTIFACTS = [
+  RUN_MANIFEST,
+  'briefs',
+  'reality-check.md',
+  ASSUMPTIONS_FILE,
+  'review.json',
+  'outcome.json',
+  // The launch receipt (REVIEW F26). Per-run by construction — it records one run's launch
+  // observation and pre-loop staging — so a second run would otherwise overwrite the only copy of
+  // the first one's provenance, which is the exact failure archiving exists to prevent.
+  LAUNCH_RECEIPT_FILE,
+  // The captured specification revision (REVIEW F12): per-run by construction, and the record a
+  // later reader needs in order to say which document that run was judged against.
+  SPECIFICATION_FILE,
+  // The held-out oracle store (REVIEW F8). Per-run because its cases are authored from *one* PRD:
+  // a store that survived into the next run would let the one gate judged against the
+  // specification rather than the implementation execute a previous objective's cases and report a
+  // clean pass over nothing.
+  ORACLE_FILE,
+];
 
 /** The manifest's own schema version, bumped when a field's meaning changes. */
 const MANIFEST_VERSION = 1;

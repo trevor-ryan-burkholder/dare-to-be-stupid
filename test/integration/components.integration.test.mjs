@@ -321,9 +321,11 @@ describe('the component phase runs under the run lock', () => {
     const root = repoWithComponents([{ name: 'solo', dir: 'packages/solo', spec: 'Build solo.' }]);
     // A live pid that is not this process: the test runner's parent. A lock naming this
     // process's own pid would pass as "already holds the lock", which is a different property.
+    // The owner token is required since 0.165.0 — a lock without one is refused as unreadable
+    // evidence rather than as a live owner, and this test is about the live owner.
     writeFileSync(
       path.join(root, '.meeseeks', 'lock.json'),
-      JSON.stringify({ pid: process.ppid, startedAt: new Date().toISOString() }),
+      JSON.stringify({ pid: process.ppid, startedAt: new Date().toISOString(), token: 'the-other-driver' }),
     );
     /** @type {string[]} */
     const logs = [];
@@ -346,11 +348,11 @@ describe('the component phase runs under the run lock', () => {
     // Nothing of the phase ran against the locked repository: no sweep, no worktree, no child.
     assert.equal(invocations, 0, 'a component ran against a repository another driver holds');
     assert.equal(git(root, ['worktree', 'list']).split('\n').length, 1);
-    // The other driver's lock was not clobbered by the refusal.
-    assert.equal(
-      JSON.parse(readFileSync(path.join(root, '.meeseeks', 'lock.json'), 'utf8')).pid,
-      process.ppid,
-      "the refused run overwrote the other driver's lock",
+    // The other driver's lock was not clobbered by the refusal, nor cleared by it on the way out.
+    assert.deepStrictEqual(
+      JSON.parse(readFileSync(path.join(root, '.meeseeks', 'lock.json'), 'utf8')).token,
+      'the-other-driver',
+      "the refused run overwrote or cleared the other driver's lock",
     );
   });
 });
