@@ -330,10 +330,41 @@ because run 14 was sent `SIGTERM` and did not die before run 15 launched. Run 15
 and nothing may be concluded from its log. §13.6's re-entrancy guard does not cover this and never
 did: it refuses a *nested* run, a builder invoking the slash command, which is a different failure.
 
-**0.164.0 does not yet satisfy that requirement.** It checks and claims separately, and claims
-only after PRD/design work and a commit. `REVIEW.md` F1 is the release-blocking implementation
-gap; this section states the required end state rather than laundering the current race into the
-specification.
+**How it is acquired, since 0.165.0.** Winning is an exclusive create — `O_CREAT | O_EXCL` on
+`.meeseeks/lock.json` — and that is the only way to win: no path in `run-lock.mjs` writes the lock
+over an existing one. Through 0.164.0 it read the file in one call and overwrote it in another, so
+two contenders that both observed an absent lock both succeeded; measured against six real
+processes racing one directory, all six "won". The same race with the exclusive create yields
+exactly one, every round.
+
+Stale recovery is an explicit retry and never part of the claim. A lock is reclaimed only after its
+recorded owner has been established dead, and only by the one contender that first wins a second
+atomic operation: `mkdir` on `.meeseeks/lock.json.takeover-<hash of the stale token>`. Without that
+serialization, two contenders reading one dead lock would each remove it and each create their own,
+which is the original defect wearing a different hat. Inside the takeover the lock is read again, so
+a straggler that arrives after somebody else has already reclaimed the repository refuses instead of
+deleting a live lock. The takeover directory is named from the stale token, so it is single-use — an
+orphan left by a crash can never block a later takeover — and an empty directory is invisible to
+git, so it cannot be swept into a commit the way five earlier `.meeseeks/` artifacts were.
+
+The token is what makes ownership enforceable: `releaseRunLock` removes the file only when the token
+on disk is the one it was handed, so a losing contender, an aborting run, and a process that never
+acquired anything all fail to clear the winner's lock. A lock carrying no token cannot be reasoned
+about in either direction and is therefore refused rather than reclaimed — the only file that can be
+in that state was written by a driver before 0.165.0, which by definition is no longer running.
+
+The driver acquires it immediately after the refusals that touch nothing — the re-entrancy guard,
+config load, argument parsing, the tracked-state check, and the components/`--give-them-the-box`
+rule — and before everything with a side effect: the `.gitignore` write, the previous run's archive,
+the first child, the quality-plugin install, and every commit. Those cheap refusals stay upstream on
+purpose. A run that was never going to start should not take the repository from one that was, and
+the nesting refusal in particular must keep its own message, because a nested run held off by the
+*parent's* lock would report the wrong reason and would refuse under `--give-them-the-box` the very
+thing that flag exists to permit. It is released by its owner on every path out, including the
+pre-loop refusals, which is enforced positionally rather than by a list somebody has to remember.
+
+`REVIEW.md` F1 records the defect and its acceptance evidence, and remains open until Codex has
+verified the repair.
 
 Living under `.meeseeks/` means §6's positional rule already protects it — a process marked
 `MEESEEKS_RUNNING` may not write there at any depth, so a builder cannot forge or clear it.

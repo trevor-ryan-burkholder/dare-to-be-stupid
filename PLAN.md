@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.164.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.165.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,12 +18,19 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.164.0
+## Build order — current traversal at 0.165.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
 
-- **F1:** acquire the repository lock atomically before any work.
+- **F1:** acquire the repository lock atomically before any work — **implemented at 0.165.0**;
+  `REVIEW.md` F1 stays OPEN until Codex has verified the repair. Winning is an exclusive create,
+  stale recovery is a serialized explicit retry, each acquisition carries an ownership token only
+  its owner may clear, and the driver acquires before the `.gitignore` write, the archive, the
+  first child, the install and every commit (`DESIGN.md` §3.5). Evidence:
+  `test/integration/run-lock.integration.test.mjs` races six real processes at one directory —
+  free and stale — and drives the real `main`; the same race against the 0.164.0 semantics
+  produced six winners out of six.
 - **F26 / item 81:** after that lock, revalidate launch safety and admit only declared pre-loop phase outputs.
 - **F2:** make timeout and output-cap termination force and settle after a bounded SIGTERM grace
   period.

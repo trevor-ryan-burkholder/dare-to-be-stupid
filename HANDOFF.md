@@ -1,10 +1,10 @@
 # START HERE — current handoff, last swept 17 August 2026
 
-**State:** `main` at `0.164.0`. The manifests and package-lock root metadata agree. Measured
-on the current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean;
-`npm test` **2307 pass, 0 fail**;
-`npm run test:integration` **51 pass, 0 fail**; `npm run release-check` **ok**. These commands
-were rerun after the documentation repair; no paid live test was invoked.
+**State:** branch `claude/f1-atomic-run-lock` at `0.165.0`, ahead of `main` at `0.164.0`. The
+manifests and package-lock root metadata agree. Measured on the current tree with Node 24.14.1:
+`npm run lint` and `npm run typecheck` clean; `npm test` **2326 pass, 0 fail**;
+`npm run test:integration` **58 pass, 0 fail**; `npm run release-check` **ok**. No paid live test
+was invoked.
 
 **External review:** `REVIEW.md` is **CHANGES REQUESTED** with seventeen high-priority defects
 (F1–F3, F5–F8, F12, F14, F16, F18, F25–F30) and thirteen medium-priority defects
@@ -12,6 +12,10 @@ were rerun after the documentation repair; no paid live test was invoked.
 guarantee-strength audit, durable-artifact registry, failure-shape matrix, and explicit
 negative-guarantee sheet. These are the first implementation gates in `PLAN.md`. Claude Code may
 implement them; Codex owns closure after reviewing the exact repair and its acceptance evidence.
+
+**Implemented, awaiting Codex verification:** F1's atomic run lock, at 0.165.0. The finding
+remains OPEN in `REVIEW.md` — implementation and passing self-tests are not acceptance. `PLAN.md`
+records what landed and where its evidence lives; `DESIGN.md` §3.5 states the mechanism.
 
 **Paid live tier:** not rerun for this documentation-only cleanup. At 0.161.0 an intermediate
 `CI=1` change failed one live test and was reverted before release; the shipped change was
@@ -21,7 +25,9 @@ the archived handoff.
 ## Current implementation order
 
 1. Close the locally implementable high-priority defects: F1–F3, F6/item 60, F7/item 61,
-   F12/item 66, F8/item 62, F14/item 68, F16/item 70, F18/item 72, and F26/item 81. Item 81
+   F12/item 66, F8/item 62, F14/item 68, F16/item 70, F18/item 72, and F26/item 81. **F1 is
+   implemented at 0.165.0 and awaiting Codex verification**; the atomic owner it establishes is
+   now available to item 81. Item 81
    follows F1 so launch revalidation and pre-loop output admission occur under the atomic owner.
    Item 66 supplies the specification identity consumed by items 62 and 68; F2 includes the
    resistant output-cap path. F30/item 87 is also high priority, but it lands only after item 70

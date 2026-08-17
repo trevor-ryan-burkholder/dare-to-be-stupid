@@ -70,8 +70,8 @@ import {
   selectLessons,
 } from './lessons.mjs';
 import { OracleError, parseOracleCases, resolveArtifactCommand, runOracle, writeOracle } from './oracle.mjs';
-import { checkNoConcurrentRun, checkStateNotTracked } from './preflight.mjs';
-import { RUN_LOCK_FILE, claimRunLock, clearRunLock } from './run-lock.mjs';
+import { checkStateNotTracked } from './preflight.mjs';
+import { RUN_LOCK_FILE, acquireRunLock, releaseRunLock } from './run-lock.mjs';
 import { installQualityPlugins } from './plugins.mjs';
 import {
   applyWinner,
@@ -5044,6 +5044,50 @@ export async function main(argv, io = {}) {
     write(verbatim(`--give-them-the-box: a ${Math.round(config.deadlineMs / 60_000)}-minute wall clock is armed with it.`));
   }
 
+  // ---- One driver per repository (DESIGN.md §3.5, REVIEW F1) -------------
+  //
+  // **Here, and in one atomic operation.** The previous version checked and claimed in two calls,
+  // and did both of them only after the PRD phase, the design phase, the quality-plugin install
+  // and a commit — so two launches could pass the same check, pay for two authoring phases and
+  // commit over each other before either owned anything. `acquireRunLock` wins by exclusive
+  // create or does not win at all; a stale owner is reclaimed by an explicit serialized retry
+  // rather than by overwriting.
+  //
+  // The position is the other half of the repair. Everything with a side effect is downstream of
+  // this line: the `.gitignore` write, the previous run's archive, every child, every install and
+  // every commit. What is deliberately *upstream* of it is the set of refusals that touch nothing
+  // and cost nothing — the re-entrancy guard, the config load, argument parsing, the tracked-state
+  // check and the components/`--give-them-the-box` rule. A run that was never going to start
+  // should not take the repository from one that was, and the nesting refusal in particular must
+  // keep its own message: a nested run held off by the *parent's* lock would report the wrong
+  // reason, and under `--give-them-the-box` it would refuse work that flag exists to permit.
+  //
+  // Preflight checks this too, and that is not redundancy: preflight runs in the `init` entry
+  // point, in a different process, and holds nothing while this one starts. Its answer is operator
+  // feedback. This one is the decision.
+  const runLock = acquireRunLock(meeseeksDir);
+  if (!runLock.ok) {
+    write(verbatim(`${runLock.detail}\n${runLock.fix}`));
+    return 1;
+  }
+
+  /**
+   * Give the repository back, then hand the exit code on.
+   *
+   * Every `return` between here and the loop's own `try`/`finally` goes through this, because
+   * DESIGN.md §3.5 says the lock is released by its owner *on every path out* and the paths out of
+   * the pre-loop phases are numerous — a failed PRD child, an unreadable capability declaration,
+   * `--confirm-prd` succeeding, a component aborting. `test/driver.test.mjs` proves no exit escapes
+   * it, because an enumeration nobody re-checks is how this project loses guarantees.
+   *
+   * @param {number} code
+   * @returns {number}
+   */
+  const releasing = (code) => {
+    releaseRunLock(meeseeksDir, runLock.lock.token);
+    return code;
+  };
+
   // What Phase 0 and Phase 1 cost. These run before `driveRun` exists, so without carrying
   // them the ceiling silently restarts at zero when the loop begins — the defect the first
   // dogfood run exposed, where a design child spent 2,965,864 tokens against a 2,000,000
@@ -5092,7 +5136,7 @@ export async function main(argv, io = {}) {
     // Continuing here would destroy the evidence archiving exists to keep, which is a worse
     // outcome than not starting.
     write(verbatim(/** @type {Error} */ (error).message));
-    return 1;
+    return releasing(1);
   }
 
   /**
@@ -5125,7 +5169,7 @@ export async function main(argv, io = {}) {
             'Give a PRD or an idea instead.',
         ),
       );
-      return 1;
+      return releasing(1);
     }
     write(verbatim(input === '' ? 'authoring PRD.md from this repository' : `authoring PRD.md from this repository, focused on: ${input}`));
     const authored = await runChild({
@@ -5146,11 +5190,11 @@ export async function main(argv, io = {}) {
     if (!authored.ok) {
       write(verbatim(`improvement authoring failed: ${authored.raw.slice(0, 800)}`));
       write(stamp('ABORTED', { mode }));
-      return 1;
+      return releasing(1);
     }
     if (chargePreLoop(authored)) {
       preLoopBudgetEnd('improvement authoring');
-      return 1;
+      return releasing(1);
     }
     if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
   } else if (input !== '' && existsSync(path.resolve(cwd, input))) {
@@ -5165,7 +5209,7 @@ export async function main(argv, io = {}) {
           : '';
     if (idea === '') {
       write(verbatim('no PRD, no idea, and improvise is disabled. Nothing to build.'));
-      return 1;
+      return releasing(1);
     }
     write(verbatim('authoring PRD.md'));
     const authored = await runChild({
@@ -5179,11 +5223,11 @@ export async function main(argv, io = {}) {
     if (!authored.ok) {
       write(verbatim(`PRD authoring failed: ${authored.raw.slice(0, 800)}`));
       write(stamp('ABORTED', { mode }));
-      return 1;
+      return releasing(1);
     }
     if (chargePreLoop(authored)) {
       preLoopBudgetEnd('PRD authoring');
-      return 1;
+      return releasing(1);
     }
     if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
   }
@@ -5191,7 +5235,7 @@ export async function main(argv, io = {}) {
   await commitPhase(improve ? 'meeseeks: author PRD.md from the existing repository' : 'meeseeks: author PRD.md');
   if (confirmPrd) {
     write(verbatim('PRD.md is written and committed. Review it, then re-run without --confirm-prd.'));
-    return 0;
+    return releasing(0);
   }
 
   const prd = readFileSync(prdPath, 'utf8');
@@ -5222,7 +5266,7 @@ export async function main(argv, io = {}) {
     if (!authored.ok) {
       write(verbatim(`oracle authoring failed: ${authored.raw.slice(0, 800)}`));
       write(stamp('ABORTED', { mode }));
-      return 1;
+      return releasing(1);
     }
     try {
       const cases = parseOracleCases(authored.text);
@@ -5232,7 +5276,7 @@ export async function main(argv, io = {}) {
       const why = error instanceof OracleError ? error.message : String(error);
       write(verbatim(`oracle authoring returned nothing usable: ${why}`));
       write(stamp('ABORTED', { mode }));
-      return 1;
+      return releasing(1);
     }
   }
 
@@ -5249,7 +5293,7 @@ export async function main(argv, io = {}) {
   if (!designed.ok) {
     write(verbatim(`design phase failed: ${designed.raw.slice(0, 800)}`));
     write(stamp('ABORTED', { mode }));
-    return 1;
+    return releasing(1);
   }
   // Charged, but not an early exit. If this blew the ceiling, `driveRun` ends the run BUDGET
   // on its first `shouldContinue` — after the run manifest has been written, which is an
@@ -5302,7 +5346,7 @@ export async function main(argv, io = {}) {
         ),
       );
       write(stamp('ABORTED', { mode }));
-      return 1;
+      return releasing(1);
     }
   }
 
@@ -5326,22 +5370,6 @@ export async function main(argv, io = {}) {
   for (const warning of provisioning.warnings) write(verbatim(warning));
 
   await commitPhase('meeseeks: design documents');
-
-  // One driver per repository (DESIGN.md §3.5). Checked here as well as in preflight, because
-  // preflight runs in a *different process* — the `init` entry point — and the operator also
-  // launches this file directly, which is exactly what the two-driver incident on 13 August
-  // 2026 looked like in `ps`. Claimed *before* the component phase rather than beside
-  // `driveRun`: that phase force-removes worktrees, resets `meeseeks/component-*` branches and
-  // fast-forwards this tree, and each of those leans on the lock's one-driver-per-repository
-  // rule — a first draft claimed the lock downstream and ran all of it unprotected. A lock
-  // leaked by a crash between here and release self-heals: `checkNoConcurrentRun` treats a
-  // dead pid's lock as stale.
-  const concurrent = checkNoConcurrentRun(meeseeksDir);
-  if (!concurrent.ok) {
-    write(verbatim(`${concurrent.detail}\n${concurrent.fix}`));
-    return 1;
-  }
-  claimRunLock(meeseeksDir, { pid: process.pid, startedAt: new Date().toISOString() });
 
   // ---- Phase 1c: components — driver-delegated sub-runs in worktrees (PLAN item 24) ------
   //
@@ -5513,8 +5541,7 @@ export async function main(argv, io = {}) {
       const failure = /** @type {Error} */ (error);
       write(verbatim(failure instanceof ComponentError ? failure.message : `${failure.name}: ${failure.message}`));
       write(stamp('ABORTED', { mode }));
-      clearRunLock(meeseeksDir);
-      return 1;
+      return releasing(1);
     }
   }
 
@@ -6102,7 +6129,7 @@ export async function main(argv, io = {}) {
     // that ended normally would refuse the next run for no reason — and unlike a lock left by a
     // killed driver, that one would not clear itself, because this pid really is alive right up
     // until the process exits.
-    clearRunLock(meeseeksDir);
+    releaseRunLock(meeseeksDir, runLock.lock.token);
   }
 
   write(render({ kind: 'terminal', state: outcome.state }, { mode }));

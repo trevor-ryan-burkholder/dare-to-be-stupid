@@ -5343,3 +5343,54 @@ describe('findHealthPath sees filesystem-declared routes', () => {
     assert.equal(detectTree(['.next/types/app/api/health/route.ts']), null);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The run lock is released on every path out (DESIGN.md §3.5, REVIEW F1)
+// ---------------------------------------------------------------------------
+
+describe('every exit between acquiring the run lock and the loop gives the repository back', () => {
+  // **Why a source scan rather than fourteen behavioural tests.** The lock is now taken before
+  // the `.gitignore` write, before the archive and before the first paid child, which puts a
+  // dozen pre-loop refusals downstream of it: a failed PRD child, an unreadable capability
+  // declaration, `--confirm-prd` succeeding, a component aborting. Each one is an exit, and each
+  // one must release. Behavioural tests can prove the paths that exist today; nothing in them
+  // notices the fifteenth `return` somebody adds next month, and a lock leaked by a normal exit
+  // refuses the *next* run for no reason.
+  //
+  // This project's own rule about enumeration applies: the guard hook's positional `.meeseeks/`
+  // rule exists because a list of names defaulted every new artifact to unprotected. So the
+  // property asserted here is positional too — inside this region of `main`, an exit code is
+  // returned through `releasing` or it is a defect.
+  const source = readFileSync(new URL('../scripts/driver.mjs', import.meta.url), 'utf8').split('\n');
+
+  /** @returns {{ from: number, to: number }} */
+  const lockOwnedRegion = () => {
+    const helper = source.findIndex((line) => line.includes('const releasing = (code) =>'));
+    assert.notEqual(helper, -1, 'main no longer defines the releasing helper this rule is about');
+    // The helper's own `return code;` is not an exit from `main`, so the region starts after it.
+    const from = source.findIndex((line, index) => index > helper && line === '  };');
+    // `let outcome;` is the line before the try whose finally releases the lock. Everything from
+    // there on is already covered, including the ABORTED return inside its catch.
+    const to = source.findIndex((line) => line === '  let outcome;');
+    assert.equal(from > 0 && to > from, true, `could not delimit the lock-owned region (${from}..${to})`);
+    return { from, to };
+  };
+
+  it('returns every exit code through releasing()', () => {
+    const { from, to } = lockOwnedRegion();
+    const escaped = [];
+    for (let index = from; index < to; index += 1) {
+      const line = source[index];
+      if (/return\s+-?\d+\s*;/.test(line)) escaped.push(`${index + 1}: ${line.trim()}`);
+    }
+    assert.deepStrictEqual(escaped, [], `these exits leak the run lock instead of releasing it:\n${escaped.join('\n')}`);
+  });
+
+  it('finds the exits it is scanning, so a rule that matched nothing cannot pass', () => {
+    // The scan's own benign neighbour. A region with no `releasing(...)` calls in it would
+    // satisfy the assertion above while proving nothing at all.
+    const { from, to } = lockOwnedRegion();
+    const released = source.slice(from, to).filter((line) => /return releasing\(-?\d+\);/.test(line));
+    assert.equal(released.length >= 10, true, `expected the pre-loop phases to have many exits, found ${released.length}`);
+  });
+});
