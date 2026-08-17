@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.168.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.169.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.168.0
+## Build order — current traversal at 0.169.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -50,7 +50,8 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
   `test/health-probe.test.mjs` — the decoy reproduction, the inverted two-masters test, the fixed
   port named by the driver, and the pre-existing listener a dead child cannot borrow.
 - **F6 / item 60:** resolve every passing reviewer citation to a contained, existing line before
-  Panel combination.
+  Panel combination — **implemented at 0.169.0**; `REVIEW.md` F6 stays OPEN until Codex has
+  verified the repair. See item 60 below.
 - **F7 / item 61:** require both process success and envelope success from every Claude role.
 - **F12 / item 66:** bind every role and terminal decision to one immutable specification revision.
 - **F8 / item 62:** bind held-out Oracle cases to that run and specification revision.
@@ -1999,7 +2000,27 @@ its receipt and still
 goes through the ordinary shipped-file version bump and required live tier before release. A failed or
 inconclusive experiment closes the item without changing the production path.
 
-### 60. Resolve reviewer evidence before accepting a pass — OPEN (REVIEW F6)
+### 60. Resolve reviewer evidence before accepting a pass — IMPLEMENTED (0.169.0); REVIEW F6 open pending Codex
+
+**Landed at 0.169.0** in `scripts/evidence.mjs`, applied by `resolveReportEvidence` between
+`parseReviewerReport` and `combinePanel` — to every panel report and to the carried report. A
+passing citation must resolve inside the exact candidate root to a readable regular file and a
+positive, in-range, non-blank line; absolute paths, `..` traversal, directories and symlinks
+escaping the root are refused, the last by comparing after `realpathSync`. An entry that does not
+resolve becomes `fail` before it can be counted, recorded, pinned or carried; an actionable advisory
+whose location does not resolve stops being actionable. The parser stays pure and the line number
+stays a locator, with content identity still the durable pin.
+
+Evidence: `test/evidence.test.mjs` (every hostile location in REVIEW F6's list beside a benign
+neighbour, including a Windows-shaped citation resolving on a POSIX root) and
+`test/driver.test.mjs`'s loop-level pair — a unanimous report citing `does/not/exist.ts:999999`
+cannot reach the ship effect, while a report citing a real line still ships.
+
+**No paid live check is due for this slice.** `templates/reviewer-system.md` and the reviewer output
+contract are unchanged; the repair is entirely on the Driver's side of the parse. If this is later
+batched with item 40, item 40's own contract change carries the tier-3 requirement.
+
+**What it was for, as originally written:**
 
 **Problem solved:** the current Panel contract accepts evidence-shaped text even when the cited file
 or line does not exist. That permits a hallucinated or stale citation to participate in `SHIPPED`.

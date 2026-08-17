@@ -59,6 +59,7 @@ import {
 } from './gate-cache.mjs';
 import { applicableGates, gateApplies } from './gate-policy.mjs';
 import { hasMeaningfulHistory, historyContext } from './history.mjs';
+import { resolveCitation } from './evidence.mjs';
 import { blankComments, integrityGate } from './integrity.mjs';
 import {
   addLesson,
@@ -533,6 +534,55 @@ export function parseReviewerReport(raw, options) {
   if (requirements.length === 0) problems.push('reviewer returned no requirement entries at all');
   const verdict = requirements.length > 0 && requirements.every((entry) => entry.status === 'pass') ? 'pass' : 'fail';
 
+  return { verdict, requirements, advisories, problems };
+}
+
+/**
+ * Resolve a parsed report's citations against the tree that was actually reviewed (REVIEW F6).
+ *
+ * **The boundary between a document and a repository, and it belongs here rather than in the
+ * parser.** `parseReviewerReport` judges reviewer output and is deliberately pure — it is the piece
+ * every hostile-report test drives, and giving it a filesystem would make those tests depend on a
+ * tree. Only the Driver knows which candidate the reviewer was reading, so only the Driver can ask
+ * whether the citation resolves inside it.
+ *
+ * Applied before combination, so an invalid location cannot be counted, recorded, pinned or
+ * carried. A `pass` whose citation does not resolve becomes a `fail`: "evidence required" has to
+ * mean a location somebody can open, or it means evidence-shaped text.
+ *
+ * An actionable advisory gets the same boundary pointed a different way. Its evidence is a repair
+ * target rather than a compliance claim, so an unresolvable one cannot flip anything to pass — it
+ * would instead send the builder to a file that is not there. It stops being actionable and says
+ * why.
+ *
+ * @param {ReviewerReport} report
+ * @param {{ root: string }} options the exact repository the reviewer read
+ * @returns {ReviewerReport}
+ */
+export function resolveReportEvidence(report, options) {
+  /** @type {string[]} */
+  const problems = [...report.problems];
+  const requirements = report.requirements.map((entry) => {
+    if (entry.status !== 'pass') return entry;
+    const resolution = resolveCitation(options.root, entry.evidence ?? '');
+    if (resolution.ok) return entry;
+    problems.push(
+      `${entry.id} was marked pass citing ${JSON.stringify(entry.evidence)}, which does not resolve: ` +
+        `${resolution.reason}; flipped to fail (DESIGN.md §4, REVIEW F6)`,
+    );
+    return { ...entry, status: /** @type {'fail'} */ ('fail') };
+  });
+  const advisories = report.advisories.map((finding) => {
+    if (!finding.actionable) return finding;
+    const resolution = resolveCitation(options.root, finding.evidence ?? '');
+    if (resolution.ok) return finding;
+    problems.push(
+      `advisory ${finding.id} cited ${JSON.stringify(finding.evidence)}, which does not resolve: ` +
+        `${resolution.reason}; it is recorded but not actionable`,
+    );
+    return { ...finding, actionable: false };
+  });
+  const verdict = requirements.length > 0 && requirements.every((entry) => entry.status === 'pass') ? 'pass' : 'fail';
   return { verdict, requirements, advisories, problems };
 }
 
@@ -2293,7 +2343,13 @@ export async function driveRun(options) {
         // panel is only unanimous if every member answered, so a partial panel cannot ship.
         if (exhausted) return { done: false, outcome: finish('BUDGET', ceilingReason()) };
         collected.push(
-          parseReviewerReport(result.text, { requiredIds: ids, minConfidence: config.advisory.minConfidence }),
+          // Parsed, then resolved against the candidate tree before anything counts it (REVIEW F6).
+          // The parser establishes that the citation is a location; only this establishes that it
+          // is a location in the repository the reviewer was reading.
+          resolveReportEvidence(
+            parseReviewerReport(result.text, { requiredIds: ids, minConfidence: config.advisory.minConfidence }),
+            { root: rootDir },
+          ),
         );
       }
       return { done: true, reports: collected };
@@ -2302,7 +2358,13 @@ export async function driveRun(options) {
     const first = await runPanel(plan.assignments);
     if (!first.done) return first.outcome;
     /** @type {ReviewerReport[]} */
-    let reports = plan.carried.length === 0 ? first.reports : [...first.reports, carriedReport(plan.carried)];
+    // The carried report gets the same boundary. A carry is a pre-filter, never a substitute for
+    // the panel (DESIGN.md §4.3), and a requirement carried on a citation whose file has since
+    // gone is not carrying evidence — it is carrying a memory of some.
+    let reports =
+      plan.carried.length === 0
+        ? first.reports
+        : [...first.reports, resolveReportEvidence(carriedReport(plan.carried), { root: rootDir })];
     let panel = combinePanel(reports, { requireUnanimous: config.requireUnanimous, requiredIds });
 
     if (plan.narrowed && panel.verdict === 'pass') {

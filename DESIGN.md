@@ -812,6 +812,30 @@ Three properties replace it:
   rather than a skip — so this is the ownership evidence a probe can actually establish, and it is
   described as that rather than as proof.
 
+**A citation is resolved against the tree that was reviewed** (REVIEW F6, repaired at 0.169.0).
+The parser establishes that evidence is *shaped* like `path/file.ts:LINE`; until this version
+nothing established that it pointed at anything. Codex's reproduction is one line: a report citing
+`does/not/exist.ts:999999` parsed with no problems, `parseReviewerReport` returned `pass`, and
+`combinePanel` agreed. Downstream pinning was best-effort by design — a missing file skipped the
+pin, an out-of-range line pinned the whole file — so a hallucinated, stale or traversal-based
+citation could satisfy the cold Panel contract and reach `SHIPPED`. "Evidence required" had become
+"evidence-shaped text required".
+
+`scripts/evidence.mjs` is the boundary, applied by the Driver between parsing and combination, to
+every panel report and to the carried report. A passing citation must resolve, inside the exact
+candidate root, to a readable regular file and a positive, in-range, non-blank line; absolute paths,
+`..` traversal, directories, and symlinks escaping the root are refused, the last of these by
+comparing after `realpathSync` because no string check can see it. An entry that does not resolve
+becomes `fail` before it can be counted, recorded, pinned or carried. Actionable advisory evidence
+gets the same boundary pointed the other way: it cannot flip anything to pass, so an unresolvable
+location stops being actionable rather than being deleted — the harm there is sending the builder to
+a file that is not there.
+
+The parser stays pure, deliberately. It judges a *document*, and every hostile-report test drives
+it; only the Driver knows which tree the document is supposed to describe. And the line number
+remains a **locator** — content identity is still the durable pin (§4.3), so evidence that moved
+down a file has not been lost.
+
 **Reviewer parser rules (unchanged, still non-negotiable):**
 - Default `fail`. `pass` requires the reviewer to *personally locate* the code and cite
   `path/file.ts:LINE`. "Probably exists" / "structure suggests it" = fail.
@@ -1567,6 +1591,7 @@ meeseeks/
 │   ├── assumptions.mjs           # what the builder had to assume (§8.3)
 │   ├── run-manifest.mjs          # .meeseeks/run.json, and archiving the last run (§7.1, §7.2)
 │   ├── integrity.mjs             # gate-integrity: no-op gates, weak assertions (§4)
+│   ├── evidence.mjs              # resolves reviewer citations against the reviewed tree (§4)
 │   ├── preflight.mjs             # the thirteen checks run before a run starts (§3.5)
 │   ├── launch.mjs                # .meeseeks/launch.json: the driver's own launch observation
 │   │                             #   and each pre-loop phase's declared output contract (§3.5)

@@ -112,6 +112,35 @@ function makeTempDir() {
   return dir;
 }
 
+/**
+ * Files the canned reviewers in this suite cite, written into a candidate tree.
+ *
+ * Since 0.169.0 a passing citation is resolved against the repository under review (REVIEW F6), so
+ * a fixture reviewer that cites `src/a.ts:1` in a tree with no `src/a.ts` is correctly flipped to
+ * `fail`. Seeding the files is what a real reviewed repository would have; the hostile locations
+ * get their own tests in `test/evidence.test.mjs` rather than being smuggled in here.
+ */
+const CITED_SOURCES = [
+  'a.ts',
+  'src/a.ts',
+  'src/a.mjs',
+  'src/b.ts',
+  'src/foo.ts',
+  'src/moved.ts',
+  'src/api/admin.ts',
+  'tests/a.test.js',
+  'tests/perf.test.js',
+];
+
+/** @param {string} root */
+function seedCitedSources(root) {
+  const body = `${Array.from({ length: 200 }, (_, index) => `const line${index + 1} = ${index + 1};`).join('\n')}\n`;
+  for (const file of CITED_SOURCES) {
+    mkdirSync(path.join(root, path.dirname(file)), { recursive: true });
+    writeFileSync(path.join(root, file), body, 'utf8');
+  }
+}
+
 after(() => {
   for (const dir of temporaryDirs) rmSync(dir, { recursive: true, force: true });
 });
@@ -1896,6 +1925,7 @@ describe('driveRun', () => {
    */
   async function run(overrides, configOverrides = {}, seedPassing = [], requiredIds = ['PRD-1.1'], unitCommand = 'npx vitest run --reporter=json') {
     const root = makeTempDir();
+    seedCitedSources(root);
     const meeseeksDir = path.join(root, '.meeseeks');
     if (seedPassing.length > 0) {
       // A seeded ratchet means a reset is reachable, and the reset really shells out to
@@ -1926,6 +1956,69 @@ describe('driveRun', () => {
     });
     return { outcome, meeseeksDir, root };
   }
+
+  // -------------------------------------------------------------------------
+  // Reviewer evidence must resolve against the tree that was reviewed (REVIEW F6)
+  // -------------------------------------------------------------------------
+  describe('a success-shaped report with unreal evidence cannot reach the ship effect', () => {
+    /** @param {string} evidence @returns {Promise<{ state: string, shipped: number, reason: string }>} */
+    async function shipAttemptCiting(evidence) {
+      let shipped = 0;
+      const { outcome } = await run({
+        // A green test really passing is the ordinary shipping condition; without it the ship is
+        // withheld for a reason that has nothing to do with evidence, and the neighbour below
+        // would pass for the wrong reason.
+        readTestReports: () => [
+          {
+            numTotalTests: 1,
+            testResults: [
+              { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+            ],
+          },
+        ],
+        review: () => ({
+          ok: true,
+          costUsd: 0.01,
+          tokens: 100,
+          raw: '',
+          text: JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence, detail: 'found it' }] }),
+        }),
+        ship: () => {
+          shipped += 1;
+        },
+      });
+      return { state: outcome.state, shipped, reason: outcome.reason };
+    }
+
+    it('does not ship on a citation whose file is not in the repository', async () => {
+      // Codex's reproduction, driven through the whole loop rather than through the parser: the
+      // report is unanimous, well-formed and cites `does/not/exist.ts:999999`. Before the
+      // boundary this reached `SHIPPED` with the ship effect called.
+      const attempt = await shipAttemptCiting('does/not/exist.ts:999999');
+      assert.notEqual(attempt.state, 'SHIPPED');
+      assert.equal(attempt.shipped, 0, 'the ship effect ran on evidence that does not exist');
+    });
+
+    it('does not ship on a citation whose line is past the end of a real file', async () => {
+      const attempt = await shipAttemptCiting('src/a.ts:999999');
+      assert.notEqual(attempt.state, 'SHIPPED');
+      assert.equal(attempt.shipped, 0);
+    });
+
+    it('does not ship on a citation that traverses out of the repository', async () => {
+      const attempt = await shipAttemptCiting('../../etc/passwd:1');
+      assert.notEqual(attempt.state, 'SHIPPED');
+      assert.equal(attempt.shipped, 0);
+    });
+
+    // The benign neighbour, and the one that matters most: a resolver that refused real evidence
+    // would turn every honest review into a stall, which is a worse product than the defect.
+    it('still ships on a citation that resolves to a real, non-empty line', async () => {
+      const attempt = await shipAttemptCiting('src/a.ts:1');
+      assert.equal(attempt.state, 'SHIPPED', attempt.reason);
+      assert.equal(attempt.shipped, 1);
+    });
+  });
 
   // The deploy command was the only call in the driver bounded by nothing. `tokenCeiling` and
   // `costCeiling` bind children that return, and `runSmoke` carries its own deadline, so a
@@ -2077,6 +2170,7 @@ describe('driveRun', () => {
      */
     async function runWithSpend(alreadySpent, overrides = {}) {
       const root = makeTempDir();
+      seedCitedSources(root);
       let builders = 0;
       const outcome = await driveRun({
         config: { ...defaultConfig(), maxIterations: 4, tokenCeiling: 2_000_000, reviewers: ['correctness'] },
@@ -2154,6 +2248,7 @@ describe('driveRun', () => {
     /** @param {string} text what the builder's final message says */
     async function runWithBuilderSaying(text) {
       const root = makeTempDir();
+      seedCitedSources(root);
       const meeseeksDir = path.join(root, '.meeseeks');
       const outcome = await driveRun({
         config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
@@ -2246,6 +2341,7 @@ describe('driveRun', () => {
      */
     async function runWithPins(pins, overrides) {
       const root = makeTempDir();
+      seedCitedSources(root);
       const meeseeksDir = path.join(root, '.meeseeks');
       writePins(meeseeksDir, pins);
       const outcome = await driveRun({
