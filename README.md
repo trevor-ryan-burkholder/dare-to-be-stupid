@@ -73,7 +73,13 @@ definition of done, or the budget dies.
 > **Pre-production only.** Build children run with `--dangerously-skip-permissions`. Point this at
 > a throwaway repository and nothing else. The plugin's own guard hook is the floor under that,
 > not a substitute for choosing the right directory.
-
+>
+> A throwaway repository does not isolate the host. Meeseeks currently establishes no CPU, memory,
+> process-count, disk-space, or workspace-growth quota, and Claude's documented Bash sandbox controls
+> filesystem and network access rather than those resources. For unattended use, provide a disposable
+> OS account, VM, container, or equivalent host boundary with explicit resource limits. PLAN item 84
+> owns measurement of the actual child boundary; no stronger guarantee is implied here.
+>
 > **Current release status.** The guarantees described below are design invariants, not a claim
 > that the current release enforces every one perfectly. The independent release gate is currently
 > **CHANGES REQUESTED** with open false-completion, termination, evidence, and trust-boundary
@@ -179,10 +185,11 @@ and you edit them however you like.
 > upgrade** — if both are present, `/dare` and `/meeseeks` are two different programs. Remove the
 > old one.
 
-**Requirements:** Node ≥ 22.12, `git`, and the Claude Code CLI. Version 0.164.0 has no
-defensible declared CLI minimum: preflight checks only that `claude --version` runs, so
-compatibility with older releases is unclaimed. REVIEW F28 / PLAN item 83 own the measured,
-fail-closed feature floor. **No runtime dependencies** — the whole thing is `node:` builtins and
+**Requirements:** Node ≥ 22.12, `git`, and the Claude Code CLI. Version 0.164.0 has no defensible
+declared compatibility range: preflight checks only that `claude --version` runs, so compatibility
+with older or newer releases is unclaimed. REVIEW F28 / PLAN item 83 own the measured, fail-closed
+policy and one-CLI-per-run install-form-specific invocation-closure identity; a path and self-reported
+version alone are insufficient. **No runtime dependencies** — the whole thing is `node:` builtins and
 shelling out.
 
 ---

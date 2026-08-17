@@ -13,6 +13,7 @@ only; the `Superseded by` column names the current authority.
 | `RECURSIVE-REVIEW-2026-08-16.md` | Recursive documentation/architecture review ledger and fixed-point evidence | `DESIGN.md`, `PLAN.md`, `REVIEW.md` |
 | `RECURSIVE-REVIEW-POST-ECOSYSTEM-2026-08-16.md` | Post-ecosystem recursive review ledger and fixed-point evidence | `DESIGN.md`, `PLAN.md`, `REVIEW.md` |
 | `RECURSIVE-IMPROVEMENT-2026-08-17.md` | Recursive documentation/architecture improvement ledger and fixed-point evidence | `DESIGN.md`, `PLAN.md`, `REVIEW.md` |
+| `OPPORTUNITY-REVIEW-2026-08-17.md` | Non-coding opportunity review, decisions, and fixed-point evidence | `DESIGN.md`, `PLAN.md`, `REVIEW.md` |
 
 An LLM should not load these files unless the task asks for historical evidence or the current
 document links to a specific archived section.

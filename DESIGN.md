@@ -285,7 +285,7 @@ this boundary; REVIEW F26 / PLAN item 81 own it. F14 separately owns final revie
 | Check | Why | If missing |
 |---|---|---|
 | Node ≥ 22.12 | driver + impeccable installer | abort, print required version |
-| `claude` on PATH, at or above the measured supported feature floor, callable non-interactively, authed | driver and command rely on versioned flags, settings, hooks, Skill controls, and envelope fields | abort, print detected and required versions plus the upgrade/sign-in fix |
+| one resolved `claude` binary inside the measured compatibility policy, callable non-interactively and authed | driver and command rely on versioned flags, settings, hooks, Skill controls, envelope fields, and one unchanged CLI contract per run | abort, print detected identity, admitted policy, and the pin/install/sign-in fix |
 | Inside a git repository | every state transition and rollback is commit-based | abort, name the required repository |
 | Repository has at least one commit | worktrees, baselines and reset targets need a commit | abort, create the initial commit |
 | **Clean working tree** | ratchet does `git reset --hard` | abort, tell user to commit/stash |
@@ -298,16 +298,28 @@ this boundary; REVIEW F26 / PLAN item 81 own it. F14 separately owns final revie
 | **Agent-config security scan** clean | dangerous mode trusts the repo's own hooks/prompts/MCP/secrets | abort on findings (§3.6) |
 | `--dangerously-skip-permissions` acknowledged | the premise; guard hook is the safety | require `--yes` or an interactive confirm |
 
-**The Claude Code floor is evidence, not a guessed constant.** Choose it from the oldest pinned CLI
-that passes the staged candidate's full `npm run test:live`, including every mandatory
-command/child contract used by the release, and raise it when a
-required feature raises the floor. Preflight parses `claude --version` and refuses an older or
-unparseable value before any run work. A version pass does not replace the paid live suite: flags
-such as `--safe-mode` have had behavior not fully specified by help text. Current 0.164.0 checks
-only whether `claude --version` exits successfully; the repository records a 2.1.136 binary
-that lacks `--safe-mode`, individual live measurements on 2.1.226/2.1.228, and source
-validation on 2.1.233—not a complete product contract matrix. REVIEW F28 / PLAN item 83
-own the measured floor and enforcement.
+**Claude Code compatibility is evidence, not semantic-version optimism.** Admit only pinned CLI
+releases or a deliberately evidenced range that passes the staged candidate's full
+`npm run test:live`, including every mandatory command/child contract. The policy records both its
+oldest demonstrated floor and its highest demonstrated compatible boundary; a greater version is not
+automatically compatible. Preflight parses `claude --version` and refuses values outside that policy,
+including prerelease-ambiguous or unparseable output, before any run work. The Driver resolves one
+canonical real invocation path, content fingerprint, and reported version for the run. It captures
+the fingerprint before and after each compatibility probe, executes every later Claude probe and role
+through that sealed path rather than another `PATH` lookup, and rechecks the canonical target,
+fingerprint, and version immediately before every role spawn. Item 56 supplies a sealed
+no-background-update control to every such probe and role. A same-version byte replacement, symlink
+retarget, or other identity mismatch refuses; path plus self-reported version alone is not identity.
+For a symlink, script, or package launcher, the fingerprint policy also binds the measured delegated
+entrypoint or package identity whose mutation changes invoked code. An install form whose mutable
+invocation closure cannot be bounded and live-proven is unsupported rather than approximately sealed.
+A compatibility pass does not replace the paid live suite:
+flags such as `--safe-mode` have had behavior not fully specified by help text, and current official
+documentation says background updates take effect on a later launch. Current 0.164.0 checks only
+whether `claude --version` exits successfully; the repository records a 2.1.136 binary that lacks
+`--safe-mode`, individual live measurements on 2.1.226/2.1.228, and source validation on
+2.1.233—not a complete product contract matrix. REVIEW F28 / PLAN item 83 own the policy and
+enforcement.
 
 **The run lock is `.meeseeks/lock.json`; `.meeseeks/run.json` is the run manifest (§7.1).** The
 lock must be acquired atomically by the driver before Phase 0, before the first child spawn,
@@ -338,6 +350,14 @@ build. A greenfield idea → PRD → repo with no `package.json` is fine; the bu
 it.
 
 **Not required unless opted in:** deploy host + credentials (only when `deploy.enabled`).
+
+**A throwaway repository is not a host resource sandbox.** The current release and the documented
+Claude Bash sandbox establish no CPU, memory, process-count, disk-space, or workspace-growth quota.
+A deadline or output cap can stop and reap work after a boundary fires; it cannot prevent a child from
+exhausting a shared host first. Until PLAN item 84 records a stronger measured boundary, unattended
+runs belong in an operator-provided disposable account, VM, container, or equivalent environment with
+explicit resource limits. That operator isolation is deployment guidance, not a Meeseeks runtime
+dependency or a claim that filesystem/network policy enforces resource quotas.
 
 **Not setup, but the real cost:** API budget. Build + reviewer-panel whole-repo reads ×
 up to `maxIterations` is the dominant spend; `tokenCeiling` is the backstop that ends a run
@@ -2295,6 +2315,12 @@ The split of responsibility is the load-bearing part, so it is stated plainly:
 | which statuses count as evidence | `ratchet.mjs` (`extractTestIds`; `flaky` does not count) |
 | may the ratchet advance on this | `ratchet.mjs` (an empty set never advances) |
 
+Excluding `flaky` from ratchet credit is necessary but not sufficient. A normalized flaky result
+must also fail the current iteration explicitly: retrying runners can exit zero, and without that
+second decision a new unstable test has neither prior ratchet credit to regress nor a failed gate to
+block Panel. It may establish RED history, never current passing evidence. REVIEW F30 / PLAN item 87
+own the current implementation gap.
+
 Four behaviours must survive any widening, and each has a test. **Unidentifiable throws** —
 never an empty id set, which reads exactly like a green run. **Malformed throws**, naming what
 was wrong. **An unknown status throws**, naming the value, because mapping it to `passed`
@@ -2632,8 +2658,9 @@ assume a temporary workflow worktree contains the current tree.
 
 Every role-workflow invocation must leave one Driver-owned receipt that identifies the durable role
 and parent lineage, input tree and prompt/template/brief digests, effective settings and permissions,
-requested and actual models, worktree identity, phase and aggregate usage, result digest, and terminal
-reason. The receipt is reproducible boundary evidence, not hidden reasoning or per-agent telemetry.
+requested selectors and observed per-model identifiers (or an explicit unavailability reason),
+worktree identity, phase and aggregate usage, result digest, and terminal reason. The receipt is
+reproducible boundary evidence, not hidden reasoning or per-agent telemetry.
 
 ### 15.2 Do not build a general graph
 

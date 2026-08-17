@@ -177,9 +177,10 @@ The following statements are documented behavior, not Meeseeks assumptions:
 - The workflow script itself has no direct filesystem or shell access and cannot load modules;
   agents perform reads, writes, and commands. This narrows the script's authority but does not
   narrow the agents' inherited permissions.
-- Workflows require Claude Code 2.1.154 or later. That is the workflow feature minimum, not
-  Meeseeks' product-wide supported CLI floor: other mandatory flags and boundaries may require a
-  newer release, and PLAN item 83 must establish the floor through the complete pinned live suite.
+- Workflows require Claude Code 2.1.154 or later. That is one feature minimum, not Meeseeks'
+  product-wide compatibility policy: other mandatory flags and boundaries may require a newer
+  release, while a greater release can also change another contract. PLAN item 83 must admit each
+  boundary through the complete pinned live suite and keep one CLI identity across a run.
 - Saved workflows live under project or user `.claude/workflows/` directories, or may be
   distributed by a plugin and invoked as a namespaced slash command.
 - Claude Code currently bundles `/deep-research`, which fans out source gathering, cross-checks
@@ -373,8 +374,9 @@ primarily pre-approve; explicit agent tool sets, deny rules, and hooks establish
 The stable SDK result exposes estimated total cost, top-level `usage`, whole-tree
 `modelUsage`, duration, permission denials, and terminal reason. The distinction is
 load-bearing: `usage` excludes subagents, while `total_cost_usd` and `modelUsage` include them.
-Assistant messages also identify the actual model. Meeseeks can therefore record requested and
-actual model sets separately and reject a policy-sensitive substitution, but a workflow adapter
+Assistant messages also expose observed model identity. Meeseeks can therefore record requested
+selectors and observed model sets separately and reject a policy-sensitive substitution, while
+representing a missing observation explicitly rather than filling it from configuration. A workflow adapter
 must not feed top-level `usage` into the run token ceiling as though it covered descendants.
 
 The existing `childBudget()` path already supplies `--max-budget-usd` when the run has a cost
@@ -682,7 +684,7 @@ Both job types inherit the existing Builder/Panel/Oracle/Driver separation:
 | timeout leaves descendants alive | process-tree termination and verification |
 | same-session replay is mistaken for restart recovery | driver-owned idempotent phase receipts |
 | workflow script changes without trace | hash the exact definition/script in the receipt |
-| actual model differs from requested model | compare result model usage with requested policy |
+| observed model differs from requested selector | compare result model usage with requested policy; missing observation cannot establish a match |
 | graph duplicates ratchets and pins | extend authoritative records first; shadow graph before authority |
 | model invents a narrow dependency | Driver acceptance required; uncertainty widens invalidation |
 | dependency cycle deadlocks work | reject cycles, layer dependencies, add deadlines/failure states |

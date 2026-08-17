@@ -1012,9 +1012,11 @@ reconned for the §3.9 prompt-drift problem.
 From `skillopt/evaluation/gate.py`: a pure decision function, strict `>` acceptance, reject returns
 the incumbent unchanged, best-so-far tracked with the step that earned it — the decision/effect split
 this repo already houses. PLAN item 59 captures the protocol as a parked, operator-side experiment:
-discovery, selection, and untouched final-test partitions; strict improvement; and per-required-scenario
-non-regression. It is not a current release gate. Existing template commits continue through the
-ordinary shipped-file and live-tier requirements unless and until item 59 passes its admission tests.
+discovery, selection, and a single-use final-test package; item 57's precommitted minimum-delta and
+uncertainty rule; and per-required-scenario non-regression. SkillOpt's raw strict-greater comparison is
+insufficient for stochastic Meeseeks trials. This is not a current release gate. Existing template
+commits continue through the ordinary shipped-file and live-tier requirements unless and until item 59
+passes its admission tests.
 
 ## R42. Operator-side rejected-candidate buffer with score deltas — **captured in PLAN items 35 and 59**
 

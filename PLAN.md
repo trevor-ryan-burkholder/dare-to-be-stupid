@@ -35,6 +35,8 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
 - **F8 / item 62:** bind held-out Oracle cases to that run and specification revision.
 - **F14 / item 68:** commit and tag only the exact workspace identity gated and reviewed.
 - **F16 / item 70:** accept only fresh successful test reports from the current gate attempt.
+- **F30 / item 87:** reject every normalized flaky test result before Panel or `SHIPPED`,
+  after items 70 and 74 bind the report.
 - **F18 / item 72:** conserve every completed child envelope into ceilings and terminal receipts.
 - **F29 / item 85:** keep candidate-tree instructions out of reviewer authority; candidate files
   remain evidence, while binding review inputs come from identified immutable sources.
@@ -48,7 +50,8 @@ and disposable-cache release contract. F25/item **80** makes the shipped command
 under the current Claude Code command/skill contract without claiming to authenticate arbitrary
 direct Bash. F27/item **82** makes each non-Builder role's tool availability match its declared
 policy rather than only pre-approving named tools. F28/item **83** establishes and enforces the
-measured product-wide Claude Code feature floor. All close before feature fan-out.
+measured product-wide Claude Code compatibility policy and one-CLI-per-run identity. All close before
+feature fan-out.
 
 **Gate 0C — remaining external review defects.** Close F4's absolute HTTP deadline/body cap, F9's
 positional machine-state ignore boundary through item **63**, F10's complete atomic terminal
@@ -70,15 +73,18 @@ permission to implement shared primitives in arbitrary order. Preserve these con
    **76**; do not let any of those invent a parallel PRD identity.
 3. Item **64** establishes the atomic terminal writer before item **73** routes refusal through it
    and before item **76** extends its receipt.
-4. Items **68**, **70**, and **72** establish exact-tree, attempt, and usage identities before item
-   **76** assembles the acceptance receipt. Items **71** and **74** must agree on the contained test
-   definition receiving current credit.
+4. Items **68**, **70**, **72**, and **77** establish exact-tree, attempt, usage, and role-supply
+   identities before item **76** assembles the acceptance receipt. Items **71** and **74** must agree on the contained test
+   definition receiving current credit. Item **87** consumes items **70** and **74** so its flaky
+   stability decision cannot be laundered through a stale or external report; item **67** must then
+   keep that required result in the non-shrinking roster.
 5. Item **75** may build the reusable loader gate in Gate 0B, but its acceptance run exercises the
    staged, version-bumped candidate after that slice's shipped-file changes have landed. Items
    **79** and **80** should share one versioned command-contract slice, whose installed result item
-   **75** verifies. Item **83** may add parsing and early refusal independently, but its declared
-   floor is accepted only after the staged candidate passes the mandatory item **75**, **80**, and
-   **82** live contracts at both the floor and current supported CLI. This is an evidence
+   **75** verifies. Item **83** may add parsing and early refusal independently, but closure consumes
+   item **56**'s sealed child control set so one run cannot background-update into a different CLI.
+   Its compatibility policy is accepted only after the staged candidate passes the mandatory item
+   **75**, **80**, and **82** live contracts at every admitted boundary. This is an evidence
    dependency, not a construction cycle. Every later release candidate reruns the gate; an earlier
    source-only or version-only pass is never acceptance evidence.
 6. Complete Gate 0 and item **77**, then record item **84**'s containment outcome, before item
@@ -122,12 +128,15 @@ a real run demonstrates a provenance or invalidation failure that passes its adm
 **58** remains **PARKED** until a killed-run experiment proves that a lifecycle journal would close
 a forensic gap; it is not authorization for checkpoint/resume.
 
-**Deferred/post-DoD:** item **21** remains deferred until code-complete. Items **32–36** and
-**47–51** remain Phase 6; within that phase item **49**'s artifact substrate precedes its first
-Verified Research instance, item **34**, despite their chronological numbering. Item **59** is also
-post-DoD because it depends on item 35. Item **30** remains a research/measurement intake, not an
-implicit build. Item **86** is parked post-DoD; it cannot enter the queue until its containment and
-incremental-detection admission conditions are met.
+**Deferred/post-DoD:** item **21** remains deferred until code-complete. Items **33–35** and
+**47–51** remain Phase 6; item **32** is parked there until calibrated evidence justifies one optional
+heterogeneous cold-role experiment without changing the Claude-native runtime, and item **36** is
+parked on its native detachment experiment plus item **58**'s separate resume admission. Within Phase
+6, item **49**'s artifact substrate precedes its first Verified Research instance, item **34**,
+despite their chronological numbering. Item **59** is also post-DoD because it depends on item 35.
+Item **30** remains a research/measurement intake, not an implicit build. Item **86** is parked
+post-DoD; it cannot enter the queue until its containment and incremental-detection admission
+conditions are met.
 
 `PLAN.md` owns these statuses. `HANDOFF.md` summarizes them and must not invent a second ledger.
 
@@ -844,6 +853,11 @@ whatever is current at run time — the CLI-registry analog of the marketplace a
 reproducibility trap the official docs now warn about). If gitleaks findings ever become pinned
 security elements, design the escape before the enforcement (§4.3).
 
+**Done when:** the registry accepts a detect-only plugin without inventing an installer; an absent
+binary produces the documented warning, a clean installed scanner passes, and a committed synthetic
+secret fails with bounded JSON-backed evidence. Every Driver-installed registry command is version
+pinned and records the resolved version; no finding becomes monotonic until its escape is specified.
+
 ### 30. Ecosystem intake — four measured candidates, none lands without its number — OPEN
 
 Parked from the scan's "worth design first" tier, each with the measurement it owes:
@@ -862,6 +876,10 @@ each, each owing a failed-iteration-rate comparison. Ecosystem notes worth keepi
 hook event fires in `-p` mode (a documented per-child bootstrap point); `/plugin` now shows
 per-plugin context-token cost; Anthropic's harness paper (Mar 2026) independently validates the
 cold hostile panel ("agents evaluating their own work are pathological optimists").
+
+**Disposition complete when:** each candidate has a recorded measurement and is either rejected,
+parked with an admission condition, or promoted into its own numbered implementation slice with
+prerequisites and deterministic acceptance. Item 30 itself never authorizes a runtime change.
 
 ---
 
@@ -906,6 +924,11 @@ non-empty attack account is an unparseable pass (already a fail by law). Makes l
 passes machine-detectable. Surface: `templates/reviewer-system.md` + the envelope parser + tests in
 one commit; **tier 3**. **Campaign B**.
 
+
+**Done when:** schema/parser fixtures prove a non-empty `unverifiable[]` blocks acceptance, a missing
+or empty attack account cannot parse as `pass`, and valid hostile findings remain intact. Benign
+neighbours prove ordinary evidence still parses; malformed or extra authority-bearing output fails
+closed; the required paid tier-3 contract passes before the template/parser slice lands.
 ### 41. Review packaging — truncation honesty + the diff base (R28) — **CLOSED (not applicable, source-traced 16 Aug 2026)**
 The proposed implementation surface does not exist. Panel processes receive a bounded prompt and
 inspect the candidate repository directly with read-only tools; the Driver does not assemble or
@@ -934,6 +957,12 @@ web-ui smoke (31a) so the gate rewire is validated on a real web run, not blind.
 impeccable's runnable entry is `detector/detect-antipatterns.mjs` (`isMainModule` guard); a bare HTML path uses
 the static engine (no browser), a `file://` URL uses Puppeteer; exit 2 iff primary findings > 0.
 
+
+**Done when:** the gate invokes the pinned real JSON interface for static and `file://` targets,
+fails on any primary finding or malformed/oversized output, preserves advisory findings as bounded
+reviewer evidence without granting them gate authority, and skips only on the documented non-UI
+capability path. Real committed fixtures cover primary/advisory partition and viewport output; the
+paired web-ui smoke proves the installed invocation rather than only the parser.
 ### 43. Gate-skip on an unchanged workspace (R35) — **DONE (0.149.0)**
 Content-hash "nothing changed since the last gate run → don't re-pay for the gate"; increment the
 attempt counter instead. Attacks the ship1 token-thrash class. Surface: `scripts/driver.mjs` gate
@@ -1091,12 +1120,31 @@ model-agnostic, self-improving coding harness that lacks all three meeseeks guar
 cold separate-process judge, positional guard). These items absorb its genuinely-good capabilities
 into the verification-first architecture; the non-goals below are the ones that would dilute it.
 
-### 32. Model-agnostic backends + a heterogeneous cold panel — OPEN
-Add backend adapters behind `spawnClaude`/`claudeArgs` (Codex, open models, others). The
-meeseeks-only twist that makes this a verification UPGRADE rather than parity: let the cold panel
-run on a **different model than the builder** — a reviewer that is not even the same model is more
-independent, not less. **Invariant:** the panel stays cold and separate-process; heterogeneity
-strengthens independence, never softens review. Touches the spawn contract → **tier 3 mandatory**.
+### 32. Optional heterogeneous cold-role experiment — PARKED (Claude Code remains native)
+
+**Problem solved:** Builder and Panel can share model-specific blind spots even when their processes
+and contexts are independent. A different provider or model might improve cold-review recall, but
+heterogeneity by itself is not evidence of better judgment.
+
+**Disposition and boundary:** do not build a general backend abstraction and do not replace Claude
+Code as Meeseeks' native runtime or control surface. Park one optional, offline side-by-side
+experiment until item **57**'s calibrated Panel corpus demonstrates a material, model-correlated
+high-severity miss that the existing Claude configurations do not address. The experimental role
+has no terminal authority and cannot enter the production Panel merely because it found more issues.
+
+**Admission:** Gate 0, items **57**, **76**, **77**, **82**, and **83** must close; the candidate
+backend must expose a stable non-interactive interface whose exact model, prompt supply, tools,
+permissions, cost, timeout, and process settlement can be observed and bounded. Precommit the
+incremental recall, false-positive, latency, and cost thresholds. Only an operator may authorize
+the additional provider, credentials, data handling, and spend.
+
+**Experiment and done condition:** run the same sealed seeded-defect and clean-neighbour corpus
+through the existing cold Panel and the candidate role, with candidate identity hidden from the
+grader. Accept only reproducible improvement under item 57's uncertainty rule, no deterministic or
+high-severity regression, preserved context starvation, exact receipts, and bounded descendants.
+Otherwise reject the backend. A passing experiment may justify a separately reviewed optional
+adapter slice; it never makes the Driver, command, install format, or default execution path
+model-agnostic.
 
 ### 33. More language toolchains + reporters (Python, Go, Rust) — OPEN
 New `scripts/toolchains/*.mjs` + `scripts/reporters/*.mjs` behind the existing fixed toolchain
@@ -1107,6 +1155,11 @@ check** per toolchain. The core loop is already language-agnostic (the ratchet p
 JSON, not syntax) — this is surface, not spine.
 
 ### 34. Verified research mode — OPEN (the first instance of item 49's substrate)
+
+**Done when:** each admitted language lands as its own complete slice with deterministic detection,
+fixed gates, real committed reporter fixtures, contained definition paths, current-definition
+ratchet credit, and fail-closed missing/malformed/crashed-report behavior. A clean-clone integration
+case proves the external tool's actual invocation and one seeded regression cannot retain credit.
 
 **Problem solved:** a polished unattended report can contain unsupported, stale, incomplete, or
 contradictory claims while its author confidently reports success. This job type applies the
@@ -1186,27 +1239,45 @@ delta and refusal reason so the promoter can avoid repeating harmful edits; this
 a Builder brief. Item 59 owns the offline optimization experiment, while this item owns the durable
 store, adoption, rollback, and retraction boundary.
 
-### 36. Durable, resumable, daemon-backed runs (folds R38) — OPEN
-A driver that survives the terminal closing, re-discovers in-flight worktrees on relaunch, and
-resumes — plus a driver-owned sub-run registry (sub-run-id → worktree → status) extending race.mjs'
-SIGKILL sweep-at-start. **Invariant:** the guard still owns `.meeseeks/` (registry is
-driver-written), the run-lock holds, results are read from artifacts never a child's return value,
-no nesting unless `--give-them-the-box`. Matches "long-running across sessions" with the spine
-intact.
+### 36. Terminal detachment and later resumability — PARKED (evidence-gated)
 
-**Use the native detachment experiment before building a daemon.** Current Claude Code
-[agent view](https://code.claude.com/docs/en/agent-view) is research preview, but its
-background-session supervisor documents that a full session keeps running
-without an open terminal and persists through supervisor restarts, auto-updates, and sleep. It also
-documents shutdown stops, possible post-sleep hangs, human-needed states, and session-local storage;
-none is Meeseeks recovery evidence. Run this only after F25/item **80** has verified the user-only
-command boundary; the current 0.164.0 command does not yet establish it. In a disposable target, the
-operator—not autonomous dispatch—must start `/meeseeks` and then background the in-flight session.
-Close agent view and the shell, restart the supervisor, and verify the exact Driver PID/descendants,
-output, guard, lock,
-receipts, and terminal state. A Claude row labelled Completed is never `SHIPPED`. If this safely solves
-terminal detachment, narrow item 36 to the unprovided crash/reboot/relaunch and Driver-state recovery
-work. If it does not, reject the native path; do not make a research-preview supervisor a dependency.
+**Done when:** the durable store has a measured size/age bound, append-only promotion and retraction
+history, and an explicit rollback for a false lesson; only independently sourced support can promote
+a candidate, and every accept/reject records evidence and policy identity. Builder and target code
+cannot write, read rejected guidance, or cause self-promotion; crash fixtures preserve the last valid
+store; item 59 consumes only the staged interface rather than gaining runtime mutation authority.
+
+**Problems kept separate:** surviving an operator terminal closing is a supervision problem;
+restarting after Driver death, reboot, or incompatible upgrade is a replay and idempotency problem.
+Conflating them would build a daemon before establishing which failure actually blocks morning
+acceptance.
+
+**Disposition:** do not build a daemon or resume path from this item. Terminal detachment gets the
+bounded native experiment below. Crash/reboot/relaunch remains parked behind item **58**'s killed-run
+admission test and a demonstrated gap in current artifacts. A lifecycle journal is not itself
+authorization to replay effects, and the current run lock must never be bypassed by a relaunch.
+
+**Stage A — native detachment experiment:** after F25/item **80** verifies the user-only command
+boundary, an operator starts `/meeseeks` in a disposable target through Claude Code's research-preview
+[agent view](https://code.claude.com/docs/en/agent-view), then closes the view and shell and restarts
+the supervisor. Verify the exact Driver PID and descendants, output, guard, lock, receipts, spend,
+and terminal state through sleep and supervisor restart. A Claude row labelled Completed is never
+`SHIPPED`. Record whether shutdown, post-sleep hangs, auto-update, or human-needed states break the
+contract; do not make agent view a dependency.
+
+**Stage B admission:** only if Stage A fails a material detachment need, or item 58 proves current
+artifacts cannot reconstruct a killed run, specify the missing supervisor or resume primitive.
+Before any replay implementation, bind a compatibility fence for schema, Driver/plugin/CLI, target
+tree, config/policy, role supply, and tools; classify every interrupted effect as safely idempotent,
+compensatable, or non-replayable; and refuse rather than guess. The guard remains positional,
+Driver-owned state remains protected, and nesting still requires `--give-them-the-box`.
+
+**Done when:** Stage A either demonstrates safe terminal detachment and closes that need with a
+recorded hostile/benign result, or rejects the native path with evidence. Resumability remains parked
+unless item 58 admits it; if later admitted, crash/reboot/relaunch fixtures must reconstruct one
+exact run without duplicating a child, gate, commit, deploy, spend charge, or terminal transition,
+must reject every compatibility mismatch before side effects, and must never treat a child return
+or supervisor label as durable success evidence.
 
 ### 47. Accept an ERD alongside the PRD, and gate the schema against it — OPEN (Phase-6 class, post-DoD)
 
@@ -1485,11 +1556,12 @@ reviewer prompt gains constitutional text as a side effect.
 
 ## Current follow-ons and research-gated experiments
 
-This heading ends Phase 6. Items 52, 53, 56, 57, and 77–85 are pre-DoD only in the order stated at
-the top of this file; items 54, 55, and 58 are conditional or research-gated; item 59 remains
+This heading ends Phase 6. Items 52, 53, 56, 57, 77–85, and 87 are pre-DoD only in the order stated
+at the top of this file; items 54, 55, and 58 are conditional or research-gated; item 59 remains
 post-DoD because it depends on Phase-6 item 35. Item 86 is PARKED post-DoD behind its own admission
-conditions. Item numbering records chronology, not priority. The top-level build order is
-authoritative when physical placement and execution order differ.
+conditions. Item numbering records chronology, not priority. Item **77** therefore lands before item
+**76** despite its later number. The top-level build order is authoritative when physical placement
+and execution order differ.
 
 ### 52. Denial dampening (R25c), done without giving the guard a write primitive — OPEN (was part of item 37, cut on review)
 
@@ -1543,13 +1615,18 @@ that belongs to the ratchet.
 
 ### 54. Role-internal Claude Code dynamic workflow experiment — BLOCKED (research-gated)
 
+**Done when:** mapping-tightness tests cover all three new events and refuse a missing renderer;
+`MEESEEKS_STYLE=plain` preserves the complete plain payload; styled output keeps gate details
+verbatim; and changing style cannot alter gate, carry, Panel, ratchet, or terminal decisions. No
+heartbeat or child-output path gains narration.
+
 **Problem solved:** bounded fan-out and synthesis may improve difficult implementation work, but
 only if they do not transfer durable authority to an ephemeral agent organization. This item tests
 that proposition; it does not replace `driver.mjs`, the ratchet, the panel, or the oracle.
 
 **Blocked by:** completion of PLAN Gate 0, item **77**'s durable prompt-supply boundary, and a
 recorded item **84** containment outcome. Gate 0 includes the atomic owner, hard cross-platform
-process settlement, child-environment boundary, exact role tools/CLI floor, and candidate-independent
+process settlement, child-environment boundary, exact role tools/CLI compatibility, and candidate-independent
 review authority that fan-out would otherwise amplify. Item 84 need not adopt a stronger profile—a
 measured rejection is an outcome—but the workflow probe must know and state the containment guarantee
 it actually has.
@@ -1688,12 +1765,68 @@ Define stable scenario ids and emit one driver-owned JSON result per run contain
 plugin version, scenario, terminal state, iterations, token/cost totals, deterministic gate results,
 panel outcome, post-run black-box checks, operator repairs required, and an explicitly sourced
 `morningAccepted` value (deterministic when the scenario defines it; otherwise human-labelled).
-Also bind an execution-resource profile: OS/architecture, available or enforced CPU and memory,
+Bind the exact experimental identity: resolved Claude binary/version, requested model and effort per
+role, observed per-model usage names, and role prompt/tool/supply digests. Keep requested and observed
+models distinct; an unavailable observed-model field is explicit and cannot support a model-attribution
+claim. Also bind an execution-resource profile: OS/architecture, available or enforced CPU and memory,
 concurrency, phase timeouts, and relevant external tool versions. Compare candidates only on matched
-profiles and enforcement semantics; classify infrastructure failures separately rather than charging
-them to model capability or quietly dropping them. Cold model judgments may be recorded as advisory
-scores but cannot turn a deterministic failure into success, advance the ratchet, or declare
-`SHIPPED`. No Braintrust, Eve, or hosted eval dependency.
+effective identities, profiles, and enforcement semantics; stratify or mark provider/model drift as
+confounded rather than letting counterbalancing conceal it. Classify infrastructure failures separately
+rather than charging them to model capability or quietly dropping them. Cold model judgments may be
+recorded as advisory scores but cannot turn a deterministic failure into success, advance the ratchet,
+or declare `SHIPPED`. No Braintrust, Eve, or hosted eval dependency.
+
+Before the first comparative run, seal an evaluation-protocol receipt naming the baseline and
+candidate digests, scenario and partition identities, fixed trial count, counterbalanced run order,
+inclusion/exclusion and retry rules, grader/rubric identities, primary metric, non-compensable failure
+policy, minimum acceptance threshold, minimum practically meaningful delta, uncertainty estimator,
+confidence level or equivalent calibrated error bound, decision rule, and stopping rule. A missing
+or unsettled threshold makes the campaign descriptive
+evidence, not a readiness claim. Retain failed, interrupted, and missing attempts; do not peek, extend
+the cohort, or stop early because the observed result became flattering. The operator owns the product
+threshold, minimum practically meaningful delta, and severe-failure tolerance; the harness owns
+faithful execution of the precommitted rule.
+
+Pair baseline and candidate on the same scenario/trial identities where practical and report an
+uncertainty interval that respects scenario and repeated-trial clustering. A selection win requires
+the precommitted uncertainty rule to establish at least the minimum practically meaningful delta. A
+positive point estimate that does not establish that threshold is inconclusive. State
+the sample size and method; do not manufacture precision from too few expensive trials. This adopts
+METR's useful confidence-boundary discipline and Anthropic's warning that small score differences sit
+inside statistical and infrastructure noise, without importing a statistics service.
+
+Every trial starts from the same immutable fixture snapshot in a fresh disposable workspace with no
+files, Git commits, Meeseeks state, ports, services, or temp artifacts produced by another trial.
+Give each trial unique writable state and record any intentionally shared package/model cache rather
+than calling it isolated. Counterbalance baseline/candidate order across the campaign so time-of-day or
+provider drift does not consistently favor one side. This adopts Anthropic's current
+[clean-environment guidance](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)
+without importing an eval service. A deliberate leftover-file/history/service canary must fail the
+isolation check before paid comparison begins.
+
+Version and audit every scenario before it can enter selection or final evidence. Its contract maps
+each prompt requirement and claimed Definition-of-Done criterion to an outcome grader or an explicit
+human criterion; a known reference solution passes; seeded incomplete or incorrect outputs fail; and
+a valid alternative implementation is not rejected merely for differing from the reference patch.
+Ambiguous, contradictory, underspecified, or low-coverage tasks are quarantined. If such a defect is
+found after protocol sealing, retain the affected attempts, mark the metric invalid under the
+precommitted rule, version the repaired scenario, and never silently delete the inconvenient result.
+This harvests the task-quality invariant from Anthropic's eval guidance and OpenAI's coding-eval audit,
+not either organization's benchmark or agent-review pipeline.
+
+The untouched final partition must also be **unseen**, not merely unused for selection. Keep exact final
+task payloads, reference solutions, hidden checks, seeded-defect labels, and grader answers in an
+operator-owned package outside the public plugin repository, target tree, and every model-visible tool
+surface until the relevant input must be supplied. Identify that package by digest in the protocol and
+result. A web-enabled task whose exact question/answer or benchmark key is publicly retrievable is
+contaminated evidence, not a clean final result. Anthropic has observed models identify an evaluation
+and retrieve its answer material; static public secrecy-by-obscurity is not an invariant
+([eval-awareness report](https://www.anthropic.com/engineering/eval-awareness-browsecomp)).
+
+When `morningAccepted` is human-labelled, precommit a versioned rubric and, where practical, present
+the prompt, artifact, and black-box behavior without candidate/model/version identity, cost, or the
+agent's own terminal assertion until the acceptance label is recorded. Reveal cost and identity
+afterward for efficiency analysis. Record when blinding is impossible rather than implying it occurred.
 
 Treat stochastic reliability as a first-class result, not as noise hidden by a best run. Give every
 attempt a stable trial index and identical harness/config identity, retain raw successes and trial
@@ -1733,9 +1866,13 @@ answers in a production role's prompt or target tree. Calibration measures wheth
 configuration is safe to adopt; it does not give the eval harness terminal authority over a live run.
 
 The scenario corpus may declare **discovery**, **selection**, and untouched **final-test** partitions.
-Candidate comparison uses selection only: aggregate quality must strictly improve, ties reject, and
-every required deterministic scenario must preserve or improve. Missing or non-finite results refuse.
-The final-test partition is opened only for reporting after selection, never for choosing the candidate.
+Candidate comparison uses selection only: aggregate quality must satisfy the precommitted uncertainty
+rule, and every required deterministic scenario must preserve or improve. Missing or non-finite results
+refuse. The final-test package remains sealed outside model-visible repositories and tools until the
+candidate and selection decision are frozen. It may grant or deny the predeclared readiness claim, but
+never choose among candidate variants or feed an edit inside that sealed campaign. Once opened, it may
+inform only a future discovery phase; any later optimization or readiness claim requires a new sealed
+protocol receipt and final package.
 
 **Done when:** item 20 cases A/B emit schema-validated, directly comparable results; a seeded
 black-box regression fails the hard result even when a judge likes the output; judge disagreement is
@@ -1751,7 +1888,19 @@ also proves each relevant Panel role sees a seeded high-severity defect and does
 finding in its clean neighbour; a reviewer prompt/model change cannot be selected by hiding misses,
 false positives, or disagreement behind aggregate morning acceptance. A deliberately changed CPU,
 memory, concurrency, timeout, or tool profile refuses direct comparison, while a synthetic
-infrastructure outage remains visible as missing evidence rather than a model-quality regression.
+infrastructure outage remains visible as missing evidence rather than a model-quality regression. The
+campaign protocol, fixed trial count, run order, threshold, and stopping rule are sealed before the
+first result; a failed or missing attempt remains in the denominator. A deliberate prior-trial
+file/history/service contaminant is detected before paid comparison, and baseline/candidate trials
+start from matched fresh snapshots. Every admitted scenario passes the contract/reference/negative/
+alternative audit, and a seeded low-coverage task is quarantined rather than scored. The comparison
+reports its precommitted uncertainty interval and treats a delta that does not establish the minimum
+meaningful improvement as no win.
+The final package digest is recorded, its hidden answers and checks are absent from public/model-visible
+surfaces before use, and an exact-answer search leak marks the affected result contaminated. A final
+failure denies readiness without becoming optimization input, and an opened package cannot be reused as
+final evidence. Human-labelled acceptance records the rubric and whether candidate identity and the
+agent's terminal assertion were successfully blinded.
 
 ### 58. Forensic lifecycle event journal before resumability — PARKED (conditional)
 
@@ -1809,19 +1958,25 @@ Builder, Panel, or Oracle rewrite their own instructions. The first target is
 Builder and reviewer prompts require separate adversarial corpora before they may enter the lab.
 
 **Acceptance rule:** discovery evidence may generate candidates; selection evidence alone chooses
-among them; the untouched final-test partition reports generalization. Selection must strictly improve
-the primary acceptance measure, ties reject, and no required deterministic scenario may regress.
+among them; the untouched final-test package may grant or deny the resulting readiness claim. Selection
+must satisfy item 57's precommitted minimum-delta and uncertainty rule, and no required deterministic
+scenario may regress. A positive point estimate that does not establish item 57's minimum meaningful
+delta under its uncertainty rule rejects as inconclusive; SkillOpt's raw strict-greater gate is not
+sufficient for stochastic Meeseeks trials.
 Model-judged scores remain advisory and cannot override a hard failure. Every attempt records artifact
 and baseline digests, exact edits, independent-run support, apply/skip status, scenario-level deltas,
-cost/latency, and acceptance or rejection reason. Rejected records are promoter-only evidence, not
-runtime guidance.
+cost/latency, uncertainty, and acceptance or rejection reason. Rejected records are promoter-only
+evidence, not runtime guidance.
 
 **Done when:** a versioned fixture experiment accepts a seeded general improvement, rejects an
-anecdotal or overfitted edit, rejects an aggregate improvement that regresses one required scenario,
-and proves the final-test partition was not consulted during selection; the staged candidate can be
-reproduced from its receipt and still goes through the ordinary shipped-file version bump and required
-live tier before release. A failed or inconclusive experiment closes the item without changing the
-production path.
+anecdotal, overfitted, or statistically inconclusive edit, rejects an aggregate improvement that
+regresses one required scenario, and proves the final-test package was not consulted during selection.
+Once opened, that package cannot rescue or revise the candidate inside the sealed campaign and cannot
+be rerun as final. If the result later informs discovery, the resulting candidate begins a new
+campaign with a new protocol receipt and final package. The staged candidate can be reproduced from
+its receipt and still
+goes through the ordinary shipped-file version bump and required live tier before release. A failed or
+inconclusive experiment closes the item without changing the production path.
 
 ### 60. Resolve reviewer evidence before accepting a pass — OPEN (REVIEW F6)
 
@@ -2063,8 +2218,16 @@ Extend item 64's atomic terminal receipt rather than creating another terminal a
 item 66's spec revision, item 68's candidate tree seal, item 70's gate-attempt/report identities,
 and item 72's conserved usage ledger. Record the required gate roster and per-gate status,
 command/config/tool identity, bounded output/report digest, Oracle/deploy result, ratchet revision,
-Panel-record digest, and terminal transition. Store a sanitized interpretable config projection or
-referenced immutable policy digest; never raw environment values or unbounded logs.
+Panel-record digest, and terminal transition. For every Claude role invocation, also record the
+requested model and effort, the observed per-model usage identifiers, and the role-supply receipt
+from item 77. Requested selectors and observed models are separate fields. Represent observation as a
+tagged `observed` value with identifiers or an explicit `unavailable` value with reason; a missing
+or malformed receipt field makes the receipt incomplete. An explicit unavailable value may preserve
+forensic completeness only when policy does not require an observed-model match. It cannot satisfy a
+model-identity gate, attribution, or matched comparative claim and is never filled from config. Store
+a sanitized interpretable
+config projection or referenced immutable policy digest; never raw environment values or unbounded
+logs.
 
 Make the receipt a typed, versioned assertion rather than an unlabelled bag of digests. Bind one
 explicit acceptance claim type to an immutable subject (candidate tree plus resulting commit when
@@ -2076,9 +2239,10 @@ attestation framework.
 
 **Done when:** a clean-clone auditor can traverse one `SHIPPED` receipt to every required
 same-tree acceptance edge; absent and failed gates remain distinct; stale/mixed/wrong-tree evidence
-cannot complete the receipt; archived receipts remain interpretable after config changes; an unknown
-schema, claim type, or subject fails closed; and synthetic secrets do not appear. REVIEW F22 owns
-closure.
+cannot complete the receipt; archived receipts remain interpretable after config changes; requested
+and observed model identities expose a forced substitution while an absent observation stays explicit;
+an unknown schema, claim type, or subject fails closed; and synthetic secrets do not appear. REVIEW
+F22 owns closure.
 
 ### 77. Record and enforce the cold-role supply boundary — OPEN (BORROWED R44)
 
@@ -2241,38 +2405,65 @@ cannot be observed. Items **77**, **82**, and **83** satisfy three of item **54*
 completion of Gate 0 and item **84**'s recorded outcome still govern admission. This slice closes
 only F27/item **82**.
 
-### 83. Enforce a measured Claude Code feature floor — OPEN (REVIEW F28)
+### 83. Enforce a measured Claude Code compatibility policy — OPEN (REVIEW F28)
 
 **Problem solved:** preflight currently accepts any executable whose `claude --version` exits
 successfully, even though Meeseeks relies on versioned flags, settings, hooks, command/Skill
 controls, tool-availability semantics, and envelope fields. The repository has already observed
 2.1.136 missing `--safe-mode`; a callable but incompatible PATH shadow can therefore fail only
-after an unattended run has started work.
+after an unattended run has started work. A greater version is not proof of compatibility either:
+official [setup documentation](https://code.claude.com/docs/en/setup) says a background update takes
+effect on the next CLI launch, and a Meeseeks run launches many separate children. Official
+[headless documentation](https://code.claude.com/docs/en/headless) also says `-p` will eventually
+adopt bare-mode defaults that currently change discovery and authentication.
 
-Establish one canonical minimum from the oldest pinned Claude Code release that passes every
-mandatory live command and child contract used by the staged candidate. Do not guess an earlier
-version from a single feature's documentation. If historical releases cannot be tested safely,
-start with the lowest version actually verified and lower it only when evidence supports doing so.
-Keep the value in one runtime source. Parse the ordinary decorated `claude --version` output and
-refuse older, prerelease-ambiguous, or malformed values before state creation, child spawn,
-target-content write, or install. Report the detected and required values plus a repair; never
-auto-upgrade. Record the actual selected binary/CLI identity in the release evidence; item
-**76** reuses that observation when its acceptance receipt lands.
+Establish one canonical compatibility policy from pinned Claude Code releases that pass every
+mandatory live command and child contract used by the staged candidate. Record the oldest
+demonstrated floor and highest demonstrated compatible release or deliberately tested range; do not
+guess either boundary from one feature or semantic-version ordering. If historical releases cannot be
+tested safely, begin with the exact versions actually verified and expand only with evidence. Keep the
+policy in one runtime source. Parse ordinary decorated `claude --version` output and refuse older,
+newer-but-unverified, prerelease-ambiguous, or malformed values before state creation, child spawn,
+target-content write, or install. Report the detected and admitted values plus a pin/install repair;
+never auto-upgrade.
+
+At the Driver-owned run boundary, resolve one canonical real invocation path, content fingerprint,
+and reported version. Capture the fingerprint before and after each compatibility probe so the probe
+cannot silently establish evidence for a target it replaced. Every later Driver-owned Claude probe
+and role executes that sealed path rather than performing another PATH lookup. Item **56**'s explicit
+control set disables background auto-update for every Driver-owned Claude invocation, including
+compatibility probes and roles. Immediately before each role spawn, re-resolve the canonical target,
+recompute its fingerprint, run the version check under the sealed controls, and confirm the
+fingerprint again. A same-version byte replacement, symlink retarget, version change, or missing
+target refuses before the next role; a child cannot redirect or upgrade later roles into a different
+contract. Record that binary/CLI identity in the run and release evidence; item **76** binds it and
+each invocation's requested/observed model identity into the acceptance receipt.
+Identity is install-form-specific. A native executable may be one fingerprinted artifact; a symlink,
+script, or package launcher must also bind the measured delegated entrypoint or package identity whose
+mutation changes invoked code. If that mutable invocation closure cannot be bounded and live-proven,
+the compatibility policy refuses that install form rather than recording an approximate seal.
 
 A version comparison is only an early compatibility gate. Items **75**, **80**, and **82** still
-own their installed-loader, command-surface, and role-tool behavior canaries. Item **54**'s
-documented workflow minimum is only one input to the product floor and cannot substitute for the
-whole contract suite.
+own their installed-loader, command-surface, and role-tool behavior canaries. Item **54**'s documented
+workflow minimum is only one input and cannot substitute for the whole contract suite. Item **56** may
+land its environment allowlist independently, but item 83 cannot close until the auto-update control is
+sealed and live-proven.
 
-**Done when:** unit tests cover a missing executable, below/equal/above-floor stable versions,
+**Done when:** unit tests cover a missing executable, below/equal/inside/above-policy stable versions,
 ordinary decorated output, prerelease output, and malformed output; an integration fixture puts a
-known-old synthetic binary first on PATH and proves refusal before any run mutation or automatic
-upgrade while preserving preflight's complete check report; pinned paid live runs at the declared floor and current supported CLI pass the same staged
-installed candidate's full `npm run test:live`, including the item **75**, **80**, and **82**
-canaries, and record exact
-binary, CLI, settings, and plugin identities; README, DESIGN, preflight output, and fixtures name
-the same floor; and raising a required external feature's minimum cannot leave the check stale.
-REVIEW F28 owns closure.
+known-old synthetic binary first on PATH and proves refusal before any run mutation or network install;
+a second fixture inserts a hostile PATH shadow after sealing and proves the next role still uses the
+sealed path; a third atomically replaces the target with byte-different content reporting the same
+version, a fourth retargets a symlink, and a fifth keeps launcher bytes/version stable while replacing
+its delegated entrypoint or package identity. All refuse before the next child while preserving the
+complete check report. Every Driver-owned Claude probe and role receives the
+no-background-update control, operator values cannot override it, and a live canary covers the admitted
+discovery/authentication behavior, including any later bare-mode transition. Pinned paid live runs at
+every admitted compatibility boundary pass the same staged installed candidate's full
+`npm run test:live`, including the item **75**, **80**, and **82** canaries, and record exact canonical
+target, invocation-closure fingerprints, CLI, settings, and plugin identities. README, DESIGN,
+preflight output, and fixtures name the same
+policy; expanding either boundary without the complete live suite fails. REVIEW F28 owns closure.
 
 ### 84. Measure and admit fail-closed child containment — OPEN (live-contract first)
 
@@ -2303,6 +2494,15 @@ or ignored refuses before target mutation; it never silently falls back to bypas
 current unsandboxed-compatible path until the experiment establishes which operators and platforms
 can support a stronger default.
 
+Resource isolation is a separate claim. Current Claude Code sandbox documentation specifies
+filesystem and network controls, not CPU, memory, process-count, disk-space, or workspace-growth
+quotas. Inventory the effective limits visible to the child and record each as enforced, merely
+available, or absent; never call filesystem isolation a resource ceiling. Any exhaustion canary must
+be bounded inside an operator-provided disposable environment that already has a known outer quota.
+Do not test a fork bomb, disk fill, or uncontrolled memory pressure on the operator's ordinary host.
+A future portable quota mechanism remains parked unless this measurement or a real run demonstrates
+the need and a cross-platform boundary can be stated truthfully.
+
 **Experiment:** after items **56**, **82**, and **83** establish environment, role-tool, and CLI
 identity, pass a pinned writing child a driver-owned settings profile with sandbox startup failure and
 unsandboxed escape disabled. Measure the minimum filesystem reads and outbound domains needed for
@@ -2325,10 +2525,12 @@ Builder failure.
 **Done when:** paid pinned live evidence distinguishes settings registration from actual filesystem
 and network confinement; secret canaries never appear in logs or receipts, and any admitted mask
 releases a synthetic value only to its exact approved host; every available outbound surface is
-constrained, disabled, or named as outside the guarantee; an unavailable sandbox, ignored
-key, denied required domain, unsandboxed retry, or unsupported auto-mode combination is diagnosed
-before—or settles without—unbounded work; benign Builder behavior and the independent review boundary
-remain intact; and the evidence supports one of three explicit outcomes: adopt a
+constrained, disabled, or named as outside the guarantee. The evidence also names the observed CPU,
+memory, process-count, disk, and workspace-growth posture without inferring a quota from sandbox
+registration; absence remains an explicit negative guarantee. An unavailable sandbox, ignored key,
+denied required domain, unsandboxed retry, or unsupported auto-mode combination is diagnosed
+before—or settles without—unbounded work; benign Builder behavior and the independent review
+boundary remain intact; and the evidence supports one of three explicit outcomes: adopt a
 portable stronger default, offer a capability-gated profile with truthful limitations, or reject the
 change and retain R19. No outcome is inferred from vendor marketing or a single successful child.
 
@@ -2410,6 +2612,29 @@ regression reruns; crash, timeout, output cap, budget exhaustion, unavailable co
 malformed finding evidence all terminate fail-closed without orphan descendants; the final report
 distinguishes reproduced, rejected, unresolved, and unattempted coverage; and a measured pilot
 improves incremental defect discovery or morning acceptance enough to justify its added cost.
+
+### 87. Treat normalized flaky tests as a failed deterministic gate — OPEN (REVIEW F30)
+
+**Problem solved:** Playwright reports a test that failed and then passed on retry as `flaky`, while
+the runner can still exit zero. Meeseeks correctly excludes that status from ratchet credit but does
+not currently fail the iteration for a newly flaky id. With no earlier ratchet identity to regress,
+that unstable result can accompany green command gates into Panel and `SHIPPED`.
+
+Land this after items **70** and **74**, which establish the fresh attempt and contained report
+identity the stability decision consumes. Parse each accepted report once, collapse duplicate ids by
+worst normalized status, and add one deterministic failed `test-stability` result whenever any id is
+`flaky`. Bound and sort the reported ids so Builder receives a stable repair objective. Preserve the
+existing stronger behavior when a previously ratcheted id becomes flaky: it is still a regression and
+reset, not merely a new gate failure. Observing flakiness may satisfy RED-before-GREEN history, but it
+never supplies current passing evidence. Item **67** must include this required result in its
+non-shrinking gate roster once armed.
+
+**Done when:** the committed real Playwright fixture with a successful runner exit and mixed
+passed/flaky records fails the iteration before Panel; a clean expected fixture passes; skipped/todo
+neighbours retain their existing semantics; duplicate pass+flaky records resolve to flaky; a prior
+ratcheted id still takes the reset path; bounded failure evidence names the exact attempt/report
+identity from items 70/74; and unit plus integration coverage proves no `SHIPPED` path can ignore a
+normalized flaky result. REVIEW F30 owns closure.
 
 ## Cross-cutting non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:

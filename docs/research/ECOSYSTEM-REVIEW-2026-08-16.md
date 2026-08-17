@@ -1,14 +1,14 @@
-# Independent ecosystem review — 16 August 2026
+# Independent ecosystem review — 16–17 August 2026
 
 > **Status:** research ledger, not specification or implementation authority. `DESIGN.md` remains
-> normative; only explicit changes in `PLAN.md` are live work. Source behavior is current as of the
-> date above and must be re-measured before implementation.
+> normative; only explicit changes in `PLAN.md` are live work. Source behavior was last checked
+> 17 August 2026 and must be re-measured before implementation.
 
 ## Authority and admission rule
 
 The review started from `docs/INDEX.md`, then `DESIGN.md`, `REVIEW.md`, `PLAN.md`,
 `HANDOFF.md`, and `docs/research/BORROWED.md`. The current repository is a Claude Code plugin at
-0.164.0. Its non-paid gates are recorded green, while `REVIEW.md` still blocks release on F1–F29.
+0.164.0. Its non-paid gates are recorded green, while `REVIEW.md` still blocks release on F1–F30.
 The durable Driver, monotonic ratchet/pins, cold Panel, held-out Oracle, guard, exact-tree work, and
 terminal authority are existing mechanisms, not blank space for another framework to fill.
 
@@ -31,7 +31,7 @@ A vendor claim or an attractive abstraction is not implementation evidence.
 | [Sigstore](https://docs.sigstore.dev/about/security/) | **REJECTED FOR CURRENT SCOPE** | Identity-bound signatures and a transparency log make published supply-chain attestations discoverable and tamper-evident. | Meeseeks has no independent receipt signer, public artifact distribution, or transparency-log threat. Adding identity, network, and keyless-signing dependencies would create ceremony without independent evidence. |
 | [OpenTelemetry GenAI conventions](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/) | **ALREADY COVERED / REJECTED DETAIL** | Common operation/agent ids help correlate spans, but message attributes can contain sensitive data and the agent conventions are still moving. | Stable run/role/attempt ids already exist or are planned in bounded Driver artifacts. PLAN 58 explicitly rejects content-rich telemetry; no OTel dependency or transcript export. |
 | [systemd process control](https://www.freedesktop.org/software/systemd/man/latest/systemd.kill.html) | **ALREADY COVERED** | Process groups/cgroups can terminate all descendants rather than only a wrapper PID. | REVIEW F2/F11 and PLAN 65 already require grace, force, descendant sweep, guaranteed settlement, bystander safety, and Windows parity. systemd is only a possible Linux implementation detail. |
-| [The Update Framework](https://theupdateframework.io/) | **ALREADY COVERED / NOT ADOPTED** | Versioned signed metadata addresses rollback, freeze, and repository compromise for distributed updates. | Release-check, the Claude cache version rule, PLAN 75's exact installed snapshot, and PLAN 83's CLI floor cover the local failure modes. A TUF repository is unjustified for this development plugin. |
+| [The Update Framework](https://theupdateframework.io/) | **ALREADY COVERED / NOT ADOPTED** | Versioned signed metadata addresses rollback, freeze, and repository compromise for distributed updates. | Release-check, the Claude cache version rule, PLAN 75's exact installed snapshot, and PLAN 83's verified CLI compatibility policy cover the local failure modes. A TUF repository is unjustified for this development plugin. |
 | [AgentDojo](https://proceedings.neurips.cc/paper_files/paper/2024/hash/97091a5177d8dc64b1da8bf3e1f6fb54-Abstract-Datasets_and_Benchmarks_Track.html) | **ALREADY COVERED** | Security defenses must be measured against both benign utility and adaptive prompt-injection cases. | PLAN 84 already requires hostile and benign neighbours through the real child. Importing its Python benchmark would not exercise Meeseeks' Claude/guard/sandbox boundary. |
 | [CaMeL](https://github.com/google-research/camel-prompt-injection) | **PARKED / FRAMEWORK REJECTED** | Source-tracked capabilities can prevent untrusted tool data from controlling privileged sinks, but the released interpreter is a research artifact and changes the execution model. | Reconsider source/sink labels only if Meeseeks gains external action tools or connectors. Do not import the interpreter for today's repository-local coding loop. |
 | [Temporal durable execution documentation](https://github.com/temporalio/documentation/blob/main/docs/glossary.md) and [history service](https://github.com/temporalio/temporal/blob/main/docs/architecture/history-service.md) | **ALREADY COVERED** | Event history can reconstruct workflow state; replay makes deterministic orchestration and idempotent side effects mandatory. | PLAN 58 already refuses replay until idempotency and receipt semantics exist. A Temporal server/SDK violates the dependency-free local control plane for an unproven need. |
@@ -53,6 +53,10 @@ A vendor claim or an attractive abstraction is not implementation evidence.
 | [GitHub CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners) and [Gerrit submit requirements](https://gerrit-review.googlesource.com/Documentation/config-submit-requirements.html) | **ALREADY COVERED / CORROBORATING** | Review policy comes from the base branch or a separate protected configuration ref, and later candidate changes stale prior approval. | PLAN 85's pre-Builder authority snapshot and item 68's exact-tree seal capture the useful invariants locally. GitHub/Gerrit hosting and policy engines are not dependencies. |
 | [Claude Code ultrareview](https://code.claude.com/docs/en/ultrareview) | **PARKED** | A remotely sandboxed fleet independently reproduces reported bugs and exposes a non-interactive JSON mode. It is research preview, paid after limited trials, remotely uploads/clones code, is unavailable on several backends/ZDR, reviews a diff rather than Meeseeks' PRD, and exits zero with findings as well as no findings. | It cannot replace Panel or certify acceptance. Consider only as an optional advisory specialist if PLAN 57 first measures a Panel code-defect recall gap and a pinned side-by-side experiment proves incremental value, exact subject identity, acceptable false positives, privacy, availability, and cost. |
 | [Claude Code agent view](https://code.claude.com/docs/en/agent-view) | **HARVESTED TO EXPERIMENT** | Its research-preview supervisor keeps full background sessions running without an open terminal and persists session state across supervisor restarts, auto-updates, and sleep, but shutdown stops work and recovery can be imperfect. | After F25/item 80 verifies the user-only command boundary, PLAN 36 tests only operator-started terminal detachment before building a daemon. Driver receipts, guard, lock, crash recovery, and terminal authority remain independent. |
+| [OpenAI, coding-evaluation data audit](https://openai.com/index/separating-signal-from-noise-coding-evaluations/) and [Anthropic, agent evals](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents) | **HARVESTED** | Hard benchmarks can contain underspecified prompts, overly strict or low-coverage tests, and misleading requirements. Reference solutions, negative cases, and task-contract review are evidence about the evaluator rather than the agent. | PLAN 57 now audits every selection/final scenario, quarantines broken tasks, and preserves post-seal exclusions rather than silently improving the score. Neither vendor's benchmark or review pipeline is imported. |
+| [METR evaluation protocol](https://metr.org/blog/2024-03-15-example-autonomy-evaluation-protocol/), [Anthropic statistical eval guidance](https://www.anthropic.com/research/statistical-approach-to-model-evals), and [infrastructure-noise study](https://www.anthropic.com/engineering/infrastructure-noise) | **HARVESTED** | Fixed trials stop optional stopping, but a positive point estimate can still be sampling or infrastructure noise. Threshold decisions need a precommitted effect size, clustered uncertainty method, and confidence boundary. | PLAN 57 now requires uncertainty-bounded evidence of the meaningful delta and retires an opened final package from that campaign. No hosted statistics or benchmark dependency is added. |
+| [Claude Code headless mode](https://code.claude.com/docs/en/headless), [advanced setup](https://code.claude.com/docs/en/setup), and [Agent SDK result types](https://code.claude.com/docs/en/agent-sdk/typescript) | **HARVESTED** | JSON results expose per-model usage; background CLI updates take effect on a later launch; and the documented future `-p` bare default changes current discovery/authentication semantics. Requested model aliases and greater version numbers are not observed compatibility evidence. | F22/item 76 records requested versus observed model identity; PLAN 57 binds effective invocation identity; F28/item 83 seals one verified CLI contract per run and consumes item 56's no-background-update control. |
+| [Claude Code model configuration](https://code.claude.com/docs/en/model-config) | **ALREADY COVERED / NO NEW CONTROL** | Bare family aliases follow a provider's recommended version and update over time; full model names can pin a version, while served identity and fallback still require observation. Ambient variables can also remap aliases and subagents. | Meeseeks already supplies explicit role selectors, item 56 excludes ambient model-routing controls, F22/item 76 records observed identity, and item 57 treats model drift as a confounder. Do not add managed settings or another compatibility matrix unless observed substitutions or measured acceptance regressions establish a gap. |
 
 ## HARVESTED
 
@@ -239,14 +243,65 @@ background sessions keep running without an open terminal and persist through su
 auto-updates, and sleep. After F25/item 80 verifies the user-only command boundary—unverified in
 current 0.164.0—run one disposable operator-started `/meeseeks` session through backgrounding, shell
 closure, and supervisor restart. Measure Driver descendants, output, guard, lock, receipts, and
-terminal state. If native detachment holds, item 36 keeps only the crash/reboot/relaunch and durable
-Driver-state work the vendor session does not prove.
+terminal state. If native detachment holds, close that narrow need. Crash/reboot/relaunch work does
+not become OPEN automatically; it remains parked behind item 58's killed-run evidence, compatibility
+fence, and idempotency boundary.
 
 **New failure modes controlled:** the experiment does not begin until F25/item 80 proves autonomous
 dispatch cannot select `/meeseeks`; shutdown still stops sessions, sleep can leave one unresponsive,
 needs-input states violate unattended completion, and the feature is research preview. A Claude
 Completed row is never terminal
 evidence, and the supervisor never becomes a required runtime or Meeseeks authority.
+
+### E14. Validate the evaluation task before evaluating the agent
+
+**Problem solved:** a broken, underspecified, overly strict, or low-coverage scenario can turn an
+agent's correct work into a failure or let incomplete work pass, corrupting the morning-acceptance
+signal.
+
+**Smallest adaptation:** PLAN 57 versions a task contract mapping visible requirements to graders,
+requires a passing reference solution, proves seeded wrong/incomplete outputs fail, and accepts a
+valid alternative implementation. A defect found after protocol sealing is retained and quarantined
+under the precommitted rule, never silently dropped. This borrows the audit invariant, not OpenAI's
+benchmark or multi-agent review pipeline.
+
+**New failure modes controlled:** reference patches can overfit graders and task repair can become
+score laundering. The alternative-solution check and immutable scenario versions keep reference code
+from becoming the only accepted implementation; post-seal defects stay visible.
+
+### E15. A positive point estimate is not a readiness result
+
+**Problem solved:** PLAN 57 previously required strict improvement but could select a candidate whose
+small observed lead was ordinary stochastic or infrastructure noise.
+
+**Smallest adaptation:** precommit a minimum meaningful delta, paired design where practical,
+clustering-aware uncertainty method, and decision boundary. Unless the uncertainty rule establishes
+at least that delta, the result is inconclusive. Final evidence may grant or deny readiness, but once
+opened it cannot rescue or revise that candidate or serve again as final. It may inform a future
+discovery phase only when the resulting candidate starts a newly sealed campaign with a new final
+package.
+
+**New failure modes controlled:** confidence machinery can create false precision or inflate paid
+sample counts. The method, sample size, and stopping rule are sealed first; underpowered campaigns stay
+descriptive rather than expanding opportunistically.
+
+### E16. Bind the actual role and CLI that produced the evidence
+
+**Problem solved:** configured model aliases and a run-start version string cannot prove which model
+or even which Claude Code contract served every role. Background updates may take effect between the
+many CLI launches in one run.
+
+**Smallest adaptation:** F22/item 76 and PLAN 57 record requested model/effort separately from the
+result's observed per-model identifiers. F28/item 83 admits only pinned live-proven CLI boundaries,
+resolves one canonical real target plus install-form-specific invocation-closure fingerprints and reported version per run,
+fingerprints before and after compatibility probes, executes every later Driver-owned probe and role
+through that path, applies item 56's sealed no-background-update control, and rechecks target,
+fingerprint, and version before every role spawn. A same-version replacement remains a mismatch.
+
+**New failure modes controlled:** refusing every vendor patch can create maintenance load, while
+accepting every greater version can silently change auth, discovery, tools, or envelopes. The admitted
+policy expands only after the full contract suite; missing observed-model identity remains unknown and
+cannot support an attribution claim.
 
 ## ALREADY COVERED
 
@@ -263,6 +318,10 @@ evidence, and the supervisor never becomes a required runtime or Meeseeks author
 - Prompt-injection eval shape: PLAN 84's real-child hostile and benign neighbours already preserve
   AgentDojo's security/utility invariant at the boundary that matters to this plugin.
 - Durable replay runtimes and process supervisors corroborate PLAN 58 and REVIEW F2/F11; they do not
+- Moving model aliases and exact model names: explicit role selectors, item 56's child-control
+  boundary, F22's observed identity, and item 57's confounding rule capture the useful controls.
+  Managed enterprise settings or a second compatibility matrix remain unjustified without an
+  observed substitution or measured acceptance regression.
   justify importing a service, sidecar, database, or cluster.
 
 ## REJECTED
@@ -427,3 +486,13 @@ item 36's terminal-detachment slice. PLAN retains Driver authority and requires 
 version, parent/subprocess, platform, proxy, fail-open, process-visibility, overshoot, crash-accounting,
 and persistence limits. This update does not invalidate the earlier pass chronology; it records vendor
 capabilities found after that ecosystem loop had converged.
+
+### Post-convergence source update — task validity, uncertainty, and invocation identity
+
+The 17 August recursive review checked OpenAI's current primary coding-eval audit, Anthropic's agent
+and statistical eval guidance, METR's threshold protocol, and current Claude Code headless/setup/SDK
+contracts against items 57, 76, and 83. It harvested E14–E16: evaluation tasks need their own
+contract/coverage evidence; stochastic selection needs a precommitted uncertainty boundary and a
+single-use final package; and role evidence must bind observed model plus one immutable CLI contract
+per run. The adaptations extend existing owners and introduce no framework, service, new authority, or
+runtime dependency.

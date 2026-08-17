@@ -1,4 +1,4 @@
-# Codex code review — 16 August 2026
+# Codex code review — 16–17 August 2026
 
 > **Ownership:** This is the Codex reviewer document. Codex records and verifies findings here;
 > Claude Code owns implementation. Do not treat an entry as closed until Codex has reviewed the
@@ -8,10 +8,10 @@
 baseline through the commit containing this review is documentation-only.
 **Runtime continuity:** shipped JavaScript, hooks, templates, and output styles match `65a14cc`
 (`pre-codex`, 0.161.0). The shipped command and manifests changed through 0.164.0 and were reviewed
-at `be19c9c`; they are not folded into the older runtime label. F1–F29 cite the files at this
+at `be19c9c`; they are not folded into the older runtime label. F1–F30 cite the files at this
 documentation baseline unless a finding explicitly identifies historical evidence, and finding
 status is authoritative only here.
-**Verdict:** **CHANGES REQUESTED** — sixteen high-priority defects and thirteen medium-priority defects
+**Verdict:** **CHANGES REQUESTED** — seventeen high-priority defects and thirteen medium-priority defects
 are open.
 
 This remains a read-only review of the Claude-native implementation. The documentation cleanup
@@ -819,6 +819,15 @@ weakens incident diagnosis and morning acceptance without changing the runtime v
 - Record the required gate roster and each result's name, command/config identity, status, attempt,
   tool version, and bounded output/report digest; link the Oracle, deploy, Panel, ratchet, and
   terminal records by immutable identity.
+- Record each Claude role invocation's requested model and effort plus the observed per-model identifiers
+  exposed by the result's per-model usage. Keep requested and observed identities distinct; a
+  configured alias is not evidence that the requested model actually served the invocation.
+- Use a tagged observed-or-unavailable state. A missing or malformed receipt field is incomplete;
+  explicit unavailable may preserve forensic completeness only when current policy does not require
+  an observed-model match, and it cannot satisfy model-identity gating, attribution, or a matched
+  comparative claim.
+- Bind each invocation to the Driver-owned role-supply receipt from PLAN item 77 so the recorded
+  model identity is attached to the prompt, tools, and policy that invocation actually received.
 - Preserve enough sanitized configuration metadata to interpret the result without persisting
   secrets or arbitrary raw logs.
 - Reuse F14's tree seal, F16's report attempt identity, and F10's atomic terminal writer rather than
@@ -830,7 +839,10 @@ weakens incident diagnosis and morning acceptance without changing the runtime v
   deterministic and independent-review edge to a matching exact-tree artifact.
 - Missing, stale, mixed-attempt, or wrong-tree evidence cannot produce a complete receipt.
 - A deliberately failed gate remains distinguishable from a gate absent from the roster, while
-  bounded diagnostics reveal no synthetic secret. PLAN item 76 owns the slice.
+  bounded diagnostics reveal no synthetic secret. A model substitution is visible; a result without
+  vendor observation becomes an explicit unavailable state rather than the requested selector; and
+  deleting or corrupting that state makes the receipt incomplete. Unavailable cannot satisfy a
+  policy-required model match or attribution. PLAN item 76 owns the slice.
 
 ### F23 — MEDIUM: `styleModel` is an accepted setting and recorded model with no consumer
 
@@ -869,7 +881,7 @@ makes model/provenance comparisons unreliable. It does not currently change a ga
   declared compatibility boundary; none silently pretends the key is active.
 - An injected-child Driver test proves `prdModel` selects the bare-improvisation child; changing the
   legacy key does not produce a false active-model record.
-- A run manifest contains no inert style selector; F22 remains responsible for exact actual-model
+- A run manifest contains no inert style selector; F22 remains responsible for exact observed-model
   provenance per child invocation. The ordinary version bump applies. Paid live evidence is needed
   only if the implementation also changes child argv, routing, or another external CLI contract.
   PLAN item 78 owns the compatibility slice.
@@ -1063,10 +1075,11 @@ Panel/document-role boundaries without appearing in `PHASE_PERMISSIONS`.
 - Evidence records actual CLI/settings/plugin identities and distinguishes unavailable from denied.
   Items 77 and 82 then unblock the role-internal workflow experiment; PLAN item 82 owns closure.
 
-### F28 — HIGH: preflight accepts any callable Claude Code version
+### F28 — HIGH: preflight accepts any callable or newer-unverified Claude Code version
 
 **Status:** OPEN
-**Affected:** `scripts/preflight.mjs:102-109`, `test/preflight.test.mjs:51-59`,
+**Affected:** `scripts/preflight.mjs:102-109`, `scripts/driver.mjs:1273-1305`,
+`scripts/driver.mjs:4693-4720`, `test/preflight.test.mjs:51-59`,
 `test/preflight.test.mjs:135-140`, `test/live/binary-identity.live.test.mjs:8-16`
 
 `checkClaudeCli()` treats any successful `claude --version` exit as compatible. It neither parses
@@ -1082,34 +1095,63 @@ validation on 2.1.233, not a complete product contract matrix. The exact earlies
 version has not been established, so selecting a convenient constant now would replace
 an absent check with unsupported precision.
 
-**Impact:** a stale or shadowed PATH binary can pass preflight and then reject a required flag,
-produce a different envelope, or fail to enforce a command/role boundary. An unattended run may die
-after doing work, and fixes for F25 or F27 may appear installed while the executing loader is too old
-to honor them.
+The other direction is also unsealed. Official Claude Code
+[setup documentation](https://code.claude.com/docs/en/setup) says native installations can download
+background updates that take effect on the next launch. One Meeseeks run launches multiple
+independent `claude -p` processes, but no run-owned identity prevents a later role from resolving a
+newly updated binary. Current [headless documentation](https://code.claude.com/docs/en/headless) also
+says bare mode will become the default for `-p`; today that mode changes customization discovery and
+skips OAuth/keychain authentication. Those are concrete examples of forward contract drift, not proof
+that one particular future release will fail.
+
+**Impact:** a stale, shadowed, newly updated, or otherwise unverified PATH binary can pass preflight
+and then reject a required flag, produce a different envelope, or fail to enforce a command/role
+boundary. An unattended run may die after doing work, or different roles in one run may execute
+different external contracts. Fixes for F25 or F27 may appear installed while the executing loader
+is incompatible.
 
 **Required resolution:**
 
-- Establish one canonical minimum supported Claude Code feature floor from the oldest pinned CLI
-  that passes every mandatory live command and child contract used by the release. Do not infer it
-  from a single documented feature or guess it from the current developer machine.
-- Parse `claude --version` fail-closed and refuse older, prerelease-ambiguous, or unparseable output
-  before run work. Print the selected executable identity, detected value, required floor, and an
-  upgrade/sign-in repair without attempting a network install.
-- Keep the version floor in one runtime source and align preflight, README, DESIGN, fixtures, and
-  release evidence. Raise it when a required external feature raises the demonstrated floor.
+- Establish one canonical supported Claude Code compatibility policy from pinned CLIs that pass
+  every mandatory live command and child contract used by the release. It includes the oldest
+  demonstrated floor and the highest demonstrated compatible release or deliberately tested range;
+  do not infer forward compatibility from a greater version number.
+- Parse `claude --version` fail-closed and refuse older, newer-but-unverified, prerelease-ambiguous,
+  or unparseable output before run work. Print the selected executable identity, detected value,
+  verified policy, and a pin/install/sign-in repair without attempting a network install.
+- Resolve and seal one canonical real invocation path, content fingerprint, and reported version at
+  the Driver-owned run boundary. Capture the fingerprint before and after every compatibility probe;
+  path plus a self-reported version is not sufficient identity.
+- Item 56's explicit control set disables background auto-update for every Driver-owned Claude
+  invocation, including compatibility probes and roles. Invoke each through that absolute sealed path
+  rather than repeating PATH lookup. Immediately before each role spawn, re-resolve and fingerprint
+  the target, run the version check under the sealed controls, and fingerprint again. A same-version
+  byte replacement, symlink retarget, or other mismatch refuses; a role may not replace the binary
+  used by later roles.
+- For a symlink, script, or package launcher, bind the measured delegated entrypoint or package
+  identity whose mutation changes invoked code. Refuse an install form whose mutable invocation
+  closure cannot be bounded and live-proven.
+- Keep the compatibility policy in one runtime source and align preflight, README, DESIGN, fixtures,
+  and release evidence. Expand it only after the candidate passes the full pinned contract suite.
 - Treat the check as an early compatibility gate, not capability proof. Paid live contracts,
-  including items 75, 80, and 82, remain mandatory at the declared floor and the current supported
-  CLI.
+  including items 75, 80, and 82, remain mandatory at every admitted compatibility boundary.
 
 **Acceptance evidence:**
 
-- Unit cases cover below/equal/above-floor versions, ordinary decorated output, prerelease output,
-  malformed output, and a failed executable.
+- Unit cases cover below/equal/inside/above-policy versions, ordinary decorated output, prerelease
+  output, malformed output, and a failed executable.
 - An integration fixture places a known-old synthetic binary first on PATH and proves refusal before
-  state creation, child spawn, target-content write, or automatic upgrade.
-- Pinned live runs at the declared floor and current supported version pass the staged candidate's
-  full `npm run test:live`, including the item 75/80/82 canaries, and record exact binary, CLI,
-  settings, and plugin identities.
+  state creation, child spawn, target-content write, or automatic upgrade. After sealing a good
+  binary, a hostile PATH shadow cannot redirect a later role. Atomically replacing it with different
+  bytes that report the same version, retargeting a symlink, and keeping launcher bytes/version stable
+  while replacing its delegated entrypoint or package identity all refuse before the second spawn.
+- Child controls suppress background updating on probes and roles without inheriting an operator
+  value, and the production invocation records the same canonical target, fingerprint, and version
+  for every role. A live canary covers current discovery/authentication semantics, including any
+  admitted bare-mode transition.
+- Pinned live runs at every admitted boundary pass the staged candidate's full `npm run test:live`,
+  including the item 75/80/82 canaries, and record exact canonical target, invocation-closure
+  fingerprints, CLI, settings, and plugin identities.
 - The disposable installed-plugin check uses the same staged candidate. PLAN item 83 owns closure.
 
 ### F29 — HIGH: the cold reviewer treats Builder-mutable instructions as review authority
@@ -1163,6 +1205,47 @@ property that Builder cannot certify Builder even if tools, context, and process
 - Item 68 seals the scanned/reviewed bytes, item 77 records the supply classes, and PLAN item 85 owns
   closure. A scan result or model assertion alone is insufficient.
 
+### F30 — HIGH: a retrying test can be parsed as flaky while its gate still passes
+
+**Status:** OPEN
+**Affected:** `scripts/reporters/playwright.mjs:14-16`, `scripts/ratchet.mjs:39-56`,
+`scripts/driver.mjs:669-735`, `scripts/driver.mjs:5753-5787`
+
+The Playwright parser deliberately preserves the runner's whole-test `flaky` status, and the ratchet
+deliberately refuses to credit that status because a test that failed and then passed on retry has not
+proved a stable result. The production gate path nevertheless decides command success from exit code
+alone. Later report parsing groups every non-`passed` status only into RED-history evidence; it does not
+add a failed gate for `flaky`. Playwright normally exits successfully when every test is either expected
+or flaky, so a newly flaky test that has no prior ratchet credit can leave every gate green and reach the
+Panel and `SHIPPED`.
+
+**Impact:** the machine can accept an iteration while its own normalized evidence says a test failed
+before retry. A previously ratcheted test becoming flaky is caught as a regression, but a new flaky test
+has no earlier identity to compare against. This makes acceptance depend on whether instability existed
+before or after the ratchet first saw the test and violates the documented rule that missing proof does
+not default to pass.
+
+**Required resolution:**
+
+- After item 70 establishes a fresh successful attempt and item 74 establishes contained report
+  identity, collapse normalized test records once and make any `flaky` status an explicit deterministic
+  stability-gate failure. Keep it out of ratchet credit and preserve the existing reset when an already
+  protected test becomes flaky.
+- Name the flaky test ids in bounded failure evidence so Builder receives a repairable objective. Do not
+  reinterpret `skipped`/`todo` as flaky, and do not rely on runner-specific prose or exit-code behavior.
+- Keep RED-before-GREEN evidence separate: observing a flaky result may establish that a test can fail,
+  but it cannot establish that the current implementation passes it reliably.
+
+**Acceptance evidence:**
+
+- A real Playwright reporter fixture containing passed and flaky tests, paired with a synthetic successful
+  command exit, fails the iteration before Panel and cannot produce `SHIPPED`.
+- A clean expected report still passes, a skipped/todo neighbour retains its existing semantics, and an
+  already-ratcheted id becoming flaky still follows the regression/reset path rather than a weaker
+  stability-only path.
+- The stability result binds item 70's attempt and item 74's contained report identity. PLAN item 87 owns
+  closure.
+
 ## Audit coverage maps
 
 These tables are reviewer evidence and triage aids, not new sources of product requirements.
@@ -1171,14 +1254,14 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 
 | Claim | Actual enforcement strength | Current qualification |
 |---|---|---|
-| ratcheted test ids never disappear | deterministic store, atomic write, fail-closed read, unit/integration coverage | F16 permits stale attempt evidence; F17 is definition-blind; F20 admits out-of-repository identities |
+| ratcheted test ids never disappear | deterministic store, atomic write, fail-closed read, unit/integration coverage | F16 permits stale attempt evidence; F17 is definition-blind; F20 admits out-of-repository identities; F30 allows an uncredited new flaky result to accompany otherwise-green gates |
 | Builder cannot write Driver state | positional PreToolUse guard plus child settings; paid live coverage | tool-mediated writes only; F15 allows Oracle reads and F16 shows executed target code is outside the hook boundary |
 | Builder cannot certify Builder | separate Panel processes and Driver recombination | F6/F7 weaken evidence/process success; F29 lets Builder-mutable policy influence every reviewer |
 | Panel is cold | fresh read-only `claude -p`, safe mode, narrowed supplied prompt | F29 reintroduces Builder-mutable policy through an explicit read; F14 shows the live tree can change after it is read |
 | Oracle is independent | PRD-only zero-tool author; deterministic execution | F8 breaks run binding; F15 means cases are not confidential from Builder; F27 shows the zero-tool author policy is not enforced |
 | budgets and deadlines are hard | Driver accounting, CLI child allowance, timers | in-flight overshoot exists; F18 breaks spend conservation; F2/F4 mean some wall-clock bounds are not hard |
 | sandbox and model routing hold | settings/argv plus paid live probes | owned by an external binary/provider and must be re-probed when changed; F23 records one inert model route as active |
-| external CLI feature contract | parsed minimum plus pinned live command/child canaries | F28 currently accepts any callable version and the supported floor is unmeasured |
+| external CLI feature contract | live-proven compatibility policy, pinned canaries, and one binary identity per run | F28 currently accepts any callable version and neither compatibility boundary is established |
 | supported command requires user invocation | `disable-model-invocation` plus direct user invocation | F25 leaves that command on the model's autonomous Skill surface; arbitrary direct Bash is outside this guarantee |
 | preflight authorizes the tree the Driver receives | command preflight plus Driver checks | F26 leaves a model/process gap and stages all pre-loop changes |
 | terminal state is durable | `outcome.json` on `driveRun.finish` paths | F10: incomplete/non-atomic coverage; F22: no complete acceptance proof |
@@ -1199,7 +1282,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | `run.json`, `outcome.json` | per run, Driver-owned | manifest records only; outcome is terminal evidence | manifest atomic/no reader; F10 outcome coverage/atomicity; F22 omits deterministic acceptance links; F23 records an unused model as active |
 | `review.json`, briefs, assumptions | per run, Driver-owned | review evidence; assumptions are supplied context, not verdicts | archived; review/brief writes are forensic rather than decision inputs |
 | lessons and bloopers | cross-run, Driver-owned | advisory prompt context / human history | lesson corruption degrades loudly to none; bloopers append |
-| test/e2e reports, mutation config, browser marker | per iteration or tool invocation | ratchet/gates consume reports; other files configure or record tools | F9 ignore gap; F16 lacks attempt/tree identity; F19 lacks size bounds; F20 lacks path containment |
+| test/e2e reports, mutation config, browser marker | per iteration or tool invocation | ratchet/gates consume reports; other files configure or record tools | F9 ignore gap; F16 lacks attempt/tree identity; F19 lacks size bounds; F20 lacks path containment; F30 does not convert normalized flakiness into gate failure |
 | `runs/NNN/` | cross-run archive, Driver-owned | human/forensic evidence only | move failures stop startup; partial-move crash risk remains for PLAN item 58's admission test |
 
 ### Failure-shape summary
@@ -1233,8 +1316,9 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | supported command invocation | `/meeseeks` is unavailable to autonomous Skill selection and remains directly user-invocable | F25 |
 | pre-loop change provenance | launch and document phases admit only declared paths from a clean tree | F26 |
 | role tool availability | each non-Builder sees only its declared built-ins and no inherited capability surface | F27 |
-| Claude Code feature floor | selected binary is new enough for every mandatory external contract | F28 |
+| Claude Code compatibility | one live-proven binary contract remains unchanged across every role in the run | F28 |
 | reviewer instruction authority | only immutable pre-Builder and Driver-owned policy can bind Panel | F29 |
+| retrying test stability | every normalized flaky result blocks Panel and `SHIPPED` without earning ratchet credit | F30 |
 
 ### Explicit negative guarantees
 
@@ -1260,6 +1344,10 @@ These tables are reviewer evidence and triage aids, not new sources of product r
   command and child contracts (F28).
 - `--safe-mode` prevents automatic project customization, but the reviewer prompt explicitly reads
   Builder-mutable `CLAUDE.md` and treats it as binding (F29).
+- A new flaky test is excluded from ratchet credit but currently does not fail its otherwise-successful
+  runner gate (F30).
+- Current Claude sandbox registration and Meeseeks budgets do not establish CPU, memory, process-count,
+  disk-space, or workspace-growth quotas; PLAN item 84 measures and names that boundary.
 - A model verdict is judgment, not deterministic proof; only the Driver combines it with gates.
 - `run.json` is a record and is deliberately not read as authority.
 - There is no crash-resume protocol, lifecycle journal, dynamic-workflow runtime, or general claim
@@ -1273,7 +1361,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | Review lens | Result |
 |---|---|
 | process-lifecycle state machine | F2, F4, F10, and F11 expose unsettled termination, deadline, receipt, and platform states |
-| success laundering | F6 accepts evidence-shaped text; F7 lets an envelope overwrite process failure |
+| success laundering | F6 accepts evidence-shaped text; F7 lets an envelope overwrite process failure; F30 lets a flaky normalized result coexist with a successful runner exit |
 | crash fault injection | F1, F2, F8, and F10 lack an atomic or guaranteed-settlement boundary at a critical transition |
 | evidence-citation adversary | F6 reproduced a shipping-eligible pass with a nonexistent citation |
 | authority by write site | F1, F8, and F9 show authority or machine state whose writer/lifecycle boundary is weaker than its reader assumes |
@@ -1283,12 +1371,12 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | launcher-authority reachability | F25 checks the current external command/skill default and finds no user-only control on the supported command |
 | preflight-to-use race | F26 traces the separate launcher calls, missing Driver revalidation, write-capable document roles, and broad phase staging |
 | tool availability versus approval | F27 finds `allowedTools`/`--allowedTools` treated as a closed set even though the external CLI requires `--tools`; the production Oracle policy is absent from its live contract test |
-| version-to-capability boundary | F28 finds preflight accepting a known-too-old class of CLI without parsing a measured feature floor; version remains an early gate rather than a substitute for live contracts |
+| version-to-capability boundary | F28 finds preflight accepting both known-too-old and newer-unverified CLIs without sealing one run identity; version remains an early gate rather than a substitute for live contracts |
 | reviewer instruction provenance | F29 finds safe-mode isolation explicitly reopened by treating Builder-mutable repository policy as binding; candidate content must remain evidence |
-| monotonic escape audit | the stored set unions correctly, but F16 weakens reset verification and F17 shows a stable ID can inherit credit after its definition changes |
+| monotonic escape audit | the stored set unions correctly, but F16 weakens reset verification, F17 shows a stable ID can inherit credit after its definition changes, and F30 exposes an unstable new ID before it qualifies for credit |
 | hostile cross-platform pass | F11 is the platform finding; F6 and F20 require Windows-shaped containment cases |
 | budget conservation | F18 finds one uncharged role and one early-return loss after parallel settlement |
-| resource-exhaustion boundary | F2/F4 cover processes and HTTP; F19 covers unbounded file-backed decision inputs |
+| resource-exhaustion boundary | F2/F4 cover process and HTTP bounds; F19 covers unbounded file-backed decision inputs; no host CPU, memory, process-count, disk, or workspace-growth quota is currently claimed |
 | path-identity boundary | F20 proves a passing external path can enter the ratchet namespace |
 | terminal transition enumeration | pre-loop/outer-exception gaps and non-atomic receipt remain F10; F22 is the separate evidence-completeness gap |
 | installed-package reality | source validation passes on Claude Code 2.1.233, but no disposable cache install is exercised (F21) |
@@ -1302,12 +1390,12 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | ratchet banking versus `lastGoodCommit` | `DESIGN.md` now distinguishes successful-unit-gate banking from full-acceptance commit advancement |
 | archived artifact count | `DESIGN.md` now names all six archived artifact classes rather than claiming there are three |
 | review package and `HEAD~1` base | PLAN item 41 is closed as inapplicable after tracing every current consumer |
-| current finding counts and queue | `HANDOFF.md` now agrees with F1–F29 and corresponding PLAN items 56, 60–76, 78–83, and 85; items 77 and 84 are separate research-derived boundary items |
+| current finding counts and queue | `HANDOFF.md` now agrees with F1–F30 and corresponding PLAN items 56, 60–76, 78–83, 85, and 87; items 77 and 84 are separate research-derived boundary items |
 | model-role vocabulary | DESIGN now says `styleModel` is inert, deterministic style has no model, and bare improvisation uses `prdModel`; F23/item 78 own the code/config repair |
 | flag vocabulary | README and DESIGN name `--confirm-prd`; the shipped command remains the release-blocking mismatch in F24/item 79 |
 | invocation authority | DESIGN now requires a user-only supported command and disclaims arbitrary direct-Bash authentication; the versioned command/loader repair remains F25/item 80 |
 | role tool terminology | DESIGN now distinguishes `--tools` availability, `--allowedTools` approval, safe-mode isolation, and inherited MCP/settings surfaces; F27/item 82 own enforcement |
-| CLI compatibility terminology | DESIGN distinguishes a measured product-wide feature floor from any one feature minimum; F28/item 83 own enforcement |
+| CLI compatibility terminology | DESIGN distinguishes one feature's minimum from the product's live-proven compatibility policy and one-CLI-per-run identity; F28/item 83 own enforcement |
 | conceptual ERD versus implemented Oracle lifecycle | the architecture report now labels the run-to-Oracle edge as intended but currently violated by F8 |
 | role vocabulary | Builder, Panel/reviewer, Oracle, and Driver retain the meanings and authority boundaries in `DESIGN.md`; no runtime is renamed or replaced |
 
@@ -1323,7 +1411,7 @@ remains byte-identical to the reviewed tree:
 - `npm run release-check` — **ok** at `0.164.0`; no shipped file has changed since release and
   `HANDOFF.md` agrees
 
-The paid live tier was not run. Existing green tests do not cover the twenty-nine failure shapes above.
+The paid live tier was not run. Existing green tests do not cover the thirty failure shapes above.
 
 ## Closure protocol
 
