@@ -1585,6 +1585,113 @@ describe('the lines that bracket a child', () => {
   });
 });
 
+describe('a failed Claude process cannot be talked into a success (REVIEW F7)', () => {
+  const SUCCESS_ENVELOPE = JSON.stringify({
+    is_error: false,
+    result: 'claimed success',
+    total_cost_usd: 0.25,
+    usage: { input_tokens: 100, output_tokens: 50 },
+  });
+
+  /**
+   * @param {Partial<import('../scripts/driver.mjs').ShellResult>} shell
+   * @returns {Promise<import('../scripts/driver.mjs').ClaudeResult>}
+   */
+  const spawnWith = (shell) =>
+    spawnClaude({
+      prompt: 'do the thing',
+      model: 'claude-opus-5',
+      phase: 'builder',
+      cwd: '/nowhere',
+      env: {},
+      run: async () => ({ ok: true, status: 0, stdout: '', stderr: '', ...shell }),
+    });
+
+  it('keeps a nonzero exit failed, even with a valid success envelope on stdout', async () => {
+    // Codex's reproduction, exactly: ok:false, status 9, stderr `process failed`, and stdout
+    // `{"is_error":false,"result":"claimed success"}`. This returned ok:true with text
+    // `claimed success`, so a failed process could supply a PRD, a design declaration, a builder
+    // response or a panel verdict.
+    const result = await spawnWith({ ok: false, status: 9, stdout: SUCCESS_ENVELOPE, stderr: 'process failed' });
+    assert.equal(result.ok, false);
+    assert.equal(result.text, '', 'a failed child supplied text a role would have acted on');
+  });
+
+  it('keeps a signalled child failed for the same reason', async () => {
+    const result = await spawnWith({ ok: false, status: 1, stdout: SUCCESS_ENVELOPE, stderr: 'killed by signal' });
+    assert.equal(result.ok, false);
+    assert.equal(result.text, '');
+  });
+
+  it('keeps a timed-out child failed, and reads nothing it wrote', async () => {
+    const result = await spawnWith({ ok: false, status: 1, stdout: SUCCESS_ENVELOPE, timedOut: true });
+    assert.equal(result.ok, false);
+    assert.equal(result.text, '');
+    assert.equal(result.raw.includes('killed'), true, result.raw);
+  });
+
+  it('keeps an output-capped child failed, which had no distinct kind at all before', async () => {
+    // Valid JSON emitted *before* the cap fired survives inside the truncated stdout, so this was
+    // the most dangerous of the four: a flooding child that had already printed a success envelope.
+    const result = await spawnWith({ ok: false, status: 1, stdout: SUCCESS_ENVELOPE, overflowed: true });
+    assert.equal(result.ok, false);
+    assert.equal(result.text, '');
+    assert.equal(result.raw.includes('output cap'), true, result.raw);
+  });
+
+  it('still records what a failed child cost, because that money was spent', async () => {
+    // The envelope is read for what it can honestly supply — usage — and not for authority.
+    const result = await spawnWith({ ok: false, status: 9, stdout: SUCCESS_ENVELOPE, stderr: 'process failed' });
+    assert.equal(result.costUsd, 0.25);
+    assert.equal(result.tokens, 150);
+  });
+
+  it('keeps a guard denial visible without letting it turn a failure into a success', async () => {
+    const result = await spawnWith({
+      ok: false,
+      status: 9,
+      stdout: SUCCESS_ENVELOPE,
+      stderr: 'meeseeks-guard: denied Write to .meeseeks/state.json',
+    });
+    assert.equal(result.ok, false);
+    assert.deepStrictEqual(result.denials, ['meeseeks-guard: denied Write to .meeseeks/state.json']);
+  });
+
+  it('carries the exhaustion signal off a failed child, so the run ends BUDGET rather than ABORTED', async () => {
+    const result = await spawnWith({
+      ok: false,
+      status: 1,
+      stdout: JSON.stringify({ is_error: true, result: 'Claude AI usage limit reached' }),
+      stderr: 'limit',
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.exhausted, true);
+  });
+
+  // The benign neighbours. A conjunction that refused every child would be a product that cannot
+  // run, and `is_error: true` must keep meaning what it already meant.
+  it('still accepts a successful process with a successful envelope', async () => {
+    const result = await spawnWith({ ok: true, status: 0, stdout: SUCCESS_ENVELOPE });
+    assert.equal(result.ok, true);
+    assert.equal(result.text, 'claimed success');
+    assert.equal(result.costUsd, 0.25);
+  });
+
+  it('still refuses a successful process whose envelope reports an error', async () => {
+    const result = await spawnWith({
+      ok: true,
+      status: 0,
+      stdout: JSON.stringify({ is_error: true, result: 'the model refused' }),
+    });
+    assert.equal(result.ok, false);
+  });
+
+  it('still refuses a successful process whose stdout is not an envelope at all', async () => {
+    const result = await spawnWith({ ok: true, status: 0, stdout: 'I am afraid I cannot do that' });
+    assert.equal(result.ok, false);
+  });
+});
+
 describe('spawnClaude checks the context budget before it spends anything', () => {
   // The check lives inside spawnClaude rather than at any call site, for the reason
   // builderSystemPrompt is a function: every child passes through this one door, so a phase

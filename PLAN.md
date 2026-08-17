@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.178.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.179.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.178.0
+## Build order — current traversal at 0.179.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -53,11 +53,9 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
   Panel combination — **implemented at 0.169.0**; `REVIEW.md` F6 stays OPEN until Codex has
   verified the repair. See item 60 below.
 - **F7 / item 61:** require both process success and envelope success from every Claude role —
-  **not started; blocked on authorised paid live evidence.** The repair changes `spawnClaude`, and
-  both REVIEW F7's acceptance and this repository's own tier rules make the paid tier-3 `claude -p`
-  child contract mandatory for that file. Implementing it without that evidence would ship a change
-  to the one function whose contract belongs to another binary, which is the argv defect exactly.
-  Left for a session with the expenditure authorised; it may share that spend with F2's live check.
+  **implemented at 0.179.0**; `REVIEW.md` F7 stays OPEN until Codex has verified the repair. See
+  item 61 below. The mandatory tier-3 run was made: the operator authorised it, and the live tier is
+  covered by their Claude Max subscription rather than being a per-run expenditure.
 - **F12 / item 66:** bind every role and terminal decision to one immutable specification revision —
   **implemented at 0.170.0**; `REVIEW.md` F12 stays OPEN until Codex has verified the repair. See
   item 66 below.
@@ -2062,13 +2060,27 @@ and Windows-shaped neighbour; an integration case proves fake evidence cannot re
 and any parser/template contract change receives the required paid live check. This may batch with
 item 40, but F6 closure remains independently reviewer-owned.
 
-### 61. Conjoin Claude process and envelope success — OPEN, BLOCKED (REVIEW F7; needs authorised paid live evidence)
+### 61. Conjoin Claude process and envelope success — IMPLEMENTED (0.179.0); REVIEW F7 open pending Codex
 
-**Blocked, not deferred.** The repair is entirely inside `spawnClaude`, and `CLAUDE.md`'s tier rules
-plus REVIEW F7's own acceptance both make `npm run test:live` mandatory for a change there. That
-spend was not authorised in the session that implemented F1, F26, F2, F3, F6 and F12, so the slice
-was left unstarted rather than landed on unit evidence that cannot see the contract it would be
-changing. Nothing else in Gate 0A depends on it.
+**Landed at 0.179.0.** `ClaudeResult.ok` now requires a successful shell result *and* a valid
+non-error envelope. `ShellResult` gained `overflowed`, so the output cap is a distinct kind rather
+than something a caller has to infer from the absence of a timeout — the cap is the dangerous one,
+because valid JSON emitted before 64MB survives inside the truncated stdout and parses cleanly. A
+failed envelope is read only for usage and the exhaustion signal, never for its `result` text, and
+guard denials stay visible on every path.
+
+Evidence: `test/driver.test.mjs` (nonzero, signal, timeout and overflow each carrying a valid success
+envelope; usage still recorded; denials preserved; exhaustion carried; and the three benign
+neighbours — ordinary success, `is_error: true`, and unparseable stdout);
+`test/integration/spawn-claude-failure.integration.test.mjs`, which drives the production `shell`
+against real stand-in processes for each kind including a genuine 70MB flood; and the **mandatory
+tier-3 run**, recorded in `HANDOFF.md`.
+
+**On the earlier block.** This item sat unstarted for one session because the tier-3 requirement was
+read as an unauthorised expenditure. It is not: the operator's Claude Max subscription covers the
+live tier. The rule that *did* hold is the one worth keeping — a change to `spawnClaude` is a change
+to a contract owned by another binary, and unit tests over the array you build say nothing about what
+the callee does with it.
 
 **Problem solved:** `spawnClaude` can reinterpret a failed process as a successful role result when
 failed stdout contains a success-shaped Claude envelope.
@@ -2876,6 +2888,21 @@ neighbours retain their existing semantics; duplicate pass+flaky records resolve
 ratcheted id still takes the reset path; bounded failure evidence names the exact attempt/report
 identity from items 70/74; and unit plus integration coverage proves no `SHIPPED` path can ignore a
 normalized flaky result. REVIEW F30 owns closure.
+
+## Observations recorded rather than repaired
+
+- **`test/live/improve-contract.live.test.mjs` is non-deterministic** (seen 17 Aug 2026 at 0.179.0).
+  Across two full live runs it passed once and failed once; re-run alone it passed. The failure is
+  downstream of `result.ok === true` — the child succeeded and wrote a document over 200 characters
+  that contained no `PRD-N.M` identifier, so `requiredIdsFor` found none. It is a test of a model's
+  output, in the one tier that is inherently probabilistic.
+
+  Not repaired here, and not loosened: an assertion that tolerated a PRD with no requirements would
+  stop checking the thing the improve-author contract exists for. Recorded because F30/item 87 has
+  just made a flaky result a *failed gate* for the product, and the tier that judges the product
+  should not quietly hold itself to a weaker bar. A repair would need to decide whether the
+  non-determinism is the model's, the template's, or the assertion's — which is a question for a
+  slice of its own with its own live budget.
 
 ## Cross-cutting non-goals — the refusals ARE the product
 Recorded so a future session does not "helpfully" add them:

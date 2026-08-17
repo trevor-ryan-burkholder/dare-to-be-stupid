@@ -1,10 +1,9 @@
 # START HERE — current handoff, last swept 17 August 2026
 
-**State:** branch `claude/f1-atomic-run-lock` at `0.178.0`, ahead of `main` at `0.164.0`. The
-manifests and package-lock root metadata agree. Measured on the current tree with Node 24.14.1:
-`npm run lint` and `npm run typecheck` clean; `npm test` **2498 pass, 0 fail**;
-`npm run test:integration` **105 pass, 0 fail**; `npm run release-check` **ok**. No paid live test
-was invoked.
+**State:** `main` at `0.179.0`. The manifests and package-lock root metadata agree. Measured on the
+current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean; `npm test`
+**2508 pass, 0 fail**; `npm run test:integration` **112 pass, 0 fail**; `npm run release-check`
+**ok**; `MEESEEKS_LIVE=1 npm run test:live` **30 pass, 1 fail** — see the live-tier note below.
 
 **External review:** `REVIEW.md` is **CHANGES REQUESTED** with seventeen high-priority defects
 (F1–F3, F5–F8, F12, F14, F16, F18, F25–F30) and thirteen medium-priority defects
@@ -13,7 +12,8 @@ guarantee-strength audit, durable-artifact registry, failure-shape matrix, and e
 negative-guarantee sheet. These are the first implementation gates in `PLAN.md`. Claude Code may
 implement them; Codex owns closure after reviewing the exact repair and its acceptance evidence.
 
-**Implemented, awaiting Codex verification.** Fourteen findings have repairs on this branch. Each
+**Implemented, awaiting Codex verification.** Fifteen findings have repairs, merged to `main` at
+`v0.178.0` (fourteen) plus F7 on top. Each
 remains **OPEN** in `REVIEW.md` — implementation and passing self-tests are not acceptance, and Codex
 reviews each commit separately:
 
@@ -33,21 +33,34 @@ reviews each commit separately:
 | 0.176.0 | F30 / item 87 | normalized flaky results as a failed deterministic gate |
 | 0.177.0 | F4 | absolute HTTP deadlines and a bounded body for health and smoke |
 | 0.178.0 | F9 / item 63 | positional `.meeseeks/` git boundary, retiring the filename list |
+| 0.179.0 | F7 / item 61 | process success and envelope success conjoined |
 
 `PLAN.md` records what landed and where each repair's evidence lives; `DESIGN.md` §3.5, §4 and §11.1
 state the mechanisms.
 
-**F7 / item 61 is not started, and is blocked rather than deferred.** Its repair is inside
-`spawnClaude`, and both REVIEW F7's acceptance and this repository's own tier rules make the paid
-tier-3 `claude -p` child contract mandatory for a change there. That expenditure was not authorised,
-and landing it on unit evidence that cannot see the contract it changes is the argv defect exactly.
+**The live tier is not a blocker.** The operator's Claude Max subscription covers it, so
+`MEESEEKS_LIVE=1 npm run test:live` is a time question rather than a money one. F7/item 61 sat
+unstarted for one session on a mistaken reading of that; it is now implemented with its mandatory
+tier-3 run recorded below.
 
-**Paid live tier:** not invoked on this branch, and nothing here required it — every repair above is
-Driver-side, and none touched `spawnClaude`, `claudeArgs`, envelope parsing, or a template's output
-contract. At 0.161.0 an intermediate
-`CI=1` change failed one live test and was reverted before release; the shipped change was
-toolchain-guidance prose. The full chronology and earlier successful live measurements are in
-the archived handoff.
+**Live tier:** run twice at 0.179.0 against the `claude` the driver actually spawns, about ten
+minutes each. The first run was **31 pass, 0 fail**. The second was **30 pass, 1 fail**, and the
+failure is recorded rather than rounded off: `improve-contract.live.test.mjs` asserted
+`result.ok === true` **and passed that assertion**, then failed downstream because the document the
+model wrote carried no `PRD-N.M` identifiers at all. Re-run alone, it passed (149s). So it is
+non-deterministic model output rather than a regression — and specifically not F7's, whose code path
+that same test exercised and found correct.
+
+**That is a flaky test, and this repository has opinions about those.** 0.176.0 landed F30, which
+makes a normalized flaky result a failed gate rather than something to shrug at. The same standard
+should apply to the tier that judges the product; `PLAN.md` records it as an observation rather than
+loosening the assertion, because a live test that tolerates a PRD with no requirements would stop
+checking the thing it exists for.
+
+The tier is mandatory for F7's slice because that repair is inside `spawnClaude`, whose contract
+belongs to another binary; `CLAUDE.md` requires it for `claudeArgs`, envelope parsing and template
+output contracts too. At 0.161.0 an intermediate `CI=1` change failed one live test and was reverted
+before release. The full chronology is in the archived handoff.
 
 ## Current implementation order
 

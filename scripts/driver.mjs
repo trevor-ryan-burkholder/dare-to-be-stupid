@@ -4534,7 +4534,15 @@ export function requiredIdsFor(prd) {
  * Optional for the same reason, and empty is different from absent: `[]` means the sweep ran
  * and found nothing, absent means no sweep was possible.
  *
- * @typedef {{ ok: boolean, status: number, stdout: string, stderr: string, timedOut?: boolean, reaped?: number[] }} ShellResult
+ * @typedef {{
+ *   ok: boolean, status: number, stdout: string, stderr: string,
+ *   timedOut?: boolean, overflowed?: boolean, reaped?: number[]
+ * }} ShellResult
+ *   `timedOut` and `overflowed` are **distinct kinds**, not two ways of saying failure
+ *   (REVIEW F7). The cap had no field of its own, so a caller could not tell a child that was
+ *   killed for flooding from one that merely exited badly — and valid JSON emitted before the
+ *   cap fired survives inside the truncated stdout, which is precisely the shape that used to
+ *   be reinterpreted as a successful role result.
  */
 
 /**
@@ -4777,6 +4785,8 @@ export function shell(command, args, options) {
         stdout: text(outChunks),
         stderr: text(errChunks),
         timedOut: false,
+        // Its own kind, so no caller has to infer the cap from the absence of a timeout.
+        overflowed: true,
         // Swept for the same reason the timeout path is: a gate that backgrounded a dev server
         // and then flooded a stream leaks exactly the same descendants, and the cap is no more
         // able to reap them than the ceiling was. Absent — rather than empty — when no ceiling
@@ -5152,10 +5162,47 @@ export async function spawnClaude(options) {
     .filter((line) => line.startsWith('meeseeks-guard: denied'))
     .map((line) => line.trim());
 
-  if (!result.ok && result.stdout.trim() === '') {
-    return { ok: false, text: '', costUsd: 0, tokens: 0, raw: result.stderr, ...(denials.length > 0 ? { denials } : {}) };
+  // The cap, with its own answer (REVIEW F7). Valid JSON emitted *before* 64MB was reached
+  // survives inside the truncated stdout, so a flooding child that had already printed a
+  // success-shaped envelope would otherwise be read as a role that succeeded. It is not: the
+  // output was cut off mid-stream, and half a transcript is a different thing from a short one.
+  if (result.overflowed === true) {
+    return {
+      ok: false,
+      text: '',
+      costUsd: 0,
+      tokens: 0,
+      raw:
+        `the ${options.phase} child was killed for exceeding the output cap. Its stdout was truncated ` +
+        'mid-stream, so nothing in it is a complete answer',
+    };
   }
+
+  // **Process success and envelope success, conjoined** (REVIEW F7). This used to consult
+  // `result.ok` only when stdout happened to be empty, so a nonzero, signalled or otherwise failed
+  // process that left a parseable envelope had its failure *overwritten* by that envelope's
+  // verdict. Measured: `ok:false`, status 9, stderr `process failed`, stdout
+  // `{"is_error":false,"result":"claimed success"}` — and `spawnClaude` returned `ok:true` with
+  // text `claimed success`. Process failure is boundary evidence the child cannot revoke by
+  // describing itself favourably, and laundering it can accept a partial PRD, design declaration,
+  // builder response or panel verdict.
   const parsed = parseClaudeEnvelope(result.stdout);
+  if (!result.ok) {
+    // The envelope is still *read*, and only for what it can honestly supply: what the child cost,
+    // which was spent whatever the process then did (REVIEW F18), and whether it stopped because an
+    // allowance ran out, which the run needs in order to end BUDGET rather than ABORTED. Its
+    // `result` text is discarded, because that is the field authority would come from.
+    const detail = result.stdout.trim() === '' ? result.stderr : `${result.stderr}\n${parsed.raw}`.trim();
+    return {
+      ok: false,
+      text: '',
+      costUsd: parsed.costUsd,
+      tokens: parsed.tokens,
+      raw: detail,
+      ...(parsed.exhausted === true ? { exhausted: true } : {}),
+      ...(denials.length > 0 ? { denials } : {}),
+    };
+  }
   return denials.length > 0 ? { ...parsed, denials } : parsed;
 }
 

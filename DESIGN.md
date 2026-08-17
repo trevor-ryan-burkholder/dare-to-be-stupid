@@ -787,6 +787,31 @@ Two things stay static, on purpose:
   application, so there is nothing to ask. The gate passes on the static finding and *says
   in its detail line that it did not probe*, rather than reporting a request it never made.
 
+**A role result requires process success *and* envelope success** (REVIEW F7, implemented at
+0.179.0). `spawnClaude` consulted `result.ok` only when stdout happened to be empty; for every other
+failed process the envelope's own verdict *overwrote* the failure. Measured: `ok:false`, status 9,
+stderr `process failed`, stdout `{"is_error":false,"result":"claimed success"}` — and the driver
+returned `ok:true` with text `claimed success`. Process failure is boundary evidence a child cannot
+revoke by describing itself favourably, and laundering it can accept a partial PRD, design
+declaration, Builder response or Panel verdict.
+
+Four failure kinds now stay distinct all the way through `ShellResult`, and none of them becomes a
+role success because stdout happens to parse:
+
+- **timeout** — the child is killed and nothing it wrote is read, because a killed child has no
+  verdict and a fragment of one is a different verdict rather than a smaller one;
+- **output cap** — which had no field of its own until now, and is the most dangerous of the four:
+  valid JSON emitted *before* 64MB was reached survives inside the truncated stdout and parses
+  cleanly;
+- **process error** — nonzero or signalled;
+- **envelope error** — `is_error: true`, which keeps exactly the meaning it already had.
+
+A failed envelope is still *read*, and only for what it can honestly supply: **what the child cost**,
+which was spent whatever the process then did (§3.5, F18), and **whether an allowance ran out**, which
+the run needs in order to end `BUDGET` rather than `ABORTED`. Its `result` text is discarded, because
+that is the field authority would come from. Guard denials stay visible on every path and never turn
+a failure into a success.
+
 **The machine-state git boundary is positional** (REVIEW F9, implemented at 0.178.0). The driver
 promised to keep its own state out of the target's history and implemented that promise as a
 hand-maintained list of filenames. `state.json`, `outcome.json`, `run.json` and the per-run archive
