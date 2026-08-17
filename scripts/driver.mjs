@@ -70,7 +70,18 @@ import {
   selectLessons,
 } from './lessons.mjs';
 import { OracleError, parseOracleCases, resolveArtifactCommand, runOracle, writeOracle } from './oracle.mjs';
-import { checkStateNotTracked } from './preflight.mjs';
+import { defaultProbe } from './preflight.mjs';
+import {
+  LAUNCH_RECEIPT_FILE,
+  admitOutputs,
+  buildLaunchReceipt,
+  changedPaths,
+  declaredOutputs,
+  describeUnexpected,
+  recordPhase,
+  revalidateLaunch,
+  writeLaunchReceipt,
+} from './launch.mjs';
 import { RUN_LOCK_FILE, acquireRunLock, releaseRunLock } from './run-lock.mjs';
 import { installQualityPlugins } from './plugins.mjs';
 import {
@@ -2580,6 +2591,11 @@ export const MEESEEKS_IGNORED_PATHS = [
   // some other run's pid into the file this run is holding, and the next run would then refuse
   // to start on the word of a process that has not existed for days.
   `.meeseeks/${RUN_LOCK_FILE}`,
+  // The launch receipt (REVIEW F26): what the driver observed before it touched anything, and what
+  // each pre-loop phase was allowed to leave. Driver-owned per-run state read back as evidence, so
+  // it belongs here with the others — tracked, a hard reset would restore an older run's receipt
+  // over this one's and the record would describe a launch that never happened.
+  `.meeseeks/${LAUNCH_RECEIPT_FILE}`,
   // The run manifest, missing until 0.86.0 — the third instance of this exact defect after
   // `state.json` and `outcome.json`, and the first found by watching a live run rather than by
   // reading. `?? .meeseeks/run.json` sat in the target's `git status` one `git add -A` from being
@@ -4985,19 +5001,6 @@ export async function main(argv, io = {}) {
   }
   const { input, confirmPrd, improve } = args;
 
-  // The tracked-state refusal, wired to the direct-launch path. The full preflight runs in the
-  // `init` entry point, and an operator launching this file directly — which is how every
-  // dogfood run is launched — never passes through it. Measured within minutes of the check
-  // shipping: a repository with two tracked `.meeseeks` files sailed straight past the check
-  // that names it. **Checked here, before Phase 0, because it is a static property of the
-  // repository** — a first draft placed it beside the lock claim, downstream of the PRD and
-  // design phases, and the refusal arrived only after two children had been paid for.
-  const tracked = await checkStateNotTracked((command, args) => shell(command, args, { cwd }));
-  if (!tracked.ok) {
-    write(verbatim(`${tracked.detail}\n${tracked.fix}`));
-    return 1;
-  }
-
   // Components are nested runs, and the permission to nest is typed, never configured
   // (PLAN item 24). The config says *what* the components are; only `--give-them-the-box` on
   // this session's command line says they may run, because a flag is typed by somebody watching
@@ -5055,12 +5058,14 @@ export async function main(argv, io = {}) {
   //
   // The position is the other half of the repair. Everything with a side effect is downstream of
   // this line: the `.gitignore` write, the previous run's archive, every child, every install and
-  // every commit. What is deliberately *upstream* of it is the set of refusals that touch nothing
-  // and cost nothing — the re-entrancy guard, the config load, argument parsing, the tracked-state
-  // check and the components/`--give-them-the-box` rule. A run that was never going to start
+  // every commit. What is deliberately *upstream* of it is the set of refusals about the
+  // *invocation* rather than the repository — the re-entrancy guard, the config load, argument
+  // parsing and the components/`--give-them-the-box` rule. A run that was never going to start
   // should not take the repository from one that was, and the nesting refusal in particular must
   // keep its own message: a nested run held off by the *parent's* lock would report the wrong
   // reason, and under `--give-them-the-box` it would refuse work that flag exists to permit.
+  // Everything that is a fact about the *repository* is downstream, in the launch revalidation
+  // below, because those facts are only authoritative while somebody owns the tree.
   //
   // Preflight checks this too, and that is not redundancy: preflight runs in the `init` entry
   // point, in a different process, and holds nothing while this one starts. Its answer is operator
@@ -5087,6 +5092,50 @@ export async function main(argv, io = {}) {
     releaseRunLock(meeseeksDir, runLock.lock.token);
     return code;
   };
+
+  // ---- The authoritative launch observation (DESIGN.md §3.5, REVIEW F26) --
+  //
+  // The command runs `init.mjs` and this file as two separate model-directed Bash calls, and
+  // `allowed-tools` pre-approves the two it names without removing the launcher's other tools. So
+  // preflight's verdict is operator feedback with a shelf life: between it and this line, another
+  // tool call, a concurrent operator or an unrelated process can dirty the tree, repoint the
+  // remote at something production-shaped, drop a hostile hook into the agent surface, or rewrite
+  // the config. Nothing rechecked any of that — before this, the driver's only repeated check was
+  // whether `.meeseeks/` was tracked.
+  //
+  // Reused from `preflight.mjs` rather than reimplemented, because a second answer to "is this
+  // remote production-shaped" eventually disagrees with the first one, quietly.
+  //
+  // **It observes the repository and claims nothing more.** The `claude` binary, its
+  // authentication and the network are mutable host state that this snapshot cannot seal; they
+  // stay ordinary fail-closed failures where they are used.
+  const launch = await revalidateLaunch({
+    cwd,
+    meeseeksDir,
+    sandboxWanted: config.sandbox.enabled,
+    // `defaultProbe` is preflight's own read-only, synchronous shell. Synchronous is right here:
+    // these are a handful of `git` reads at startup, and there is nothing else for this process
+    // to be doing until it knows whether it may proceed.
+    probe: defaultProbe(cwd),
+  });
+  if (!launch.ok) {
+    // Verbatim and unstyled, every failure at once (DESIGN.md §9). The receipt for a refusal is
+    // this text: nothing is written, because writing would be the very thing the refusal is
+    // protecting the repository from.
+    write(verbatim(`launch refused at HEAD ${launch.head === '' ? '(unreadable)' : launch.head}`));
+    for (const failed of launch.failures) write(verbatim(`${failed.name}: ${failed.detail}\n${failed.fix}`));
+    return releasing(1);
+  }
+
+  /**
+   * What this run observed and what each pre-loop phase was allowed to leave behind.
+   *
+   * Rebuilt rather than mutated as phases are admitted, and written after the archive below —
+   * writing it before would put this run's receipt where `archivePreviousRun` is about to move
+   * the *previous* run's, and the archive exists because a second run silently overwriting the
+   * first one's evidence has already happened here.
+   */
+  let receipt = buildLaunchReceipt({ at: new Date().toISOString(), head: launch.head, checks: launch.checks });
 
   // What Phase 0 and Phase 1 cost. These run before `driveRun` exists, so without carrying
   // them the ceiling silently restarts at zero when the loop begins — the defect the first
@@ -5123,8 +5172,12 @@ export async function main(argv, io = {}) {
 
   write(banner({ mode }));
 
-  // Before anything is written, so the very first commit cannot stage machine state.
-  if (ensureMeeseeksIgnored(cwd)) write(verbatim('added meeseeks machine state to .gitignore'));
+  // Before anything is written, so the very first commit cannot stage machine state. Whether it
+  // wrote is carried, because `.gitignore` is then a change in the tree that the PRD phase's
+  // admission would otherwise refuse — and it is admitted only on the run that actually made it,
+  // so a child editing `.gitignore` on any other run is still an unexpected neighbour.
+  const wroteIgnore = ensureMeeseeksIgnored(cwd);
+  if (wroteIgnore) write(verbatim('added meeseeks machine state to .gitignore'));
 
   // Before this run writes any artifact of its own, because the collision it prevents is
   // silent: iteration numbering restarts at 1 every run, so `briefs/iter-001.md` would be
@@ -5139,18 +5192,106 @@ export async function main(argv, io = {}) {
     return releasing(1);
   }
 
+  // The first thing this run writes of its own, and only now: the archive above has already
+  // moved the previous run's receipt out of the way (DESIGN.md §7.2).
+  writeLaunchReceipt(meeseeksDir, receipt);
+
   /**
-   * Commit what a phase produced.
+   * Commit what a phase produced — and refuse anything it did not declare.
    *
    * An interrupt between phases would otherwise strand the work: the PRD lands untracked,
    * preflight refuses the dirty tree, and the operator cannot simply resume. Observed on
    * the first real run, which was stopped after phase 0 and left `?? PRD.md` behind.
    *
-   * @param {string} message
+   * **The staging list is explicit, and that is the repair (REVIEW F26).** `git add -A` committed
+   * whatever was present at that moment under a message claiming it was Meeseeks document output,
+   * so a launcher edit, a concurrent operator's edit, or an off-contract edit by the document
+   * child itself became trusted phase provenance. The tree is clean at launch — the observation
+   * above insists on it — so every path here belongs to this phase, and a path the phase's
+   * template does not declare ends the run.
+   *
+   * Refusing stages nothing, commits nothing, resets nothing and removes nothing. The surprise
+   * stays on disk because it may be the operator's, and a check that destroys what it objects to
+   * has stopped being a check.
+   *
+   * The allowlist is read from the phase's own template, never restated here, so a template that
+   * changes what it writes changes what is admitted in the same edit. `template: null` means the
+   * phase has no template contract — quality-plugin provisioning writes whatever the tools it
+   * installs write. Those paths are enumerated, staged by name and recorded rather than predicted,
+   * which is still not `git add -A`.
+   *
+   * @param {{ phase: string, message: string, template: string | null, extra?: string[] }} options
+   * @returns {Promise<boolean>} false when the phase left something it does not declare
    */
-  const commitPhase = async (message) => {
-    await shell('git', ['add', '-A'], { cwd });
-    await shell('git', ['commit', '--no-verify', '-m', message], { cwd });
+  const commitPhase = async (options) => {
+    /** @type {string[] | null} */
+    let declared = null;
+    if (options.template !== null) {
+      try {
+        declared = [
+          ...declaredOutputs({ template: template(options.template), name: options.template }),
+          ...(options.extra ?? []),
+        ];
+      } catch (error) {
+        write(verbatim(/** @type {Error} */ (error).message));
+        return false;
+      }
+    }
+    /** @type {string[]} */
+    let changed;
+    try {
+      changed = await changedPaths({ run: (command, args) => shell(command, args, { cwd }), cwd });
+    } catch (error) {
+      // A tree git cannot describe is not an unchanged one, and an exception escaping here would
+      // leave the run lock held and reach the operator as a stack trace instead of a verdict.
+      write(verbatim(/** @type {Error} */ (error).message));
+      return false;
+    }
+    /** @type {string[]} */
+    let staged;
+    if (declared === null) {
+      staged = changed;
+    } else {
+      const decision = admitOutputs({ changed, allowed: declared });
+      if (!decision.ok) {
+        write(verbatim(describeUnexpected({ phase: options.phase, unexpected: decision.unexpected, allowed: declared })));
+        return false;
+      }
+      staged = decision.admitted;
+    }
+    if (staged.length > 0) {
+      // `--` so a path that looks like a revision is still a path.
+      await shell('git', ['add', '--', ...staged], { cwd });
+      await shell('git', ['commit', '--no-verify', '-m', options.message], { cwd });
+    }
+    receipt = recordPhase(receipt, { phase: options.phase, declared, staged });
+    writeLaunchReceipt(meeseeksDir, receipt);
+    return true;
+  };
+
+  /**
+   * A phase that declares no repository output at all, checked without committing anything.
+   *
+   * The oracle author holds no tools and the reality-check retry holds only read tools, so both
+   * should leave the tree exactly as they found it. Asserting that here rather than letting the
+   * next document phase discover it keeps the attribution honest: a stray file is reported
+   * against the phase that produced it.
+   *
+   * @param {string} phase
+   * @returns {Promise<boolean>}
+   */
+  const assertWroteNothing = async (phase) => {
+    /** @type {string[]} */
+    let changed;
+    try {
+      changed = await changedPaths({ run: (command, args) => shell(command, args, { cwd }), cwd });
+    } catch (error) {
+      write(verbatim(/** @type {Error} */ (error).message));
+      return false;
+    }
+    if (changed.length === 0) return true;
+    write(verbatim(describeUnexpected({ phase, unexpected: changed, allowed: [] })));
+    return false;
   };
 
   // ---- Phase 0: ideate --------------------------------------------------
@@ -5232,7 +5373,19 @@ export async function main(argv, io = {}) {
     if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
   }
 
-  await commitPhase(improve ? 'meeseeks: author PRD.md from the existing repository' : 'meeseeks: author PRD.md');
+  // `.gitignore` is admitted only when this run's own `ensureMeeseeksIgnored` wrote it, which is
+  // a driver-owned fact rather than something a child could arrange for itself.
+  if (
+    !(await commitPhase({
+      phase: 'prd',
+      message: improve ? 'meeseeks: author PRD.md from the existing repository' : 'meeseeks: author PRD.md',
+      template: improve ? 'improve-author.md' : 'prd-author.md',
+      extra: wroteIgnore ? ['.gitignore'] : [],
+    }))
+  ) {
+    write(stamp('ABORTED', { mode }));
+    return releasing(1);
+  }
   if (confirmPrd) {
     write(verbatim('PRD.md is written and committed. Review it, then re-run without --confirm-prd.'));
     return releasing(0);
@@ -5275,6 +5428,13 @@ export async function main(argv, io = {}) {
     } catch (error) {
       const why = error instanceof OracleError ? error.message : String(error);
       write(verbatim(`oracle authoring returned nothing usable: ${why}`));
+      write(stamp('ABORTED', { mode }));
+      return releasing(1);
+    }
+    // The oracle author holds no tools at all (`PHASE_PERMISSIONS`), so the tree it leaves must be
+    // the tree it found. Checked here rather than left for the design phase to discover, because a
+    // stray file reported against the wrong phase is a wrong answer about who wrote it.
+    if (!(await assertWroteNothing('oracle-author'))) {
       write(stamp('ABORTED', { mode }));
       return releasing(1);
     }
@@ -5366,10 +5526,18 @@ export async function main(argv, io = {}) {
   };
   write(verbatim(`this project is: ${runCapabilities().join(', ')}`));
 
+  // Committed **before** provisioning, which is the other half of F26's repair. The design child's
+  // contract is `templates/architect.md`'s output table; the quality-plugin install writes whatever
+  // the tools it installs write, and one `git add -A` covering both meant neither had provenance.
+  // Two commits, each staging an enumerated list, and only the first one is held to a template.
+  if (!(await commitPhase({ phase: 'design', message: 'meeseeks: design documents', template: 'architect.md' }))) {
+    write(stamp('ABORTED', { mode }));
+    return releasing(1);
+  }
+
   const provisioning = await installQualityPlugins({ cwd, plugins: config.qualityPlugins, runner: shell });
   for (const warning of provisioning.warnings) write(verbatim(warning));
-
-  await commitPhase('meeseeks: design documents');
+  await commitPhase({ phase: 'quality-plugins', message: 'meeseeks: provision quality plugins', template: null });
 
   // ---- Phase 1c: components — driver-delegated sub-runs in worktrees (PLAN item 24) ------
   //

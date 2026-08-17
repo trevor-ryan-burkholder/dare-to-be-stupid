@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.165.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.166.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.165.0
+## Build order — current traversal at 0.166.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -31,7 +31,9 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
   `test/integration/run-lock.integration.test.mjs` races six real processes at one directory —
   free and stale — and drives the real `main`; the same race against the 0.164.0 semantics
   produced six winners out of six.
-- **F26 / item 81:** after that lock, revalidate launch safety and admit only declared pre-loop phase outputs.
+- **F26 / item 81:** after that lock, revalidate launch safety and admit only declared pre-loop phase
+  outputs — **implemented at 0.166.0**; `REVIEW.md` F26 stays OPEN until Codex has verified the
+  repair. See item 81 below for what landed.
 - **F2:** make timeout and output-cap termination force and settle after a bounded SIGTERM grace
   period.
 - **F3:** prevent an unrelated local listener from satisfying the health gate.
@@ -2349,7 +2351,22 @@ invocation still loads it and reaches a deliberately safe preflight refusal; the
 actual CLI/plugin identities; and an unsupported or unobservable control fails acceptance rather
 than falling back to prompt wording. REVIEW F25 owns closure.
 
-### 81. Bind preflight and document phases to declared repository changes — OPEN (REVIEW F26)
+### 81. Bind preflight and document phases to declared repository changes — IMPLEMENTED (0.166.0); REVIEW F26 open pending Codex
+
+**Landed at 0.166.0** in `scripts/launch.mjs`, wired into `main` immediately after F1's run lock.
+`revalidateLaunch` reuses preflight's clean-tree, positional tracked-state, non-production remote,
+effective-config, agent-surface and requested-sandbox checks and reports every failure at once; a
+refusal names the observed HEAD and writes nothing. Each pre-loop document phase commits an
+enumerated path list, and the allowlist is **read from the template that declares it**
+(`<!-- meeseeks:declared-outputs ... -->`) rather than restated in a script — which also keeps
+`PRODUCT.md` out of every shipped script, as `test/capabilities.test.mjs` requires. Provisioning is a
+separate commit with no template contract. `.meeseeks/launch.json` records HEAD, check names and
+verdicts, and each phase's declared and staged paths, bounded and free of contents or check
+sentences. Evidence: `test/launch.test.mjs` and `test/integration/launch.integration.test.mjs`
+(dirty tree, production remote, unsafe agent surface, hostile PRD and design neighbours, the benign
+full conditional design output, and a source rule that no pre-loop phase uses `git add -A`). The
+requested-sandbox refusal is proven at tier 1 with an injected probe, because whether `bwrap` exists
+is a property of the machine running the suite. **REVIEW F26 owns closure and remains open.**
 
 **Problem solved:** supported launch runs preflight in one interactive Claude tool call and starts
 the Driver in a later call. Claude Code's `allowed-tools` field pre-approves the two intended Bash

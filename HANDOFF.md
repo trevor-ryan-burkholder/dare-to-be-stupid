@@ -1,9 +1,9 @@
 # START HERE — current handoff, last swept 17 August 2026
 
-**State:** branch `claude/f1-atomic-run-lock` at `0.165.0`, ahead of `main` at `0.164.0`. The
+**State:** branch `claude/f1-atomic-run-lock` at `0.166.0`, ahead of `main` at `0.164.0`. The
 manifests and package-lock root metadata agree. Measured on the current tree with Node 24.14.1:
-`npm run lint` and `npm run typecheck` clean; `npm test` **2326 pass, 0 fail**;
-`npm run test:integration` **58 pass, 0 fail**; `npm run release-check` **ok**. No paid live test
+`npm run lint` and `npm run typecheck` clean; `npm test` **2364 pass, 0 fail**;
+`npm run test:integration` **70 pass, 0 fail**; `npm run release-check` **ok**. No paid live test
 was invoked.
 
 **External review:** `REVIEW.md` is **CHANGES REQUESTED** with seventeen high-priority defects
@@ -13,9 +13,10 @@ guarantee-strength audit, durable-artifact registry, failure-shape matrix, and e
 negative-guarantee sheet. These are the first implementation gates in `PLAN.md`. Claude Code may
 implement them; Codex owns closure after reviewing the exact repair and its acceptance evidence.
 
-**Implemented, awaiting Codex verification:** F1's atomic run lock, at 0.165.0. The finding
-remains OPEN in `REVIEW.md` — implementation and passing self-tests are not acceptance. `PLAN.md`
-records what landed and where its evidence lives; `DESIGN.md` §3.5 states the mechanism.
+**Implemented, awaiting Codex verification:** F1's atomic run lock (0.165.0) and F26/item 81's
+launch revalidation and pre-loop output admission (0.166.0). Both findings remain OPEN in
+`REVIEW.md` — implementation and passing self-tests are not acceptance. `PLAN.md` records what
+landed and where its evidence lives; `DESIGN.md` §3.5 states both mechanisms.
 
 **Paid live tier:** not rerun for this documentation-only cleanup. At 0.161.0 an intermediate
 `CI=1` change failed one live test and was reverted before release; the shipped change was
@@ -25,10 +26,9 @@ the archived handoff.
 ## Current implementation order
 
 1. Close the locally implementable high-priority defects: F1–F3, F6/item 60, F7/item 61,
-   F12/item 66, F8/item 62, F14/item 68, F16/item 70, F18/item 72, and F26/item 81. **F1 is
-   implemented at 0.165.0 and awaiting Codex verification**; the atomic owner it establishes is
-   now available to item 81. Item 81
-   follows F1 so launch revalidation and pre-loop output admission occur under the atomic owner.
+   F12/item 66, F8/item 62, F14/item 68, F16/item 70, F18/item 72, and F26/item 81. **F1 (0.165.0)
+   and F26/item 81 (0.166.0) are implemented and awaiting Codex verification.** Item 81
+   followed F1 so launch revalidation and pre-loop output admission occur under the atomic owner.
    Item 66 supplies the specification identity consumed by items 62 and 68; F2 includes the
    resistant output-cap path. F30/item 87 is also high priority, but it lands only after item 70
    here and F20/item 74 in step 3 bind the accepted report; item 67 must retain the resulting

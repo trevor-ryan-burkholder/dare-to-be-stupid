@@ -378,23 +378,26 @@ describe('components without --give-them-the-box refuse at start', () => {
 
   it('does not refuse an empty component list, which is the feature switched off', async () => {
     // The benign neighbour: a config that declares no components must behave exactly as it did
-    // before the key existed. The run proceeds past the refusal point and reaches its first
-    // child - which this canned spawn fails, ending the run for an unrelated, later reason.
+    // before the key existed. The run proceeds past the components gate and stops at the *next*
+    // one for an unrelated reason — this suite's fixture is a bare directory rather than a
+    // repository, and 0.166.0's launch observation refuses a tree git cannot describe before any
+    // child is paid for. Reaching that refusal is the evidence: it lives downstream of the
+    // components gate, so an empty list cannot have been refused as a populated one.
     const root = dirWithComponents([]);
     /** @type {string[]} */
     const logs = [];
-    let spawned = 0;
     const code = await main(['--yes'], {
       cwd: root,
       env: cleanEnv(),
       log: (line) => logs.push(line),
-      spawn: async () => {
-        spawned += 1;
-        return { ok: false, text: '', costUsd: 0, tokens: 0, raw: 'canned failure' };
-      },
+      spawn: async () => ({ ok: false, text: '', costUsd: 0, tokens: 0, raw: 'canned failure' }),
     });
     assert.equal(code, 1);
-    assert.equal(spawned >= 1, true, 'the run never got past the refusal point');
+    assert.equal(
+      logs.some((line) => line.startsWith('launch refused at HEAD')),
+      true,
+      `the run never got past the components gate:\n${logs.join('\n')}`,
+    );
     assert.equal(
       logs.some((line) => line.includes('--give-them-the-box')),
       false,

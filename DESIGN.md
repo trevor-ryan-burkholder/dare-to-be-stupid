@@ -277,8 +277,35 @@ claim that the repository snapshot seals the host. Each PRD/design phase then ha
 output-path allowlist and refuses unexpected changes before staging only those
 paths. It never uses a broad phase `git add -A` to absorb an unattributed edit. This matters because
 Claude Code `allowed-tools` pre-approves matching tools but does not remove the rest of the launcher's
-tool pool, and the document children intentionally hold Write/Edit. Current 0.164.0 does not enforce
-this boundary; REVIEW F26 / PLAN item 81 own it. F14 separately owns final reviewed-tree identity.
+tool pool, and the document children intentionally hold Write/Edit. F14 separately owns final
+reviewed-tree identity.
+
+**How it is enforced, since 0.166.0** (`scripts/launch.mjs`). Immediately after the run lock and
+before the `.gitignore` write, the previous run's archive, the first child, the install and every
+commit, the Driver re-runs preflight's own clean-tree, positional tracked-state, non-production
+remote, effective-config, agent-surface and requested-sandbox checks — *reused*, not reimplemented,
+because a second answer to "is this remote production-shaped" eventually disagrees with the first
+one quietly. Every check runs even after one fails, so an operator with three problems learns all
+three now. A refusal names the observed HEAD and each failing check, and writes nothing at all:
+repository bytes are preserved, and so is the previous run's receipt, which the archive has not yet
+moved.
+
+Each pre-loop document phase then commits an **enumerated** path list rather than `git add -A`. What
+it may leave is read from the template that declares it — `<!-- meeseeks:declared-outputs ... -->`
+in `prd-author.md`, `improve-author.md` and `architect.md` — so a template that changes what it
+writes changes what is admitted in the same edit, and no shipped script restates the architect's
+output table. It is an allowlist and never a required set: `docs/openapi.yaml` is conditional. Any
+other tracked or untracked path ends the run, and refusing stages, resets, cleans and removes
+nothing, because the surprise may be the operator's. The oracle author holds no tools and is held to
+leaving the tree exactly as it found it. Quality-plugin provisioning is a separate commit with no
+template contract — it writes whatever the tools it installs write — and its paths are enumerated,
+staged by name and recorded rather than predicted. `.meeseeks/launch.json` records the observed HEAD,
+each check's name and verdict, and each phase's declared and staged paths, bounded to 50 entries with
+the remainder counted; it carries no file contents and no check sentence, because `safe-remote`'s
+sentence quotes the remote URL and that is where an embedded credential would be.
+
+`REVIEW.md` F26 records the defect and its acceptance evidence, and remains open until Codex has
+verified the repair.
 
 **Preflight verifies (hard-fails with a fix hint if missing):**
 
@@ -1516,6 +1543,8 @@ meeseeks/
 │   ├── run-manifest.mjs          # .meeseeks/run.json, and archiving the last run (§7.1, §7.2)
 │   ├── integrity.mjs             # gate-integrity: no-op gates, weak assertions (§4)
 │   ├── preflight.mjs             # the thirteen checks run before a run starts (§3.5)
+│   ├── launch.mjs                # .meeseeks/launch.json: the driver's own launch observation
+│   │                             #   and each pre-loop phase's declared output contract (§3.5)
 │   ├── security-scan.mjs         # the repo's own agent surface, pre-run (§3.6)
 │   ├── config.mjs                # defaults, validation, and the risky-remote words (§10)
 │   ├── configure.mjs             # interactive author for validated config

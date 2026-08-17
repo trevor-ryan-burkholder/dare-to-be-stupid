@@ -30,6 +30,7 @@ import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'n
 import path from 'node:path';
 
 import { ASSUMPTIONS_FILE } from './assumptions.mjs';
+import { LAUNCH_RECEIPT_FILE } from './launch.mjs';
 
 /** Driver-owned. Protected by the `.meeseeks/**` invariant (§6) with no rule of its own. */
 export const RUN_MANIFEST = 'run.json';
@@ -74,7 +75,18 @@ export const RUN_ARCHIVE_DIR = 'runs';
  * they are already transient within a run, and archiving the last one would preserve an
  * arbitrary moment while implying it was the run's.
  */
-const PER_RUN_ARTIFACTS = [RUN_MANIFEST, 'briefs', 'reality-check.md', ASSUMPTIONS_FILE, 'review.json', 'outcome.json'];
+const PER_RUN_ARTIFACTS = [
+  RUN_MANIFEST,
+  'briefs',
+  'reality-check.md',
+  ASSUMPTIONS_FILE,
+  'review.json',
+  'outcome.json',
+  // The launch receipt (REVIEW F26). Per-run by construction — it records one run's launch
+  // observation and pre-loop staging — so a second run would otherwise overwrite the only copy of
+  // the first one's provenance, which is the exact failure archiving exists to prevent.
+  LAUNCH_RECEIPT_FILE,
+];
 
 /** The manifest's own schema version, bumped when a field's meaning changes. */
 const MANIFEST_VERSION = 1;

@@ -24,6 +24,8 @@ At the repository root:
 | `CLAUDE.md` | the project's own conventions: test gates in the order they run, slice rules, what must never be done here |
 | `PRODUCT.md` | short: users, mode, brand voice, anti-references — the design tooling reads this on every command, and without it designs from defaults. Who it is **for**, never what it **does**: no capabilities, no stack, no gates. Those are declared below, where a closed vocabulary can check them |
 
+<!-- meeseeks:declared-outputs docs/architecture.md docs/api-contract.md docs/data-model.md docs/openapi.yaml CLAUDE.md PRODUCT.md -->
+
 ## Declare what this project is
 
 The gates that run against every iteration depend on what is being built. A CLI has no health

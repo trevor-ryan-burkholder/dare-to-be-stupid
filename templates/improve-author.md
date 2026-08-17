@@ -100,3 +100,5 @@ there are only three, and a short section naming what you examined and found cor
 
 Padding the list to look thorough produces exactly the unsatisfiable gate this file has spent
 several paragraphs warning you about, and it will cost the run more than an empty finding would.
+
+<!-- meeseeks:declared-outputs PRD.md -->
