@@ -31,6 +31,7 @@ import path from 'node:path';
 
 import { ASSUMPTIONS_FILE } from './assumptions.mjs';
 import { LAUNCH_RECEIPT_FILE } from './launch.mjs';
+import { ORACLE_FILE } from './oracle.mjs';
 import { SPECIFICATION_FILE } from './specification.mjs';
 
 /** Driver-owned. Protected by the `.meeseeks/**` invariant (§6) with no rule of its own. */
@@ -90,6 +91,11 @@ const PER_RUN_ARTIFACTS = [
   // The captured specification revision (REVIEW F12): per-run by construction, and the record a
   // later reader needs in order to say which document that run was judged against.
   SPECIFICATION_FILE,
+  // The held-out oracle store (REVIEW F8). Per-run because its cases are authored from *one* PRD:
+  // a store that survived into the next run would let the one gate judged against the
+  // specification rather than the implementation execute a previous objective's cases and report a
+  // clean pass over nothing.
+  ORACLE_FILE,
 ];
 
 /** The manifest's own schema version, bumped when a field's meaning changes. */

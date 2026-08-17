@@ -1199,6 +1199,29 @@ So `.meeseeks/oracle.json` holds executable acceptance cases authored at **Phase
 alone, **before the design phase and before any code exists.** A child that has seen the code
 cannot write them.
 
+**The store belongs to one run and one specification** (REVIEW F8, implemented at 0.171.0). It used
+to survive into the next run: it was authored only when absent, it was not in the per-run archive
+list, and it was not in the machine-state ignore list either, so a second objective in the same
+repository could execute the first one's held-out cases and report a clean pass that established
+nothing — the one gate whose entire value is independence, quietly judging something else. Its
+writer was a direct overwrite, so a kill mid-write left a corrupt file whose mere existence stopped
+the driver re-authoring.
+
+Four things close it, and each is separately load-bearing:
+
+- **Archived with its run**, so the ordinary second-run case finds nothing to reuse and authors
+  fresh from the current PRD.
+- **Bound to §4's captured specification digest**, which is the independent second proof for a store
+  somebody put back: a store authored from another revision, or one that records no revision at all,
+  is a failed gate rather than a reused one, and no case is executed.
+- **Written temp-and-rename**, so a reader gets the old complete store or the new one and never
+  partial JSON.
+- **Ignored, store and scratch directory both.** Tracked, the target's own history would carry the
+  cases the builder is never shown.
+
+PRD-only, no-tools authoring is unchanged: the repair never re-authors from implementation
+context.
+
 **That requires tool availability to be restricted, not merely unapproved.** Every non-Builder
 role has a closed built-in tool set; Oracle-author has none. Claude Code's `--allowedTools` changes
 approval only, while `--tools` controls which built-ins enter the model context and `--tools ""`

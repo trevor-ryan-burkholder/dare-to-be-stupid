@@ -70,7 +70,16 @@ import {
   saveLessons,
   selectLessons,
 } from './lessons.mjs';
-import { OracleError, parseOracleCases, resolveArtifactCommand, runOracle, writeOracle } from './oracle.mjs';
+import {
+  ORACLE_FILE,
+  ORACLE_SCRATCH,
+  OracleError,
+  oracleMatchesSpecification,
+  parseOracleCases,
+  resolveArtifactCommand,
+  runOracle,
+  writeOracle,
+} from './oracle.mjs';
 import { defaultProbe } from './preflight.mjs';
 import {
   LAUNCH_RECEIPT_FILE,
@@ -2711,6 +2720,13 @@ export const MEESEEKS_IGNORED_PATHS = [
   // run's digest over this one's, and the run would then be checking the working copy against a
   // document it never captured — which is the drift it exists to catch, wearing the mask of a pass.
   `.meeseeks/${SPECIFICATION_FILE}`,
+  // The held-out oracle store and the scratch directory its cases are materialised in (REVIEW F8).
+  // Tracked, the target's own history would carry the cases the builder is never shown — the
+  // confidentiality of the only gate judged against the specification rather than the
+  // implementation, leaking through a gitignore omission — and a hard reset would restore a
+  // previous run's store over this one's.
+  `.meeseeks/${ORACLE_FILE}`,
+  `.meeseeks/${ORACLE_SCRATCH}/`,
   // The run manifest, missing until 0.86.0 — the third instance of this exact defect after
   // `state.json` and `outcome.json`, and the first found by watching a live run rather than by
   // reading. `?? .meeseeks/run.json` sat in the target's `git status` one `git add -A` from being
@@ -3477,7 +3493,7 @@ export async function observabilityGate(cwd, options = {}) {
  *
  * @param {string} cwd
  * @param {string} meeseeksDir
- * @param {{ run?: import('./plugins.mjs').Runner }} [options]
+ * @param {{ run?: import('./plugins.mjs').Runner, specification?: string }} [options]
  * @returns {Promise<GateResult>}
  */
 export async function oracleGate(cwd, meeseeksDir, options = {}) {
@@ -3493,7 +3509,7 @@ export async function oracleGate(cwd, meeseeksDir, options = {}) {
         'or inert passes every other gate here (run 10).',
     };
   }
-  return await runOracle({ meeseeksDir, root: cwd, command, run: options.run ?? shell });
+  return await runOracle({ meeseeksDir, root: cwd, command, specification: options.specification, run: options.run ?? shell });
 }
 
 /**
@@ -3524,7 +3540,10 @@ export function openApiDocument(cwd) {
 
 /**
  * @param {string} cwd
- * @param {{ run?: import('./plugins.mjs').Runner, capabilities?: string[] | null, probeTimeoutMs?: number, meeseeksDir?: string, oracle?: boolean }} [options]
+ * @param {{
+ *   run?: import('./plugins.mjs').Runner, capabilities?: string[] | null, probeTimeoutMs?: number,
+ *   meeseeksDir?: string, oracle?: boolean, specification?: string
+ * }} [options]
  * @returns {Promise<GateResult[]>}
  */
 export async function staticGates(cwd, options = {}) {
@@ -5618,7 +5637,15 @@ export async function main(argv, io = {}) {
   //
   // Failure to author **ends the run**. A gate armed with nothing would report a clean pass over
   // nothing, and this is the one gate whose entire value is independence.
-  if (config.oracle.enabled && !existsSync(path.join(meeseeksDir, 'oracle.json'))) {
+  // Authored when there is no store *for this specification* (REVIEW F8). The previous run's store
+  // is archived with that run, so the ordinary second-run case finds nothing here and authors
+  // fresh. The digest check is the independent second proof, for the store somebody put back:
+  // held-out cases written for a different objective establish nothing about this one, and the one
+  // gate whose entire value is independence must not quietly judge a different specification.
+  if (config.oracle.enabled && !oracleMatchesSpecification(meeseeksDir, specification.revision.digest)) {
+    if (existsSync(path.join(meeseeksDir, ORACLE_FILE))) {
+      write(verbatim('the held-out oracle on disk does not belong to this specification; authoring a fresh one'));
+    }
     write(verbatim('authoring held-out acceptance cases from the PRD'));
     const authored = await runChild({
       prompt: `${template('oracle-author.md')}\n\n---\n\nPRD.md:\n\n${prd}`,
@@ -5635,7 +5662,7 @@ export async function main(argv, io = {}) {
     }
     try {
       const cases = parseOracleCases(authored.text);
-      writeOracle(meeseeksDir, cases);
+      writeOracle(meeseeksDir, cases, { specification: specification.revision.digest });
       write(verbatim(`held out ${cases.length} acceptance case(s); the builder is never shown them`));
     } catch (error) {
       const why = error instanceof OracleError ? error.message : String(error);
@@ -6187,7 +6214,15 @@ export async function main(argv, io = {}) {
       // demands is filtered by the same capabilities, which is why they are passed in as well
       // as applied outside. Without that, a browserless project could not satisfy `ci` at all.
       ...applicableGates(
-        await staticGates(dir, { run: shell, capabilities, meeseeksDir: treeStateDir, oracle: config.oracle.enabled }),
+        await staticGates(dir, {
+          run: shell,
+          capabilities,
+          meeseeksDir: treeStateDir,
+          oracle: config.oracle.enabled,
+          // Threaded so the held-out gate can refuse cases written from another PRD rather than
+          // reporting a clean pass over them (REVIEW F8).
+          specification: specification.revision.digest,
+        }),
         capabilities,
       ).gates,
       redEvidenceGate(evidence),

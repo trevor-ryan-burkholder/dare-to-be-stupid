@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.170.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.171.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -18,7 +18,7 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 
 ---
 
-## Build order — current traversal at 0.170.0
+## Build order — current traversal at 0.171.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
@@ -61,7 +61,9 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
 - **F12 / item 66:** bind every role and terminal decision to one immutable specification revision —
   **implemented at 0.170.0**; `REVIEW.md` F12 stays OPEN until Codex has verified the repair. See
   item 66 below.
-- **F8 / item 62:** bind held-out Oracle cases to that run and specification revision.
+- **F8 / item 62:** bind held-out Oracle cases to that run and specification revision —
+  **implemented at 0.171.0**; `REVIEW.md` F8 stays OPEN until Codex has verified the repair. See
+  item 62 below.
 - **F14 / item 68:** commit and tag only the exact workspace identity gated and reviewed.
 - **F16 / item 70:** accept only fresh successful test reports from the current gate attempt.
 - **F30 / item 87:** reject every normalized flaky test result before Panel or `SHIPPED`,
@@ -2063,7 +2065,21 @@ termination/failure representation with F2 instead of adding another parallel st
 with a valid success envelope; normal success and `is_error:true` keep their meanings; and the
 mandatory paid tier-3 check observes the production `claude -p` contract. REVIEW F7 owns closure.
 
-### 62. Bind the Oracle store to one run and one PRD — OPEN (REVIEW F8)
+### 62. Bind the Oracle store to one run and one PRD — IMPLEMENTED (0.171.0); REVIEW F8 open pending Codex
+
+**Landed at 0.171.0.** `.meeseeks/oracle.json` is now archived with its run (`PER_RUN_ARTIFACTS`),
+carries the item-66 specification digest it was authored from, is written temp-and-rename, and is
+ignored along with `.meeseeks/oracle-scratch/`. `readOracle` refuses a store authored from another
+revision or recording none, and executes no case when it does; the Driver authors fresh whenever
+there is no store *for this specification*, saying so when it replaces a foreign one. PRD-only,
+no-tools authoring is untouched.
+
+Evidence: `test/oracle.test.mjs` — foreign digest, absent digest, caller with no digest, refusal to
+write an unattributable store, the matching benign neighbour, `oracleMatchesSpecification` across
+every unusable shape, no case executed on a mismatch, no temporary left behind, a half-written
+temporary never accepted, archival moving the store, and the ignore stanza covering both paths.
+
+**What it was for, as originally written:**
 
 **Problem solved:** `.meeseeks/oracle.json` currently survives previous-run archival, so a new
 objective can reuse held-out cases written for an old PRD.
