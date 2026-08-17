@@ -42,7 +42,8 @@ These are the load-bearing properties. A change that breaks one is wrong even if
   again. Any code path that removes an ID from the passing set without a `git reset --hard`
   + regression task is a bug.
 - **The builder cannot judge its own work.** Review happens in a *separate* `claude -p`
-  process with no build log, no iteration history, no hint an agent wrote the code. Never
+  process. The Driver supplies no build log, iteration history, or hint that an agent wrote the
+  code; this is the `not supplied` discipline below, not a filesystem-read barrier. Never
   "optimize" this into a subagent.
 - **Nothing defaults to pass.** Missing evidence, unparseable reviewer output, a crashed
   gate, a timeout — all fail. If you are writing `catch { return pass }`, stop.

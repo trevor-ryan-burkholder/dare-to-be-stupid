@@ -36,6 +36,8 @@ items; the full requirements and closure evidence remain reviewer-owned in `REVI
 - **F14 / item 68:** commit and tag only the exact workspace identity gated and reviewed.
 - **F16 / item 70:** accept only fresh successful test reports from the current gate attempt.
 - **F18 / item 72:** conserve every completed child envelope into ceilings and terminal receipts.
+- **F29 / item 85:** keep candidate-tree instructions out of reviewer authority; candidate files
+  remain evidence, while binding review inputs come from identified immutable sources.
 
 **Gate 0B — external child/platform contracts.** F5 is implemented by item **56**: measure the real
 child-environment contract before replacing ambient inheritance, then prove the boundary through a
@@ -79,14 +81,22 @@ permission to implement shared primitives in arbitrary order. Preserve these con
    **82** live contracts at both the floor and current supported CLI. This is an evidence
    dependency, not a construction cycle. Every later release candidate reruns the gate; an earlier
    source-only or version-only pass is never acceptance evidence.
-6. Items **77**, **82**, and **83** close the durable prompt-supply, effective tool-availability,
-   and supported-CLI boundaries before item **54** may fan a role out into a dynamic workflow.
-   None is evidence for another, and `--safe-mode` is not a substitute for an exact tool set.
+6. Complete Gate 0 and item **77**, then record item **84**'s containment outcome, before item
+   **54** may fan a role out into a dynamic workflow. In particular, items **77**, **82**, and
+   **83** establish distinct prompt-supply, effective tool-availability, and supported-CLI
+   boundaries; none is evidence for another, and `--safe-mode` is not a substitute for an exact
+   tool set.
+7. Item **85** consumes item **66**'s immutable specification, item **68**'s exact candidate
+   identity, and items **77**, **82**, and **83**'s instruction/tool/CLI contracts. This edge crosses
+   the headings below: implement item **77** after item **66** and before closing F29 rather than
+   waiting for every Gate 0 item to finish. Its Driver-owned reviewer contract is not item **51**'s
+   general `CONSTITUTION.md`, which remains excluded from Panel.
 
 **Campaign 1 — reviewer contract:** after F6/item **60**, implement item **40** (unverifiable
-channel and mandatory attack account). After item **66** establishes specification identity,
-item **77** makes the cold-role `not supplied` discipline machine-checkable; it complements but
-does not close F15's separate filesystem-confidentiality question. Item **41** is closed as
+channel and mandatory attack account). Item **77** is physically described in this campaign but
+executes during Gate 0 after item **66**, because F29/item **85** consumes its machine-checkable
+cold-role `not supplied` supply manifest. It complements but does not close F15's separate
+filesystem-confidentiality question. Item **41** is closed as
 inapplicable: the current Driver does not assemble a Panel diff package, and its `HEAD~1` uses do
 not feed review evidence. Batch actual shared parser/template work and pay the required tier-3
 check once.
@@ -99,11 +109,15 @@ evidence, viewport path) → item **29** (detect-first gitleaks and registry ver
 staged Ateliers capstone. Case C is **PARKED by operator decision**; it is not first in this queue
 and must not be launched without reopening that decision.
 
-**Campaign 4 — bounded follow-ons:** item **52** denial dampening → item **53** styled milestone
+**Campaign 4 — containment experiment and bounded follow-ons:** after items **56**, **82**, and
+**83** establish the measured child boundary, run item **84** and record whether a stronger
+containment profile is portable, capability-gated, or rejected. The experiment does not silently
+change the supported default. Then take item **52** denial dampening → item **53** styled milestone
 lines, after safety and reviewer work.
 
-**Research-gated and conditional work:** item **54** remains **BLOCKED** on F1 and F2; it does not
-enter the queue merely because the supporting analysis exists. Item **55** remains **PARKED** until
+**Research-gated and conditional work:** item **54** remains **BLOCKED** on Gate 0, item **77**, and
+a recorded item **84** outcome; it does not enter the queue merely because the supporting analysis
+exists. Item **55** remains **PARKED** until
 a real run demonstrates a provenance or invalidation failure that passes its admission test. Item
 **58** remains **PARKED** until a killed-run experiment proves that a lifecycle journal would close
 a forensic gap; it is not authorization for checkpoint/resume.
@@ -169,7 +183,8 @@ child actually stopped by the flag.
 
 **Landed at 0.90.0, and tier 3 watched the stop.** A real child bounded at the `$0.0001` floor
 returned not-ok with empty text. Tier 3 is now 23 of 23 across 10 files. `--max-budget-usd` is
-derived and always on; **`--max-turns` ships off by default** (`maxChildTurns: 0`) because no
+derived whenever `costCeiling` is armed (the default); `costCeiling: 0` deliberately omits it.
+**`--max-turns` ships off by default** (`maxChildTurns: 0`) because no
 honest arithmetic gets from a dollar ceiling to a turn count, and because it is undocumented in
 `claude --help` 2.1.228 — accepted by the parser, verified, but a weaker contract.
 
@@ -641,8 +656,9 @@ failed — a tree that could not ship whatever the verdict said.
 - When the just-gated iteration has failing **required** gates, the cold panel runs on
   `reviewerTriageModel`; when the gates are green (a ship candidate), on `reviewerModel`. The
   panel's log line names the tier and why, so a transcript reader never has to infer it.
-- The panel stays exactly as cold either way — separate processes, no build log, the same
-  starvation. **Model is not independence**; nothing about §4's contract moves.
+- The panel stays exactly as cold either way — separate processes, and the Driver supplies no build
+  log or iteration history under the same `not supplied` discipline. This is not a filesystem-read
+  barrier. **Model is not independence**; nothing about §4's contract moves.
 - **Monotonic-store protection, which is the load-bearing half:** a triage-tier panel's
   requirement passes are feedback only. They are never pinned as cold-passed requirements and
   never satisfy or seed a carry. Only full-model panels write pins. Without this, one sonnet
@@ -1116,6 +1132,20 @@ driver-written), the run-lock holds, results are read from artifacts never a chi
 no nesting unless `--give-them-the-box`. Matches "long-running across sessions" with the spine
 intact.
 
+**Use the native detachment experiment before building a daemon.** Current Claude Code
+[agent view](https://code.claude.com/docs/en/agent-view) is research preview, but its
+background-session supervisor documents that a full session keeps running
+without an open terminal and persists through supervisor restarts, auto-updates, and sleep. It also
+documents shutdown stops, possible post-sleep hangs, human-needed states, and session-local storage;
+none is Meeseeks recovery evidence. Run this only after F25/item **80** has verified the user-only
+command boundary; the current 0.164.0 command does not yet establish it. In a disposable target, the
+operator—not autonomous dispatch—must start `/meeseeks` and then background the in-flight session.
+Close agent view and the shell, restart the supervisor, and verify the exact Driver PID/descendants,
+output, guard, lock,
+receipts, and terminal state. A Claude row labelled Completed is never `SHIPPED`. If this safely solves
+terminal detachment, narrow item 36 to the unprovided crash/reboot/relaunch and Driver-state recovery
+work. If it does not, reject the native path; do not make a research-preview supervisor a dependency.
+
 ### 47. Accept an ERD alongside the PRD, and gate the schema against it — OPEN (Phase-6 class, post-DoD)
 
 **Origin:** operator, 15 Aug 2026, after an ERD of the Ateliers capstone made its schema's two
@@ -1372,7 +1402,7 @@ reviewer prompt gains constitutional text as a side effect.
 
 ## Current follow-ons and research-gated experiments
 
-This heading ends Phase 6. Items 52, 53, 56, 57, and 77–82 are pre-DoD only in the order stated at
+This heading ends Phase 6. Items 52, 53, 56, 57, and 77–85 are pre-DoD only in the order stated at
 the top of this file; items 54, 55, and 58 are conditional or research-gated; item 59 remains
 post-DoD because it depends on Phase-6 item 35. Item numbering records chronology, not priority.
 The top-level build order is authoritative when physical placement and execution order differ.
@@ -1433,11 +1463,12 @@ that belongs to the ratchet.
 only if they do not transfer durable authority to an ephemeral agent organization. This item tests
 that proposition; it does not replace `driver.mjs`, the ratchet, the panel, or the oracle.
 
-**Blocked by:** `REVIEW.md` F1 (atomic run ownership), F2 (hard process termination), item **77**
-(durable prompt-supply boundary), F27/item **82** (effective role tool availability), and
-F28/item **83** (supported CLI feature floor). Fan-out before those close would amplify known
-unattended-execution or role-isolation failures. F3 and F4
-remain part of the release gate independently.
+**Blocked by:** completion of PLAN Gate 0, item **77**'s durable prompt-supply boundary, and a
+recorded item **84** containment outcome. Gate 0 includes the atomic owner, hard cross-platform
+process settlement, child-environment boundary, exact role tools/CLI floor, and candidate-independent
+review authority that fan-out would otherwise amplify. Item 84 need not adopt a stronger profile—a
+measured rejection is an outcome—but the workflow probe must know and state the containment guarantee
+it actually has.
 
 **Architecture boundary:** `DESIGN.md` §15 and
 `docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md`. Builder may invoke a bounded workflow as an internal
@@ -1450,20 +1481,33 @@ Driver imposes its own aggregate descendant-call/fan-out ceiling rather than tru
 default, and cancellation must settle every descendant before the role returns.
 
 **Experiment shape:** use the disposable recipe in `DOGFOOD.md` against a pinned Claude Code
-version. Start from an explicit commit boundary, record every created worktree, pass guard settings
-and run markers to every descendant, impose phase and aggregate budgets, and persist a
-driver-owned receipt containing durable role and parent lineage, item 77's prompt-supply manifest,
-settings/tool/permission digest, model and effort, whole-tree `modelUsage` plus estimated spend,
+version. The initial workflow is Builder-internal only: cold Panel and Oracle keep their ordinary
+non-workflow paths because `--safe-mode` currently disables workflow loading. Start from an explicit
+commit boundary, record every created worktree, pass guard settings and run markers to every
+descendant, impose phase and aggregate budgets, and retain the existing `childBudget()`-derived
+`--max-budget-usd` whenever `costCeiling` is armed. Current CLI documentation says subagent spend
+counts toward that cap and, on supported releases, reaching it blocks another subagent spawn and
+stops remaining background subagents. Prove that workflow agents take the same path through the
+pinned production invocation. Treat the native cap as an approximate per-role dollar stop, not a
+token, fan-out, crash-accounting, or run-wide authority. Also pin
+`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` to a nonzero value no larger than the role deadline. That CLI
+timer begins after the final turn and is defense in depth; the Driver's whole-role watchdog still
+owns the absolute deadline. Persist a driver-owned receipt containing durable role and parent lineage,
+item 77's prompt-supply manifest, settings/tool/permission digest, model and effort, whole-tree
+`modelUsage` plus estimated spend,
 tree/worktree identity, result, and termination. Top-level `usage` is not descendant accounting.
 Record the minimum durable context needed to reproduce the boundary — never hidden
 reasoning or an enormous telemetry graph of ephemeral agents. Kill and restart are first-class
 cases, not cleanup details. Do not depend on preview behavior that cannot be detected and refused
 when absent.
 
-**Done when:** all four DOGFOOD cases pass in a paid live run; receipts prove Builder, Panel, and
-Oracle context separation; a child cannot recurse and an exceeded aggregate cap refuses closed;
-descendant settings are evidenced rather than inferred; a killed workflow leaves no process or
-worktree ambiguity; workflow success cannot advance global state; an independently cold panel
+**Done when:** all four DOGFOOD cases pass in a paid live run; receipts prove the Builder workflow
+remains separate from ordinary cold Panel and Oracle contexts; a child cannot recurse and an exceeded
+aggregate cap refuses closed; a forced native dollar-cap case accounts for every completed agent,
+prevents a later spawn, settles remaining background agents, and returns a failed bounded assignment;
+descendant settings and the observed post-turn wait ceiling are evidenced rather than inferred; a
+workflow terminated by any ceiling leaves no process or worktree ambiguity; workflow success cannot
+advance global state; an independently cold panel
 reviews the result; and the measured outcome gives a credible improvement in accepted work or cost
 without a new false-completion path. A failed or inconclusive probe rejects adoption without
 affecting the existing Claude-native path.
@@ -1505,26 +1549,39 @@ each `claude -p` child. That preserves tool discovery, but it also gives an unat
 credentials and unrelated secrets it was never deliberately supplied. Eve's trusted-runtime/sandbox
 split is a useful security invariant here; Eve or Vercel Sandbox is **not** the proposed dependency.
 
-**Research source:** [Eve's security model](https://eve.dev/docs/concepts/security-model), checked
-16 August 2026. The local risk is established independently by `scripts/driver.mjs` and its tests.
+**Research sources:** [Eve's security model](https://eve.dev/docs/concepts/security-model) and
+Claude Code's official [environment-variable](https://code.claude.com/docs/en/env-vars) and
+[sandbox credential](https://code.claude.com/docs/en/sandboxing#protect-credentials) controls,
+checked 16 August 2026. The local risk is established independently by `scripts/driver.mjs` and
+its tests.
 
 **Slice A — measure before designing:** run one paid tier-3 probe using synthetic secret values only
 and record exactly what a Builder-launched shell can observe. Establish the minimum environment the
 installed Claude CLI and target tools actually require: executable search path, home/temp, locale,
-Claude authentication, Meeseeks run/depth markers, and platform necessities. This is an external
-binary contract; an argv or unit test cannot establish it.
+Claude authentication, Meeseeks run/depth markers, and platform necessities. Separately measure
+`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`: current documentation says the parent Claude process keeps
+Anthropic/cloud credentials while Bash, hook, and stdio-MCP subprocesses lose them, and on Linux the
+Bash path also enters a PID namespace that cannot see or signal host processes. This is an external
+binary contract; an argv or unit test cannot establish it, and F2/F11 process supervision must not be
+weakened as a side effect.
 
 **Slice B — enforce the measured boundary:** construct a minimal operational child environment plus
 an explicit operator-configured allowlist of additional variable **names**. Never persist, print, or
 place values in receipts. Refuse closed — or emit a preflight refusal naming only variable names —
 when the required boundary cannot be applied or a high-risk ambient credential would otherwise cross
-it. Preserve ordinary tool discovery and every existing guard/depth marker. Do not promise credential
-brokering the Claude CLI does not expose.
+it. Preserve ordinary tool discovery and every existing guard/depth marker. The native subprocess
+scrub may be defense in depth only after a pinned canary proves its exact provider coverage and
+process-lifecycle side effects; it does not remove arbitrary variables from the parent Claude process.
+If a target tool genuinely requires a secret, item **84** may test Claude's named sandbox credential
+`deny` or `mask` controls rather than inventing a broker, but only within their measured
+Bash/proxy/platform scope.
 
 **Done when:** unit tests prove synthetic secrets are absent, required benign neighbours survive,
 and no value appears in diagnostics or driver-owned artifacts; a paid tier-3 test proves the same
-boundary through a real Claude child and its shell; authentication and normal target tool discovery
-still work; and the change introduces neither Eve nor another runtime dependency.
+boundary through a real Claude child and its Bash, hook, and stdio-MCP subprocess surfaces;
+authentication and normal target tool discovery still work; enabling native scrub neither hides a
+required descendant from F2/F11 settlement nor broadens its documented provider-only coverage; and
+the change introduces neither Eve nor another runtime dependency.
 
 ### 57. Machine-readable morning-acceptance evals — OPEN (extends item 20)
 
@@ -1547,11 +1604,14 @@ scores but cannot turn a deterministic failure into success, advance the ratchet
 
 Treat stochastic reliability as a first-class result, not as noise hidden by a best run. Give every
 attempt a stable trial index and identical harness/config identity, retain raw successes and trial
-count, and report first-attempt success plus both any-success and all-success consistency over the
-declared cohort. `pass@k` can describe search when multiple attempts are genuinely available;
-unattended morning acceptance is governed by `pass^k`/all-trials consistency because the user gets
-one night, not a cherry-picked candidate. Publish the estimator and sample size rather than false
-precision, and never let a best-of-N success erase a failed required trial.
+count, and report the empirical per-trial success rate (the direct estimate for one unattended run),
+the first trial's outcome, and both any-success and all-success over the declared cohort. `pass@k`
+describes search only when the product genuinely offers `k` attempts; `pass^k` is a stricter
+all-trials consistency stress, not the success probability of one morning run. Morning acceptance is
+governed primarily by per-trial success plus the non-compensable failure classes below; report
+`pass^k` alongside it when repeated reliability is a product requirement. Publish the estimator and
+sample size rather than false precision, and never let a best-of-N success erase a failed required
+trial.
 
 Stratify the corpus by task horizon. Each scenario records a reference-solution human-effort band or
 another independently defined difficulty band; agent wall-clock time is not a proxy for task length.
@@ -2084,8 +2144,9 @@ Oracle cannot read a repository sentinel, a read-only role can read but cannot w
 document role retains only its declared built-ins plus the guard. A synthetic inherited allow rule
 and MCP tool do not broaden any non-Builder surface. The result records actual CLI/settings/plugin
 identities, distinguishes unavailable from denied, and refuses acceptance if effective availability
-cannot be observed. Items **77**, **82**, and **83** then unblock item **54**; this slice closes only
-F27/item **82**.
+cannot be observed. Items **77**, **82**, and **83** satisfy three of item **54**'s prerequisites;
+completion of Gate 0 and item **84**'s recorded outcome still govern admission. This slice closes
+only F27/item **82**.
 
 ### 83. Enforce a measured Claude Code feature floor — OPEN (REVIEW F28)
 
@@ -2128,8 +2189,11 @@ Builder still uses `--dangerously-skip-permissions`, can read most of the operat
 the sandbox happens to enforce a suitable default—can send repository or credential data to arbitrary
 network destinations. Item **56** removes ambient environment values but cannot stop filesystem reads
 or exfiltration. Current Claude Code documents stronger native controls (`failIfUnavailable`,
-`allowUnsandboxedCommands: false`, filesystem deny-read/allow-read, and outbound domain policy) plus
-an `auto` permission mode for non-interactive runs. Those controls are versioned and, in auto mode,
+`allowUnsandboxedCommands: false`, filesystem deny-read/allow-read, outbound domain policy, and
+named credential `deny`/`mask` rules) plus an `auto` permission mode for non-interactive runs.
+Credential masking gives a sandboxed command a sentinel and can inject the real value only through
+the sandbox proxy to configured hosts; it is not a whole-role secret broker. Those controls are
+versioned and, in auto mode,
 provider/model/plan restricted and preview-quality; documentation is not evidence that this plugin's
 children receive or survive them.
 
@@ -2150,9 +2214,13 @@ can support a stronger default.
 identity, pass a pinned writing child a driver-owned settings profile with sandbox startup failure and
 unsandboxed escape disabled. Measure the minimum filesystem reads and outbound domains needed for
 Claude authentication, package installation, source control, and representative target gates; allow
-names/domains, never secret values. Run synthetic hostile canaries for a credential-file read, an
-unapproved HTTPS destination through **each available outbound surface**, local/private and Unix-socket
-escape where the platform exposes them, a request to disable the sandbox, hostile repository
+names/domains, never secret values. For an explicitly required synthetic target credential, measure
+both `deny` and `mask`: the command must see only absence or a sentinel, proxy injection must occur
+only to the declared `injectHosts` that also pass the domain allowlist, and any extraction miss,
+TLS/proxy setup failure, unsupported platform, or ignored setting must refuse rather than warn-and-pass
+the real value. Run synthetic hostile canaries for a credential-file read, an unapproved HTTPS
+destination through **each available outbound surface**, local/private and Unix-socket escape where
+the platform exposes them, a request to disable the sandbox, hostile repository
 instructions, and a `.meeseeks/` write. Prove built-in fetch/search or an inherited MCP/plugin cannot
 route around the Bash proxy; a canary that cannot be attempted because the tool is absent records that
 observed absence rather than a universal guarantee. Run benign neighbours for normal editing,
@@ -2162,8 +2230,9 @@ classifier outage or repeated headless denial as a named fail-closed result rath
 Builder failure.
 
 **Done when:** paid pinned live evidence distinguishes settings registration from actual filesystem
-and network confinement; secret canaries never appear in logs or receipts; every available outbound
-surface is constrained, disabled, or named as outside the guarantee; an unavailable sandbox, ignored
+and network confinement; secret canaries never appear in logs or receipts, and any admitted mask
+releases a synthetic value only to its exact approved host; every available outbound surface is
+constrained, disabled, or named as outside the guarantee; an unavailable sandbox, ignored
 key, denied required domain, unsandboxed retry, or unsupported auto-mode combination is diagnosed
 before—or settles without—unbounded work; benign Builder behavior and the independent review boundary
 remain intact; and the evidence supports one of three explicit outcomes: adopt a
@@ -2180,8 +2249,9 @@ shared candidate-controlled route into every reviewer verdict.
 
 Keep candidate-tree content available as evidence, but remove its ability to define the reviewer's
 instructions. Binding requirements come from item **66**'s immutable pre-Builder specification
-revision and a Driver/plugin-owned reviewer constitution; any project convention admitted as authority
-must be snapshotted before Builder and identified in the review supply. A later Builder edit to that
+revision and a Driver/plugin-owned reviewer contract—not item **51**'s general `CONSTITUTION.md`,
+which remains excluded from Panel. Any project convention admitted as authority must be snapshotted
+before Builder and identified in the review supply. A later Builder edit to that
 file is an output to assess. Preserve `--safe-mode`, and make item **77** report trusted instruction
 sources, untrusted candidate evidence, and disabled ambient sources separately. Immediately before
 Panel, re-run the agent-config security scan against the exact item **68** candidate identity. That
@@ -2189,11 +2259,12 @@ scan is a fail-closed known-pattern defense, not proof that arbitrary model-visi
 
 **Done when:** reviewer templates contain no direction to obey candidate policy; unit tests bind every
 authoritative requirement frame to the immutable pre-Builder source; a post-preflight fixture changes
-`CLAUDE.md`, `.claude/rules/`, a Skill, hook, and MCP configuration and proves hostile forms refuse
-before Panel while benign documentation remains readable only as evidence; the final scan is sealed to
+`CLAUDE.md`, `.claude/rules/`, a Skill, hook, and MCP configuration and proves seeded hostile forms
+refuse before Panel while benign documentation remains readable only as evidence; the final scan is sealed to
 the reviewed tree; item **77**'s supply report names the trust class and identity of each source; and a
 pinned paid hostile/benign canary proves project/user/local customizations stay unloaded while the
-Driver-owned reviewer prompt and implementation evidence remain available. Items **66**, **68**,
+Driver-owned reviewer prompt and implementation evidence remain available. The canary establishes
+only those seeded cases, not arbitrary prompt-injection immunity. Items **66**, **68**,
 **77**, **82**, and **83** are prerequisites. REVIEW F29 owns closure.
 
 ## Cross-cutting non-goals — the refusals ARE the product

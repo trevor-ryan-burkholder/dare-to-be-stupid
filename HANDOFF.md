@@ -32,24 +32,29 @@ the archived handoff.
    external-contract campaign; batch item 80 with F24/item 79's versioned command repair. Close
    F27/item 82 with pinned role-tool availability canaries, including the real Oracle-author phase.
    Close F28/item 83 in that same pinned matrix by deriving and enforcing the oldest CLI that
-   passes every mandatory contract; a version pass does not replace those canaries. Close
-   F29/item 85 after item 66 and alongside items 77/82/83: candidate files remain evidence, while
-   reviewer authority comes only from identified pre-Builder and Driver-owned sources.
+   passes every mandatory contract; a version pass does not replace those canaries. After item 66
+   from step 1, close item 77's cold-role supply manifest here, before its consumer. Then close
+   F29/item 85 after items 66/68/77/82/83: candidate files remain evidence, while reviewer
+   authority comes only from identified pre-Builder and Driver-owned sources. Its reviewer contract
+   is not PLAN item 51's general constitution.
 3. Close F4, F9/item 63, F10/item 64, F13/item 67, F17/item 71, F19/item 73, F20/item 74,
    F22/item 76, and F23/item 78. F24/item 79 already lands once in step 2's shared command/loader
    slice; its Gate 0C classification does not create a second implementation pass.
-4. Complete item 40's reviewer contract after F6 and item 77's cold-role supply manifest after
-   item 66; item 77 complements but does not close F15's filesystem-confidentiality question. Then
+4. Complete item 40's reviewer contract after F6. Item 77 already lands in step 2 because F29
+   consumes it; it complements but does not close F15's filesystem-confidentiality question. Then
    finish item 42 and item 29. Item 41 is closed as inapplicable because no Panel diff-package path
    exists.
 5. Complete the live evidence for item 24, add item 57's machine-readable acceptance result, run
    dogfood cases A and B in item 20, and run the staged Ateliers capstone in item 31. Case C remains
    parked by operator decision.
-6. Take items 52 and 53 only after the safety/reviewer work.
-7. Consult PLAN's research-gated and conditional entry for items 54, 55, and 58 only after the
-   queued implementation work; item 54 additionally requires items 77, 82, and 83, and PLAN alone
-   decides when any of them enters the queue.
-8. Keep item 21 deferred until the repository is code-complete; Phase 6 and PLAN item 59 remain
+6. After items 56/82/83 establish the environment, tool, and CLI identities, run item 84's paid
+   child-containment experiment. Record a portable default, a capability-gated profile, or rejection;
+   do not infer a stronger default from documentation or settings registration.
+7. Take items 52 and 53 only after the safety/reviewer work.
+8. Consult PLAN's research-gated and conditional entry for items 54, 55, and 58 only after the
+   queued implementation work; item 54 additionally requires item 77 and item 84's recorded
+   containment outcome, and PLAN alone decides when any of them enters the queue.
+9. Keep item 21 deferred until the repository is code-complete; Phase 6 and PLAN item 59 remain
    post-DoD.
 
 PLAN owns the statuses. This file deliberately does not duplicate their acceptance criteria.

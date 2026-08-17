@@ -146,8 +146,9 @@ run.
 > gate passes, because that is the claim being made: the suite ran and produced a report. The
 > reset target still only moves on a fully good iteration.
 
-**2. The builder cannot judge its own work.** Review happens in *separate* `claude -p` processes
-with no build log, no iteration history, and no hint an agent wrote the code. Three auditors —
+**2. The builder cannot judge its own work.** Review happens in *separate* `claude -p` processes.
+The Driver does not supply the build log, iteration history, or Builder framing; this is deliberate
+context starvation, not a filesystem seal. Three auditors —
 security, correctness, design — each owning different requirement ids. It is never a subagent, and
 that is not an optimisation waiting to happen.
 

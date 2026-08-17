@@ -2606,8 +2606,11 @@ or terminal-state transition merely because one of its agents reports success.
   created cold panel exactly like any other builder output.
 - **Panel members remain separate, cold invocations.** They do not join Builder's workflow, inherit
   its transcript, share its synthesis context, or accept its internal reviewer as panel evidence.
-  A panel member may use its own bounded workflow only if that workflow begins from the panel
-  member's deliberately narrow evidence envelope and cannot see Builder's reasoning history.
+  Current Claude Code `--safe-mode` disables workflows as well as the ambient customizations it
+  exists to remove, so the initial experiment keeps Panel on its ordinary single-role path. A later
+  panel member may use its own bounded workflow only if a documented, selectively supplied invocation
+  is live-proven without re-enabling project/user workflow discovery, begins from the panel member's
+  deliberately narrow evidence envelope, and cannot see Builder's reasoning history.
 - **Oracle remains held-out and non-authoritative over execution.** Workflow agents may not author,
   reveal, revise, or grade the held-out oracle. Oracle evidence is evaluated through the existing
   deterministic and cold-review paths; it does not inherit Builder's context.

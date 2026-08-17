@@ -20,10 +20,10 @@ A vendor claim or an attractive abstraction is not implementation evidence.
 
 | source | disposition | useful mechanism or reason for refusal | Meeseeks result |
 |---|---|---|---|
-| [Anthropic, agent evals](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents) | **HARVESTED** | Trials are stochastic; `pass@k` measures any success while `pass^k` measures all-run consistency. Outcomes matter more than an agent's completion claim. | PLAN 57 now records raw repeated trials, keeps any-success distinct from all-success, and makes consistency—not best-of-N—the morning metric. Outcome-over-claim was already covered. |
+| [Anthropic, agent evals](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents) | **HARVESTED** | Trials are stochastic; per-trial success estimates one-attempt reliability, `pass@k` measures any success in `k` attempts, and `pass^k` measures all-run consistency. Outcomes matter more than an agent's completion claim. | PLAN 57 now records raw repeated trials, uses per-trial success as the direct morning estimate, and keeps any-success and all-success as separate product-dependent views. Outcome-over-claim was already covered. |
 | [METR, task-completion time horizons](https://metr.org/time-horizons/) | **HARVESTED** | Human task length predicts autonomous success better than short benchmark scores, and 50% and 80% reliability horizons tell different stories. | PLAN 57 now separates short fixtures from independently classified substantial tasks. Meeseeks does not import METR's suite, logistic model, or forecasts. |
 | [Rabanser et al., agent reliability](https://arxiv.org/abs/2602.16666) | **HARVESTED** | Mean task success hides consistency, perturbation robustness, predictability, and bounded failure severity; the paper tests repeated trials, paraphrases, injected faults, and environment shifts separately. | PLAN 57 now records non-compensable false completion/safety severity plus cheap paraphrase and transient-fault cohorts. It does not import the paper's twelve-metric framework or model self-confidence grader. |
-| [Claude Code sandboxing](https://code.claude.com/docs/en/sandboxing) and [settings](https://code.claude.com/docs/en/settings) | **HARVESTED** | Current native settings expose fail-closed sandbox startup, disabled unsandboxed escape, filesystem deny-read/allow-read, and domain allow/deny policy. Filesystem and network isolation are complementary. | PLAN 84 measures a stronger child containment profile. Registration is not treated as confinement evidence. |
+| [Claude Code sandboxing](https://code.claude.com/docs/en/sandboxing), [settings](https://code.claude.com/docs/en/settings), and [environment variables](https://code.claude.com/docs/en/env-vars) | **HARVESTED** | Current native settings expose fail-closed sandbox startup, disabled unsandboxed escape, filesystem/network policy, named credential deny/mask, and provider-credential subprocess scrubbing. The parent process, arbitrary variables, non-Bash tools, platforms, and PID-namespace side effects remain separate boundaries. | PLAN 56 now measures native subprocess scrubbing without abandoning the parent allowlist; PLAN 84 measures credential deny/mask and a stronger child containment profile. Registration is not confinement evidence. |
 | [Claude Code permission modes](https://code.claude.com/docs/en/permission-modes) and [auto-mode design](https://www.anthropic.com/engineering/claude-code-auto-mode) | **HARVESTED TO EXPERIMENT** | `auto` works with `-p` and adds a reasoning-blind action classifier plus prompt-injection probe, but is preview, probabilistic, eligibility-limited, and terminates headless runs after repeated denials. | PLAN 84 tests it only as defense in depth. It cannot judge acceptance, advance state, or replace deterministic sandbox/guard/cold review. |
 | [GitHub Copilot agent firewall](https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-the-firewall) | **ALREADY COVERED / CORROBORATING** | Default-restricted egress reduces exfiltration, but GitHub explicitly documents bypass and process-scope limitations. | Corroborates PLAN 84's threat and hostile canaries. GitHub's runtime and firewall are not dependencies or proof that Claude children are contained. |
 | [OpenHands persistence](https://docs.openhands.dev/sdk/guides/convo-persistence) and [cold-load state code](https://github.com/OpenHands/software-agent-sdk/blob/main/openhands-sdk/openhands/sdk/conversation/state.py) | **HARVESTED** | Persisted events are reloaded by rebuilding the derived view under property checks and verifying agent/tool compatibility. | PLAN 58 now requires schema/version/tree/config/prompt/tool/CLI compatibility before any future resume. The OpenHands event bus and runtime are rejected. |
@@ -37,7 +37,7 @@ A vendor claim or an attractive abstraction is not implementation evidence.
 | [Temporal durable execution documentation](https://github.com/temporalio/documentation/blob/main/docs/glossary.md) and [history service](https://github.com/temporalio/temporal/blob/main/docs/architecture/history-service.md) | **ALREADY COVERED** | Event history can reconstruct workflow state; replay makes deterministic orchestration and idempotent side effects mandatory. | PLAN 58 already refuses replay until idempotency and receipt semantics exist. A Temporal server/SDK violates the dependency-free local control plane for an unproven need. |
 | [SWE-agent trajectories and retry loop](https://github.com/SWE-agent/SWE-agent/blob/main/docs/usage/trajectories.md) | **ALREADY COVERED / REJECTED DETAIL** | It saves per-step trajectories/configs and evaluates generated patches separately. | Separate evaluation, bounded retries/cost, and replayable config identity are already stronger in Meeseeks. Hidden reasoning and full action trajectories are deliberately excluded from durable artifacts. |
 | [OpenAI Codex goals](https://learn.chatgpt.com/use-cases/follow-goals) | **ALREADY COVERED** | A durable objective with proof commands, checkpoints, progress log, and pause/resume supports hours-long work. | Meeseeks already adds budgets, monotonic evidence, independent review, and terminal authority. A vendor-native goal cannot replace the Driver. |
-| [OpenAI Codex approvals and security](https://learn.chatgpt.com/docs/agent-approvals-security) | **HARVESTED** | Command-network policy is only one egress surface; web/search, MCP/connectors, browser/computer use, model/auth, local/private addresses, and sockets have separate controls. Cloud setup can receive secrets that are removed before the offline agent phase. | PLAN 84 now inventories and canaries every available outbound surface instead of treating a Bash proxy as whole-child containment. Setup/agent secret separation stays parked because Claude CLI exposes no measured broker. |
+| [OpenAI Codex approvals and security](https://learn.chatgpt.com/docs/agent-approvals-security) | **HARVESTED** | Command-network policy is only one egress surface; web/search, MCP/connectors, browser/computer use, model/auth, local/private addresses, and sockets have separate controls. Cloud setup can receive secrets that are removed before the offline agent phase. | PLAN 84 now inventories and canaries every available outbound surface instead of treating a Bash proxy as whole-child containment. Claude now documents a narrower sandbox credential broker, so PLAN 56/84 measure it; no separate setup phase or whole-role guarantee is inferred. |
 | [OpenAI scored improvement loops](https://learn.chatgpt.com/codex/use-cases/iterate-on-difficult-problems) | **ALREADY COVERED** | Machine-readable scores, fixed stopping rules, one focused change, artifact inspection, and deterministic checks supplemented by model judgment. | Ratchet, gate artifacts, bounded iteration, cold panel, and PLAN 57/59 cover the useful invariants. A self-judge remains non-authoritative. |
 | [OpenAI PaperBench](https://openai.com/index/paperbench/) | **HARVESTED** | Hierarchical expert rubrics make long tasks gradable, and the LLM grader is evaluated in a separate judge benchmark rather than assumed reliable. | Requirements are already decomposed and reviewed; PLAN 57 now adds a cold Panel calibration corpus with seeded defects, clean neighbours, and independently owned labels. |
 | [Anthropic, AI-resistant technical evals](https://www.anthropic.com/engineering/AI-resistant-technical-evaluations) | **ALREADY COVERED** | Evaluations need realistic horizon, multiple independent opportunities to show capability, and refreshed headroom as models saturate them. | PLAN 57's substantial-task strata and living discovery/selection/final corpus cover the useful mechanism. Hiring-test novelty is not a Meeseeks objective. |
@@ -52,6 +52,7 @@ A vendor claim or an attractive abstraction is not implementation evidence.
 | [Instruction Hierarchy](https://arxiv.org/abs/2404.13208), [Spotlighting](https://arxiv.org/abs/2403.14720), and [Anthropic prompt-injection defenses](https://www.anthropic.com/research/prompt-injection-defenses) | **ALREADY COVERED / CORROBORATING** | Privileged instruction levels and continuous provenance cues improve resistance, but adaptive injection remains unsolved and classifiers are not guarantees. | PLAN 85 already distinguishes trusted instructions from untrusted evidence; R30 frames/neutralizes untrusted text; PLAN 57/84/85 require hostile/benign evaluation. Model training and prompt markers cannot replace exact source identity or constrained tools. |
 | [GitHub CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners) and [Gerrit submit requirements](https://gerrit-review.googlesource.com/Documentation/config-submit-requirements.html) | **ALREADY COVERED / CORROBORATING** | Review policy comes from the base branch or a separate protected configuration ref, and later candidate changes stale prior approval. | PLAN 85's pre-Builder authority snapshot and item 68's exact-tree seal capture the useful invariants locally. GitHub/Gerrit hosting and policy engines are not dependencies. |
 | [Claude Code ultrareview](https://code.claude.com/docs/en/ultrareview) | **PARKED** | A remotely sandboxed fleet independently reproduces reported bugs and exposes a non-interactive JSON mode. It is research preview, paid after limited trials, remotely uploads/clones code, is unavailable on several backends/ZDR, reviews a diff rather than Meeseeks' PRD, and exits zero with findings as well as no findings. | It cannot replace Panel or certify acceptance. Consider only as an optional advisory specialist if PLAN 57 first measures a Panel code-defect recall gap and a pinned side-by-side experiment proves incremental value, exact subject identity, acceptable false positives, privacy, availability, and cost. |
+| [Claude Code agent view](https://code.claude.com/docs/en/agent-view) | **HARVESTED TO EXPERIMENT** | Its research-preview supervisor keeps full background sessions running without an open terminal and persists session state across supervisor restarts, auto-updates, and sleep, but shutdown stops work and recovery can be imperfect. | After F25/item 80 verifies the user-only command boundary, PLAN 36 tests only operator-started terminal detachment before building a daemon. Driver receipts, guard, lock, crash recovery, and terminal authority remain independent. |
 
 ## HARVESTED
 
@@ -60,9 +61,10 @@ A vendor claim or an attractive abstraction is not implementation evidence.
 **Problem solved:** a candidate that succeeds once in several attempts can look impressive while
 remaining a bad product for a user who starts one unattended run.
 
-**Smallest adaptation:** PLAN 57 records every trial, first-attempt success, any-success, all-success,
-sample size, and estimator assumptions. Candidate and baseline use the same cohort. Best-of-N cannot
-hide a required failure.
+**Smallest adaptation:** PLAN 57 records every trial, empirical per-trial success, the first trial,
+any-success, all-success, sample size, and estimator assumptions. Per-trial success is the direct
+estimate for one unattended run; all-success is a stricter consistency stress. Candidate and baseline
+use the same cohort. Best-of-N cannot hide a required failure.
 
 **New failure modes controlled:** repeated runs can explode cost or invite selection leakage. Start
 with cheap deterministic cohorts; retain discovery/selection/final partitions; never open final data
@@ -193,6 +195,58 @@ classify candidate files as evidence, and re-scan the exact final agent surface 
 real defects, while claiming a scanner makes arbitrary text safe would be false. The boundary changes
 authority rather than visibility, combines deterministic known-pattern refusal with paired reviewer
 calibration, and seals both to the exact candidate tree.
+
+### E11. Use native secret narrowing where it is actually narrower
+
+**Problem solved:** a full parent-environment copy exposes provider and unrelated credentials to
+Builder-launched subprocesses, while removing every credential can break Claude authentication and
+target tools that legitimately need one.
+
+**Smallest adaptation:** PLAN 56 measures `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` as provider-specific
+subprocess defense in depth while retaining the arbitrary-variable parent allowlist. PLAN 84 measures
+sandbox credential `deny` and `mask` for explicitly named target secrets, exact injection hosts,
+and fail-closed extraction/proxy behavior. No new broker or runtime dependency is added.
+
+**New failure modes controlled:** scrubbing does not remove arbitrary variables or credentials from the
+parent Claude process, and its Linux PID namespace changes process visibility. Masking is scoped to
+sandboxed commands/proxy traffic, has version/platform/TLS requirements, and some mismatch modes warn
+and pass through. Pinned hostile/benign canaries plus F2/F11 lifecycle evidence precede adoption.
+
+### E12. Reuse the native descendant-aware dollar stop without surrendering Driver accounting
+
+**Problem solved:** one Builder workflow can fan out spend before its outer envelope returns, while a
+second Meeseeks dollar estimator would disagree with the CLI and duplicate an existing in-flight stop.
+
+**Smallest adaptation:** keep the existing `childBudget()`-derived `--max-budget-usd`. Official
+[CLI documentation](https://code.claude.com/docs/en/cli-reference) says subagent spend counts and, on
+releases with the v2.1.217 enforcement behavior,
+reaching the cap prevents another subagent spawn and stops remaining background subagents. PLAN 54
+adds one pinned workflow canary for that exact production path. Driver-owned run cost, token, call,
+fan-out, and terminal accounting remain authoritative.
+
+**New failure modes controlled:** the vendor cap is approximate, versioned, dollar-only, and may leave
+in-flight overshoot or missing crash usage. A live proof precedes reliance; it cannot turn a workflow
+result into progress or replace post-return envelope accounting.
+
+### E13. Test native terminal detachment before building a Meeseeks daemon
+
+**Problem solved:** PLAN 36 includes keeping a run alive after the operator closes the terminal, but
+building a second daemon may duplicate a current Claude Code supervisor for that narrow failure.
+
+**Smallest adaptation:** current official
+[agent-view documentation](https://code.claude.com/docs/en/agent-view) says research-preview
+background sessions keep running without an open terminal and persist through supervisor restarts,
+auto-updates, and sleep. After F25/item 80 verifies the user-only command boundary—unverified in
+current 0.164.0—run one disposable operator-started `/meeseeks` session through backgrounding, shell
+closure, and supervisor restart. Measure Driver descendants, output, guard, lock, receipts, and
+terminal state. If native detachment holds, item 36 keeps only the crash/reboot/relaunch and durable
+Driver-state work the vendor session does not prove.
+
+**New failure modes controlled:** the experiment does not begin until F25/item 80 proves autonomous
+dispatch cannot select `/meeseeks`; shutdown still stops sessions, sleep can leave one unresponsive,
+needs-input states violate unattended completion, and the feature is research preview. A Claude
+Completed row is never terminal
+evidence, and the supervisor never becomes a required runtime or Meeseeks authority.
 
 ## ALREADY COVERED
 
@@ -361,3 +415,15 @@ PRD, exits zero whether findings exist or not, uploads or clones code remotely, 
 credits, and is unavailable on several backends and under Zero Data Retention. Without a measured
 Panel recall gap, it is PARKED rather than planned. The admission test above is new research memory,
 not runtime work or terminal authority; no material plan change survived this pass.
+
+### Post-convergence source update — native credential, budget, and detachment boundaries
+
+Later recursive compatibility passes rechecked current official Claude Code sandbox, environment,
+CLI, and agent-view documentation against F5/items 36, 54, 56, and 84. They harvested E11–E13:
+provider-credential subprocess scrubbing and named sandbox credential deny/mask can narrow exposure;
+the existing native dollar cap documents descendant-subagent enforcement that the workflow experiment
+should live-prove rather than duplicate; and the research-preview session supervisor may solve only
+item 36's terminal-detachment slice. PLAN retains Driver authority and requires pinned measurement of
+version, parent/subprocess, platform, proxy, fail-open, process-visibility, overshoot, crash-accounting,
+and persistence limits. This update does not invalidate the earlier pass chronology; it records vendor
+capabilities found after that ecosystem loop had converged.

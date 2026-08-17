@@ -4,12 +4,13 @@
 > Claude Code owns implementation. Do not treat an entry as closed until Codex has reviewed the
 > repair and the relevant verification has passed.
 
-**Reviewed committed baseline:** `main` at `ed0a51f`; executable baseline `be19c9c`; manifests at `0.164.0`.
+**Reviewed executable baseline:** `be19c9c`; manifests at `0.164.0`. Every commit after that
+baseline through the commit containing this review is documentation-only.
 **Runtime continuity:** shipped JavaScript, hooks, templates, and output styles match `65a14cc`
 (`pre-codex`, 0.161.0). The shipped command and manifests changed through 0.164.0 and were reviewed
-at `be19c9c`; they are not folded into the older runtime label. The uncommitted changes described
-by this document are documentation only. F1–F29 cite the current committed files unless a finding
-explicitly identifies historical evidence, and finding status is authoritative only here.
+at `be19c9c`; they are not folded into the older runtime label. F1–F29 cite the files at this
+documentation baseline unless a finding explicitly identifies historical evidence, and finding
+status is authoritative only here.
 **Verdict:** **CHANGES REQUESTED** — sixteen high-priority defects and thirteen medium-priority defects
 are open.
 
@@ -1135,8 +1136,10 @@ property that Builder cannot certify Builder even if tools, context, and process
   the blanket instruction to obey target `CLAUDE.md` or documents merely because the candidate names
   them. Keep `--safe-mode`; do not replace it with a prompt claim.
 - Derive binding review requirements and conventions from item 66's immutable pre-Builder
-  specification revision and Driver/plugin-owned reviewer constitution. If project conventions must
-  be review authority, snapshot and identify the admitted pre-Builder bytes; later changes are output
+  specification revision and a Driver/plugin-owned reviewer contract. This is not PLAN item 51's
+  general `CONSTITUTION.md`, which remains excluded from Panel by that item's own boundary. If
+  project conventions must be review authority, snapshot and identify the admitted pre-Builder bytes;
+  later changes are output
   to review, not new instructions.
 - Re-run the agent-config security scan on the exact candidate before Panel as defense in depth, and
   bind that result to item 68's reviewed-tree identity. Do not claim a pattern scanner proves prompt-
@@ -1153,9 +1156,10 @@ property that Builder cannot certify Builder even if tools, context, and process
 - A fixture passes initial preflight, then adds or changes `CLAUDE.md`, `.claude/rules/`, a Skill,
   hook, or MCP configuration. The exact final-tree scan refuses known-hostile forms before Panel and
   preserves benign candidate documentation as reviewable evidence rather than authority.
-- A pinned paid canary proves a cold reviewer does not auto-load project/user/local customizations and
-  still receives the Driver-owned reviewer prompt. A paired hostile/benign reviewer-calibration case
-  proves candidate text cannot obtain a pass merely by declaring itself binding.
+- A pinned paid canary proves a cold reviewer does not auto-load the seeded project/user/local
+  customizations and still receives the Driver-owned reviewer prompt. In a paired hostile/benign
+  reviewer-calibration case, the seeded candidate text does not change the verdict merely by declaring
+  itself binding. This bounded canary is not proof of immunity to arbitrary prompt injection.
 - Item 68 seals the scanned/reviewed bytes, item 77 records the supply classes, and PLAN item 85 owns
   closure. A scan result or model assertion alone is insufficient.
 

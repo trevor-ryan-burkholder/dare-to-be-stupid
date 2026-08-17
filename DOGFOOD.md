@@ -19,7 +19,7 @@ The table below is the current status; historical headings do not override it.
 | Tallyho web-ui smoke | `SHIPPED` | Shipped on attempt 6; findings landed through 0.161.0 |
 | Ateliers capstone | `STAGED` | PLAN item 31; no terminal result recorded in this repository |
 | Child-environment boundary probe | `BLOCKED` | `REVIEW.md` F5 / PLAN item 56; run after PLAN Gate 0A closes; synthetic canary only |
-| Dynamic-workflow boundary probe | `BLOCKED` | PLAN item 54; do not run until `REVIEW.md` F1, F2, F27/item 82, F28/item 83, and PLAN item 77 are closed |
+| Dynamic-workflow boundary probe | `BLOCKED` | PLAN item 54; run only when PLAN's authoritative traversal records its prerequisites closed and admits the experiment |
 
 ## Pending recipes
 
@@ -89,15 +89,16 @@ Record:
 
 The probe has four fail-closed cases:
 
-1. A spawned top-level `claude -p` role invokes one bounded workflow through a documented interface.
+1. A spawned top-level Builder `claude -p` role invokes one bounded workflow through a documented interface.
 2. A workflow child attempts both a `.meeseeks/` write and recursive role-workflow or nested-Meeseeks
    invocation. Every attempt is refused, and no child advances a ratchet, pin, review verdict, or
    terminal state.
 3. A resistant workflow is killed within its phase ceiling, and a separate run that exceeds the
    Driver-owned aggregate descendant cap refuses closed. Both cases settle every descendant and
    remain diagnosable after restart from Driver-owned receipts.
-4. Builder output is reviewed by newly instantiated cold panel members that receive no Builder
-   transcript, workflow synthesis, or internal reviewer verdict.
+4. Builder output is reviewed by newly instantiated cold panel members on their ordinary
+   non-workflow path. They receive no Builder transcript, workflow synthesis, or internal reviewer
+   verdict; `--safe-mode` remains enabled.
 
 Any missing receipt or digest, unsupported version, context leak, recursive invocation, aggregate-cap
 overshoot without refusal, unbounded child, unsettled descendant, or uncertain guard propagation

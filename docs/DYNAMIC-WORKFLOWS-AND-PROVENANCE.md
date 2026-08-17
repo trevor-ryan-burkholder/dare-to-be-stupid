@@ -18,14 +18,16 @@ change. Raw research remains under `docs/research/`.
 
 ## Decision summary
 
-- **Dynamic workflows: experiment first, then adopt only inside a role.** A workflow may
-  help Builder, one independently instantiated reviewer, or Oracle-author complete a
-  bounded assignment. It never owns global state, ratchets, review coverage, budgets, or
+- **Dynamic workflows: experiment first, then adopt only inside a role.** The initial experiment
+  is Builder-only. A later independently instantiated reviewer or Oracle-author may use a bounded
+  workflow only if its cold/safe-mode boundary can be preserved through a documented, measured
+  selective invocation. No workflow owns global state, ratchets, review coverage, budgets, or
   terminal status.
 - **Driver: never a workflow.** The Node driver remains the durable control plane and the
   only authority allowed to advance global state or declare `SHIPPED`.
-- **Panel: never one shared workflow.** If reviewers eventually use workflows, each cold
-  reviewer gets a private workflow inside its own top-level `claude -p` process.
+- **Panel: ordinary safe-mode processes in the initial experiment, never one shared workflow.**
+  If reviewers eventually use workflows, each cold reviewer keeps its own top-level `claude -p`
+  process and receives only one selectively supplied private workflow.
 - **Oracle execution: never a workflow.** Model-assisted Oracle authoring may be explored
   later; accepted Oracle cases continue to execute deterministically.
 - **General execution graph: rejected.** The ratchet, pins, gate records, review ownership,
@@ -35,8 +37,8 @@ change. Raw research remains under `docs/research/`.
   existing records before considering a separate claim DAG. A graph earns implementation
   only if real runs show stale evidence or unnecessarily broad rework that current
   structures cannot address.
-- **Reliability prerequisites come first.** Run-lock exclusivity and hard process-tree
-  reaping must be resolved before one `claude -p` child may fan out into many agents.
+- **Reliability prerequisites come first.** PLAN Gate 0 and item 77 must close, and item 84 must
+  record the actual containment outcome, before one `claude -p` child may fan out into many agents.
 
 The success measure is morning user acceptance: the user returns to work that satisfies
 the original intent without substantive repair. Agent count, token count, and raw speed are
@@ -152,6 +154,8 @@ A future shadow DAG remains conditional on PLAN item 55's measured admission tes
 Primary sources:
 
 - <https://code.claude.com/docs/en/workflows>
+- <https://code.claude.com/docs/en/cli-reference>
+- <https://code.claude.com/docs/en/env-vars>
 - <https://code.claude.com/docs/en/agent-sdk/slash-commands>
 - <https://code.claude.com/docs/en/agent-sdk/plugins>
 - <https://code.claude.com/docs/en/agent-sdk/subagents>
@@ -175,7 +179,9 @@ The following statements are documented behavior, not Meeseeks assumptions:
 - Slash commands can be sent programmatically through the Agent SDK; supported commands
   are reported in the initialization message.
 - Workflows are available in `claude -p` and the Agent SDK, and launch without an
-  interactive approval prompt there.
+  interactive approval prompt there. The CLI's `--safe-mode` disables workflow loading along
+  with other customizations, so availability in print mode does not imply availability to a cold
+  Meeseeks role.
 - The natural-language/`ultracode` opt-in is accepted only from direct human-origin input.
   A synthesized `-p` prompt, scheduled prompt, webhook, or ordinary non-human SDK message
   does not cause ad-hoc workflow generation.
@@ -190,6 +196,14 @@ The following statements are documented behavior, not Meeseeks assumptions:
   cannot be answered during unattended `-p` execution.
 - A paused workflow reuses some completed-agent results only within the same Claude Code
   session. Exiting and starting another session starts the workflow again.
+- In `-p`, `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` bounds how long Claude waits after the final
+  turn for background workflows whose result belongs in the output. The documented default is
+  600,000 ms; exceeding it terminates remaining background work, while `0` waits indefinitely.
+  This is a post-turn timer, not an absolute role deadline.
+- Current CLI documentation says `--max-budget-usd` includes subagent spend; on releases with the
+  v2.1.217 cap-enforcement behavior, reaching the cap prevents another subagent spawn and stops
+  remaining background subagents. Dynamic workflows coordinate subagents, but Meeseeks must live-prove
+  that workflow agents follow this contract through its exact pinned `claude -p` path.
 - Matching agents in one workflow may share a cached tools-and-system-prompt prefix; this mechanism
   does not share their intermediate results. Cache reuse is a cost behavior, not proof of durable
   role independence, which still requires separate top-level processes and supplied contexts.
@@ -206,17 +220,18 @@ plugin loading path satisfy Meeseeks' exact contract.
 
 ## Programmatic invocation conclusion
 
-A reviewed plugin workflow should be invocable in principle as a namespaced command, for
-example:
+For a non-safe-mode writing role, a reviewed plugin workflow should be invocable in principle as a
+namespaced command, for example:
 
 ```text
 claude -p "/meeseeks:builder-discovery <structured arguments>"
 ```
 
-The initialization message must first report that command as supported. This is the safe
-initial path because the role is invoking a known workflow definition. Meeseeks must not
-forge `{ kind: "human" }` provenance or assume the following will dynamically create a
-workflow:
+The initialization message must first report that command as supported. This is the safe initial
+Builder experiment because the role is invoking a known workflow definition. It is not a Panel path:
+`--safe-mode` disables workflow loading, and Meeseeks must not weaken that cold-role boundary merely
+to expose the command. Meeseeks must not forge `{ kind: "human" }` provenance or assume the following
+will dynamically create a workflow:
 
 ```text
 claude -p "use a workflow to investigate this"
@@ -259,7 +274,10 @@ Avoid using a workflow to reproduce the outer "fix until everything passes" loop
 ### Panel
 
 Do not place all reviewers in one workflow. That would create shared intermediate context
-and a single synthesis authority. If later evidence justifies reviewer workflows:
+and a single synthesis authority. The first experiment keeps reviewers on the ordinary path because
+their required `--safe-mode` currently disables workflows. If a later documented interface can
+selectively supply one reviewed definition without restoring ambient project/user customizations, and
+live evidence justifies reviewer workflows:
 
 - preserve one fresh top-level `claude -p` process per reviewer;
 - give each reviewer only its owned IDs and cold inputs;
@@ -347,11 +365,15 @@ Assistant messages also identify the actual model. Meeseeks can therefore record
 actual model sets separately and reject a policy-sensitive substitution, but a workflow adapter
 must not feed top-level `usage` into the run token ceiling as though it covered descendants.
 
-The cost is a client-side estimate. Error results can carry usage, but a session crash may zero
-the final fields and leave some descendant usage unrecoverable. Official documentation does not
-promise an atomic reservation across concurrent workflow agents or exactly how the non-interactive
-CLI envelope exposes every workflow failure. Meeseeks must assume in-flight overshoot and missing
-crash accounting are possible.
+The existing `childBudget()` path already supplies `--max-budget-usd` when the run has a cost
+ceiling. Use that native descendant-aware stop as defense in depth and live-prove its workflow
+behavior; do not duplicate it with a second approximate dollar estimator. The cost is a client-side
+estimate.
+Error results can carry usage, but a session crash may zero the final fields and leave some descendant
+usage unrecoverable. Official documentation does not promise an atomic reservation across concurrent
+workflow agents or exactly how the non-interactive CLI envelope exposes every workflow failure. The
+Driver therefore still owns run-wide cost, token, call/fan-out, and failure accounting and must assume
+in-flight overshoot and missing crash accounting are possible.
 
 Any future workflow receipt should contain at least:
 
@@ -406,7 +428,9 @@ The Agent SDK exposes `interrupt()`, `stopTask()`, and `close()`. `close()` prom
 the underlying SDK process and clean resources. Official documentation does not promise
 that sending raw `SIGTERM` to a `claude -p` PID kills every workflow descendant.
 
-Meeseeks currently shells out to the CLI, so hard process-tree reaping is a prerequisite.
+Meeseeks currently shells out to the CLI, so hard process-tree reaping is a prerequisite. Pin the
+CLI's post-turn background wait to a nonzero value within the role deadline and record it, but keep
+the Driver's whole-role watchdog authoritative because the two timers start at different boundaries.
 A live test must prove that timeout removes the top-level Claude process, workflow tasks,
 shell children, grandchildren that ignore `SIGTERM`, temporary worktrees, and the run lock.
 
@@ -513,7 +537,7 @@ exact shipping tree.
 |---|---|
 | workflow returns success and Builder is treated as certified | Driver treats result as untrusted role output |
 | failed agents become filtered `null` entries | preserve expected cardinality; missing result fails |
-| one workflow shares Builder and reviewer context | separate top-level role processes and private workflows |
+| one workflow shares Builder and reviewer context | initial experiment is Builder-only; preserve ordinary safe-mode Panel, then require separate top-level processes and selectively supplied private workflows before any later expansion |
 | multiple agents edit one checkout | read-only fan-out, one integrator, or existing Meeseeks worktrees |
 | workflow worktree starts from stale `HEAD` | bind and verify exact input tree; checkpoint or transport patch |
 | guard or nesting marker is absent | nested live guard/recursion test before enablement |
@@ -529,23 +553,27 @@ exact shipping tree.
 
 ## Smallest safe experiment sequence
 
-1. Resolve run-lock exclusivity and hard process-tree reaping.
+1. Complete PLAN Gate 0 and item 77, including run-lock exclusivity, hard cross-platform process
+   settlement, child/tool/CLI boundaries, and candidate-independent review authority; record item
+   84's containment outcome without assuming it adopted a stronger profile.
 2. Add a default-off capability probe for Claude Code version, workflow availability,
    provider, and organization policy.
 3. Through production `claudeArgs` and `childSettings()`, invoke one reviewed, read-only,
    namespaced plugin workflow.
 4. Prove hook and environment propagation by attempting a `.meeseeks/` write and nested
    Meeseeks invocation inside a workflow agent.
-5. Compare expected child usage with outer cost/model totals and force agent failure,
-   `null`, timeout, and restart cases.
+5. Compare expected child usage with outer cost/model totals; force the existing native dollar cap
+   and prove later-spawn refusal plus background-agent settlement; pin and observe the nonzero post-turn
+   wait within the role deadline; and force agent failure, `null`, both timeout paths, and restart cases.
 6. Prove worktree base and cleanup behavior.
 7. Add a role-local adapter and receipt. Missing, malformed, or incomplete output fails the
    bounded workflow assignment and may fall back to the ordinary single-role path; it does
    not count as progress.
 8. Experiment only with Builder discovery and compare against the normal Builder path.
 9. Add minimal dependency metadata to assumptions and pins.
-10. Consider private per-reviewer workflows only after Builder results, permission
-    enforcement, and cold-context tests are satisfactory.
+10. Consider private per-reviewer workflows only after Builder results, permission enforcement,
+    cold-context tests, and a documented selective invocation compatible with `--safe-mode` are
+    satisfactory.
 11. Consider Oracle-author workflows last.
 12. Consider a claim DAG only in read-only shadow mode and only if measured invalidation or
     provenance failures justify it.
@@ -568,20 +596,24 @@ phase faster.
 ## Remaining live questions
 
 1. Does the installed CLI expose a saved Meeseeks plugin workflow in the initialization
-   command list and execute it through the exact production `claude -p` path?
-2. Do `childSettings()`, the guard hook, `MEESEEKS_RUNNING`, and the box-depth marker reach
+   command list and execute it through the exact production Builder `claude -p` path?
+2. Is there any documented, detectable way to supply one reviewed workflow to a `--safe-mode`
+   role without re-enabling ambient project/user workflows or other customizations? Until measured,
+   Panel and Oracle remain on their ordinary non-workflow paths.
+3. Do `childSettings()`, the guard hook, `MEESEEKS_RUNNING`, and the box-depth marker reach
    every workflow agent?
-3. Does the outer result account for every successful, failed, cancelled, and retried
+4. Does the outer result account for every successful, failed, cancelled, and retried
    workflow agent; does the production CLI envelope expose whole-tree `modelUsage` rather than
-   only top-level `usage`; and what is the maximum observed in-flight budget overshoot?
-4. Can each workflow stage enforce a narrower tool set on every supported provider/version,
+   only top-level `usage`; does `--max-budget-usd` refuse later workflow-agent spawns and settle
+   already-running agents on the pinned CLI; and what is the maximum observed in-flight overshoot?
+5. Can each workflow stage enforce a narrower tool set on every supported provider/version,
    or must the driver hook enforce privilege classes?
-5. Which workflow-specific identifiers and phase/failure details are exposed through stable
+6. Which workflow-specific identifiers and phase/failure details are exposed through stable
    non-interactive output rather than the terminal UI or private session files?
-6. How are changed workflow-agent worktrees surfaced and cleaned in non-interactive runs?
-7. Does timeout termination reap every workflow descendant, including a grandchild that
+7. How are changed workflow-agent worktrees surfaced and cleaned in non-interactive runs?
+8. Does timeout termination reap every workflow descendant, including a grandchild that
    ignores `SIGTERM`?
-8. Which classes of real Meeseeks task improve morning acceptance enough to justify the
+9. Which classes of real Meeseeks task improve morning acceptance enough to justify the
    added cost?
-9. How often do current assumption changes cause stale evidence or unnecessarily broad
+10. How often do current assumption changes cause stale evidence or unnecessarily broad
    rework?
