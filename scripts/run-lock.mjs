@@ -399,11 +399,16 @@ function sweepAbandonedTakeover(file, shown, abandonedToken, token) {
  * Nothing in here throws: this runs on the way out of a failed acquisition, and a complaint about
  * housekeeping must not replace the real reason the run ended.
  *
+ * Exported for the same reason `releaseRunLock` is, and tested the same way. The window this guard
+ * covers — a foreign claim occupying the path while a contender unwinds — cannot be arranged from
+ * outside `acquireRunLock`, so a behavioural test can only reach the token-matches branch. Review
+ * proved that by mutation: replacing this body with an unconditional remove left both tiers green.
+ *
  * @param {string} file
  * @param {string} token
  * @returns {void}
  */
-function releaseTakeoverClaim(file, token) {
+export function releaseTakeoverClaim(file, token) {
   try {
     const held = readTakeoverClaim(file, file);
     if (held.state !== 'held' || held.claim.token !== token) return;

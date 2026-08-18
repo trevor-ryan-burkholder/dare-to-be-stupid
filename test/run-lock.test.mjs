@@ -30,6 +30,7 @@ import {
   pidIsAlive,
   readRunLock,
   releaseRunLock,
+  releaseTakeoverClaim,
   takeoverLockPath,
 } from '../scripts/run-lock.mjs';
 
@@ -493,10 +494,12 @@ describe('a reclaimer that died mid-takeover (REVIEW F34)', () => {
     assert.equal(existsSync(takeoverLockPath(meeseeksDir, 'dead-owner')), false);
   });
 
-  it('leaves a live contender’s claim alone while refusing, so no straggler can clear it', () => {
-    // Only the owner may clear the claim, exactly as for the lock. Before the claim carried a token
-    // it was dropped unconditionally on the way out, which was safe only while nothing could
-    // legitimately replace it -- and the sweep makes replacement legitimate.
+  it('refuses without going near a live contender’s claim', () => {
+    // Named for what it actually proves. It does *not* exercise the release guard: with a live claim
+    // present, acquisition refuses inside the failed-claim branch and returns before the try/finally
+    // that would release anything. Review caught this test claiming the guard's property while never
+    // reaching the guard -- the same shape of defect that produced F31 through F37. The guard itself
+    // is tested directly below.
     const meeseeksDir = makeMeeseeksDir();
     acquireRunLock(meeseeksDir, { pid: DEAD_OWNER_PID, startedAt: 'a', token: 'dead-owner' });
     claimTakeover(meeseeksDir, 'dead-owner', { pid: process.pid, startedAt: 'b', token: 'the-live-one' });
@@ -507,3 +510,51 @@ describe('a reclaimer that died mid-takeover (REVIEW F34)', () => {
     assert.equal(claim.token, 'the-live-one', 'the refused contender cleared a claim that was not its own');
   });
 });
+
+describe('releaseTakeoverClaim: only the owner may clear a claim (REVIEW F34)', () => {
+  // **Tested directly, because behaviour cannot reach it.** The window this guard covers is a
+  // foreign claim occupying the path while a contender unwinds, and nothing outside `acquireRunLock`
+  // can arrange that: a contender holding the claim has already verified it is theirs, and one that
+  // does not hold it returns before the `finally`. Review proved the gap by mutation — replacing the
+  // body with an unconditional remove left tier 1 at 2531 pass and tier 2 at 122 pass. So it is
+  // tested the way `releaseRunLock` is, against the function.
+  /** @param {string} dir @param {string} token @returns {string} the claim path */
+  function claimHeldBy(dir, token) {
+    claimTakeover(dir, 'dead-owner', { pid: process.pid, startedAt: 'a', token });
+    return takeoverLockPath(dir, 'dead-owner');
+  }
+
+  it('removes the claim when the token is the one holding it', () => {
+    const meeseeksDir = makeMeeseeksDir();
+    const claim = claimHeldBy(meeseeksDir, 'mine');
+    releaseTakeoverClaim(claim, 'mine');
+    assert.equal(existsSync(claim), false);
+  });
+
+  it('leaves a claim held by somebody else exactly where it is', () => {
+    // The straggler. A contender that swept an abandoned claim can be holding one of its own by the
+    // time an older contender unwinds; an unconditional remove there puts two reclaimers on one
+    // stale lock, which is the whole catastrophe.
+    const meeseeksDir = makeMeeseeksDir();
+    const claim = claimHeldBy(meeseeksDir, 'the-newer-contender');
+    releaseTakeoverClaim(claim, 'a-straggler-from-earlier');
+    assert.equal(existsSync(claim), true, 'a straggler cleared a claim that was not its own');
+    assert.equal(JSON.parse(readFileSync(claim, 'utf8')).token, 'the-newer-contender');
+  });
+
+  it('leaves a claim that names nobody, because nobody can prove it is theirs', () => {
+    const meeseeksDir = makeMeeseeksDir();
+    claimHeldBy(meeseeksDir, 'mine');
+    const claim = takeoverLockPath(meeseeksDir, 'dead-owner');
+    writeFileSync(claim, '', 'utf8');
+    releaseTakeoverClaim(claim, 'mine');
+    assert.equal(existsSync(claim), true);
+  });
+
+  it('says nothing when there is no claim to clear', () => {
+    // This runs on the way out of a failed acquisition. A throw here would replace the real reason
+    // the run ended with a complaint about housekeeping.
+    const meeseeksDir = makeMeeseeksDir();
+    assert.doesNotThrow(() => releaseTakeoverClaim(takeoverLockPath(meeseeksDir, 'never-existed'), 'mine'));
+  });
+})

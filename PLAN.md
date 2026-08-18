@@ -3114,14 +3114,20 @@ and `d9632da` was scannable and proved clean. The structural fix is not vigilanc
 that performs mutation experiments must run in an isolated git worktree**, so it physically cannot
 write to the tree being committed.
 
-**Two coverage gaps recorded rather than papered over.** The token guard in `releaseTakeoverClaim`
-can be deleted with both tiers still green: reaching it requires a foreign claim to appear at the
-path while a contender is inside its critical section, and the post-create ownership check now makes
-that state unreachable from the outside — so the guard is defence in depth that nothing can
-currently mutate-test. The same is true of `rename`-as-arbitration inside the sweep: replacing it
-with a plain unlink needs two contenders colliding within microseconds to distinguish, which no
-deterministic test here can arrange. Both are stated so the next reviewer does not mistake green for
-proof.
+**One coverage gap closed after review corrected an overclaim of mine.** An earlier draft here
+called the `releaseTakeoverClaim` token guard untestable. That was wrong, and review proved it by
+mutation: replacing the body with an unconditional remove left tier 1 and tier 2 entirely green,
+*and* the test named for the property — "leaves a live contender's claim alone while refusing" —
+never reached the function at all, because acquisition refuses in the failed-claim branch before the
+`finally`. A test claiming a property it never exercises is the exact defect family that produced
+F31 through F37, and it was mine. The guard is now exported and tested directly, the way
+`releaseRunLock` already is, and the test is renamed to what it actually proves. Verified by
+re-running the mutation: two of the four new cases fail against it.
+
+**One gap remains, stated rather than papered over.** `rename`-as-arbitration inside the sweep can
+be replaced with a plain unlink and stay green: distinguishing them needs two contenders colliding
+within microseconds, which no deterministic test here can arrange. The verification that follows the
+rename *is* covered, by `does not sweep a live claim that replaced the abandoned one it read`.
 
 **Evidence.** `test/run-lock.test.mjs` adds the reproduction (an abandoned claim written by the
 production `claimTakeover`, not a hand-rolled fixture, so the test cannot drift from the format the
