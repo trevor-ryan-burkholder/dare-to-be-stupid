@@ -96,6 +96,7 @@ import { roleSupplyManifest } from './role-supply.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
 import { captureSpecification, verifySpecification } from './specification.mjs';
 import { installQualityPlugins } from './plugins.mjs';
+import { blockingFindings, scanAgentSurface } from './security-scan.mjs';
 import { appendSupplyRecord } from './role-supply.mjs';
 import {
   applyWinner,
@@ -1723,6 +1724,7 @@ export function repeatedRegressionNote(counts, regressions) {
  *   shipTimeMutation?: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
  *   checkSpecification: () => { ok: boolean, digest: string, detail: string },
  *   workspaceIdentity: () => string | null | Promise<string | null>,
+ *   scanSurface?: typeof scanAgentSurface,
  *   verifyPublication: () => { ok: boolean, detail: string, head?: string | null }
  *     | Promise<{ ok: boolean, detail: string, head?: string | null }>,
  *   readTestReports: () => unknown[],
@@ -2764,6 +2766,52 @@ export async function driveRun(options) {
         findings: ['the candidate workspace could not be identified'],
       };
       await closeIteration(iterationNumber, ['ship:workspace-identity'], score, passing.size);
+      continue;
+    }
+
+    // **The agent surface, rescanned against the exact bytes about to be reviewed** (REVIEW F29).
+    //
+    // Preflight scans this once, before the run — and the builder has been editing the tree ever
+    // since. A `CLAUDE.md`, a `.claude/rules/` file, a hook, a Skill or an MCP entry added during
+    // the run is *candidate output*, and the panel is about to read the tree it lives in. The
+    // reviewer prompt no longer treats any of it as authority, but a prompt is a discipline and a
+    // hostile hook is a mechanism; F29 asks for both, and this is the mechanism half.
+    //
+    // Placed after the seal and before the first reviewer, so the bytes scanned are the bytes
+    // reviewed. Fail-closed: blocking findings end the iteration with those findings as the
+    // objective, which is the builder's next instruction rather than a run that dies.
+    //
+    // **It is a known-pattern scan and nothing more.** It refuses the forms it knows. It is not
+    // proof that arbitrary model-visible text in a repository is safe, and describing it that way
+    // would be the overclaim §6.1 warns about.
+    //
+    // The default is the **real scanner**, not a no-op: an effect that silently means "no scan"
+    // when a caller omits it is a gate that defaults to pass, and a scan that throws is a scan
+    // that did not happen. Both fail closed here.
+    /** @type {{ file: string, detail: string }[]} */
+    let hostile;
+    try {
+      const scan = effects.scanSurface ?? scanAgentSurface;
+      hostile = blockingFindings(scan(rootDir).findings).map((finding) => ({
+        file: finding.file,
+        detail: finding.detail,
+      }));
+    } catch (error) {
+      hostile = [{ file: rootDir, detail: `the agent-surface scan could not run: ${/** @type {Error} */ (error).message}` }];
+    }
+    if (hostile.length > 0) {
+      effects.log(`cannot review: the candidate tree carries ${hostile.length} blocking agent-surface finding(s)`);
+      for (const finding of hostile) effects.log(`  ${finding.file}: ${finding.detail}`);
+      objective = {
+        kind: 'review',
+        headline: 'The repository instructs the agents that judge it.',
+        reason:
+          'the gates passed, but the candidate tree contains agent configuration a reviewer would read as ' +
+          'instruction — a hook, an instruction file, a Skill or an MCP entry. A panel reading a tree that ' +
+          'tells it how to audit is not an independent panel',
+        findings: hostile.map((finding) => `${finding.file}: ${finding.detail}`),
+      };
+      await closeIteration(iterationNumber, ['ship:agent-surface'], score, passing.size);
       continue;
     }
 

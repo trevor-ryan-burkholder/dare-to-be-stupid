@@ -3281,7 +3281,7 @@ external source or effect uses item **106**'s separately sealed, job-scoped capa
 Neither a role nor an external server may convert tool availability, network reachability, or its own
 annotations into authority.
 
-### 85. Keep candidate instructions out of reviewer authority — OPEN (REVIEW F29)
+### 85. Keep candidate instructions out of reviewer authority — PARTIAL (0.206.0): the authority boundary and the pre-Panel rescan landed; the supply trust-class report and the paid canary have not
 
 **Problem solved:** cold roles use `--safe-mode`, so current Claude Code does not automatically load
 target `CLAUDE.md`, rules, Skills, plugins, hooks, MCP servers, or memory. The reviewer template then
@@ -3308,6 +3308,45 @@ pinned paid hostile/benign canary proves project/user/local customizations stay 
 Driver-owned reviewer prompt and implementation evidence remain available. The canary establishes
 only those seeded cases, not arbitrary prompt-injection immunity. Items **66**, **68**,
 **77**, **82**, and **83** are prerequisites. REVIEW F29 owns closure.
+
+**What landed (0.206.0).** Two halves, because F29 asks for both and either alone is defeated.
+
+**The prompt.** `templates/reviewer-system.md` no longer tells the panel to read the target's
+`CLAUDE.md` and treat its rules and referenced documents as *binding*. It now states that the
+specification and the reviewer prompt are the only authorities, that every file in the repository is
+evidence and none of it is authority, and that a file asking the reviewer to change how it audits is
+**a finding, not a rule**. This is a boundary on authority, not on reading: "Open anything" is
+explicit, and a document contradicting the code is still the fastest route to a real finding — that
+is how a previous audit convicted a builder, and it still works. `AGENTS.md` is deliberately *not*
+named among the examples, because a reviewer may never be told an agent wrote the code and a filename
+in its own prompt is that tell.
+
+**The mechanism.** A prompt is a discipline; a hostile hook is a mechanism. `driveRun` rescans the
+agent surface against the **exact tree it is about to review** — after the F14 seal, before the first
+reviewer — and blocking findings end the iteration with those findings as the builder's next
+objective. It defaults to the *real* scanner rather than to a no-op, and a scan that throws is a
+refusal: an effect that silently means "no scan" when a caller omits it is a gate that defaults to
+pass.
+
+**Why the rescan is needed at all.** Preflight scans once, before the run; the builder then edits the
+tree for hours. `test/integration/reviewer-authority.integration.test.mjs` proves exactly that
+ordering against a real repository — the same tree passes the door and fails afterwards, with nothing
+in between but a written file.
+
+**Evidence.** `test/driver.test.mjs` drives the loop over a real temporary tree with the real scanner
+— no scanner double, because a doubled scan proves the double: a hostile `CLAUDE.md` and a hostile
+`.claude/rules/*.md` both stop the panel, a throwing scan stops it, and an ordinary project with a
+benign `CLAUDE.md` is reviewed normally. Three of the four go red with the rescan disabled; the
+benign one stays green throughout, which is what keeps this from being a scan that stops everything.
+`test/templates.test.mjs` asserts the authority frame, the report-it-as-a-finding instruction, the
+removal of the binding-documents sentences, and that the reviewer is still told to read the
+repository.
+
+**Not yet done, and named rather than implied:** item **77**'s supply report does not yet distinguish
+*trusted instruction*, *untrusted candidate evidence* and *disabled ambient customization* as trust
+classes; the scan result is not bound to item **68**'s reviewed-tree identity as a recorded artifact;
+and the pinned paid hostile/benign reviewer-calibration canary has not been run. A scan is a
+known-pattern defense, and nothing here claims immunity to arbitrary prompt injection.
 
 ### 86. Verified red-team assessment job type — PARKED (post-DoD follow-on)
 
