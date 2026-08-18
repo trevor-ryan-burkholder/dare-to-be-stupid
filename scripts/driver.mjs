@@ -5709,15 +5709,14 @@ export function childEndLine(phase, result, seconds) {
 }
 
 /**
- * @param {string[]} argv
- * @param {{
+ * @typedef {{
  *   cwd?: string,
  *   env?: Record<string, string | undefined>,
  *   log?: (line: string) => void,
  *   spawn?: typeof spawnClaude,
  *   runComponent?: typeof runComponentDriver,
  *   heartbeatMs?: number,
- * }} [io] `spawn` exists so a test can drive the **real** loop -- real gates, real git, real
+ * }} DriverIo `spawn` exists so a test can drive the **real** loop -- real gates, real git, real
  *   `gateTree` -- with canned child envelopes instead of paid ones. Three composition sites
  *   inside this function were unassertable without it (`quality:` and `operator:` gates reaching
  *   the roster, the scoped restore firing, the prompt-growth note), each carrying the shape of
@@ -5725,9 +5724,68 @@ export function childEndLine(phase, result, seconds) {
  *   spawner, so production behaviour is untouched. `runComponent` is the same seam for the
  *   component phase's nested driver, so tier 2 can fake the child driver while the worktree,
  *   config and merge halves run against real git.
- * @returns {Promise<number>} process exit code
+ */
+
+/**
+ * @typedef {{
+ *   releasing: ((code: number, terminal: { state?: 'SHIPPED' | 'STALLED' | 'BUDGET' | 'ABORTED',
+ *     reason: string, phase: string }) => number) | null,
+ *   phase: string,
+ * }} CrashGuard
+ */
+
+/**
+ * The entry point, and the boundary where an unexpected exception still leaves a record.
+ *
+ * **The last hole in F10's one door.** `driveRun` has its own handler and the pre-loop *refusals*
+ * all route through `releasing`, but an unexpected **throw** between winning the lock and entering
+ * the loop escaped this function entirely: no receipt, and a lock left behind by a process that is
+ * about to exit. That region is long — PRD authoring, design, capability resolution, the Oracle,
+ * components, provisioning — and every `await` in it can throw for reasons nobody enumerated. F10's
+ * acceptance names "unexpected post-lock exception" explicitly, and wrapping only the one path that
+ * had been observed to throw would be the enumeration mistake this repository keeps paying for.
+ *
+ * **Why a wrapper rather than a `try` around the region.** A lexical `try` would mean re-indenting
+ * some sixteen hundred lines, and dozens of them are multi-line template literals whose contents
+ * are prompts — mechanical re-indentation would silently rewrite what children are told. The guard
+ * state is published instead: the body hands out its own `releasing` the moment it has one, and
+ * this handler calls that same shared writer rather than a second copy of it.
+ *
+ * A crash *before* the lock rethrows untouched. Nothing owns the repository yet, so there is no run
+ * to file a receipt for, and inventing one would claim a run that never started.
+ *
+ * @param {string[]} argv
+ * @param {DriverIo} [io]
+ * @returns {Promise<number>}
  */
 export async function main(argv, io = {}) {
+  /** @type {CrashGuard} */
+  const crash = { releasing: null, phase: 'pre-loop' };
+  try {
+    return await runInvocation(argv, io, crash);
+  } catch (error) {
+    if (crash.releasing === null) throw error;
+    const failure = `${/** @type {Error} */ (error).name}: ${/** @type {Error} */ (error).message}`;
+    // Reported before the receipt and separately from it: a broken `log` must not be able to stop
+    // the durable record, which is the only half of this that survives the process.
+    try {
+      (io.log ?? ((/** @type {string} */ line) => process.stdout.write(`${line}\n`)))(failure);
+    } catch {
+      // Nothing to do about a logger that throws. The receipt below is the point.
+    }
+    // The shared writer: it archives the previous run first, writes at most once — so a loop that
+    // already decided keeps its own answer — and gives the repository back.
+    return crash.releasing(1, { state: 'ABORTED', reason: failure.slice(0, 800), phase: crash.phase });
+  }
+}
+
+/**
+ * @param {string[]} argv
+ * @param {DriverIo} io
+ * @param {CrashGuard} crash published to `main` so an escaping throw can still file a receipt
+ * @returns {Promise<number>}
+ */
+async function runInvocation(argv, io, crash) {
   const cwd = io.cwd ?? process.cwd();
   // When this run began, for handing components the parent's *remaining* wall clock rather
   // than a fresh one. `driveRun` keeps its own start for the loop's deadline; this one exists
@@ -6017,6 +6075,12 @@ export async function main(argv, io = {}) {
     releaseRunLock(meeseeksDir, runLock.lock.token);
     return code;
   };
+
+  // From here an escaping throw is a *run* that crashed rather than an invocation that failed, so
+  // `main`'s handler has a receipt to file and a lock to give back. Published as late as the
+  // declarations above allow and no later: everything between winning the lock and this line is
+  // `const` bindings and closures, with no `await` and nothing that can throw.
+  crash.releasing = releasing;
 
   // ---- The authoritative launch observation (DESIGN.md §3.5, REVIEW F26) --
   //
@@ -7187,6 +7251,10 @@ export async function main(argv, io = {}) {
 
   /** @type {RunOutcome} */
   let outcome;
+  // Everything after this belongs to the loop, including the lines that report its result. The
+  // handler below catches the loop's own throws; this only keeps `main`'s backstop from labelling
+  // a late crash with a phase the run had already left.
+  crash.phase = 'loop';
   try {
     outcome = await driveRun({
     receipt: outcomeWritten,

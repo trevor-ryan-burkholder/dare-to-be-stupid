@@ -3772,6 +3772,40 @@ A test that cannot fail *legibly* is barely better than one that cannot fail.
 **Evidence.** Tier 2 156 pass / 0 fail, the new cases green on three consecutive rounds and red
 under the reverted guard. No shipped file changed, so no version moved.
 
+### 103. The last hole in F10's one door — IMPLEMENTED (0.200.0); REVIEW F10 open pending Codex
+
+**What was still escaping.** `driveRun` has its own handler and every pre-loop *refusal* routes
+through `releasing`, but an unexpected **throw** between winning the lock and entering the loop left
+`main` entirely: no receipt, and a lock left behind by a process about to exit. F10's acceptance
+names "unexpected post-lock exception" explicitly. 0.196.0 wrapped the one path that had been
+observed to throw — provisioning — which is the enumeration mistake this repository keeps paying
+for; the region also holds PRD authoring, design, capability resolution, the Oracle and components,
+and every `await` in it can throw for reasons nobody listed.
+
+**A wrapper, not a lexical `try`.** Wrapping the region in a `try` would mean re-indenting some
+sixteen hundred lines, dozens of which are multi-line template literals whose contents are prompts —
+mechanical re-indentation would silently rewrite what children are told. So the exported `main` is
+now a guard around `runInvocation`, and the body publishes its own `releasing` the moment it has
+one. The handler calls that same shared writer: archive first, at most once, lock given back. A run
+that already decided keeps its answer.
+
+**It is bounded at the lock.** A crash before acquisition rethrows untouched, because nothing owns
+the repository yet and a receipt would claim a run that never started.
+
+**Evidence.** `test/integration/outcome.integration.test.mjs` throws from the child transport rather
+than returning a failure envelope — the distinction is the whole finding — and asserts the ABORTED
+receipt, the honest phase and spend, and the released lock. Neighbours: a handled failure keeps its
+own phase rather than being relabelled, a pre-lock crash still escapes with no receipt, and a run
+whose *logger* is what broke still files the record, because the durable half must not depend on
+stdout. Three red against the reverted guard, two neighbours green throughout.
+
+**One test was wrong first and is recorded because it was the named failure mode.** The pre-lock
+boundary case was originally a throwing logger, which does not crash before the lock at all —
+nothing writes a line until after acquisition — so it exercised the guard while claiming to bound
+it. Replaced with a non-array argv, which throws on the entry point's first line.
+
+**Evidence.** Tier 1 2650 pass / 0 fail, tier 2 161 pass / 0 fail.
+
 ## Observations recorded rather than repaired
 
 - **Tier 2 refused once and passed on an immediate re-run** (18 Aug 2026, committing 0.196.0 through

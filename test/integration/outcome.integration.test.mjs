@@ -221,3 +221,106 @@ describe('a run that dies before the loop still files a receipt', () => {
     assert.deepStrictEqual(receipts, [OUTCOME_FILE]);
   });
 });
+
+describe('an unexpected throw after the lock is still a run that ended (REVIEW F10, reopened)', () => {
+  /**
+   * A child transport that dies rather than returning a failure envelope.
+   *
+   * The distinction is the whole finding. A child that *returns* `ok: false` is a handled failure
+   * and always filed a receipt; a child that **throws** — a spawn that cannot allocate, a stream
+   * that closes mid-parse, a bug in an option validator — escaped `main` entirely. There is no
+   * enumeration of the reasons an `await` in that region can throw, which is why the guard is
+   * positional rather than a list of the ones anybody has seen.
+   *
+   * @param {string} phase @returns {any}
+   */
+  const throwingSpawn = (phase) => (/** @type {{ phase: string }} */ spawned) => {
+    if (spawned.phase === phase) throw new Error('the child transport died');
+    return cannedSpawn()(spawned);
+  };
+
+  it('files an ABORTED receipt naming the failure, rather than escaping with nothing', async () => {
+    const root = repo();
+    const { code } = await run(root, ['PRD.md', '--yes'], throwingSpawn('design'));
+
+    assert.equal(code, 1);
+    const written = receipt(root);
+    assert.equal(written.state, 'ABORTED');
+    assert.equal(written.phase, 'pre-loop');
+    assert.equal(written.reason, 'Error: the child transport died');
+    assert.equal(written.version, 1);
+    // The spend already paid is recorded, and an iteration count the run never reached is not.
+    assert.equal(typeof written.spentTokens, 'number');
+    assert.equal('iterations' in written, false);
+  });
+
+  it('gives the repository back, so the next run is not refused by a dead process', async () => {
+    // The other half, and the one an operator feels first. A lock left by a crashed driver names a
+    // pid that is gone, so the next run can reclaim it — but reclaiming is the recovery path, not
+    // the ordinary one, and a driver that exits normally must not leave work for it.
+    const root = repo();
+    await run(root, ['PRD.md', '--yes'], throwingSpawn('design'));
+
+    assert.equal(existsSync(path.join(root, '.meeseeks', 'lock.json')), false, 'the crashed run kept the repository');
+  });
+
+  it('does not relabel a handled failure that already knew its own phase', async () => {
+    // The neighbour. A backstop that swallowed ordinary refusals would replace six specific phases
+    // with one useless word, and every receipt would say the run crashed somewhere.
+    const root = repo();
+    await run(root, ['PRD.md', '--yes'], cannedSpawn({ fail: 'design' }));
+
+    const written = receipt(root);
+    assert.equal(written.phase, 'design');
+    assert.equal(written.reason, 'design phase failed');
+  });
+
+  it('lets a crash before the lock escape, because no run had started', async () => {
+    // The bound on the guard. Before the lock nothing owns the repository, so there is no run to
+    // file a receipt for and writing one would claim a run that never began. A non-array argv
+    // throws on the first line of the entry point, which is as early as a crash can be.
+    //
+    // Worth stating because the first attempt at this case was wrong: a logger that throws does
+    // *not* crash before the lock, because nothing writes a line until after acquisition. It
+    // exercised the guard while claiming to bound it.
+    const root = repo();
+    await assert.rejects(
+      () =>
+        main(/** @type {any} */ (null), {
+          cwd: root,
+          env: { ...process.env, MEESEEKS_RUNNING: undefined, MEESEEKS_STYLE: 'plain' },
+          log: () => {},
+          spawn: cannedSpawn(),
+        }),
+      TypeError,
+    );
+    assert.equal(
+      existsSync(path.join(root, '.meeseeks', OUTCOME_FILE)),
+      false,
+      'a receipt was filed for a run that never started',
+    );
+  });
+
+  it('files the receipt even when the logger is the thing that broke', async () => {
+    // A crash *after* the lock whose cause is the reporting channel itself. The durable record is
+    // the half that survives the process, so it must not depend on stdout still working — the
+    // handler reports and writes separately for exactly this case.
+    const root = repo();
+    let lines = 0;
+    const code = await main(['PRD.md', '--yes'], {
+      cwd: root,
+      env: { ...process.env, MEESEEKS_RUNNING: undefined, MEESEEKS_STYLE: 'plain' },
+      log: () => {
+        lines += 1;
+        throw new Error('the terminal went away');
+      },
+      spawn: cannedSpawn(),
+    });
+
+    assert.equal(lines > 0, true, 'nothing was ever logged, so the logger was not the failure');
+    assert.equal(code, 1);
+    const written = receipt(root);
+    assert.equal(written.state, 'ABORTED');
+    assert.equal(written.reason, 'Error: the terminal went away');
+  });
+});
