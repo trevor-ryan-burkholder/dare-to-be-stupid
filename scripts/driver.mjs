@@ -107,6 +107,7 @@ import { clearReports, collectReports } from './reports.mjs';
 import {
   evaluateIteration,
   extractTestIds,
+  fileBackedIds,
   restorePaths,
   scopedRestorePaths,
   formatBlooperRecord,
@@ -2240,11 +2241,28 @@ export async function driveRun(options) {
           collected += parsed.tests.length;
           records.push(...parsed.tests);
         }
-        passing = new Set();
+        /** @type {Set<string>} */
+        const reported = new Set();
         for (const [id, status] of collapseByWorstStatus(records)) {
-          if (status === 'passed') passing.add(id);
+          if (status === 'passed') reported.add(id);
           else if (status === 'flaky') flaky.add(id);
         }
+        // **Credit requires a definition this checkout actually has** (REVIEW F35). Reporter
+        // normalisation falls back to a lexically contained path when the file cannot be resolved,
+        // which keeps an escaping path out but lets a runner report a pass for a file that is not
+        // in the candidate — and the monotonic ratchet would bank it, holding durable credit for a
+        // test no clean clone can execute. Withheld rather than refused: the report is still
+        // readable, and `collected` above keeps counting it, so this cannot be mistaken for the
+        // runner having produced nothing.
+        const backed = fileBackedIds(reported, rootDir);
+        if (backed.withheld.length > 0) {
+          effects.log(
+            `withholding ratchet credit from ${backed.withheld.length} passing test(s) whose defining file is not ` +
+              `an existing file in this tree: ${backed.withheld.slice(0, 10).join(', ')}` +
+              (backed.withheld.length > 10 ? ` and ${backed.withheld.length - 10} more` : ''),
+          );
+        }
+        passing = backed.credited;
       } else {
         passing = new Set(loadState(meeseeksDir).passing);
         // Not report-derived, so it is not a collection failure and must not read as one.

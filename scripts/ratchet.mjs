@@ -21,7 +21,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { quarantineCorruptFile } from './quarantine.mjs';
@@ -351,6 +351,58 @@ export function evaluateIteration(state, nowPassing, iteration = {}) {
   }
 
   return { action: 'advance', gained, state: recordAdvance(state, { passing: after, commit: iteration.commit }) };
+}
+
+/**
+ * The subset of `ids` whose defining file is an existing regular file inside the candidate.
+ *
+ * **Why credit needs this and parsing does not** (REVIEW F35). `toPosixRelative` falls back to a
+ * lexically contained path when `realpathSync` fails, which closes F20's escaping-path half but
+ * says nothing about whether the definition is *in* the candidate. A runner can therefore report a
+ * passing test whose file does not exist, and the monotonic ratchet can bank an id no clean clone
+ * can execute or inspect — durable acceptance evidence for something that is not there.
+ *
+ * The check belongs at the credit boundary rather than in the parser. A report naming a file this
+ * checkout does not have is still a *readable report*: refusing to parse it would turn a missing
+ * definition into a collection failure, and "the runner produced nothing" and "one of these tests
+ * is not in the repository" need opposite responses. Parsing keeps its meaning; only banking is
+ * withheld.
+ *
+ * `lstat`, not `stat`: a symlink at a test path is not a definition the candidate contains, for the
+ * same reason a symlinked report is not a report this attempt wrote. Anything that cannot be
+ * resolved is withheld, because nothing defaults to credited.
+ *
+ * @param {Iterable<string>} ids
+ * @param {string} rootDir
+ * @returns {{ credited: Set<string>, withheld: string[] }} `withheld` is sorted, for a stable log
+ */
+export function fileBackedIds(ids, rootDir) {
+  /** @type {Set<string>} */
+  const credited = new Set();
+  /** @type {string[]} */
+  const withheld = [];
+  /** @type {Map<string, boolean>} */
+  const seen = new Map();
+  for (const id of ids) {
+    const file = testFilePath(id);
+    if (file === '') {
+      // No path component at all: nothing to resolve, so nothing to credit.
+      withheld.push(id);
+      continue;
+    }
+    let backed = seen.get(file);
+    if (backed === undefined) {
+      try {
+        backed = lstatSync(path.resolve(rootDir, file)).isFile();
+      } catch {
+        backed = false;
+      }
+      seen.set(file, backed);
+    }
+    if (backed) credited.add(id);
+    else withheld.push(id);
+  }
+  return { credited, withheld: withheld.sort() };
 }
 
 /**

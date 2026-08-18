@@ -19,7 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
-import { extractTestIds } from '../scripts/ratchet.mjs';
+import { extractTestIds, fileBackedIds } from '../scripts/ratchet.mjs';
 import { ReportFormatError, toPosixRelative } from '../scripts/reporters/shared.mjs';
 
 /** @type {string[]} */
@@ -174,12 +174,21 @@ describe('contained paths keep deterministic identities', () => {
     assert.equal(toPosixRelative(ABSTRACT_ROOT, path.join('test', 'math.test.js')), 'test/math.test.js');
   });
 
-  it('accepts a nonexistent generated path on the lexical rule alone', () => {
-    // The stated policy: runners report virtual and generated files, and a path that does not exist
-    // cannot be a symlink escape. What it can never be is outside.
+  it('still parses a nonexistent generated path, because parsing is not crediting', () => {
+    // The stated policy, now stated precisely (REVIEW F35). A path that does not exist cannot be a
+    // symlink escape, and refusing to *parse* it would turn a missing definition into a collection
+    // failure — "the runner produced nothing" and "one of these tests is not in the repository"
+    // need opposite responses. So the id is produced, and `fileBackedIds` withholds ratchet credit
+    // from it separately. The earlier version of this case asserted the same output while implying
+    // the id was therefore acceptable evidence, which is the half F35 refused.
     const parent = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-reporter-'));
     temporaryDirs.push(parent);
     assert.equal(toPosixRelative(parent, 'virtual/generated.test.js'), 'virtual/generated.test.js');
+    assert.deepStrictEqual(
+      fileBackedIds(['virtual/generated.test.js::generated > works'], parent).credited,
+      new Set(),
+      'a path that parses is not a path that earns credit',
+    );
   });
 
   it('never produces an id that leaves the repository, whatever it was given', () => {
@@ -189,5 +198,91 @@ describe('contained paths keep deterministic identities', () => {
       assert.equal(relative.startsWith('..'), false, relative);
       assert.equal(path.posix.isAbsolute(relative), false, relative);
     }
+  });
+});
+
+describe('ratchet credit requires a definition this checkout has (REVIEW F35)', () => {
+  /** @returns {string} a scratch root */
+  function root() {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-backed-'));
+    temporaryDirs.push(dir);
+    return dir;
+  }
+
+  /** @param {string} dir @param {string} relative */
+  function file(dir, relative) {
+    mkdirSync(path.join(dir, path.dirname(relative)), { recursive: true });
+    writeFileSync(path.join(dir, relative), '// a real test file\n', 'utf8');
+  }
+
+  it('credits an id whose file is really there', () => {
+    // The benign neighbour first: withholding everything is not a guarantee, it is a broken ratchet.
+    const dir = root();
+    file(dir, 'test/math.test.js');
+    const backed = fileBackedIds(['test/math.test.js::arithmetic > adds'], dir);
+    assert.deepStrictEqual(backed.credited, new Set(['test/math.test.js::arithmetic > adds']));
+    assert.deepStrictEqual(backed.withheld, []);
+  });
+
+  it('withholds an id whose file does not exist', () => {
+    // The reproduction. A runner reporting a pass for a file the candidate does not contain could
+    // bank a durable id that no clean clone can execute or inspect.
+    const dir = root();
+    const backed = fileBackedIds(['test/absent.test.js::ghost > passes'], dir);
+    assert.deepStrictEqual(backed.credited, new Set());
+    assert.deepStrictEqual(backed.withheld, ['test/absent.test.js::ghost > passes']);
+  });
+
+  it('withholds an id whose path is a directory', () => {
+    const dir = root();
+    mkdirSync(path.join(dir, 'test', 'suite.test.js'), { recursive: true });
+    assert.deepStrictEqual(fileBackedIds(['test/suite.test.js::a > b'], dir).credited, new Set());
+  });
+
+  it('withholds an id whose path is a symlink, whatever it points at', { skip: process.platform === 'win32' }, () => {
+    // `lstat`, not `stat`: a symlink at a test path is not a definition the candidate contains, for
+    // the same reason a symlinked report is not a report this attempt wrote.
+    const dir = root();
+    file(dir, 'test/real.test.js');
+    mkdirSync(path.join(dir, 'test'), { recursive: true });
+    symlinkSync(path.join(dir, 'test', 'real.test.js'), path.join(dir, 'test', 'linked.test.js'));
+    assert.deepStrictEqual(fileBackedIds(['test/linked.test.js::a > b'], dir).credited, new Set());
+    assert.deepStrictEqual(fileBackedIds(['test/real.test.js::a > b'], dir).credited, new Set(['test/real.test.js::a > b']));
+  });
+
+  it('withholds an id whose file is deleted between the report and the credit', () => {
+    // The report was honest when it was written. Credit is a claim about now.
+    const dir = root();
+    file(dir, 'test/transient.test.js');
+    const id = 'test/transient.test.js::a > b';
+    assert.deepStrictEqual(fileBackedIds([id], dir).credited, new Set([id]));
+    rmSync(path.join(dir, 'test', 'transient.test.js'));
+    assert.deepStrictEqual(fileBackedIds([id], dir).credited, new Set());
+  });
+
+  it('withholds an id that names no file at all', () => {
+    const dir = root();
+    assert.deepStrictEqual(fileBackedIds(['a bare title with no path'], dir).credited, new Set());
+  });
+
+  it('keeps stable ids for contained paths written with either separator', () => {
+    // The id is posix by construction, so the same definition credits identically however the
+    // runner spelled it. Both spellings resolve to one file on this host.
+    const dir = root();
+    file(dir, 'test/sub/deep.test.js');
+    const id = `${toPosixRelative(dir, path.join('test', 'sub', 'deep.test.js'))}::a > b`;
+    assert.equal(id, 'test/sub/deep.test.js::a > b');
+    assert.deepStrictEqual(fileBackedIds([id], dir).credited, new Set([id]));
+  });
+
+  it('separates credited from withheld in one pass, and sorts what it withheld', () => {
+    const dir = root();
+    file(dir, 'test/here.test.js');
+    const backed = fileBackedIds(
+      ['test/zz.test.js::z', 'test/here.test.js::a > b', 'test/aa.test.js::a'],
+      dir,
+    );
+    assert.deepStrictEqual(backed.credited, new Set(['test/here.test.js::a > b']));
+    assert.deepStrictEqual(backed.withheld, ['test/aa.test.js::a', 'test/zz.test.js::z']);
   });
 });

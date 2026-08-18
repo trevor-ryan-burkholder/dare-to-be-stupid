@@ -13,12 +13,12 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
-import { extractTestIds } from '../../scripts/ratchet.mjs';
+import { extractTestIds, fileBackedIds } from '../../scripts/ratchet.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -121,5 +121,57 @@ describe('every credited test definition is present in a clean clone', () => {
       () => extractTestIds(vitestReport([path.join(clone, 'test', 'math.test.js'), outside]), { rootDir: clone }),
       /outside the repository/,
     );
+  });
+});
+
+describe('a banked definition resolves in a clean clone (REVIEW F35)', () => {
+  it('credits only the ids the clone can actually execute or inspect', async () => {
+    // The clean-clone acceptance F35 asks for, against real git. `extractTestIds` produces an id
+    // for a definition the deliverable does not contain — parsing is not crediting — and
+    // `fileBackedIds` is what refuses to bank it. Asserted together so the two cannot drift: the
+    // set that reaches the ratchet is exactly the set a fresh checkout can open.
+    const { clone } = repoAndClone();
+    const real = path.join(clone, 'test', 'math.test.js');
+    const invented = path.join(clone, 'test', 'never-written.test.js');
+
+    const ids = extractTestIds(vitestReport([real, invented]), { rootDir: clone });
+    assert.equal(ids.size, 2, 'both results parsed, which is the point: parsing is not crediting');
+
+    const backed = fileBackedIds(ids, clone);
+    assert.deepStrictEqual([...backed.credited], ['test/math.test.js::suite > works']);
+    assert.deepStrictEqual(backed.withheld, ['test/never-written.test.js::suite > works']);
+
+    // The property, stated over the whole credited set rather than over the one case above.
+    for (const id of backed.credited) {
+      const file = path.join(clone, id.split('::')[0]);
+      assert.equal(existsSync(file), true, `${id} names a file the clone does not contain`);
+      assert.equal(lstatSync(file).isFile(), true, `${id} does not name a regular file`);
+    }
+  });
+
+  it('withholds a definition that is only in the origin, not in the clone being judged', async () => {
+    // A file committed after the clone exists on this machine and is reachable from the origin, and
+    // is still not part of the candidate. Credit is a claim about the tree under judgement.
+    const { origin, clone } = repoAndClone();
+    writeFileSync(path.join(origin, 'test', 'added-later.test.js'), '// after the clone\n', 'utf8');
+    git(origin, ['add', '-A']);
+    git(origin, ['commit', '--quiet', '-m', 'added later']);
+
+    const backed = fileBackedIds(['test/added-later.test.js::suite > works'], clone);
+    assert.deepStrictEqual(backed.credited, new Set());
+    assert.equal(existsSync(path.join(origin, 'test', 'added-later.test.js')), true, 'the fixture proved nothing');
+  });
+
+  it('credits every definition of a clone whose files are all really there', async () => {
+    // The neighbour. An ordinary deliverable must bank every id it reports, or the ratchet stops
+    // protecting anything.
+    const { clone } = repoAndClone();
+    const ids = extractTestIds(
+      vitestReport([path.join(clone, 'test', 'math.test.js'), path.join(clone, 'test', 'deep nested', 'café.test.js')]),
+      { rootDir: clone },
+    );
+    const backed = fileBackedIds(ids, clone);
+    assert.deepStrictEqual(backed.withheld, []);
+    assert.equal(backed.credited.size, 2);
   });
 });

@@ -126,6 +126,17 @@ const CITED_SOURCES = [
   'src/api/admin.ts',
   'tests/a.test.js',
   'tests/perf.test.js',
+  // **The test files this file's report fixtures name** (REVIEW F35). Ratchet credit now requires
+  // the defining file to exist in the candidate, so a harness whose reports name files that are not
+  // on disk is no longer modelling a repository — it is modelling the forged-identity case F35 is
+  // about. Seeding them keeps every ordinary case ordinary; the cases that *want* a missing
+  // definition create that state deliberately.
+  'test/a.test.js',
+  'test/b.test.js',
+  'test/core.test.js',
+  'test/other.test.js',
+  'e2e/checkout.spec.ts',
+  'tests/checkout.spec.js',
 ];
 
 /** @param {string} root */
@@ -3456,6 +3467,67 @@ describe('driveRun', () => {
       ['test/a.test.js::works'],
     );
     assert.deepStrictEqual(loadState(meeseeksDir).passing, ['test/a.test.js::works']);
+  });
+
+  it('withholds ratchet credit from a passing test whose file is not in the tree', async () => {
+    // REVIEW F35. Reporter normalisation falls back to a lexically contained path when the file
+    // cannot be resolved, so a runner can report a pass for a definition the candidate does not
+    // contain — and the monotonic ratchet would bank a durable id no clean clone can execute.
+    /** @type {string[]} */
+    const logs = [];
+    const { meeseeksDir } = await run({
+      log: (line) => logs.push(line),
+      readTestReports: () => [
+        {
+          numTotalTests: 2,
+          testResults: [
+            { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+            { name: 'test/ghost.test.js', assertionResults: [{ ancestorTitles: [], title: 'invented', status: 'passed' }] },
+          ],
+        },
+      ],
+    });
+
+    assert.deepStrictEqual(
+      loadState(meeseeksDir).passing,
+      ['test/a.test.js::works'],
+      'an id with no file in the tree was banked',
+    );
+    assert.equal(
+      logs.some((line) => line.includes('withholding ratchet credit') && line.includes('test/ghost.test.js::invented')),
+      true,
+      logs.join('\n').slice(-600),
+    );
+  });
+
+  it('still reads the report as collected, so a withheld id is not a collection failure', async () => {
+    // The distinction that keeps this from becoming dogfood run 6. "The runner produced nothing"
+    // resets nothing and asks the builder to fix the suite; "one of these tests is not in the
+    // repository" withholds one id and leaves everything else standing. Here *every* passing id is
+    // unbacked, so the credited set is empty — and the run must still not read that as an empty
+    // report, because the report was full.
+    /** @type {string[]} */
+    const logs = [];
+    const { outcome } = await run({
+      log: (line) => logs.push(line),
+      readTestReports: () => [
+        {
+          numTotalTests: 1,
+          testResults: [
+            { name: 'test/ghost.test.js', assertionResults: [{ ancestorTitles: [], title: 'invented', status: 'passed' }] },
+          ],
+        },
+      ],
+    });
+
+    const all = logs.join('\n');
+    assert.equal(all.includes('withholding ratchet credit'), true, all.slice(-600));
+    assert.equal(
+      all.includes('contained no tests at all'),
+      false,
+      'a full report with unbacked ids was reported as a collection failure',
+    );
+    assert.notEqual(outcome.state, 'SHIPPED', 'a run shipped on credit it had just withheld');
   });
 
   it('ends BUDGET when the iteration limit is reached', async () => {

@@ -3187,7 +3187,7 @@ injection F34 asks for: a real process takes the real claim through production c
 cohort then produces exactly one winner whose token is the one on disk; the benign neighbour proves
 a *live* reclaimer still refuses everybody and the same directory recovers once it is gone.
 
-### 92. Require reproducible existing test definitions before ratchet credit — OPEN (REVIEW F35)
+### 92. Require reproducible existing test definitions before ratchet credit — IMPLEMENTED (0.187.0); REVIEW F35 open pending Codex
 
 **Problem solved:** reporter normalisation falls back to a lexically contained relative path when
 `realpathSync` fails, so a runner naming a file that does not exist can still bank a passing id —
@@ -3203,6 +3203,44 @@ reproducible identity and content digest rather than treating a missing file as 
 **Done when:** nonexistent, directory, symlink-race and deleted-after-report definitions fail closed
 without credit; valid contained Windows and POSIX paths keep stable ids; and a clean-clone tier-2
 test resolves every banked definition. REVIEW F35 owns closure.
+
+**What landed (0.187.0).** `fileBackedIds` credits an id only when its defining file resolves to an
+existing regular file inside the candidate; everything else is withheld and named in the log.
+`lstat`, not `stat`, so a symlink at a test path is not a definition the candidate contains — the
+same rule a symlinked report gets.
+
+**The check is at the credit boundary, not in the parser, and that placement is the design.** A
+report naming a file this checkout does not have is still a *readable report*. Refusing to parse it
+would turn a missing definition into a collection failure, and "the runner produced nothing" and
+"one of these tests is not in the repository" demand opposite responses — the first resets nothing
+and asks the builder to fix the suite, the second withholds one id and leaves the rest standing.
+Conflating them is dogfood run 6. So `collected` keeps counting the result and only banking is
+withheld.
+
+**The open question this item asked, answered from the committed fixtures rather than assumed.** No
+supported runner emits a virtual or generated path: `vitest-4.1.10-run1/2.json`,
+`playwright-1.62.1-run1/2.json` and the three `dotnet-8.0.423` TRX files all name real absolute
+files on the machine that produced them. So the separate reproducible-identity-and-digest design
+F35 contemplates has **no evidence calling for it** and is not built. If a runner ever does emit
+one it surfaces as a withheld id in the log rather than as silent credit, which is the honest
+failure direction.
+
+**Evidence.** `test/reporter-paths.test.mjs` covers nonexistent, directory, symlink,
+deleted-after-report, no-path-component, both separators, and the credited neighbour.
+`test/driver.test.mjs` proves the ratchet banks the backed id and not the invented one, and that a
+report of entirely unbacked ids is still not read as a collection failure.
+`test/integration/reporter-paths.integration.test.mjs` does the clean-clone case against real git:
+both ids parse, only the one the clone contains is credited, and a file that exists only in the
+origin is withheld. Verified red on both tiers.
+
+**One test corrected rather than kept.** `accepts a nonexistent generated path on the lexical rule
+alone` asserted the parser's output while implying the id was therefore acceptable evidence — the
+half F35 refused. It now asserts both halves: the id is produced, and credit is withheld from it.
+
+**A harness change that is itself the finding.** `test/driver.test.mjs` seeded no test files, so its
+report fixtures named definitions that were not on disk — which after this repair is the forged
+case, not the ordinary one. The seeded set now includes the files those fixtures name, because a
+harness whose reports describe a tree it did not build is not modelling a repository.
 
 ### 93. Preserve guard denials from successful children — OPEN (REVIEW F36; needs tier 3)
 

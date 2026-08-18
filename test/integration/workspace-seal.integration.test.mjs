@@ -52,6 +52,11 @@ function repo() {
   writeFileSync(path.join(root, '.gitignore'), '.meeseeks/\nnode_modules/\n');
   mkdirSync(path.join(root, 'src'), { recursive: true });
   writeFileSync(path.join(root, 'src', 'a.js'), 'export const reviewed = "reviewed bytes";\n');
+  // The test file this harness's report names, on disk (REVIEW F35). Ratchet credit now requires
+  // the defining file to exist in the candidate, so a fixture reporting a pass for a file it never
+  // created is modelling the forged-identity case rather than an ordinary iteration.
+  mkdirSync(path.join(root, 'test'), { recursive: true });
+  writeFileSync(path.join(root, 'test', 'a.test.js'), '// the definition the report names\n');
   git(root, ['add', '-A']);
   git(root, ['commit', '--quiet', '-m', 'reviewed bytes']);
   return root;
