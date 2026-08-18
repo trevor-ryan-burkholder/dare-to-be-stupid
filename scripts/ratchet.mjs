@@ -269,12 +269,21 @@ export function diffAgainstRatchet(everPassed, nowPassing) {
  * through {@link evaluateIteration}.
  *
  * @param {RatchetState} state
- * @param {{ passing: Iterable<string>, commit?: string | null, definitions?: Record<string, string> }} iteration
+ * @param {{ passing: Iterable<string>, commit?: string | null, definitions?: Record<string, string>,
+ *   credited?: Iterable<string> }} iteration
+ *        `credited` is the subset that earned ratchet credit; `passing` is everything the reports
+ *        said passed. They differ when a definition changed (REVIEW F17), and the difference must
+ *        not become a regression — so regressions are computed from `passing` and banking from
+ *        `credited`.
  * @returns {RatchetState}
  */
 export function recordAdvance(state, iteration) {
+  // **Banked from `credited`, not from everything that passed** (REVIEW F17). An id whose defining
+  // file changed still *passes* — it is simply not vouched for by history any more, so it must be
+  // observed failing again before it earns credit. Handing it to the ratchet anyway would let a
+  // rewritten assertion inherit the old bytes' protection, which is the finding.
   const union = new Set(state.passing);
-  for (const id of iteration.passing) union.add(id);
+  for (const id of iteration.credited ?? iteration.passing) union.add(id);
   return {
     version: STATE_VERSION,
     iteration: state.iteration + 1,
@@ -346,7 +355,8 @@ export function formatBlooperRecord(event) {
  *
  * @param {RatchetState} state
  * @param {Iterable<string>} nowPassing ids that passed this iteration
- * @param {{ commit?: string | null, collected?: number, definitions?: Record<string, string> }} [iteration]
+ * @param {{ commit?: string | null, collected?: number, definitions?: Record<string, string>,
+ *   credited?: Iterable<string> }} [iteration]
  *        `collected` is how many test ids the report yielded at all, passing or not
  * @returns {RatchetDecision}
  */
@@ -389,7 +399,12 @@ export function evaluateIteration(state, nowPassing, iteration = {}) {
   return {
     action: 'advance',
     gained,
-    state: recordAdvance(state, { passing: after, commit: iteration.commit, definitions: iteration.definitions }),
+    state: recordAdvance(state, {
+      passing: after,
+      commit: iteration.commit,
+      definitions: iteration.definitions,
+      credited: iteration.credited,
+    }),
   };
 }
 

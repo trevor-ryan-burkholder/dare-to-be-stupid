@@ -2321,15 +2321,43 @@ export async function driveRun(options) {
     // The digests of the files the credited ids came from, recorded with the advance (REVIEW F17)
     // so a later iteration can tell "this definition still protects the behaviour" from "an id with
     // this name once passed".
+    // **The definition rule is applied here, where banking happens** (REVIEW F17, reopened). It was
+    // computed in `gateTree` and returned as `passing`, and the `gates` effect dropped that field —
+    // so the production loop re-derived its own set from the reports and advanced on it. Correct
+    // code that nothing called, which is the defect this repository keeps finding; the helpers were
+    // green the whole time.
+    const redEvidence = loadRedEvidence(meeseeksDir);
+    const rewritten = changedDefinitions(passing, rootDir, state.definitions);
+    const withheld = unprovenIds({
+      previousPassing: state.passing,
+      passing,
+      redSeen: redEvidence.seenFailing,
+      baseline: redEvidence.baseline,
+      changedDefinitions: rewritten,
+    });
+    const credited = new Set([...passing].filter((id) => !withheld.has(id)));
+    if (withheld.size > 0) {
+      effects.log(
+        `withholding ratchet credit from ${withheld.size} passing test(s) with no red evidence under their current ` +
+          `definition: ${[...withheld].sort().slice(0, 10).join(', ')}` +
+          (withheld.size > 10 ? ` and ${withheld.size - 10} more` : ''),
+      );
+    }
+    // Digests are recorded only for what was credited, or a withheld id would stamp the new bytes
+    // as the ones that earned it and the next iteration would stop noticing the change.
     /** @type {Record<string, string>} */
     const definitions = {};
-    for (const id of passing) {
+    for (const id of credited) {
       const file = testFilePath(id);
       if (file === '' || definitions[file] !== undefined) continue;
       const digest = definitionDigest(rootDir, file);
       if (digest !== null) definitions[file] = digest;
     }
-    const decision = evaluateIteration(state, passing, { commit: null, collected, definitions });
+    // Regressions from `passing`, banking from `credited`. A withheld id still *passed*, so treating
+    // its absence from the credited set as a regression would hard-reset the tree over a test that
+    // is working — rewriting the monotonic record to state something about the present, which F17
+    // explicitly refuses.
+    const decision = evaluateIteration(state, passing, { commit: null, collected, definitions, credited });
 
     // ---- bank the ids as soon as the suite has proven them -------------
     // **Case I is why this is here.** `saveState` used to be reachable only from Phase 6, after
@@ -2874,7 +2902,10 @@ export async function driveRun(options) {
       await closeIteration(iterationNumber, ['ship:publication'], score, passing.size);
       continue;
     }
-    const advanced = evaluateIteration(state, passing, { commit, collected });
+    // The same credited set Phase 4 computed (REVIEW F17, reopened). This second advance is what
+    // records the commit, and it banked the *full* passing set — so every id Phase 4 had withheld
+    // for having no red evidence under its current definition was banked here a moment later.
+    const advanced = evaluateIteration(state, passing, { commit, collected, definitions, credited });
     if (advanced.action === 'advance') saveState(meeseeksDir, advanced.state);
 
     // Quarantine is not free, and this is the whole of what makes that true rather than a

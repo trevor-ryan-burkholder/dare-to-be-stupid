@@ -2090,10 +2090,14 @@ describe('driveRun', () => {
    * @param {string[]} [seedPassing]
    * @param {string[]} [requiredIds]
    */
-  async function run(overrides, configOverrides = {}, seedPassing = [], requiredIds = ['PRD-1.1'], unitCommand = 'npx vitest run --reporter=json') {
+  async function run(overrides, configOverrides = {}, seedPassing = [], requiredIds = ['PRD-1.1'], unitCommand = 'npx vitest run --reporter=json', /** @type {string[]} */ seedRed = []) {
     const root = makeTempDir();
     seedCitedSources(root);
     const meeseeksDir = path.join(root, '.meeseeks');
+    // The first-gating baseline a real gate run writes (REVIEW F17). An injected `gates` double
+    // never calls `recordRedEvidence`, so a fixture that needs its ids credited says so here rather
+    // than accidentally asserting that an unproven id is banked.
+    if (seedRed.length > 0) recordRedEvidence(meeseeksDir, [], seedRed);
     if (seedPassing.length > 0) {
       // A seeded ratchet means a reset is reachable, and the reset really shells out to
       // git — so the root has to be a real repository with a real commit to return to.
@@ -3335,7 +3339,16 @@ describe('driveRun', () => {
   });
 
   it('records the passing tests in the ratchet when it ships', async () => {
-    const { outcome, meeseeksDir } = await run({ readTestReports: () => [ONE_PASSING] });
+    // Baselined, because an injected `gates` double never writes the first-gating red evidence a
+    // real gate run does, and without it the id is unproven and correctly withheld (REVIEW F17).
+    const { outcome, meeseeksDir } = await run(
+      { readTestReports: () => [ONE_PASSING] },
+      {},
+      [],
+      ['PRD-1.1'],
+      'npx vitest run --reporter=json',
+      ['test/a.test.js::works'],
+    );
     assert.deepStrictEqual(outcome.passing, ['test/a.test.js::works']);
     assert.equal(loadState(meeseeksDir).lastGoodCommit, 'commit1');
   });
@@ -3503,18 +3516,26 @@ describe('driveRun', () => {
     // contain — and the monotonic ratchet would bank a durable id no clean clone can execute.
     /** @type {string[]} */
     const logs = [];
-    const { meeseeksDir } = await run({
-      log: (line) => logs.push(line),
-      readTestReports: () => [
-        {
-          numTotalTests: 2,
-          testResults: [
-            { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
-            { name: 'test/ghost.test.js', assertionResults: [{ ancestorTitles: [], title: 'invented', status: 'passed' }] },
-          ],
-        },
-      ],
-    });
+    const { meeseeksDir } = await run(
+      {
+        log: (line) => logs.push(line),
+        readTestReports: () => [
+          {
+            numTotalTests: 2,
+            testResults: [
+              { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+              { name: 'test/ghost.test.js', assertionResults: [{ ancestorTitles: [], title: 'invented', status: 'passed' }] },
+            ],
+          },
+        ],
+      },
+      {},
+      [],
+      ['PRD-1.1'],
+      'npx vitest run --reporter=json',
+      // Baselined, so this isolates F35's file-backed rule from F17's red-evidence rule.
+      ['test/a.test.js::works', 'test/ghost.test.js::invented'],
+    );
 
     assert.deepStrictEqual(
       loadState(meeseeksDir).passing,
@@ -4159,6 +4180,8 @@ describe('zero ceilings inside the loop', () => {
       // Case I held 71 passing tests across 8 iterations and never wrote state.json, because
       // saveState was reachable only after the panel. A regression in any of those 71 would have
       // gone unnoticed for the whole run.
+      // A real gate run calls `recordRedEvidence` and writes the first-gating baseline that admits
+      // these ids; an injected `gates` double does not, so the fixture states it (REVIEW F17).
       const { meeseeksDir: dir } = await run(
         {
           gates: () => ({
@@ -4179,9 +4202,48 @@ describe('zero ceilings inside the loop', () => {
         },
         { maxIterations: 1 },
         [],
+        ['PRD-1.1'],
+        'npx vitest run --reporter=json',
+        // A real gate run writes the first-gating baseline that admits these ids; an injected
+        // `gates` double does not, so the fixture states it (REVIEW F17). Without it this asserts
+        // early banking *and* accidentally asserts that an unproven id is banked, which is the
+        // defect next door.
+        ['test/a.test.js::works'],
       );
       const state = JSON.parse(readFileSync(path.join(dir, 'state.json'), 'utf8'));
       assert.equal(state.passing.length > 0, true, 'nothing was banked despite a passing unit gate');
+    });
+
+    it('does not bank an id with no red evidence under its current definition', async () => {
+      // **The other half of F17's reopening.** `unprovenIds` was applied in `gateTree`, whose
+      // credited set the `gates` effect dropped — so the production loop banked ids that had never
+      // been observed failing at all. RED-before-GREEN was inert in the one place that banks.
+      //
+      // A real gate run records a first-gating baseline before this point, which is what admits the
+      // very first ids; an injected `gates` double does not, so this fixture is the un-baselined
+      // case and must withhold.
+      const { meeseeksDir } = await run(
+        {
+          gates: () => ({
+            ok: true,
+            results: [
+              { name: 'unit', ok: true, status: 0, detail: 'passed' },
+              { name: 'mutation', ok: true, status: 0, detail: 'no survivors' },
+            ],
+          }),
+          readTestReports: () => [
+            {
+              numTotalTests: 1,
+              testResults: [
+                { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+              ],
+            },
+          ],
+        },
+        { maxIterations: 1 },
+        [],
+      );
+      assert.deepStrictEqual(loadState(meeseeksDir).passing, [], 'an unproven id was banked');
     });
 
     it('banks nothing when the unit gate itself failed', async () => {

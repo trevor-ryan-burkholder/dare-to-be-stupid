@@ -2425,7 +2425,7 @@ wrong-tree output. Scoped restore verification must check the unit result before
 attempts refuse; the stale-report reproduction falls through to the full reset; and report
 provenance survives archive/restart inspection.
 
-### 71. Bind current ratchet credit to the current test definition — IMPLEMENTED (0.191.0); REVIEW F17 open pending Codex
+### 71. Bind current ratchet credit to the current test definition — IMPLEMENTED (0.191.0, reopened and repaired at 0.195.0); REVIEW F17 open pending Codex
 
 **Problem solved:** path/title identity survives an assertion rewrite, so weakened tests inherit
 credit earned by different bytes.
@@ -2470,6 +2470,27 @@ the whitespace-only case that pins the formatting policy, the unknown/unreadable
 digest merge that keeps a file whose tests did not run this iteration. `test/driver.test.mjs` proves
 the exemption rule directly and that red evidence re-credits a changed definition. Verified red by
 restoring the unconditional `previousPassing` exemption.
+
+**Codex reopened this at 0.194.0, correctly, and the reason is the lesson.** `gateTree` computed a
+definition-aware credited set and returned it; the `gates` effect returned only `{ ok, results }`,
+so `driveRun` **discarded it**, re-derived its own passing set from the reports, and advanced on
+that. Every helper test was green while the production loop applied none of it — the same shape as
+the guard hook, which was correct for eleven versions with nothing proving it was invoked.
+
+**The reopening also exposed a second, older inertness.** `unprovenIds` is where RED-before-GREEN
+"actually bites", per its own docstring — and it, too, was only reached through `gateTree`'s
+discarded set. So the loop banked ids that had never been observed failing at all. Both are fixed by
+the same move.
+
+**Repaired at 0.195.0** by applying the rule where banking happens. Both advances — Phase 4's early
+bank and Phase 6's commit-recording one — now take the credited set. Regressions are still computed
+from `passing`, so a withheld id is never read as a regression: it passed, it simply has not earned
+credit, and treating its absence as a loss would hard-reset the tree over a working test.
+
+**Four fixtures needed the first-gating baseline a real gate run writes.** An injected `gates` double
+never calls `recordRedEvidence`, so those tests were asserting early banking *and* accidentally
+asserting that an unproven id gets banked — the defect next door. The harness now takes an explicit
+`seedRed`, which states what a real gate run would have established.
 
 ### 72. Conserve every child result in budget accounting — IMPLEMENTED (0.174.0); REVIEW F18 open pending Codex
 
