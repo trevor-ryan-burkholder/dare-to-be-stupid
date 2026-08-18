@@ -2944,7 +2944,7 @@ runner.
 successful neighbour proves the published commit, sealed workspace identity, deploy input, tag and
 terminal receipt all converge. REVIEW F31 owns closure.
 
-### 89. Refuse uncleared report paths before they can be banked — OPEN (REVIEW F32)
+### 89. Refuse uncleared report paths before they can be banked — IMPLEMENTED (0.181.0); REVIEW F32 open pending Codex
 
 **Problem solved:** `clearReports` already returns the paths it could not remove, and the Driver
 logs them and runs the gate anyway. `collectReports` then accepts any regular file at a configured
@@ -2960,6 +2960,65 @@ weakening item 70's attempt identity.
 **Done when:** unit coverage forces removal failure and proves the survivor cannot be parsed or
 banked; a real-filesystem integration case proves an exit-zero gate cannot relabel it fresh; and the
 ordinary replace-and-collect path stays green. REVIEW F32 owns closure.
+
+**What landed (0.181.0).** `collectReports` takes the clear's outcome as a **required argument**,
+binds it to the paths being collected (a path the record does not account for is uncleared, so an
+outcome for another set cannot satisfy the signature), and refuses the whole attempt when any
+declared path is stuck — structural rather than a rule each caller must remember, because
+enumerating call sites is how the guard hook's original defect worked.
+`gateTree` records the outcome per gated tree (a raced candidate clears its own paths, and one
+candidate's locked file must not withhold the main tree's evidence), skips the inline parse and the
+`recordRedEvidence` write entirely on a stuck path, and emits the `report-freshness` gate first in
+the result list. `readTestReports` fails closed on a tree with no recorded clear. The ratchet's
+`reject` objective now carries the failing gates, so a refused attempt tells the builder which gate
+explains the empty collection instead of sending it after the runner — the same shape as dogfood
+run 6.
+
+**Two judgements worth naming.** Refusal is whole-attempt, not per-path: ids collapse across reports
+by worst status so a survivor adds uncontradictable passes, and dropping only the stuck path hands
+the ratchet a set missing every id that path owned, which reads as a mass regression and resets the
+tree. And nothing report-derived runs at all on a refused attempt, because `recordRedEvidence`
+establishes its baseline exactly once — an empty baseline frozen from a refused attempt would leave
+every later test permanently unproven.
+
+**One defect the finding did not name, found by adversarially reviewing the repair.** `gateTree`
+read the declared report paths itself, with `existsSync` plus `readFileSync` — which **follows a
+symlink** — while everything downstream read them through `collectReports`, whose `lstat` refuses
+one. Two report-consuming authorities over one artifact, disagreeing inside a single attempt, and
+the one that followed the link was the one that writes red evidence. The hand-rolled reader is
+deleted; `gateTree` now collects through the same function as everybody else. Verified red against
+the unrepaired driver by `never lets a symlinked report path reach red evidence`.
+
+**Evidence.** `test/reports.test.mjs` forces a *real* removal failure (a read-only parent directory,
+which is what POSIX has instead of a Windows locked handle), asserts the survivor is a readable
+regular file whose ids `extractTestIds` would have banked, and proves collection refuses it; the
+partial-stuck, benign-reclear, absent-outcome and malformed-outcome cases go with it.
+`test/report-freshness.test.mjs` covers the gate result. `test/integration/report-freshness.integration.test.mjs`
+drives the **real `main`** — real git, real `gateTree`, canned children — with a genuinely
+unremovable report path and an operator gate that writes a real passing vitest report and exits
+zero, and proves the gate fails by name, the stuck path is named, `red-evidence.json` is never
+written, no id is banked, and the second builder brief names `report-freshness`; the benign
+neighbour admits the identical report and records its id.
+
+**Which cases were confirmed red first, stated precisely** — an earlier draft of this entry claimed
+"both", which was false and was caught by review. Confirmed failing against the unrepaired driver:
+the unit laundering case (the stale passing report was returned as evidence) and the two hostile
+integration cases (`report-freshness` never reached the roster; the symlinked path reached red
+evidence). The benign neighbours pass before and after by construction — that is what makes them
+neighbours, and they are there to prove the refusal is narrow, not to prove the defect.
+
+**What is deliberately not covered.** F32's Windows locked-file bullet says "where available", and it
+is not: the only host is WSL2, which is the same platform gap item **65** / F11 owns. POSIX governs
+`unlink` by the parent directory's write bit, so a *surviving readable regular file* can only be
+produced here by making the parent read-only — which cannot be done to a live `.meeseeks/`, because
+the run must keep writing its state there. Tier 1 therefore owns the readable-survivor shape and
+tier 2 owns the composition. The two permission-dependent cases **fail rather than skip** when the
+process can unlink from a read-only directory, on the same argument that arms the live tier by
+environment variable; the symlink case needs no permissions, so a root environment still proves the
+driver-side composition.
+
+Tier 1 **2522 pass / 0 fail**, tier 2 **120 pass / 0 fail**. No tier 3: nothing here touches
+`spawnClaude`, `claudeArgs`, `childSettings`, envelope parsing or a template's output contract.
 
 ### 90. Keep process cleanup off concurrent sibling children — OPEN (REVIEW F33)
 
@@ -3047,6 +3106,43 @@ before signalling, and preserve bounded stop behaviour and the long-running-serv
 probe, and proves the background server and its listener are gone; cooperative exit, timeout and
 already-empty group settle without killing unrelated processes; and Windows evidence stays owned by
 F11/item 65. REVIEW F37 owns closure.
+
+### 95. Do not read an absent report as a regression when its gate did not produce one — OPEN (found reviewing item 89)
+
+**Problem solved:** `reportFiles` is what the toolchain *declares*, not what any gate is armed to
+write. `scripts/toolchains/node.mjs` declares `test-report.json` and `e2e-report.json`
+unconditionally, while `gate-policy.mjs` arms `e2e` only for `web-ui`/`desktop-ui` — so `missing` is
+non-empty on essentially every iteration of every node CLI, library or service, and that is correct
+and must stay correct. Item 89's whole-attempt refusal therefore covers `stuck` and **must not** be
+extended to `missing` or `irregular`: doing so would make `contents` empty forever, `collected` zero
+forever, and no run of a non-UI node project could ever bank an id or ship. That was verified while
+reviewing item 89 and is the reason the asymmetry exists — `stuck` can fabricate a pass from bytes
+this attempt never produced, `missing` cannot credit anything at all.
+
+The hazard is the other direction, and it is real, pre-existing and reproduced. Once ids from a
+report *have* been banked, a later iteration in which that report's gate crashes, times out or is
+skipped writes nothing, so those ids are absent from `passing` while `collected` is comfortably
+non-zero from the *other* report. `evaluateIteration` rejects only on `collected === 0`, so the
+partial set passes the dogfood-run-6 guard and is read as a mass regression; `driveRun`'s reset
+branch is unconditional on gate results, so the tree is hard-reset and the iteration's work is
+destroyed. It then repeats every iteration, because the verification gate re-runs the same
+non-producing gate — a livelock to `BUDGET`, not one lost iteration. Reproduced end to end against
+the real `driveRun`: 30 e2e ids reported as regressions, `src/core.js` returned to its previous
+content, `repeated regression: ... (2 times)`, run burned to the ceiling. This is fail-closed —
+nothing unproven is ever credited and it cannot reach `SHIPPED` — which is why it is an item rather
+than a release blocker.
+
+The fix is a different mechanism from item 89's, which is why it is a separate item: a regression
+must be attributable. An id whose owning report was not produced this attempt, by a gate that did
+not run or did not pass, is **unmeasured**, not regressed; it keeps its ratchet protection and
+blocks nothing, and the failing gate is what fails the iteration. Do not weaken the case where the
+gate ran, passed and the id genuinely went away.
+
+**Done when:** a banked id whose report was not produced by a gate that did not run is not counted
+as a regression and triggers no reset; the same id genuinely failing under a gate that ran and
+passed still resets exactly as now; `collected === 0` keeps its existing meaning; and a tier-2 case
+drives the real `driveRun` through the reproduced livelock and shows it terminating instead.
+Item **89** is a prerequisite (it owns the `stuck` half of the same question).
 
 ## Observations recorded rather than repaired
 

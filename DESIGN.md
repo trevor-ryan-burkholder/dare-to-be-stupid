@@ -966,6 +966,45 @@ The scoped restore reads its verification gate's **result** before it reads anyt
 produced. A unit gate that failed, or that did not run at all, has verified nothing, and the run
 falls through to the whole-tree reset exactly as it did before the narrow one existed.
 
+**And a path the removal could not reach is a failed attempt** (REVIEW F32, implemented at
+0.181.0). "Remove first, require presence after" only means something where the removal actually
+happened. `clearReports` always returned the paths it could not remove, and the Driver logged them
+and ran the gate anyway — so a locked or unwritable-directory *old passing* report survived, an
+exit-zero gate declined to replace it, and F16's own argument then certified it as this attempt's.
+That is the same laundering, arriving through the one door the repair left open, and it is the
+branch that reaches the ratchet, red evidence and the scoped restore's confirmation alike.
+
+The repair is structural rather than a rule each caller must remember. **Collection takes the
+clear's outcome as a required argument**, so no caller can read a report without stating whether
+its path was cleared, and a caller that supplies nothing — or a record that is not a clear outcome
+— is refused rather than defaulted. The outcome is bound to the **paths**, too: a path the record
+does not account for is uncleared, so an outcome for some other set cannot be handed in to satisfy
+the signature and leave the guarantee nominal. Enumerating the call sites instead would have
+re-opened the moment somebody added the next one, which is exactly how the guard hook's original
+defect worked.
+
+**And there is now one reader, where there were two.** `gateTree` read the same declared paths
+itself, with `existsSync` plus `readFileSync` — which *follows a symlink* — while everything
+downstream read them through `collectReports`, whose `lstat` refuses one. So a symlinked report path
+was refused by the loop and read by the authority that writes red evidence, inside a single attempt.
+Neither F16 nor F32 named this; adversarial review of the F32 repair did. Two readers of one
+artifact will eventually disagree, and the fix is to stop having two rather than to teach the second
+one the first one's rules.
+
+Refusal is **the whole attempt, not the stuck path alone**. Ids collapse across every report by
+worst status, so a survivor contributes passes the other files cannot contradict; and dropping only
+the stuck path would hand the ratchet a set missing every id that path owned, which reads as a mass
+regression and resets the tree. One re-run is cheaper than one false reset.
+
+Withholding the evidence is only half of it, because an attempt whose evidence was withheld and
+whose remaining gates passed would read as a clean iteration that merely collected nothing. So the
+`report-freshness` gate **fails the attempt** and names the stuck paths, bounded, in a detail that
+reaches both the operator's log and the builder's brief; and on a refused attempt nothing
+report-derived runs at all. `recordRedEvidence` is the reason that last part is absolute rather than
+tidy: it writes the baseline **exactly once**, so establishing it from a refused attempt would
+freeze an empty baseline for the project's lifetime and leave every later test permanently unproven
+— a gate the builder could not satisfy, which is the failure the baseline exists to prevent.
+
 **A verdict is sealed to the bytes it was formed over** (REVIEW F14, implemented at 0.172.0).
 Gates and the Panel inspect the live working tree, and the loop then ran `git add -A` and committed
 whatever bytes existed at that later moment. Codex had a reviewer read `src/a.js` as `reviewed

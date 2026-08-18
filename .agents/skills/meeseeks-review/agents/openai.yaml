@@ -1,0 +1,4 @@
+interface:
+  display_name: "Meeseeks Review"
+  short_description: "Run a rigorous read-only Meeseeks audit"
+  default_prompt: "Use $meeseeks-review to perform a rigorous read-only review of the Meeseeks repository."

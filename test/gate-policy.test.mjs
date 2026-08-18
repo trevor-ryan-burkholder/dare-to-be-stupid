@@ -7,8 +7,10 @@
  *
  * So the assertions are about *absence*: which gates disappear for which project shapes, that
  * nothing disappears without a reason attached, and that the table covers every gate the
- * system can produce. That last one is why the completeness test builds its gate list from the
- * real toolchain registry rather than from a list retyped here.
+ * policy filters. That last one is why the completeness test builds its gate list from the
+ * real toolchain registry rather than from a list retyped here. It is deliberately *not* a
+ * claim about every gate the loop can produce: see `STATIC_GATES` for the two that bypass the
+ * policy entirely, and why listing them here would be wrong rather than merely redundant.
  */
 
 import assert from 'node:assert/strict';
@@ -18,7 +20,16 @@ import { CAPABILITY_ORDER } from '../scripts/capabilities.mjs';
 import { GATE_POLICY, applicableGates, gateApplies } from '../scripts/gate-policy.mjs';
 import { GATE_OPERATIONS } from '../scripts/toolchains/index.mjs';
 
-/** The gates that are not toolchain operations: static checks and the ratchet's own. */
+/**
+ * The gates that are not toolchain operations: static checks and the ratchet's own.
+ *
+ * **Policy-filtered gates only.** `GATE_POLICY` answers "does this gate apply to a project of this
+ * shape", so a gate that never passes through `applicableGates` has nothing to declare and must not
+ * be listed here. Two do not: `test-stability` (REVIEW F30) and `report-freshness` (REVIEW F32) are
+ * appended to the result list unconditionally, because a flaky test and an uncleared report path are
+ * facts about the attempt rather than about the project. Adding either to the table would claim a
+ * capability condition that does not exist.
+ */
 const STATIC_GATES = ['ci', 'docs', 'observability', 'integrity', 'red-evidence'];
 
 describe('the gate table', () => {

@@ -841,6 +841,50 @@ function mutationCoverageHint(gateName, detail) {
 export const STABILITY_ID_LIMIT = 20;
 
 /**
+ * How many uncleared report paths a freshness failure names before it counts instead of listing.
+ *
+ * Bounded for the same reason as `STABILITY_ID_LIMIT`: this text reaches the builder's brief. The
+ * real list is short — a toolchain declares two or three report paths — so the cap is a guard
+ * against a future toolchain rather than an expected truncation.
+ */
+export const UNCLEARED_PATH_LIMIT = 20;
+
+/**
+ * One deterministic gate result for report paths this attempt could not clear (REVIEW F32).
+ *
+ * **F16 removed the reports before an attempt and read back whatever was there afterwards, which
+ * makes absence mean "this attempt produced nothing".** That argument holds only for a path the
+ * removal reached. `clearReports` always reported the ones it could not remove and the Driver
+ * logged them and ran the gate regardless — so an unremovable *old passing* report survived, an
+ * exit-zero gate declined to replace it, and F16's own reasoning then certified it as fresh.
+ *
+ * The refusal has two halves and needs both. `collectReports` withholds the evidence; this makes
+ * the attempt **fail**, because a run whose evidence was withheld and whose gates all passed would
+ * otherwise read as a clean iteration that merely collected nothing. It is not a passing iteration:
+ * the workspace is in a state where the run cannot tell its own output from the last attempt's.
+ *
+ * @param {string[]} uncleared absolute report paths `clearReports` could not remove
+ * @param {string} root the tree they belong to, so the detail names them relatively
+ * @returns {GateResult | null} null when every declared report path was cleared
+ */
+export function reportFreshnessGateResult(uncleared, root) {
+  const paths = [...new Set(uncleared)].sort();
+  if (paths.length === 0) return null;
+  const named = paths.map((file) => path.relative(root, file)).slice(0, UNCLEARED_PATH_LIMIT);
+  const more = paths.length - named.length;
+  return {
+    name: 'report-freshness',
+    ok: false,
+    status: 1,
+    detail:
+      `${paths.length} declared test-report path(s) could not be removed before this attempt ran, so anything ` +
+      'found at them afterwards may be the previous attempt\'s output rather than this one\'s. No test evidence ' +
+      'was read this iteration. Something is holding these paths open, or the directory is not writable — free ' +
+      `them and re-run: ${named.join(', ')}${more > 0 ? ` and ${more} more` : ''}`,
+  };
+}
+
+/**
  * One deterministic gate result for tests that failed and then passed on a retry (REVIEW F30).
  *
  * **The hole this fills is an asymmetry nobody would have chosen.** The Playwright parser preserves
@@ -2359,10 +2403,27 @@ export async function driveRun(options) {
         headline: `${options.task}\n\nBefore anything else: make the test suite run and pass.`,
         reason:
           'no test passed on the previous iteration. An empty result is not evidence that nothing regressed, so the ' +
-          'ratchet cannot advance on it and nothing else can be judged. Check the runner before rewriting the ' +
-          `tests: the gate collects them with \`${options.unitCommand ?? 'the toolchain unit command'}\`, so a suite ` +
-          'written for a runner that command cannot collect reports zero tests however green your own test ' +
-          'script looks',
+          'ratchet cannot advance on it and nothing else can be judged. ' +
+          // **Which sentence follows depends on whether anything already explained the emptiness**
+          // (REVIEW F32). Told unconditionally to go and check the runner, a builder whose reports
+          // were withheld on purpose — or whose unit gate failed before it could write one — hunts
+          // a suite that is fine. That misdirection is dogfood run 6's shape, and a refused attempt
+          // reproduces it exactly: the gates below say what happened and this sentence contradicted
+          // them.
+          (failedGates.length > 0
+            ? 'The failing gates below are the explanation for it: fix them first, and do not go looking for a ' +
+              'fault in the suite until they pass'
+            : 'Check the runner before rewriting the ' +
+              `tests: the gate collects them with \`${options.unitCommand ?? 'the toolchain unit command'}\`, so a suite ` +
+              'written for a runner that command cannot collect reports zero tests however green your own test ' +
+              'script looks'),
+        // **The failing gates travel with it** (REVIEW F32). This branch `continue`s before the
+        // gate-failure branch below, so a builder handed a reject objective used to be told the
+        // runner collected nothing and nothing else — even when a gate had already said exactly
+        // why. A refused attempt is the loudest case (the reports were withheld deliberately), but
+        // it is the same shape as dogfood run 6, where the unit gate's failure was the whole
+        // explanation for an empty collection and never reached the actor who had to respond.
+        gateFailures: failedGates.map((result) => ({ name: result.name, detail: result.detail })),
       };
       await closeIteration(iterationNumber, ['ratchet:no-passing-tests'], score, 0);
       continue;
@@ -6236,6 +6297,21 @@ export async function main(argv, io = {}) {
   const reportFiles = (/** @type {string} */ dir) =>
     resolveToolchain(dir).toolchain.reports.map((name) => path.join(dir, '.meeseeks', name));
 
+  /**
+   * What `clearReports` managed to remove, per gated tree (REVIEW F32).
+   *
+   * The clear happens in `gateTree` and the collection happens in an effect the loop calls
+   * afterwards, so the fact has to survive the gap between them. Keyed by tree because a raced
+   * candidate gates in its own worktree against its own report paths, and one candidate's locked
+   * file must not withhold the main tree's evidence — or the other way round.
+   *
+   * A tree with no entry is refused rather than defaulted: no recorded clear is not evidence that
+   * the paths were clear.
+   *
+   * @type {Map<string, import('./reports.mjs').ClearOutcome>}
+   */
+  const clearOutcomes = new Map();
+
   const toolchainGates = gateSummary(cwd, meeseeksDir);
   write(verbatim(`toolchain: ${toolchainGates.toolchain} (${toolchainGates.evidence})`));
   // A declined operation is announced rather than merely omitted. A gate list that quietly
@@ -6349,8 +6425,14 @@ export async function main(argv, io = {}) {
     // and everything downstream reads it as this attempt's evidence — which is how a failed
     // verification gate once confirmed a scoped restore that had not held. Removing them first
     // makes absence mean "this attempt produced nothing" rather than something to infer.
-    const stuck = clearReports(reportFiles(dir)).stuck;
-    for (const file of stuck) write(verbatim(`could not clear the previous report at ${path.relative(dir, file)}`));
+    //
+    // **What could not be cleared is remembered, not merely announced** (REVIEW F32). Logging the
+    // stuck paths and running the gate anyway is how a surviving old passing report kept earning
+    // this attempt's authority: absence means "produced nothing" only for a path the removal
+    // actually reached. The outcome is keyed by tree because a raced candidate clears its own.
+    const cleared = clearReports(reportFiles(dir));
+    clearOutcomes.set(dir, cleared);
+    for (const file of cleared.stuck) write(verbatim(`could not clear the previous report at ${path.relative(dir, file)}`));
     // Arming is a question about the code, so it is asked where the code is, every
     // iteration. Resolving it once at provisioning time asked it of a repository holding a
     // PRD and nothing else, so the answer was always "no frontend" and the design gate never
@@ -6470,14 +6552,28 @@ export async function main(argv, io = {}) {
 
     const previousPassing = loadState(meeseeksDir).passing;
 
+    // **The refusal, before any report-consuming authority is assigned** (REVIEW F32). What follows
+    // records red evidence and decides what this tree may be credited with, and both are
+    // authorities. `recordRedEvidence` is the sharper of the two: it writes the baseline **exactly
+    // once**, so establishing it from a refused attempt would freeze an empty baseline for the
+    // whole project and leave every later id permanently unproven — a gate the builder could not
+    // satisfy. So on a stuck path nothing here runs at all, rather than running on empty inputs.
+    //
+    // **Read through `collectReports`, which used to be the one thing this did not do.** This was a
+    // hand-rolled second reader over the same paths — `existsSync` plus `readFileSync`, which
+    // *follows a symlink* — so a symlinked report path was refused by `readTestReports` and read
+    // here, in the same attempt, by the authority that writes red evidence. Two readers of one
+    // artifact will eventually disagree; the fix is to stop having two.
+    const collected = collectReports(reportFiles(dir), cleared);
+    const freshness = reportFreshnessGateResult(collected.uncleared, dir);
+
     /** @type {Set<string>} */
     const passing = new Set();
     /** @type {Set<string>} */
     const nonPassing = new Set();
-    for (const file of reportFiles(dir)) {
-      if (!existsSync(file)) continue;
+    for (const report of collected.contents) {
       try {
-        for (const test of parseReport(readFileSync(file, 'utf8'), { rootDir: dir }).tests) {
+        for (const test of parseReport(report, { rootDir: dir }).tests) {
           (test.status === 'passed' ? passing : nonPassing).add(test.id);
         }
       } catch {
@@ -6486,9 +6582,13 @@ export async function main(argv, io = {}) {
     }
     // Passing ids are handed over too, because the first gating of a project has to record
     // what it found as a baseline: those tests have no "before" to have been red in.
-    const red = recordRedEvidence(treeStateDir, nonPassing, [...passing]);
-    const evidence = { previousPassing, passing, redSeen: red.seenFailing, baseline: red.baseline };
+    const red = freshness === null ? recordRedEvidence(treeStateDir, nonPassing, [...passing]) : null;
+    const evidence =
+      red === null ? null : { previousPassing, passing, redSeen: red.seenFailing, baseline: red.baseline };
     const results = [
+      // First, because it invalidates everything after it: a reader scanning the failures needs to
+      // see that this attempt's evidence was withheld before reading gates judged without it.
+      ...(freshness === null ? [] : [freshness]),
       ...commandResults.results,
       // The static gates are filtered by the same table as the command gates. `observability`
       // is the one that moves: a CLI has no health endpoint to answer, and the gate was
@@ -6509,12 +6609,14 @@ export async function main(argv, io = {}) {
         }),
         capabilities,
       ).gates,
-      redEvidenceGate(evidence),
+      // Judged only where there is evidence to judge. A red-evidence verdict over a refused
+      // attempt would be a verdict about nothing, and `report-freshness` has already failed.
+      ...(evidence === null ? [] : [redEvidenceGate(evidence)]),
     ];
     // Withheld rather than blocked. An unproven test earns no protection from the ratchet,
     // which is the deterrent §8 always described; failing the iteration on it deadlocked the
     // run instead, because the evidence it demanded could not be produced.
-    const unproven = unprovenIds(evidence);
+    const unproven = evidence === null ? /** @type {Set<string>} */ (new Set()) : unprovenIds(evidence);
     const credited = new Set([...passing].filter((id) => !unproven.has(id)));
     return { ok: results.every((result) => result.ok), results, passing: credited };
   };
@@ -6637,6 +6739,9 @@ export async function main(argv, io = {}) {
     } finally {
       const cleaned = await removeWorktrees({ cwd, run: shell, worktrees: created.worktrees });
       for (const problem of cleaned.problems) write(verbatim(problem));
+      // The candidates' clear records go with their worktrees. Keeping them would grow the map for
+      // the length of the run and leave entries naming directories that no longer exist.
+      for (const worktree of created.worktrees) clearOutcomes.delete(worktree.dir);
       rmSync(parentDir, { recursive: true, force: true });
     }
   };
@@ -6783,12 +6888,36 @@ export async function main(argv, io = {}) {
       // bytes — so the identity a verdict is sealed to is the one the repository already trusts to
       // decide whether a deterministic gate may be skipped.
       workspaceIdentity: () => workspaceHash({ cwd, run: shell }),
-      // Only what this attempt produced, and only from regular files (REVIEW F16). `gateTree`
+      // Only what this attempt produced, and only from regular files (REVIEW F16, F32). `gateTree`
       // cleared these paths before the gates ran, so a path that is here now was written by the
-      // attempt just finished; one that is a directory or a symlink is refused rather than read,
-      // because reading whatever it resolves to would be guessing.
+      // attempt just finished — **for every path the clear actually reached**, which is why the
+      // clear's outcome is required below rather than assumed. One that is a directory or a symlink
+      // is refused rather than read, because reading whatever it resolves to would be guessing.
       readTestReports: () => {
-        const collected = collectReports(reportFiles(cwd));
+        // Fail-closed on a tree nothing cleared (REVIEW F32). Every call site runs after
+        // `effects.gates()`, so the entry is always there in practice; the throw exists for the
+        // ordering somebody changes later, and the loop reads it as an unreadable report, which is
+        // the correct reading — the reports cannot be attributed to an attempt that never began.
+        const cleared = clearOutcomes.get(cwd);
+        if (cleared === undefined) {
+          throw new DriverError(
+            'the declared report paths were never cleared for this attempt, so nothing found at them can be read ' +
+              "as this attempt's evidence",
+          );
+        }
+        const collected = collectReports(reportFiles(cwd), cleared);
+        // Named, not merely withheld. The gate result carries this to the builder; this line
+        // carries it to the operator, who is the only one who can go and free the file.
+        if (collected.uncleared.length > 0) {
+          write(
+            verbatim(
+              `refusing every test report this attempt: ${collected.uncleared
+                .map((file) => path.relative(cwd, file))
+                .join(', ')} could not be cleared before the gates ran, so what is there now may be the previous ` +
+                "attempt's",
+            ),
+          );
+        }
         for (const file of collected.irregular) {
           write(verbatim(`ignoring ${path.relative(cwd, file)}: a report path that is not a regular file is not a report`));
         }
