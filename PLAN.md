@@ -3027,7 +3027,7 @@ the restriction in place — but a pass on re-run does not erase the failure.
 not proof that a child cannot reach anything by other means, and `--safe-mode` remains a
 customization control rather than a tool set.
 
-### 83. Enforce a measured Claude Code compatibility policy — OPEN (REVIEW F28)
+### 83. Enforce a measured Claude Code compatibility policy — PARTIAL (0.205.0): the policy and its fail-closed parse landed; sealed binary identity has not
 
 **Problem solved:** preflight currently accepts any executable whose `claude --version` exits
 successfully, even though Meeseeks relies on versioned flags, settings, hooks, command/Skill
@@ -3086,6 +3086,46 @@ every admitted compatibility boundary pass the same staged installed candidate's
 target, invocation-closure fingerprints, CLI, settings, and plugin identities. README, DESIGN,
 preflight output, and fixtures name the same
 policy; expanding either boundary without the complete live suite fails. REVIEW F28 owns closure.
+
+**What landed (0.205.0).** `scripts/claude-compat.mjs` is the single runtime source: a floor, a
+ceiling, and the evidence for both. `checkClaudeCli` parses `claude --version` and refuses below,
+above, prerelease and unparseable, naming the executable it actually resolved — `command -v claude`,
+because a version complaint about "claude" is unactionable on a host with three of them — and
+printing the measurements the bounds come from.
+
+**The bounds are a record, not a constant somebody liked.** F28 is explicit that inventing precision
+would be no better than the absent check, so the floor is **2.1.226**, the oldest release with live
+measurements in this repository, and the ceiling is **2.1.234**, the newest the full live tier has
+passed on. 2.1.136 is cited as *recorded incompatible* — no `--safe-mode` — which is why the true
+floor is unknown and the demonstrated one is named instead. A test requires every bound to appear in
+the evidence list.
+
+**Refusing forward is the uncomfortable half and is deliberate.** A greater version number is not
+evidence of compatibility, and the CLI documents a coming bare-mode default for `-p` that would
+change authentication under a run. A version ceiling is a monotonic property, so its escape was
+designed before its enforcement, exactly as `AGENTS.md` requires: run `MEESEEKS_LIVE=1 npm run
+test:live` against the newer CLI and move `VERIFIED_THROUGH` in one commit with the evidence. Without
+that escape the next background auto-update would brick every run on the host.
+
+**Evidence.** `test/claude-compat.test.mjs` covers below, equal, inside, above, decorated output,
+prerelease, malformed and non-string. `test/integration/claude-compat.integration.test.mjs` puts a
+real executable named `claude` first on a real `PATH` and drives the real `runPreflight` with the
+real `defaultProbe`: the old binary refuses, the refusal names the resolved path and prints the
+evidence, a newer one refuses with the widening instruction, a wrapper that prints a banner refuses,
+and an in-range binary passes — the neighbour, without which a gate that refused everything would
+score the same. Five of seven go red with the policy disabled.
+
+**Recorded honestly:** the refusal happens before any *run* state, but preflight does scaffold
+`.meeseeks/config.json`, which is its own documented job. The first draft of the test asserted no
+`.meeseeks` at all and failed; asserting the artifacts that mean a run began — lock, run manifest,
+receipt — is the property that is actually true.
+
+**Not yet done, and named rather than implied.** The sealed-identity half: fingerprinting the
+canonical binary at the run boundary, re-resolving and re-fingerprinting immediately before each role
+spawn so a mid-run PATH shadow or same-version byte replacement refuses, binding a launcher's
+delegated entrypoint, and suppressing background auto-update through item **56**'s control set. A
+version check alone does not establish that the binary a later role resolves is the one preflight
+measured. `PARTIAL` for exactly that reason.
 
 ### 84. Measure and admit fail-closed child containment — OPEN (live-contract first)
 

@@ -14,6 +14,14 @@
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
+import {
+  COMPATIBILITY_EVIDENCE,
+  SUPPORTED_FLOOR,
+  VERIFIED_THROUGH,
+  classifyClaudeVersion,
+  versionText,
+} from './claude-compat.mjs';
+
 import { ConfigError, initConfig, riskyRemoteWord } from './config.mjs';
 import { RUN_LOCK_FILE, pidIsAlive, readRunLock } from './run-lock.mjs';
 import { blockingFindings, formatFindings, scanAgentSurface } from './security-scan.mjs';
@@ -96,17 +104,67 @@ export function checkNodeVersion(nodeVersion) {
 }
 
 /**
+ * Is the Claude Code on this PATH one this build has been shown to work with? (REVIEW F28)
+ *
+ * **It used to ask only whether the binary was callable.** Every version passed, including one the
+ * repository itself records as incompatible — an ancestor npm binary at 2.1.136 that has never heard
+ * of `--safe-mode`. The driver's behaviour rests on versioned external contracts, so an unverified
+ * binary does not fail here; it fails four hours later, having spent money, when a role rejects a
+ * flag or returns a differently shaped envelope.
+ *
+ * Both directions refuse, and the refusal names the executable, what it said, what the policy is and
+ * how to change it. `scripts/claude-compat.mjs` owns the bounds and the evidence for them.
+ *
+ * **This is a compatibility gate, not capability proof.** It says a version is in a range that was
+ * measured. It does not establish that this particular binary is the one a later role will resolve,
+ * which is the sealed-identity half of F28 and is not in this slice.
+ *
  * @param {Probe} probe
  * @returns {CheckResult}
  */
 export function checkClaudeCli(probe) {
   const result = probe('claude', ['--version']);
+  if (!result.ok) {
+    return check(
+      'claude-cli',
+      false,
+      `claude could not be run: ${result.stderr.trim()}`,
+      'Install the Claude Code CLI and sign in; the driver spawns `claude -p` children and inherits that auth.',
+    );
+  }
+  const verdict = classifyClaudeVersion(result.stdout);
+  if (!verdict.ok) {
+    return check(
+      'claude-cli',
+      false,
+      // The identity of what was actually run, because "claude" is a PATH lookup and the operator
+      // may have three of them. `which` is probed rather than assumed; an unknown path is reported
+      // as unknown rather than omitted.
+      `${verdict.reason} (${resolvedClaudePath(probe)})\n${COMPATIBILITY_EVIDENCE.map((line) => `  ${line}`).join('\n')}`,
+      verdict.fix,
+    );
+  }
   return check(
     'claude-cli',
-    result.ok,
-    result.ok ? `claude ${result.stdout.trim()}` : `claude could not be run: ${result.stderr.trim()}`,
+    true,
+    `claude ${versionText(verdict.version)} (supported ${SUPPORTED_FLOOR} through ${VERIFIED_THROUGH})`,
     'Install the Claude Code CLI and sign in; the driver spawns `claude -p` children and inherits that auth.',
   );
+}
+
+/**
+ * Which `claude` the shell would actually run.
+ *
+ * Reported with a refusal and nowhere else. A version complaint about "claude" is unactionable on a
+ * host with a shadowed binary, which is the shape of the incident this finding cites.
+ *
+ * @param {Probe} probe
+ * @returns {string}
+ */
+function resolvedClaudePath(probe) {
+  const found = probe('sh', ['-c', 'command -v claude']);
+  const resolved = found.ok ? found.stdout.trim() : '';
+  return resolved === '' ? 'path unknown' : resolved;
 }
 
 /**

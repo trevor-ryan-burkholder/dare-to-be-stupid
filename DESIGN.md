@@ -343,9 +343,15 @@ invocation closure cannot be bounded and live-proven is unsupported rather than 
 A compatibility pass does not replace the paid live suite:
 flags such as `--safe-mode` have had behavior not fully specified by help text, and current official
 documentation says background updates take effect on a later launch. Current 0.164.0 checks only
-whether `claude --version` exits successfully; the repository records a 2.1.136 binary that lacks
-`--safe-mode`, individual live measurements on 2.1.226/2.1.228, and source validation on
-2.1.233—not a complete product contract matrix. REVIEW F28 / PLAN item 83 own the policy and
+`claude --version` and refuses anything outside a measured range. `scripts/claude-compat.mjs` is the
+single runtime source: a floor of 2.1.226 (the oldest release with live measurements here), a ceiling
+of 2.1.234 (the newest the full live tier has passed on), the 2.1.136 binary recorded as
+incompatible for lacking `--safe-mode`, and the evidence for each. Both directions refuse, because a
+greater version number is not evidence of forward compatibility; the escape from the ceiling is to
+run the live tier against a newer CLI and move one constant. The **sealed-identity** half is not
+built: nothing yet fingerprints the resolved binary or re-resolves it before each role spawn, so a
+PATH shadow introduced mid-run is still unaddressed. REVIEW F28 / PLAN item 83 own the rest of the
+policy and
 enforcement.
 
 **The run lock is `.meeseeks/lock.json`; `.meeseeks/run.json` is the run manifest (§7.1).** The
