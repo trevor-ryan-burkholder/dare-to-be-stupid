@@ -5957,6 +5957,30 @@ export async function main(argv, io = {}) {
   const outcomeWritten = { done: false };
 
   /**
+   * Move the previous run's artifacts aside, at most once (REVIEW F10, reopened).
+   *
+   * **The ordering was contradictory the moment `releasing` started writing a receipt.** Archiving
+   * ran after the launch check, on the reasoning that a refused launch should disturb nothing — but
+   * a refusal now files `outcome.json`, so it overwrote the previous run's receipt before anything
+   * could preserve it. The fix is not to move one call: every early exit has the same problem, so
+   * the archive happens before any receipt is written, from wherever the exit is taken.
+   *
+   * A failure here is reported and does not change the terminal state already decided. The ordinary
+   * path still refuses to *start* on a failed archive; that check is at its own call site below,
+   * where continuing would destroy the evidence archiving exists to keep.
+   *
+   * @returns {string | null} the archive directory, or null when there was nothing to archive
+   */
+  let archivedTo = /** @type {string | null} */ (null);
+  let archiveAttempted = false;
+  const archiveOnce = () => {
+    if (archiveAttempted) return archivedTo;
+    archiveAttempted = true;
+    archivedTo = archivePreviousRun(meeseeksDir);
+    return archivedTo;
+  };
+
+  /**
    * @param {number} code
    * @param {{ state?: 'SHIPPED' | 'STALLED' | 'BUDGET' | 'ABORTED', reason: string, phase: string }} terminal
    * @returns {number}
@@ -5971,6 +5995,13 @@ export async function main(argv, io = {}) {
     // Spend is what is *known*: `preLoop` is the real total handed to children so far. Iterations
     // and the panel identity are omitted rather than zeroed, because a run that never reached the
     // loop has no iteration count and writing one would state a fact it never established.
+    // Before the receipt, always (REVIEW F10, reopened). Otherwise an early exit files this run's
+    // outcome over the previous run's, which is the record archiving exists to keep.
+    try {
+      archiveOnce();
+    } catch (error) {
+      write(verbatim(`could not archive the previous run: ${/** @type {Error} */ (error).message}`));
+    }
     writeRunOutcome(
       meeseeksDir,
       {
@@ -6075,7 +6106,7 @@ export async function main(argv, io = {}) {
   // silent: iteration numbering restarts at 1 every run, so `briefs/iter-001.md` would be
   // overwritten by a replacement that looks exactly like the original (DESIGN.md §7.2).
   try {
-    const archived = archivePreviousRun(meeseeksDir);
+    const archived = archiveOnce();
     if (archived !== null) write(verbatim(`archived the previous run to ${path.relative(cwd, archived)}`));
   } catch (error) {
     // Continuing here would destroy the evidence archiving exists to keep, which is a worse
@@ -6495,7 +6526,22 @@ export async function main(argv, io = {}) {
     return releasing(1, { reason: 'the design documents could not be committed', phase: 'design' });
   }
 
-  const provisioning = await installQualityPlugins({ cwd, plugins: config.qualityPlugins, runner: shell });
+  // **A throw here used to escape both the receipt and the lock** (REVIEW F10, reopened). A required
+  // plugin that cannot be provisioned ends a paid run, and this sits before the loop's own
+  // `try`/`finally`, so the run left no `outcome.json` and gave the repository back only because the
+  // process exited. Routed through `releasing` like every other pre-loop exit.
+  /** @type {Awaited<ReturnType<typeof installQualityPlugins>>} */
+  let provisioning;
+  try {
+    provisioning = await installQualityPlugins({ cwd, plugins: config.qualityPlugins, runner: shell });
+  } catch (error) {
+    write(verbatim(/** @type {Error} */ (error).message));
+    write(stamp('ABORTED', { mode }));
+    return releasing(1, {
+      reason: `quality-plugin provisioning failed: ${/** @type {Error} */ (error).message}`.slice(0, 400),
+      phase: 'quality-plugins',
+    });
+  }
   for (const warning of provisioning.warnings) write(verbatim(warning));
   await commitPhase({ phase: 'quality-plugins', message: 'meeseeks: provision quality plugins', template: null });
 

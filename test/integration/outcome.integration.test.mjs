@@ -171,6 +171,34 @@ describe('a run that dies before the loop still files a receipt', () => {
     assert.equal(Array.isArray(written.passing), true);
   });
 
+  it('preserves the previous run’s receipt when this one is refused at the door', async () => {
+    // **REVIEW F10, reopened.** Archiving ran *after* the launch check, on the reasoning that a
+    // refused launch should disturb nothing — but a refusal now files its own `outcome.json`, so it
+    // overwrote the previous run's receipt before anything could preserve it. The ordering was
+    // contradictory the moment `releasing` started writing.
+    const root = repo();
+    await run(root, ['PRD.md', '--yes'], cannedSpawn({ fail: 'design' }));
+    const first = receipt(root);
+    assert.equal(first.phase, 'design');
+
+    // A launch refusal: a dirty tree is what preflight revalidation exists to catch.
+    writeFileSync(path.join(root, 'PRD.md'), '# changed under the run\n');
+    await run(root, ['PRD.md', '--yes'], cannedSpawn());
+
+    // Whatever the second run recorded, the first run's receipt is *somewhere*, not gone.
+    const archives = path.join(root, '.meeseeks', 'runs');
+    assert.equal(existsSync(archives), true, 'nothing was archived');
+    const preserved = readdirSync(archives)
+      .map((slot) => path.join(archives, slot, OUTCOME_FILE))
+      .filter((file) => existsSync(file))
+      .map((file) => JSON.parse(readFileSync(file, 'utf8')));
+    assert.equal(
+      preserved.some((entry) => entry.phase === 'design'),
+      true,
+      `the earlier receipt was overwritten rather than archived: ${JSON.stringify(preserved)}`,
+    );
+  });
+
   it('leaves no temp file behind, so a reader never finds half a receipt', async () => {
     // The atomic write, observed at the end of a real run rather than asserted about the writer.
     const root = repo();

@@ -2203,7 +2203,7 @@ history boundary, separate from the write guard, but the ownership classificatio
 artifact, runs `git add -A`, and proves only the deliberate config carve-out may stage across
 supported platforms. REVIEW F9 owns closure.
 
-### 64. Record every terminal run outcome atomically — IMPLEMENTED (0.189.0); REVIEW F10 open pending Codex
+### 64. Record every terminal run outcome atomically — IMPLEMENTED (0.189.0, reopened and repaired at 0.196.0); REVIEW F10 open pending Codex
 
 **Problem solved:** paid pre-loop and outer-exception aborts can leave no `outcome.json`, and the
 existing direct overwrite can destroy the only terminal receipt on interruption.
@@ -2572,6 +2572,26 @@ unbounded report read.
 **The terminal-evidence half needs nothing new.** Item 64 already routes every post-lock exit through
 one atomic receipt, so a refusal that ends a run is recorded with its phase by construction — which
 is why this item listed 64 as its prerequisite.
+
+**Codex reopened this at 0.194.0 on two paths, both correct.**
+
+*The ordering was contradictory the moment `releasing` started writing.* Archiving ran **after** the
+launch check, on the reasoning that a refused launch should disturb nothing — but a refusal now
+files its own `outcome.json`, so it overwrote the previous run's receipt before anything could
+preserve it. Repaired by archiving before **any** receipt is written, from wherever the exit is
+taken, rather than by moving one call: every early exit had the same problem. An archive failure
+inside that path is reported and does not change the terminal state already decided; the ordinary
+path still refuses to *start* on a failed archive, where continuing would destroy the evidence.
+
+*Pre-loop exceptions escaped both the receipt and the lock.* Required-plugin provisioning sits
+before the loop's own `try`/`finally`, so a throw there ended a paid run with no `outcome.json` and
+gave the repository back only because the process exited. Routed through `releasing` like every
+other pre-loop exit.
+
+**Still outstanding, and named rather than implied:** only the provisioning path is wrapped. A throw
+from another pre-loop `await` still escapes, because the general fix is a `try` around the whole
+pre-loop region and that is a structural change this slice did not take. Recorded so the next
+reviewer does not read the two repaired paths as the whole class.
 
 ### 74. Require repository-contained reporter identities — IMPLEMENTED (0.175.0); REVIEW F20 open pending Codex
 
