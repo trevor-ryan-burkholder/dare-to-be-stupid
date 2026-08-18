@@ -2,7 +2,8 @@
 
 **State:** `main` at `0.183.0`. The manifests and package-lock root metadata agree. Measured on the
 current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean; `npm test`
-**2531 pass, 0 fail**; `npm run test:integration` **122 pass, 0 fail**; `npm run release-check`
+**2531 pass, 0 fail**; `npm run test:integration` **122 pass, 0 fail** (both measured on 0.183.0, with
+the `run-lock.mjs` hash verified before staging and again after committing); `npm run release-check`
 **ok**. The live tier was **not re-run at 0.181.0 or 0.182.0** and is owed by neither: nothing in those
 changes touches `spawnClaude`, `claudeArgs`, `childSettings`, envelope parsing or a template's output
 contract. Its last measurement, at 0.179.0, was **30 pass, 1 fail** — see the live-tier note below.
