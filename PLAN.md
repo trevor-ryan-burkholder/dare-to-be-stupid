@@ -3376,6 +3376,53 @@ finished work and follow an order nobody holds.
 as the sole owner of live status; the header stops restating counts and points at `REVIEW.md`; the
 F7 sentence says implemented, once. `HANDOFF.md` keeps only the measured state of the tree.
 
+### 99. The slice harness — IMPLEMENTED (no version bump; `tools/` and dev config are not shipped)
+
+**Problem solved:** the slice loop is run by hand — implement, hostile test, red-proof, gates,
+version bump, docs, commit — and three defects were introduced by driving it manually on 18 August
+2026. Two reached a commit: `git add -A` swept an unrelated untracked directory into a slice, and a
+reviewing agent mutated `scripts/run-lock.mjs` between the tier-1 run and `git add`, so 0.182.0
+shipped a gutted guard and a debug write while its message described the repair and its recorded
+test numbers belonged to other bytes.
+
+All three are the same mistake: **treating a green suite as evidence about the artifact.** A suite
+reports what the bytes did when they ran; it says nothing about which bytes get committed.
+
+`tools/slice-check.mjs` fingerprints the shipped surface, refuses known debugging scaffolding, runs
+the gates, **re-fingerprints and refuses if anything moved underneath**, then — in `commit` mode —
+stages only named paths, checks the index against the fingerprint, commits from a message file, and
+checks `HEAD` against the fingerprint again. `npm run slice-check`.
+
+**Eval, and it is the point of the harness rather than a note about it.** Re-injecting the exact two
+mutants 0.182.0 shipped makes it refuse before a gate runs:
+`scripts/run-lock.mjs:359: void shown; void abandonedToken; void token;` and
+`scripts/run-lock.mjs:421: process.stderr.write('RELEASE ' + token);`. On the clean tree it passes
+60 fingerprinted files, four gates, and the stability check.
+
+**Named paths, never `-A`.** Untracked paths are reported and left alone, which is the other defect.
+
+**It found a defect in itself on first use, which is the argument for running it rather than
+reading it.** `execFileSync` defaults to a 1MB output buffer and a full tier-2 run overruns it, so
+the harness reported a passing suite as a failed gate. A harness that cannot tell a big log from a
+broken gate is worse than none; the buffer is 64MB, the same cap `shell` uses.
+
+**Not shipped, so no bump.** `tools/` is outside the release surface and an npm script is dev config;
+`npm run release-check` confirms rather than this asserting it.
+
+### 100. `release-check`'s shipped list omits the npm manifests — OPEN (observation, low)
+
+`CLAUDE.md` says shipped means the five directories "and **the manifests**". `tools/release-check.mjs`'s
+`SHIPPED_PATHS` is `hooks, scripts, commands, templates, output-styles, .claude-plugin` — so
+`package.json` and `package-lock.json` are outside it. A non-version edit to either can therefore
+ship without a bump.
+
+The omission is probably deliberate and cannot simply be removed: the bump itself edits
+`package.json`, so including it would make the check fire on every release. The honest repair is to
+compare those two files *ignoring the version fields*, or to narrow `CLAUDE.md`'s wording to
+`.claude-plugin/`. Recorded rather than changed because picking between them is a product call about
+what "shipped" means, and the current gap admits only dev-config drift — which is what discovered it
+(adding the `slice-check` script).
+
 ## Observations recorded rather than repaired
 
 - **`test/live/improve-contract.live.test.mjs` is non-deterministic** (seen 17 Aug 2026 at 0.179.0).

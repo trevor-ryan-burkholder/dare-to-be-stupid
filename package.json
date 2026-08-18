@@ -15,7 +15,8 @@
     "test:integration": "node --test --test-concurrency=1 \"test/integration/*.test.mjs\"",
     "test:live": "node tools/run-live.mjs",
     "test:all": "npm test && npm run test:integration",
-    "release-check": "node tools/release-check.mjs"
+    "release-check": "node tools/release-check.mjs",
+    "slice-check": "node tools/slice-check.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -8,6 +8,12 @@ the `run-lock.mjs` hash verified before staging and again after committing); `np
 changes touches `spawnClaude`, `claudeArgs`, `childSettings`, envelope parsing or a template's output
 contract. Its last measurement, at 0.179.0, was **30 pass, 1 fail** — see the live-tier note below.
 
+**Slice discipline is a harness now, not a habit.** `npm run slice-check` fingerprints the shipped
+surface, refuses debugging scaffolding, runs the gates, re-fingerprints, and in `commit` mode
+verifies the index and `HEAD` against the same fingerprint. It exists because three defects on
+18 August came from reading a green suite as evidence about which bytes were committed; re-injecting
+the two mutants 0.182.0 actually shipped makes it refuse. `PLAN.md` item 99.
+
 **External review:** `REVIEW.md` is **CHANGES REQUESTED**. The counts and the finding list live
 there and are **not restated here** (REVIEW F40): this file carried a seventeen-high/thirteen-medium
 snapshot long after the ledger had moved past it, which is the reliable outcome of copying a
