@@ -5767,7 +5767,7 @@ export async function main(argv, io = {}) {
   /** @type {MeeseeksConfig} */
   let config;
   try {
-    config = loadConfig(meeseeksDir, { env });
+    config = loadConfig(meeseeksDir, { env, log: (line) => write(verbatim(line)) });
   } catch (error) {
     // Failure output is verbatim and unstyled (DESIGN.md §9), and a missing or broken
     // config must read as an instruction, not a stack trace.
@@ -6215,7 +6215,16 @@ export async function main(argv, io = {}) {
     return releasing(1, { reason: 'the authored PRD could not be committed', phase: 'prd authoring' });
   }
   if (confirmPrd) {
-    write(verbatim('PRD.md is written and committed. Review it, then re-run without --confirm-prd.'));
+    // Names the exact continuation rather than saying to remove a flag (REVIEW F24). A literal
+    // no-input or repeated-idea rerun enters the improvisation branch and spends a PRD-model call
+    // before retaining the file that was just approved; pointing at the path is what avoids that.
+    write(
+      verbatim(
+        'PRD.md is written and committed. Read it, edit it if it is wrong, then start the run with ' +
+          '`/meeseeks ./PRD.md`. That is a new invocation, not a resumed session, and naming the file is what ' +
+          'stops it authoring the intent again.',
+      ),
+    );
     return releasing(0, { state: 'STALLED', reason: 'stopped after writing PRD.md, as --confirm-prd asks', phase: 'prd authoring' });
   }
 
@@ -6653,7 +6662,8 @@ export async function main(argv, io = {}) {
         reviewer: config.reviewerModel,
         design: config.designModel,
         prd: config.prdModel,
-        style: config.styleModel,
+        // No `style` (REVIEW F23). The manifest lists only selectors that can actually choose a
+        // child; recording an inert one made two runs look different when nothing about them was.
         lesson: config.lessonModel,
       },
       // Recorded for the same reason `models` is: two runs are only comparable if what drove

@@ -16,6 +16,7 @@ import {
   ConfigError,
   applyEnvOverrides,
   defaultConfig,
+  deprecationNotices,
   initConfig,
   loadConfig,
   riskyRemoteWord,
@@ -65,7 +66,6 @@ describe('defaultConfig', () => {
       reviewerModel: 'claude-opus-5',
       designModel: 'claude-opus-5',
       prdModel: 'claude-sonnet-5',
-      styleModel: 'claude-fable-5',
       lessonModel: 'claude-sonnet-5',
       qualityPlugins: ['impeccable', 'knip', 'semgrep', 'schemathesis'],
       extraGates: [],
@@ -635,5 +635,46 @@ describe('per-phase reasoning effort', () => {
     const effort = validateConfig({ effort: { builder: 'xhigh' } }).effort;
     assert.equal(effort.builder, 'xhigh');
     assert.equal(effort.review, 'max', 'overriding one phase dropped the others');
+  });
+});
+
+describe('the retired styleModel key (REVIEW F23)', () => {
+  it('is not in the defaults, so a new config never emits it', () => {
+    assert.equal('styleModel' in defaultConfig(), false);
+  });
+
+  it('is accepted from an existing config rather than rejected', () => {
+    // Removing it outright would make strict validation reject a config that works today, turning a
+    // documentation defect into a broken target. The window exists so an operator can delete the key
+    // on their own schedule.
+    const config = validateConfig({ ...defaultConfig(), styleModel: 'claude-fable-5' });
+    assert.equal('styleModel' in config, false, 'the ignored key leaked into the active config');
+    assert.equal(config.prdModel, 'claude-sonnet-5', 'the control that does exist was disturbed');
+  });
+
+  it('still refuses a legacy key of the wrong type, because accepted is not unvalidated', () => {
+    assert.throws(() => validateConfig({ ...defaultConfig(), styleModel: 42 }), ConfigError);
+  });
+
+  it('says it is ignored and names the control that is not', () => {
+    // Silence is what created the defect: an operator set it, passed validation, saw no behavioural
+    // or cost change, and read `run.json` claiming that model participated.
+    const notices = deprecationNotices({ styleModel: 'claude-fable-5' });
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].includes('ignored'), true, notices[0]);
+    assert.equal(notices[0].includes('prdModel'), true, notices[0]);
+  });
+
+  it('says nothing about a config that does not carry it', () => {
+    // The benign neighbour. A clean config must not accumulate a warning every startup.
+    assert.deepStrictEqual(deprecationNotices(defaultConfig()), []);
+    assert.deepStrictEqual(deprecationNotices(null), []);
+    assert.deepStrictEqual(deprecationNotices('not an object'), []);
+  });
+
+  it('is not repurposed into some new model call', () => {
+    // The finding is explicit that inventing behaviour to justify a setting is the wrong repair.
+    // Asserted as an absence so a later edit that quietly wires it up fails here.
+    assert.equal(Object.keys(defaultConfig()).some((key) => key.toLowerCase().includes('style')), false);
   });
 });

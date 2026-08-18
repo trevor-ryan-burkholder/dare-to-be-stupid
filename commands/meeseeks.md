@@ -1,6 +1,6 @@
 ---
 description: Hand a PRD, an idea, an existing repository, or nothing at all to an autonomous build loop. Pre-production only.
-argument-hint: [path-to-PRD.md | "an idea in quotes" | --improve ["area"] | (nothing)] [--deadline=<min>] [--give-them-the-box]
+argument-hint: [path-to-PRD.md | "an idea in quotes" | --improve ["area"] | (nothing)] [--confirm-prd] [--deadline=<min>] [--give-them-the-box]
 allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/init.mjs:*), Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/driver.mjs:*)
 ---
 
@@ -18,7 +18,13 @@ Start an autonomous run in the current repository.
   history, because an author with nothing to read invents requirements the builder cannot satisfy
 - nothing — "meeseeks me" mode invents its own idea, if `improvise.enabled` is set
 
-Two flags may accompany any of those:
+Three flags may accompany any of those:
+
+- `--confirm-prd` — **the human checkpoint before anything unattended starts.** The run authors or
+  ingests `PRD.md`, commits it, and **stops there**: no Oracle, no design phase, no loop. Read the
+  document, edit it if it is wrong, then start the real run as a *new* invocation with
+  `/meeseeks ./PRD.md`. It is not a resumed session, and pointing at the file is what stops the
+  second invocation re-authoring intent you just approved.
 
 - `--deadline=<minutes>` — a wall clock on the whole run. Off unless given; `0` explicitly
   disables one, except that `--deadline=0` is refused with `--give-them-the-box`: nested and

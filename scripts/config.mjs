@@ -43,7 +43,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
  *   childTimeoutMs: number, gateTimeoutMs: number, maxChildTurns: number, deadlineMs: number,
  *   reviewers: string[], ownership: Record<string, string[]>, requireUnanimous: boolean,
  *   builderModel: string, reviewerModel: string, designModel: string,
- *   prdModel: string, styleModel: string, lessonModel: string,
+ *   prdModel: string, lessonModel: string,
  *   qualityPlugins: string[], extraGates: { name: string, command: string[] }[],
  *   components: ComponentConfig[],
  *   effort: Record<string, string>, oracle: OracleConfig,
@@ -179,7 +179,6 @@ export function defaultConfig() {
     reviewerModel: 'claude-opus-5',
     designModel: 'claude-opus-5',
     prdModel: 'claude-sonnet-5',
-    styleModel: 'claude-fable-5',
     lessonModel: 'claude-sonnet-5',
     // impeccable is required and fails a run it cannot provision; knip and semgrep are
     // optional and degrade to a warning, because neither is worth killing a run over on a
@@ -522,7 +521,14 @@ function rejectUnknownKeys(source, allowed, where) {
 export function validateConfig(input) {
   const defaults = defaultConfig();
   const source = requireObject(input ?? {}, 'config');
-  rejectUnknownKeys(source, new Set(Object.keys(defaults)), '.meeseeks/config.json');
+  // Retired keys are *known* — they are simply ignored (REVIEW F23). Rejecting them here would make
+  // strict validation refuse a config that works today, which turns a documentation defect into a
+  // broken target; `deprecationNotices` is what makes the tolerance loud rather than silent.
+  rejectUnknownKeys(
+    source,
+    new Set([...Object.keys(defaults), ...Object.keys(DEPRECATED_CONFIG_KEYS)]),
+    '.meeseeks/config.json',
+  );
 
   /** @type {MeeseeksConfig} */
   const merged = { ...defaults };
@@ -548,11 +554,22 @@ export function validateConfig(input) {
     'reviewerModel',
     'designModel',
     'prdModel',
-    'styleModel',
     'lessonModel',
   ])) {
     if (key in source) merged[key] = requireString(source[key], key);
   }
+
+  // **`styleModel` is accepted and ignored, loudly** (REVIEW F23). It was a validated setting that
+  // no `spawnClaude` path ever read: narration is the deterministic `style.mjs` render layer, and
+  // bare `/meeseeks` sends idea invention *and* PRD authoring through `prdModel`. An operator could
+  // set it, pass strict validation, observe no behavioural or cost change, and then read `run.json`
+  // claiming that model participated — a false control that also makes model comparisons unreliable.
+  //
+  // Removing the key outright would make strict validation reject a config that works today, which
+  // turns a documentation defect into a broken target. So it is accepted for one deprecation window
+  // and announced as ignored, naming the control that actually exists. It is *not* repurposed into
+  // a new model call: inventing behaviour to justify a setting is how the false control got here.
+  if ('styleModel' in source) requireString(source.styleModel, 'styleModel');
 
   if ('qualityPlugins' in source) merged.qualityPlugins = requireStringArray(source.qualityPlugins, 'qualityPlugins');
   if ('extraGates' in source) merged.extraGates = requireExtraGates(source.extraGates);
@@ -770,10 +787,49 @@ export function applyEnvOverrides(config, env) {
 }
 
 /**
+ * Configuration keys this build accepts and ignores, with what to do about each.
+ *
+ * **Why accept them at all.** Removing a key outright makes strict validation reject a config that
+ * works today, which turns a documentation defect into a broken target. So a retired key is
+ * tolerated for one deprecation window and *announced*, naming the control that actually exists —
+ * silence is what created the problem in the first place.
+ *
+ * @type {Record<string, string>}
+ */
+export const DEPRECATED_CONFIG_KEYS = {
+  // REVIEW F23. A validated setting no `spawnClaude` path ever read: narration is the deterministic
+  // `style.mjs` render layer, and bare `/meeseeks` sends idea invention *and* PRD authoring through
+  // `prdModel`. An operator could set it, pass strict validation, observe no behavioural or cost
+  // change, and then read `run.json` claiming that model participated. It is **not** repurposed
+  // into a new model call: inventing behaviour to justify a setting is how the false control got
+  // here.
+  styleModel:
+    'styleModel is accepted for compatibility and ignored: no child has ever been selected by it. Narration is ' +
+    'deterministic, and idea invention and PRD authoring both use prdModel. Remove the key; a later version will ' +
+    'reject it.',
+};
+
+/**
+ * What to tell the operator about retired keys present in their config.
+ *
+ * @param {unknown} source the parsed config object, before validation
+ * @returns {string[]} one line per retired key present, empty when there are none
+ */
+export function deprecationNotices(source) {
+  if (source === null || typeof source !== 'object' || Array.isArray(source)) return [];
+  const record = /** @type {Record<string, unknown>} */ (source);
+  return Object.entries(DEPRECATED_CONFIG_KEYS)
+    .filter(([key]) => key in record)
+    .map(([, notice]) => notice);
+}
+
+/**
  * Read `.meeseeks/config.json`.
  *
  * @param {string} meeseeksDir
- * @param {{ env?: Record<string, string | undefined> }} [options]
+ * @param {{ env?: Record<string, string | undefined>, log?: (line: string) => void }} [options]
+ *        `log` receives one line per retired configuration key present (REVIEW F23). Omitted in
+ *        callers that only need the values; the driver supplies it so the operator is told.
  * @returns {MeeseeksConfig}
  * @throws {ConfigError} when the file is missing, unreadable, or invalid
  */
@@ -796,6 +852,9 @@ export function loadConfig(meeseeksDir, options = {}) {
   } catch (error) {
     throw new ConfigError(`${file} is not valid JSON: ${/** @type {Error} */ (error).message}`);
   }
+  // Announced before the config is used, not after (REVIEW F23): a key that changes nothing must
+  // say so at startup, or the operator learns it from a run that behaved unexpectedly.
+  for (const notice of deprecationNotices(parsed)) (options.log ?? (() => {}))(notice);
   return applyEnvOverrides(validateConfig(parsed), options.env ?? {});
 }
 

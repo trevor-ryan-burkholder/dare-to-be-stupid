@@ -2666,7 +2666,7 @@ manifest for a role-internal workflow rather than
 creating another context ledger; and an integration fixture proves a cold Panel invocation cannot
 be assembled with Builder history even when a caller attempts it.
 
-### 78. Retire the inert `styleModel` without breaking configuration silently — OPEN (REVIEW F23)
+### 78. Retire the inert `styleModel` without breaking configuration silently — IMPLEMENTED (0.193.0); REVIEW F23 open pending Codex
 
 **Problem solved:** `styleModel` is a validated operator setting and `run.json` records it as an
 active model, but no `spawnClaude` path consumes it. Meeseeks narration is deterministic and bare
@@ -2690,7 +2690,28 @@ This is a shipped config/manifest change and receives the ordinary version bump.
 is required only if the implementation also changes child argv, routing, or an external CLI contract;
 the smallest compatibility repair does not.
 
-### 79. Expose the existing `--confirm-prd` checkpoint in the shipped command — OPEN (REVIEW F24)
+**What landed (0.193.0).** `styleModel` is gone from `defaultConfig`, from the validated model keys,
+and from `run.json`'s `models` map. It is still **accepted** — `DEPRECATED_CONFIG_KEYS` keeps it out
+of the unknown-key refusal — and `loadConfig` prints one line at startup saying it is ignored and
+naming `prdModel` as the control that exists. Type validation still applies: accepted is not
+unvalidated.
+
+**Why it is accepted rather than removed.** Rejecting it outright makes strict validation refuse a
+config that works today, turning a documentation defect into a broken target. The window is the
+whole repair: the key changes nothing and now *says* so, where silence is what created the false
+control.
+
+**Not repurposed, deliberately.** Narration stays the deterministic `style.mjs` layer and bare
+`/meeseeks` keeps sending idea invention and PRD authoring through `prdModel`. Inventing a model
+call to justify an existing setting is how a false control becomes a real one.
+
+**Evidence.** `test/config.test.mjs` covers the defaults no longer emitting it, an existing config
+being accepted without it leaking into the active config, a wrong-typed legacy value still being
+refused, the notice naming `prdModel`, a clean config producing no notice, and — as an absence — that
+nothing was wired up to consume it. The DESIGN §10 table row now records the retirement rather than
+the gap.
+
+### 79. Expose the existing `--confirm-prd` checkpoint in the shipped command — IMPLEMENTED (0.193.0); REVIEW F24 open pending Codex
 
 **Problem solved:** the Driver and DESIGN support `--confirm-prd`, but the installed command's
 frontmatter hint and instructions claim there are only two flags and omit it. The only deliberate

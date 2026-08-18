@@ -175,6 +175,53 @@ describe('the /meeseeks command', () => {
   });
 });
 
+describe('the shipped command exposes --confirm-prd (REVIEW F24)', () => {
+  // **The only deliberate review boundary before unattended work begins, and the command hid it.**
+  // The Driver has always accepted `--confirm-prd`: it commits the authored or ingested `PRD.md` and
+  // exits before the Oracle, the design phase and the loop. The installed command's `argument-hint`
+  // omitted it and its instructions said exactly two flags may accompany an input, so the feature
+  // worked only for an operator who already knew an undocumented spelling. A user who wants to
+  // inspect generated intent was led to believe the choice did not exist — with no runtime failure
+  // signal, because nothing was broken.
+
+  it('names the flag in the argument hint an operator actually reads', () => {
+    const frontmatter = COMMAND.slice(4, COMMAND.indexOf('\n---', 4));
+    assert.equal(frontmatter.includes('--confirm-prd'), true, frontmatter);
+  });
+
+  it('documents what it does, in the body, alongside the other flags', () => {
+    const body = COMMAND.slice(COMMAND.indexOf('\n---', 4));
+    assert.equal(body.includes('`--confirm-prd`'), true, 'the flag is hinted but never explained');
+    assert.equal(body.includes('Three flags'), true, 'the flag count still says two');
+  });
+
+  it('says the accepted run is a new invocation naming the file, not a resumed session', () => {
+    // The second half of the finding. A literal no-input or repeated-idea rerun enters the
+    // improvisation branch and spends a PRD-model call before retaining the file just approved.
+    const body = COMMAND.slice(COMMAND.indexOf('\n---', 4));
+    assert.equal(body.includes('/meeseeks ./PRD.md'), true, body.slice(0, 400));
+    assert.equal(body.includes('not a resumed session'), true);
+  });
+
+  it('keeps --yes out of the operator vocabulary', () => {
+    // It is launcher/preflight acknowledgement. Exposing an inert Driver flag as another user
+    // control is the same defect this finding is about, pointed the other way.
+    const frontmatter = COMMAND.slice(4, COMMAND.indexOf('\n---', 4));
+    assert.equal(frontmatter.includes('--yes'), false, 'an internal acknowledgement leaked into the hint');
+  });
+
+  it('still passes arguments through, or none of the above reaches the driver', () => {
+    assert.equal(COMMAND.includes('$ARGUMENTS'), true);
+  });
+
+  it('uses the same spelling the driver parses', () => {
+    // One vocabulary across the command, the driver and DESIGN. A hint naming a flag the parser
+    // does not accept is worse than no hint.
+    const driver = read('scripts/driver.mjs');
+    assert.equal(driver.includes("'--confirm-prd'"), true, 'the driver no longer parses the flag the command advertises');
+  });
+});
+
 describe('every file the plugin depends on is present', () => {
   const required = [
     'scripts/init.mjs',

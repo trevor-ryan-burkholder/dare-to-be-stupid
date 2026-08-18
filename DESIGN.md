@@ -2552,7 +2552,7 @@ group, so an operator-kill can still leak it (`PLAN.md` item 2's residual).
 | `reviewerModel` | `claude-opus-5` | the judge should be the smartest thing in the loop |
 | `designModel` | `claude-opus-5` | Phase 1 — design mistakes compound across every later iteration |
 | `prdModel` | `claude-sonnet-5` | Phase 0 PRD authoring |
-| `styleModel` | `claude-fable-5` | **currently inert compatibility key (REVIEW F23 / PLAN item 78):** no child consumes it. Narration is deterministic and bare `/meeseeks` uses `prdModel` for idea/PRD authoring. It is recorded misleadingly in `run.json` until the compatibility-safe retirement lands |
+| ~~`styleModel`~~ | *removed at 0.193.0* | **retired, and accepted-but-ignored for one deprecation window (REVIEW F23 / PLAN item 78).** No child was ever selected by it: narration is the deterministic `style.mjs` render layer, and bare `/meeseeks` sends idea invention *and* PRD authoring through `prdModel`. It is no longer a default, no longer in `run.json`'s `models`, and a config that still carries it gets a startup line saying it is ignored. A later version rejects it |
 | `lessonModel` | `claude-sonnet-5` | the cold lesson extractor (§13.8); advisory, so it never needs the strongest model |
 | `effort` | see §10.2 | reasoning effort per phase (`low`…`max`), keyed by the phase names the driver uses |
 | `qualityPlugins` | `["impeccable", "knip", "semgrep", "schemathesis"]` | provisioned in Phase 1 (§5); impeccable is required, the others degrade to a warning when unavailable |
