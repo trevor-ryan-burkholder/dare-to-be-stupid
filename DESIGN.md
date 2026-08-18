@@ -366,13 +366,19 @@ exactly one, every round.
 
 Stale recovery is an explicit retry and never part of the claim. A lock is reclaimed only after its
 recorded owner has been established dead, and only by the one contender that first wins a second
-atomic operation: `mkdir` on `.meeseeks/lock.json.takeover-<hash of the stale token>`. Without that
-serialization, two contenders reading one dead lock would each remove it and each create their own,
-which is the original defect wearing a different hat. Inside the takeover the lock is read again, so
-a straggler that arrives after somebody else has already reclaimed the repository refuses instead of
-deleting a live lock. The takeover directory is named from the stale token, so it is single-use — an
-orphan left by a crash can never block a later takeover — and an empty directory is invisible to
-git, so it cannot be swept into a commit the way five earlier `.meeseeks/` artifacts were.
+atomic operation: an exclusive create of the takeover claim at
+`.meeseeks/lock.json.takeover-<hash of the stale token>`. Without that serialization, two contenders
+reading one dead lock would each remove it and each create their own, which is the original defect
+wearing a different hat. Inside the takeover the lock is read again, so a straggler that arrives
+after somebody else has already reclaimed the repository refuses instead of deleting a live lock.
+
+**Since 0.182.0 the claim carries an owner and can itself be reclaimed** (REVIEW F34). It was a
+bare `mkdir` through 0.181.0, and the argument for why an orphan was harmless — the claim is named
+from the stale token, so the name never recurs — held only for claims that got cleaned up. A
+reclaimer killed between winning the claim and replacing the lock leaves both in place, so the name
+recurs for every later contender and the repository is bricked. The full mechanism, including why a
+sweep must verify the bytes it moved rather than the path it moved them from, is in §4 under
+"A takeover claim must itself be reclaimable".
 
 The token is what makes ownership enforceable: `releaseRunLock` removes the file only when the token
 on disk is the one it was handed, so a losing contender, an aborting run, and a process that never
@@ -1004,6 +1010,36 @@ report-derived runs at all. `recordRedEvidence` is the reason that last part is 
 tidy: it writes the baseline **exactly once**, so establishing it from a refused attempt would
 freeze an empty baseline for the project's lifetime and leave every later test permanently unproven
 — a gate the builder could not satisfy, which is the failure the baseline exists to prevent.
+
+**A takeover claim must itself be reclaimable** (REVIEW F34, implemented at 0.182.0). Stale-lock
+recovery is serialized by a second exclusive operation, so two contenders reading one dead lock
+cannot each remove it and each create their own. That claim was a bare directory named from the
+*stale* lock's token, and F1's argument for why an orphan was harmless — the next stale lock is a
+different token, so the name never recurs — assumed the stale lock always gets replaced. Kill a
+reclaimer between winning the claim and replacing the lock and neither happens: the token stays,
+every later contender computes the same path, receives `EEXIST`, and reads it as a live reclaimer.
+Measured with a real `kill -9`: three successive cohorts refused while no driver was running
+anywhere. A recoverable stale lock had become a permanent denial of service.
+
+The claim now carries what the lock carries — a pid and an owner token — written with the same
+exclusive `wx` primitive, so serialization is unchanged and the artifact can finally answer who
+holds it. A claim whose recorded process is **dead** is abandoned and is swept by an atomic
+`rename` that exactly one contender can win, because the sweep needs its own arbitration or it is
+the original defect one level down; the sweeper then retries, under a bounded attempt count that
+refuses rather than looping. Only the owner may clear a claim, exactly as for the lock: the old
+unconditional cleanup was safe only while nothing could legitimately replace the claim, and the
+sweep makes replacement legitimate. Two states stay refusals that name the path rather than
+becoming sweeps — a claim that will not parse (it may belong to something alive) and a directory
+left by a driver before 0.182.0 (which may be a live reclaimer of that version).
+
+**The test that guarded this was measuring the wrong property.** Its contenders exited the instant
+they won, so a later contender read a genuinely dead owner and reclaimed correctly — two sequential
+winners, which is the system working, and indistinguishable in that assertion from the simultaneous
+double-take F1 is about. Racing both module versions under CPU load, 40 rounds of six contenders:
+12 multi-winner rounds before the repair and 2 after, so the flake was pre-existing and an idle
+machine had been hiding it. A winner now holds the lock across the decision window, which puts every
+loser's liveness check against a process that is still running: 0 multi-winner rounds on both
+versions under the same load.
 
 **A verdict is sealed to the bytes it was formed over** (REVIEW F14, implemented at 0.172.0).
 Gates and the Panel inspect the live working tree, and the loop then ran `git add -A` and committed

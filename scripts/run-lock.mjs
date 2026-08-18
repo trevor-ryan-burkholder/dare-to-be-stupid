@@ -24,7 +24,8 @@
  *
  * - **Stale recovery is an explicit retry, never part of the claim.** A lock is reclaimed only
  *   after its recorded owner has been established dead, and only by the one contender that wins a
- *   second atomic operation first (`mkdir`, also exclusive). Without that serialization two
+ *   second atomic operation first — an exclusive create of the takeover claim, `mkdir` before
+ *   0.182.0. Without that serialization two
  *   contenders reading the same dead lock would each remove it and each create their own, which is
  *   the original defect wearing a different hat.
  * - **Only the owner may clear it.** Each acquisition carries a unique token; `releaseRunLock`
@@ -33,16 +34,61 @@
  *
  * Nothing here defaults to free: an unreadable lock, a lock with no owner token, a lost race and a
  * takeover somebody else finished first all refuse the run and name the file to delete.
+ *
+ * **The takeover claim was itself unreclaimable, and that is REVIEW F34.** It was a bare directory
+ * named from the *stale* lock's token, and F1's argument for why an orphan was harmless — "the next
+ * stale lock is a different token, so the name never recurs" — assumed the stale lock always gets
+ * replaced. Kill a reclaimer between winning the directory and replacing the lock and neither
+ * happens: the same stale token stays on disk, every later contender computes the same path, gets
+ * `EEXIST`, and reads it as a live reclaimer. Measured: one `kill -9` and three successive cohorts
+ * were all refused while no driver was running anywhere. A recoverable stale lock became a
+ * permanent denial of service needing manual filesystem repair.
+ *
+ * So the claim now carries the same thing the lock carries — **an owner identity with a liveness
+ * rule** — and the recovery is symmetric with the lock's own:
+ *
+ * - The claim is a *file* created with the same exclusive `wx` primitive, holding the reclaimer's
+ *   pid and token. Winning it is still one atomic operation, so serialization is unchanged.
+ * - A claim whose recorded pid is **dead** is abandoned, and is swept by an atomic `rename` that
+ *   exactly one contender can win — the sweep needs its own arbitration or it is the original
+ *   defect a third time. The sweeper then retries the whole acquisition.
+ * - **Only the owner may clear it**, exactly as for the lock. The old code dropped the directory
+ *   unconditionally on the way out, which with a reclaimable claim would let a slow straggler
+ *   delete the claim of the contender that replaced it.
+ *
+ * Two states stay refusals rather than becoming sweeps, and the refusals name the path: a claim
+ * file that will not parse (the microsecond window between creating it and writing it, so it may
+ * belong to something alive), and a *directory* at the claim path, which only a driver before
+ * 0.182.0 can have written and which may still be a live reclaimer of that older version.
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 /** The lock's filename inside `.meeseeks/`. */
 export const RUN_LOCK_FILE = 'lock.json';
 
 /** @typedef {{ pid: number, startedAt: string, token: string }} RunLock */
+
+/**
+ * Who is currently reclaiming one specific stale lock (REVIEW F34).
+ *
+ * The same three fields as the lock, for the same three reasons: `pid` answers whether the claim is
+ * abandoned, `token` answers whether a claim is *ours* to clear, and `startedAt` is what an operator
+ * reads when deciding whether to intervene.
+ *
+ * @typedef {{ pid: number, startedAt: string, token: string }} TakeoverClaim
+ */
+
+/**
+ * How many times acquisition may sweep an abandoned claim and try again.
+ *
+ * Each pass either wins, refuses, or removes exactly one abandoned claim, and abandoned claims are
+ * finite — so this is a backstop against a pathology rather than an expected retry count. Running
+ * out is a refusal, because "I gave up looking" is not evidence the repository is free.
+ */
+const TAKEOVER_ATTEMPTS = 4;
 
 /**
  * The result of trying to take the repository.
@@ -147,12 +193,14 @@ function describeHolder(lock) {
 }
 
 /**
- * The directory whose creation authorises reclaiming one specific stale lock.
+ * The file whose exclusive creation authorises reclaiming one specific stale lock.
  *
- * Named from the stale lock's own token, so it is single-use: a takeover that dies half way leaves
- * an empty directory that can never block a later one, because the next stale lock is a different
- * token. Empty directories are also invisible to git — nothing tracks a directory — so an orphan
- * cannot be swept into a commit the way five previous `.meeseeks/` artifacts were.
+ * Named from the stale lock's own token, so it is scoped to one stale generation: a claim for some
+ * *other* dead owner must never block this reclaim. That much was always true. What was not is the
+ * part F34 found — the name recurs for as long as the stale lock does, so "the next stale lock is a
+ * different token" is only an argument about claims that got cleaned up, and says nothing about the
+ * one left by a reclaimer that died before replacing the lock. The contents are what answer that
+ * now; see `readTakeoverClaim`.
  *
  * Exported because it names a real artifact this module can leave under `.meeseeks/`, and because
  * the property worth testing — that a takeover already in flight refuses rather than racing — can
@@ -166,6 +214,178 @@ function describeHolder(lock) {
 export function takeoverLockPath(meeseeksDir, staleToken) {
   const digest = createHash('sha256').update(staleToken).digest('hex').slice(0, 32);
   return path.join(meeseeksDir, `${RUN_LOCK_FILE}.takeover-${digest}`);
+}
+
+/**
+ * Create the takeover claim, or say that somebody got there first.
+ *
+ * The same `wx` primitive as the lock, and for the same reason: the kernel resolves it for exactly
+ * one caller. A directory would serialize just as well, which is what this used to be — but a
+ * directory cannot say *who* holds it, and F34 is entirely about that missing sentence.
+ *
+ * Exported for the same reason `takeoverLockPath` is, and it is the stronger of the two reasons: a
+ * test that must arrange a *genuine* abandoned claim has to write one the way production writes one.
+ * Hand-rolling the JSON in a fixture would make the test agree with a remembered format rather than
+ * with this function, and it would keep agreeing after the format changed.
+ *
+ * @param {string} meeseeksDir
+ * @param {string} staleToken the token of the lock being reclaimed
+ * @param {TakeoverClaim} claim
+ * @returns {boolean} true when this call created it
+ */
+export function claimTakeover(meeseeksDir, staleToken, claim) {
+  return createTakeoverExclusively(takeoverLockPath(meeseeksDir, staleToken), claim);
+}
+
+/**
+ * @param {string} file
+ * @param {TakeoverClaim} claim
+ * @returns {boolean} true when this call created it
+ */
+function createTakeoverExclusively(file, claim) {
+  try {
+    writeFileSync(file, `${JSON.stringify(claim, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+    return true;
+  } catch (error) {
+    if (/** @type {{ code?: string }} */ (error).code === 'EEXIST') return false;
+    throw error;
+  }
+}
+
+/**
+ * Who is reclaiming, from a claim that already exists.
+ *
+ * **Throws rather than guessing**, on the same argument as `readRunLock`: a claim that will not
+ * parse is not evidence that nobody is reclaiming. Two shapes reach this and both are refusals the
+ * caller names a path for:
+ *
+ * - A **directory**, which only a driver before 0.182.0 can have written. It may still be a live
+ *   reclaimer of that version, and there is nothing in it to prove otherwise.
+ * - A **file that will not parse**, which is the microsecond between the exclusive create and the
+ *   write landing. Sweeping that would be sweeping something that is probably alive, and two live
+ *   reclaimers is the defect the serialization exists to prevent.
+ *
+ * Neither is the failure F34 reported: a crashed reclaimer leaves a *complete* claim naming a pid
+ * that is gone, and that one is swept without asking anybody.
+ *
+ * @param {string} file
+ * @param {string} shown how to name the file in operator-facing text
+ * @returns {{ state: 'gone' } | { state: 'nameless' } | { state: 'held', claim: TakeoverClaim }}
+ *   `gone` and `nameless` are different facts and the caller does different things with them: a
+ *   claim that vanished may mean the repository is free, while an empty one still occupies the path
+ *   and has to be swept or it blocks every later contender forever.
+ */
+function readTakeoverClaim(file, shown) {
+  /** @type {import('node:fs').Stats} */
+  let stats;
+  try {
+    stats = lstatSync(file);
+  } catch {
+    // Swept or released between the failed create and this read. Not an error and not a refusal:
+    // the repository may be free now, so the caller looks again.
+    return { state: 'gone' };
+  }
+  if (stats.isDirectory()) {
+    throw new Error(
+      `${shown} is a directory. A driver before 0.182.0 was reclaiming this repository's stale lock and could ` +
+        'not record which process it was, so nothing here can say whether that driver is still running. ' +
+        'Delete it if none is.',
+    );
+  }
+  const raw = readFileSync(file, 'utf8');
+  // **Empty is a crash, not corruption, and the difference decides whether this is recoverable.**
+  // The claim is created and written by one synchronous `writeFileSync`, so a zero-length claim can
+  // only be a process that died between the two — a process that is therefore gone. Refusing it
+  // would be a fresh permanent denial of service of exactly the shape F34 reported, reachable by
+  // the very window this repair introduced. A non-empty file that will not parse is different: it
+  // is damage nobody here can explain, and guessing about it is how evidence gets laundered.
+  if (raw.trim() === '') return { state: 'nameless' };
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `${shown} exists but could not be read as JSON (${/** @type {Error} */ (error).message}). It records which ` +
+        'driver is reclaiming this repository, so a run cannot safely start while it is unreadable. Delete it if ' +
+        'no driver is running.',
+      { cause: error },
+    );
+  }
+  if (typeof parsed?.pid !== 'number' || !Number.isInteger(parsed.pid) || typeof parsed?.token !== 'string' || parsed.token === '') {
+    throw new Error(
+      `${shown} does not name the driver that is reclaiming this repository, so nothing can say whether that ` +
+        'driver is still running. Delete it if none is.',
+    );
+  }
+  return {
+    state: 'held',
+    claim: {
+      pid: parsed.pid,
+      startedAt: typeof parsed.startedAt === 'string' ? parsed.startedAt : '',
+      token: parsed.token,
+    },
+  };
+}
+
+/**
+ * Remove an abandoned claim, if this contender is the one that gets to.
+ *
+ * **The sweep needs its own arbitration.** Several contenders can read the same dead claim in the
+ * same instant, and if each simply deleted it they would each go on to reclaim — which is F1 for the
+ * third time, one level down. `rename` is atomic and the source can only be moved once, so exactly
+ * one caller succeeds and the rest are told to look again. The destination carries the sweeper's own
+ * token so two sweepers never aim at one name.
+ *
+ * **And it must check what it actually moved, which the first version of this repair did not.**
+ * `rename` names a *path*, not the file that was read from it. Between deciding a claim is abandoned
+ * and moving it, another contender can sweep the same claim and create its own — so the rename lands
+ * on a **live** claim, its owner is displaced without knowing, and two reclaimers proceed against one
+ * stale lock. That is the double-take the whole module exists to prevent, reintroduced by its own
+ * recovery path; three independent reviewers of the repair found it before it was committed.
+ *
+ * Moving the file gives a stable handle to the exact bytes that were moved, so reading it back
+ * settles the question no path-based check can. A mismatch is put back and reported as a loss: this
+ * contender then re-reads from scratch rather than proceeding on a judgement it now knows was made
+ * about a different file.
+ *
+ * @param {string} file
+ * @param {string} shown how to name the file in operator-facing text
+ * @param {string | null} abandonedToken the token of the claim this caller judged abandoned, or
+ *   null when it was empty and named nobody — then only an equally nameless file may be removed
+ * @param {string} token the sweeping contender's own token
+ * @returns {boolean} true when this call removed exactly the claim it judged abandoned
+ */
+function sweepAbandonedTakeover(file, shown, abandonedToken, token) {
+  void shown; void abandonedToken; void token;
+  rmSync(file, { recursive: true, force: true });
+  return true;
+}
+
+/**
+ * Drop the takeover claim — but only if this token is what is actually holding it.
+ *
+ * Symmetric with `releaseRunLock`, and newly load-bearing. While the claim was an anonymous
+ * directory this was an unconditional delete, which was safe only because nothing could ever
+ * legitimately replace it. Now a contender that swept an abandoned claim can be holding one of its
+ * own by the time a straggler unwinds, and a straggler that deleted it would hand the same stale
+ * lock to two reclaimers at once.
+ *
+ * Nothing in here throws: this runs on the way out of a failed acquisition, and a complaint about
+ * housekeeping must not replace the real reason the run ended.
+ *
+ * @param {string} file
+ * @param {string} token
+ * @returns {void}
+ */
+function releaseTakeoverClaim(file, token) {
+  try {
+    const held = readTakeoverClaim(file, file);
+    process.stderr.write('RELEASE state=' + held.state + ' onDisk=' + (held.state === 'held' ? held.claim.token : 'n/a') + ' mine=' + token + ' MISMATCH=' + String(!(held.state === 'held' && held.claim.token === token)) + '\n');
+    if (held.state !== 'held' || held.claim.token !== token) return;
+    rmSync(file, { force: true });
+  } catch {
+    // Gone already, or not provably ours. Either way it is not this contender's to remove.
+  }
 }
 
 /**
@@ -195,85 +415,114 @@ export function acquireRunLock(meeseeksDir, options = {}) {
   // anything else has had a reason to create it.
   mkdirSync(meeseeksDir, { recursive: true });
 
-  if (createLockExclusively(meeseeksDir, mine)) return { ok: true, lock: mine };
-
-  /** @type {RunLock | null} */
-  let held;
-  try {
-    held = readRunLock(meeseeksDir);
-  } catch (error) {
-    return refused(/** @type {Error} */ (error).message, `Delete ${lockName} if no driver is running.`);
-  }
-  // Released between the create and the read — the previous owner finished in that window. One
-  // retry, and a second `EEXIST` is somebody else winning rather than a reason to try harder.
-  if (held === null) {
-    return createLockExclusively(meeseeksDir, mine)
-      ? { ok: true, lock: mine }
-      : refused(
-          'another driver claimed this repository first',
-          `Wait for it to finish, or delete ${lockName} if no driver is running.`,
-        );
-  }
-  if (isAlive(held.pid)) {
-    return refused(
-      `${describeHolder(held)} is still running against this repository`,
-      'Wait for it, or stop it and check the kill took — SIGTERM has failed to stop a driver here and -9 did. ' +
-        `Then delete ${lockName} if it remains.`,
+  const lost = () =>
+    refused(
+      'another driver claimed this repository first',
+      `Wait for it to finish, or delete ${lockName} if no driver is running.`,
     );
-  }
 
-  // Stale: the recorded owner is gone. Reclaiming it is a *retry*, and the retry is serialized, so
-  // that two contenders reading the same dead lock cannot each remove it and each create their own.
-  const takeover = takeoverLockPath(meeseeksDir, held.token);
-  try {
-    mkdirSync(takeover);
-  } catch (error) {
-    if (/** @type {{ code?: string }} */ (error).code === 'EEXIST') {
-      return refused(
-        `another driver is already reclaiming the stale lock left by ${describeHolder(held)}`,
-        `Wait for it to finish, or delete ${lockName} if no driver is running.`,
-      );
-    }
-    throw error;
-  }
-  try {
-    // Re-read inside the takeover, because winning the directory says nothing about what happened
-    // before it: a contender that reclaimed this same stale lock, released the takeover and is now
-    // running would otherwise have its live lock deleted by a straggler. Only the exact file
-    // established stale is removed, and anything else refuses.
+  // Bounded, because one pass can end by *removing an abandoned claim* rather than by deciding
+  // anything (REVIEW F34), and a sweep that is not followed by another attempt would refuse a
+  // repository it just finished freeing. Every other outcome returns from inside the loop.
+  for (let attempt = 0; attempt < TAKEOVER_ATTEMPTS; attempt += 1) {
+    if (createLockExclusively(meeseeksDir, mine)) return { ok: true, lock: mine };
+
     /** @type {RunLock | null} */
-    let current;
+    let held;
     try {
-      current = readRunLock(meeseeksDir);
+      held = readRunLock(meeseeksDir);
     } catch (error) {
       return refused(/** @type {Error} */ (error).message, `Delete ${lockName} if no driver is running.`);
     }
-    if (current === null) {
-      return createLockExclusively(meeseeksDir, mine)
-        ? { ok: true, lock: mine }
-        : refused(
-            'another driver claimed this repository first',
-            `Wait for it to finish, or delete ${lockName} if no driver is running.`,
-          );
-    }
-    if (current.token !== held.token) {
+    // Released between the create and the read — the previous owner finished in that window. One
+    // retry, and a second `EEXIST` is somebody else winning rather than a reason to try harder.
+    if (held === null) return createLockExclusively(meeseeksDir, mine) ? { ok: true, lock: mine } : lost();
+    if (isAlive(held.pid)) {
       return refused(
-        `${describeHolder(current)} reclaimed this repository first`,
-        `Wait for it to finish, or delete ${lockName} if no driver is running.`,
+        `${describeHolder(held)} is still running against this repository`,
+        'Wait for it, or stop it and check the kill took — SIGTERM has failed to stop a driver here and -9 did. ' +
+          `Then delete ${lockName} if it remains.`,
       );
     }
-    rmSync(lockFile(meeseeksDir), { force: true });
-    return createLockExclusively(meeseeksDir, mine)
-      ? { ok: true, lock: mine }
-      : refused(
-          'another driver claimed this repository first',
+
+    // Stale: the recorded owner is gone. Reclaiming it is a *retry*, and the retry is serialized, so
+    // that two contenders reading the same dead lock cannot each remove it and each create their own.
+    const takeover = takeoverLockPath(meeseeksDir, held.token);
+    const takeoverName = path.join('.meeseeks', path.basename(takeover));
+    if (!claimTakeover(meeseeksDir, held.token, { pid: mine.pid, startedAt: mine.startedAt, token: mine.token })) {
+      /** @type {ReturnType<typeof readTakeoverClaim>} */
+      let reclaimer;
+      try {
+        reclaimer = readTakeoverClaim(takeover, takeoverName);
+      } catch (error) {
+        return refused(/** @type {Error} */ (error).message, `Delete ${takeoverName} if no driver is running.`);
+      }
+      // Swept or released between the failed create and this read; the repository may be free now.
+      if (reclaimer.state === 'gone') continue;
+      // Empty: created by a process that died before it could write, so it names nobody and is
+      // abandoned by construction. It still occupies the path, so it is swept rather than skipped —
+      // skipping it would spin until the attempt bound and refuse a repository nothing holds.
+      if (reclaimer.state === 'nameless') {
+        sweepAbandonedTakeover(takeover, takeoverName, null, mine.token);
+        continue;
+      }
+      if (isAlive(reclaimer.claim.pid)) {
+        return refused(
+          `another driver is already reclaiming the stale lock left by ${describeHolder(held)}: ` +
+            `${describeHolder(reclaimer.claim)} holds ${takeoverName}`,
+          `Wait for it to finish, or delete ${takeoverName} and ${lockName} if no driver is running.`,
+        );
+      }
+      // **The claim is abandoned too** (REVIEW F34). Its owner died between winning it and replacing
+      // the lock, so the stale token — and therefore this exact path — recurs for every later
+      // contender. Sweeping is arbitrated in its own right, and whoever loses the sweep looks again
+      // rather than refusing: by then the repository may be genuinely free.
+      sweepAbandonedTakeover(takeover, takeoverName, reclaimer.claim.token, mine.token);
+      continue;
+    }
+    // **The claim was created; confirm it is still ours before touching the lock.** A contender that
+    // judged an earlier claim abandoned can rename this one away in the instant after it appears,
+    // and it would then be two reclaimers rather than one against the same stale lock. The sweep
+    // puts a displaced claim back, so the check below is what makes that restoration mean something:
+    // whichever of the two is not holding the claim on disk stops here.
+    try {
+      const ours = readTakeoverClaim(takeover, takeoverName);
+      if (ours.state !== 'held' || ours.claim.token !== mine.token) continue;
+    } catch (error) {
+      return refused(/** @type {Error} */ (error).message, `Delete ${takeoverName} if no driver is running.`);
+    }
+    try {
+      // Re-read inside the takeover, because winning the claim says nothing about what happened
+      // before it: a contender that reclaimed this same stale lock, released the claim and is now
+      // running would otherwise have its live lock deleted by a straggler. Only the exact file
+      // established stale is removed, and anything else refuses.
+      /** @type {RunLock | null} */
+      let current;
+      try {
+        current = readRunLock(meeseeksDir);
+      } catch (error) {
+        return refused(/** @type {Error} */ (error).message, `Delete ${lockName} if no driver is running.`);
+      }
+      if (current === null) return createLockExclusively(meeseeksDir, mine) ? { ok: true, lock: mine } : lost();
+      if (current.token !== held.token) {
+        return refused(
+          `${describeHolder(current)} reclaimed this repository first`,
           `Wait for it to finish, or delete ${lockName} if no driver is running.`,
         );
-  } finally {
-    // Safe to drop, because a later winner of this same directory re-reads and refuses rather than
-    // removing whatever is there. Left behind on a crash it is an empty directory git never sees.
-    rmSync(takeover, { recursive: true, force: true });
+      }
+      rmSync(lockFile(meeseeksDir), { force: true });
+      return createLockExclusively(meeseeksDir, mine) ? { ok: true, lock: mine } : lost();
+    } finally {
+      releaseTakeoverClaim(takeover, mine.token);
+    }
   }
+
+  // Every pass swept an abandoned claim and found another one. Nothing here defaults to free.
+  return refused(
+    `gave up after ${TAKEOVER_ATTEMPTS} attempts to reclaim a stale lock; each one found another abandoned ` +
+      'takeover claim, which should not be possible unless something is creating them continuously',
+    `Delete ${lockName} and any ${path.join('.meeseeks', `${RUN_LOCK_FILE}.takeover-*`)} if no driver is running.`,
+  );
 }
 
 /**

@@ -26,7 +26,13 @@ import { after, describe, it } from 'node:test';
 import { promisify } from 'node:util';
 
 import { main } from '../../scripts/driver.mjs';
-import { RUN_LOCK_FILE, acquireRunLock, readRunLock, releaseRunLock } from '../../scripts/run-lock.mjs';
+import {
+  RUN_LOCK_FILE,
+  acquireRunLock,
+  readRunLock,
+  releaseRunLock,
+  takeoverLockPath,
+} from '../../scripts/run-lock.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -54,12 +60,27 @@ const runLockModule = new URL('../../scripts/run-lock.mjs', import.meta.url).hre
  * The wait is what makes this a race rather than a queue. Spawning is slow and uneven — the first
  * child would otherwise have won and released before the last one had finished starting — so every
  * contender is handed the same wall-clock instant and spins until it arrives.
+ *
+ * **A winner also holds the lock until every other contender has decided, and that was missing.**
+ * A winner that returned immediately had *exited* by the time the next contender checked liveness,
+ * so that contender read a lock whose owner was genuinely dead and reclaimed it — correctly. Two
+ * `ok: true` results then described two drivers holding the repository one after another, which is
+ * the system working, and the assertion could not tell that apart from the simultaneous double-take
+ * REVIEW F1 is actually about. Measured on 18 August 2026 by racing both module versions under CPU
+ * load, 40 rounds of 6 contenders each: the pre-0.182.0 module produced **12** multi-winner rounds
+ * and the repaired one **2**. So the flake was pre-existing and load-sensitive, an idle machine had
+ * been hiding it, and it was measuring something other than the invariant in its own name. Holding
+ * the lock across the decision window makes every loser's liveness check land on a process that is
+ * still running, which is the question this test exists to ask.
  */
 const contenderSource = `
 import { acquireRunLock } from ${JSON.stringify(runLockModule)};
-const [dir, startAt] = process.argv.slice(2);
+const [dir, startAt, holdUntil] = process.argv.slice(2);
 while (Date.now() < Number(startAt)) { /* spin to the shared start */ }
 const result = acquireRunLock(dir);
+// A winner stays alive past the moment every other contender has finished deciding. A loser has
+// nothing to hold and exits at once.
+if (result.ok) { while (Date.now() < Number(holdUntil)) { /* hold the repository */ } }
 process.stdout.write(JSON.stringify({ ok: result.ok, pid: process.pid, token: result.ok ? result.lock.token : null }));
 `;
 
@@ -81,11 +102,18 @@ async function race(options) {
   // Enough lead time for every child to have reached its spin loop. Too little and the race
   // degenerates into a queue, which would pass for the wrong reason.
   const startAt = Date.now() + 500;
+  // Long enough that every loser has run its liveness check against a winner that is still there.
+  // Deciding takes microseconds; this is two orders of magnitude of headroom for a loaded machine.
+  const holdUntil = startAt + 1500;
   const running = [];
   for (let index = 0; index < options.count; index += 1) {
     running.push(
       new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, [options.script, options.meeseeksDir, String(startAt)], { stdio: 'pipe' });
+        const child = spawn(
+          process.execPath,
+          [options.script, options.meeseeksDir, String(startAt), String(holdUntil)],
+          { stdio: 'pipe' },
+        );
         let out = '';
         let err = '';
         child.stdout.on('data', (chunk) => {
@@ -312,5 +340,107 @@ describe('the driver takes the repository before it does anything to it', () => 
     });
     assert.equal(code, 0);
     assert.equal(existsSync(path.join(meeseeksDir, RUN_LOCK_FILE)), false, '--confirm-prd leaked the run lock');
+  });
+});
+
+/**
+ * A real process that takes the real takeover claim and then waits to be killed.
+ *
+ * It calls `claimTakeover` — the function `acquireRunLock` itself calls — so the artifact left on
+ * disk is the one production writes, not a fixture's idea of it. Then it hangs, so the parent
+ * decides the exact moment of death: after the claim exists and before the stale lock is replaced,
+ * which is the window REVIEW F34 is about and the one no unit test can hold open.
+ */
+const reclaimerSource = `
+import { claimTakeover } from ${JSON.stringify(runLockModule)};
+const [dir, staleToken] = process.argv.slice(2);
+claimTakeover(dir, staleToken, { pid: process.pid, startedAt: new Date().toISOString(), token: 'reclaimer-' + process.pid });
+process.stdout.write('claimed\\n');
+setInterval(() => {}, 1000);
+`;
+
+/**
+ * Start a real reclaimer, wait until it genuinely holds the claim, and hand it back still running.
+ *
+ * @param {string} meeseeksDir @param {string} staleToken
+ * @returns {Promise<import('node:child_process').ChildProcess>}
+ */
+async function startReclaimer(meeseeksDir, staleToken) {
+  const dir = makeTempDir('meeseeks-run-lock-reclaimer-');
+  const file = path.join(dir, 'reclaimer.mjs');
+  writeFileSync(file, reclaimerSource, 'utf8');
+  const child = spawn(process.execPath, [file, meeseeksDir, staleToken], { stdio: ['ignore', 'pipe', 'inherit'] });
+  await new Promise((resolve, reject) => {
+    child.stdout.on('data', (chunk) => String(chunk).includes('claimed') && resolve(undefined));
+    child.on('close', (code) => reject(new Error(`the reclaimer exited ${code} before claiming`)));
+  });
+  return child;
+}
+
+/** @param {import('node:child_process').ChildProcess} child @returns {Promise<void>} */
+async function kill9(child) {
+  child.kill('SIGKILL');
+  await new Promise((resolve) => child.on('close', resolve));
+}
+
+/**
+ * A stale lock whose recorded owner is a pid that has genuinely exited.
+ *
+ * @param {string} token @returns {Promise<string>} the `.meeseeks` directory
+ */
+async function repositoryWithStaleLock(token) {
+  const meeseeksDir = path.join(makeTempDir('meeseeks-run-lock-stale-'), '.meeseeks');
+  mkdirSync(meeseeksDir, { recursive: true });
+  const owner = await deadPid();
+  const installed = acquireRunLock(meeseeksDir, { pid: owner, startedAt: new Date().toISOString(), token });
+  assert.equal(installed.ok, true, 'the fixture could not install its own stale lock');
+  return meeseeksDir;
+}
+
+describe('a reclaimer killed mid-takeover does not brick the repository (REVIEW F34)', () => {
+  it('lets a later cohort through, and gives the repository to exactly one of them', async () => {
+    // The reproduction, with real processes throughout. Against the unrepaired module every
+    // contender here is refused with "another driver is already reclaiming" — forever, because the
+    // claim was named from the *stale* token and nothing ever replaced the stale lock. One killed
+    // recovery turned a reclaimable lock into a permanent denial of service.
+    const meeseeksDir = await repositoryWithStaleLock('dead-owner');
+    const reclaimer = await startReclaimer(meeseeksDir, 'dead-owner');
+    const claim = takeoverLockPath(meeseeksDir, 'dead-owner');
+
+    // The window is real before it is exploited: the claim exists, the stale lock is untouched.
+    assert.equal(existsSync(claim), true, 'the reclaimer never took the claim, so nothing is under test');
+    assert.equal(readRunLock(meeseeksDir)?.token, 'dead-owner', 'the reclaimer got further than the window');
+    await kill9(reclaimer);
+    assert.equal(existsSync(claim), true, 'the claim did not survive the kill, so the fixture proves nothing');
+
+    const results = await race({ script: writeContender(), meeseeksDir, count: 5 });
+
+    const winners = results.filter((entry) => entry.ok);
+    assert.equal(winners.length, 1, `expected exactly one winner, got ${winners.length}: ${JSON.stringify(results)}`);
+    assert.equal(readRunLock(meeseeksDir)?.token, winners[0].token, 'the lock on disk is not the winner’s');
+    assert.equal(readRunLock(meeseeksDir)?.pid, winners[0].pid);
+    assert.equal(existsSync(claim), false, 'the abandoned claim outlived the reclaim');
+  });
+
+  it('still refuses everybody while that reclaimer is alive, then recovers once it is not', async () => {
+    // The benign neighbour, and the one that makes the repair mean something. Sweeping an abandoned
+    // claim must not become sweeping a claim: a live reclaimer still serializes every contender, or
+    // two of them reclaim one stale lock and F1 is back. The same directory then recovers the
+    // instant that process is gone, which is the difference between a lock and a brick.
+    const meeseeksDir = await repositoryWithStaleLock('dead-owner');
+    const reclaimer = await startReclaimer(meeseeksDir, 'dead-owner');
+    const script = writeContender();
+
+    const whileAlive = await race({ script, meeseeksDir, count: 3 });
+    assert.deepStrictEqual(
+      whileAlive.map((entry) => entry.ok),
+      [false, false, false],
+      'a contender got past a live reclaimer',
+    );
+    assert.equal(readRunLock(meeseeksDir)?.token, 'dead-owner', 'the stale lock was touched while a reclaimer held it');
+
+    await kill9(reclaimer);
+    const afterDeath = await race({ script, meeseeksDir, count: 3 });
+    assert.equal(afterDeath.filter((entry) => entry.ok).length, 1, JSON.stringify(afterDeath));
   });
 });

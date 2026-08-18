@@ -1,10 +1,10 @@
 # START HERE — current handoff, last swept 17 August 2026
 
-**State:** `main` at `0.181.0`. The manifests and package-lock root metadata agree. Measured on the
+**State:** `main` at `0.182.0`. The manifests and package-lock root metadata agree. Measured on the
 current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean; `npm test`
-**2522 pass, 0 fail**; `npm run test:integration` **120 pass, 0 fail**; `npm run release-check`
-**ok**. The live tier was **not re-run at 0.181.0** and is not owed by it: nothing in that change
-touches `spawnClaude`, `claudeArgs`, `childSettings`, envelope parsing or a template's output
+**2531 pass, 0 fail**; `npm run test:integration` **122 pass, 0 fail**; `npm run release-check`
+**ok**. The live tier was **not re-run at 0.181.0 or 0.182.0** and is owed by neither: nothing in those
+changes touches `spawnClaude`, `claudeArgs`, `childSettings`, envelope parsing or a template's output
 contract. Its last measurement, at 0.179.0, was **30 pass, 1 fail** — see the live-tier note below.
 
 **External review:** `REVIEW.md` is **CHANGES REQUESTED** with seventeen high-priority defects
@@ -14,7 +14,7 @@ guarantee-strength audit, durable-artifact registry, failure-shape matrix, and e
 negative-guarantee sheet. These are the first implementation gates in `PLAN.md`. Claude Code may
 implement them; Codex owns closure after reviewing the exact repair and its acceptance evidence.
 
-**Implemented, awaiting Codex verification.** Seventeen findings have repairs. A second Codex pass at
+**Implemented, awaiting Codex verification.** Eighteen findings have repairs. A second Codex pass at
 0.179.0 recorded F31–F37, six of them incomplete repairs of the first fifteen; PLAN items 88–94 own
 them and Gate 0D records the order. Each
 remains **OPEN** in `REVIEW.md` — implementation and passing self-tests are not acceptance, and Codex
@@ -39,6 +39,14 @@ reviews each commit separately:
 | 0.179.0 | F7 / item 61 | process success and envelope success conjoined |
 | 0.180.0 | F31 / item 88 | fail-closed git publication and committed-tree identity |
 | 0.181.0 | F32 / item 89 | uncleared report paths refused as a failed attempt |
+| 0.182.0 | F34 / item 91 | takeover claims carry an owner and are reclaimable |
+
+Adversarially reviewing 0.182.0 before committing it found a defect the repair had introduced —
+the abandoned-claim sweep renamed whatever sat at the claim path rather than the claim it had read,
+so a contender could displace a *live* claim and put two reclaimers on one stale lock. Three
+reviewers found it independently and it survived both skeptics. Repaired in the same commit by
+reading back the moved file and restoring anything that is not the claim judged abandoned. `PLAN.md`
+item 91 records two coverage gaps left honestly open.
 
 Reviewing 0.181.0 adversarially before committing it found one defect neither F16 nor F32 named —
 `gateTree` was a **second** reader of the declared report paths, using `existsSync` plus

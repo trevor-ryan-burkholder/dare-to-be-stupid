@@ -3037,7 +3037,7 @@ the second is born, and the second survives and completes while the first child 
 are gone; reversed order and the overflow path exercise the same rule; and the Panel still combines
 completed results in declared reviewer order. REVIEW F33 owns closure.
 
-### 91. Make crashed stale-lock arbitration reclaimable — OPEN (REVIEW F34)
+### 91. Make crashed stale-lock arbitration reclaimable — IMPLEMENTED (0.182.0); REVIEW F34 open pending Codex
 
 **Problem solved:** the takeover directory is named from the *stale* lock's token, and item F1's
 argument that orphans are inert assumed the stale lock always gets replaced. If the reclaimer dies
@@ -3055,6 +3055,68 @@ prevent a late reclaimer from deleting a newer owner's lock or claim.
 and proves a later cohort still has exactly one winner; live-contender and benign-orphan neighbours
 stay distinguishable; and token mismatch and delayed cleanup cannot clear the winner. REVIEW F34
 owns closure.
+
+**What landed (0.182.0).** The takeover claim is a *file* carrying the reclaimer's pid and token,
+created with the same exclusive `wx` primitive the lock uses, so serialization is unchanged and the
+artifact can say who holds it. A claim naming a **dead** process is abandoned and swept by an atomic
+`rename` exactly one contender can win — the sweep needs its own arbitration or it is F1 one level
+down — after which that contender retries, under a bounded attempt count that refuses rather than
+loops. `releaseTakeoverClaim` removes a claim only when the token is ours, because the sweep makes
+replacement legitimate and the old unconditional cleanup would let a straggler clear a newer claim.
+Refusals now name the claim path, so even the states that stay refusals have a one-line fix.
+
+**Two states are deliberately not swept**, and both name the path instead: a claim that will not
+parse — the microsecond between the exclusive create and the write landing, so it may belong to
+something alive — and a *directory*, which only a driver before 0.182.0 can have written and which
+may be a live reclaimer of that version. Sweeping either would put two reclaimers on one stale lock.
+
+**A defect in the guarding test, found while repairing this.** `test/integration/run-lock.integration.test.mjs`'s
+exactly-one-winner case had contenders that exited the instant they won, so a later contender read a
+genuinely dead owner and reclaimed it — correctly. Two sequential winners is the system working, and
+the assertion could not tell it from the simultaneous double-take F1 is about. Racing both module
+versions under CPU load, 40 rounds of six contenders each: **12 multi-winner rounds on the
+pre-0.182.0 module and 2 on the repaired one**, so the flake was pre-existing, load-sensitive, and
+hidden by an idle machine — and the repair reduces it rather than causing it. A winner now holds the
+lock across the decision window, which puts every loser's liveness check against a live process:
+**0 multi-winner rounds on both versions** under the same load.
+
+**A defect this repair introduced, caught by adversarially reviewing it before commit.** Three
+independent reviewers found the same thing and it survived both skeptics: `rename` names a *path*,
+not the file that was read from it. Between judging a claim abandoned and moving it, another
+contender can sweep that same claim and create its own — so the rename lands on a **live** claim,
+displaces an owner that never finds out, and puts two reclaimers on one stale lock. That is the
+double-take the module exists to prevent, arriving through its own recovery path. The sweep now
+reads back the file it moved — a stable handle to the exact bytes, which no path-based check can
+give — restores anything that is not the claim it judged, and takes nothing from that pass. A
+matching check after a successful claim create stops whichever contender is not holding the claim on
+disk. Verified red by removing the guard: the displacement case fails with *"a contender reclaimed
+past a live claim it had displaced"*.
+
+Two smaller repairs came from the same review. An **empty** claim — the process died between the
+exclusive create and the write — was a refusal, which was a fresh permanent denial of service of
+exactly F34's shape reachable through the window this repair opened; it is now swept, because a
+synchronous create-and-write can only be observed empty by a process that is gone. And a claim that
+vanishes between the failed create and the read is now a retry rather than a raw `ENOENT` naming a
+file that no longer exists.
+
+**Two coverage gaps recorded rather than papered over.** The token guard in `releaseTakeoverClaim`
+can be deleted with both tiers still green: reaching it requires a foreign claim to appear at the
+path while a contender is inside its critical section, and the post-create ownership check now makes
+that state unreachable from the outside — so the guard is defence in depth that nothing can
+currently mutate-test. The same is true of `rename`-as-arbitration inside the sweep: replacing it
+with a plain unlink needs two contenders colliding within microseconds to distinguish, which no
+deterministic test here can arrange. Both are stated so the next reviewer does not mistake green for
+proof.
+
+**Evidence.** `test/run-lock.test.mjs` adds the reproduction (an abandoned claim written by the
+production `claimTakeover`, not a hand-rolled fixture, so the test cannot drift from the format the
+code reads), a second stale generation proving the sweep leaves no residue, the illegible-claim,
+no-pid and legacy-directory refusals, the bounded-retry give-up, and the live-claim neighbour that
+must not be cleared. `test/integration/run-lock.integration.test.mjs` adds the tier-2 fault
+injection F34 asks for: a real process takes the real claim through production code, is really
+`SIGKILL`ed inside the window, the window is asserted before it is exploited, and a five-process
+cohort then produces exactly one winner whose token is the one on disk; the benign neighbour proves
+a *live* reclaimer still refuses everybody and the same directory recovers once it is gone.
 
 ### 92. Require reproducible existing test definitions before ratchet credit — OPEN (REVIEW F35)
 
