@@ -2870,7 +2870,7 @@ passes; and the shipped command/Driver change receives the required version bump
 slash-command invocation is not required unless implementation changes the external Claude Code
 loading or argument-passing contract. REVIEW F24 owns closure.
 
-### 80. Make the supported `/meeseeks` command user-invocable only — OPEN (REVIEW F25)
+### 80. Make the supported `/meeseeks` command user-invocable only — PARTIAL (0.203.0): the control and its contract tests landed; the installed-loader canary is batched with items 79 and 75
 
 **Problem solved:** current Claude Code treats custom commands as skills and, unless
 `disable-model-invocation: true` is present, advertises them to the model for autonomous invocation.
@@ -2887,6 +2887,21 @@ command control to support scheduled or model-selected launches: any future non-
 supported launcher needs its own explicit operator-created authorization and acceptance contract.
 Add a static frontmatter assertion and batch the external behavior probe with items **79** and
 **75** against the staged installed candidate.
+
+**What landed (0.203.0).** `disable-model-invocation: true` is in the shipped frontmatter, and the
+command says in its own body what the control does and does not claim: it governs **Skill
+selection**, and it is not an authentication boundary against a process that already holds arbitrary
+Bash and the path to `driver.mjs`. Writing that down is not decoration — F25 is explicit that its
+closure must not become a false global launch-authentication claim, and a reader who finds only the
+field will assume the stronger thing. `claude plugin validate` accepts the command. The contract
+tests reject the absent, `false`, commented and inverted spellings, and refuse `user-invocable`
+outright because it reads alike and enforces the opposite policy. Verified red by flipping the field
+to `false`.
+
+**Not yet done:** the paid pinned-CLI canary against the staged installed snapshot, which proves the
+*loader* honours the field rather than that the file states it. Batched with items **79** and **75**
+as F25 itself directs, because a separate release campaign for one probe is the cost that finding
+was written to avoid. `PARTIAL` for exactly that reason.
 
 **Done when:** command-contract tests fail if the field is absent, false, or confused with
 `user-invocable`; `claude plugin validate` accepts the versioned command; a paid pinned-CLI canary

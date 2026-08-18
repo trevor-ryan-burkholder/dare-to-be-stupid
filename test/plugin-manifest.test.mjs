@@ -305,3 +305,42 @@ describe('the plugin ships no runtime dependencies', () => {
     }
   });
 });
+
+describe('the command is the operator’s to invoke, not the model’s (REVIEW F25)', () => {
+  const frontmatter = () => COMMAND.slice(4, COMMAND.indexOf('\n---', 4));
+
+  it('declares disable-model-invocation: true', () => {
+    // **Claude Code uses one mechanism for commands and skills**, and the field defaults to `false`
+    // — so a command without it is advertised to the model's Skill tool. This one grants its active
+    // turn the Bash permissions to run preflight and the Driver, and supplies preflight's `--yes`
+    // itself, so an autonomously selected `/meeseeks` starts a long-lived, permission-bypassing
+    // unattended loop that no person asked for. The dirty-tree, remote and repository checks reduce
+    // the damage; none of them is an authorization check.
+    assert.match(frontmatter(), /^disable-model-invocation:\s*true$/m, frontmatter());
+  });
+
+  it('does not confuse it with user-invocable, which is the opposite policy', () => {
+    // `user-invocable: false` would withhold the command from the *operator* and leave it to the
+    // model — precisely inverted. Asserted because the two fields read alike and the mistake would
+    // look like a fix.
+    assert.equal(frontmatter().includes('user-invocable'), false, frontmatter());
+  });
+
+  it('rejects the absent, false and inverted spellings', () => {
+    // The deny path, against the same matcher the assertion above uses, so a future edit that
+    // weakens the field cannot pass by being differently shaped.
+    const control = /^disable-model-invocation:\s*true$/m;
+    assert.equal(control.test('description: x\nargument-hint: y'), false, 'an absent field passed');
+    assert.equal(control.test('disable-model-invocation: false'), false, 'a disabled control passed');
+    assert.equal(control.test('user-invocable: false'), false, 'the inverted field passed');
+    assert.equal(control.test('# disable-model-invocation: true'), false, 'a commented field passed');
+  });
+
+  it('keeps the field a claim about Skill selection and nothing more', () => {
+    // **Stated in the command itself, because the closure must not become a global launch-
+    // authentication claim.** The field governs what the model may *select*. It says nothing about
+    // a process already granted arbitrary Bash and holding the script path, which is an unsupported
+    // operator surface rather than an authenticated boundary.
+    assert.match(COMMAND, /Skill selection/i, 'the command does not bound what the control claims');
+  });
+});

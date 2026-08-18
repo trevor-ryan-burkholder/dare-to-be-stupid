@@ -2,11 +2,20 @@
 description: Hand a PRD, an idea, an existing repository, or nothing at all to an autonomous build loop. Pre-production only.
 argument-hint: [path-to-PRD.md | "an idea in quotes" | --improve ["area"] | (nothing)] [--confirm-prd] [--deadline=<min>] [--give-them-the-box]
 allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/init.mjs:*), Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/driver.mjs:*)
+disable-model-invocation: true
 ---
 
 # /meeseeks
 
 Start an autonomous run in the current repository.
+
+> **You cannot start this.** `disable-model-invocation: true` withholds this command from the
+> model's own Skill selection: a run begins because a person typed `/meeseeks`, not because an
+> agent decided one was needed. The control governs **Skill selection** and claims nothing more —
+> it is not an authentication boundary against a process that already holds arbitrary Bash and the
+> path to `driver.mjs`, which is an unsupported operator surface. Scheduled and other
+> non-interactive launches stay unsupported until they have their own explicit authorization
+> contract.
 
 `$ARGUMENTS` is one of:
 

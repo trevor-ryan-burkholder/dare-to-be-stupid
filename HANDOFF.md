@@ -1,6 +1,6 @@
 # START HERE — current handoff, last swept 18 August 2026
 
-**State:** `main` at `0.202.0`. The manifests and package-lock root metadata agree. Measured on the
+**State:** `main` at `0.203.0`. The manifests and package-lock root metadata agree. Measured on the
 current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean; `npm test`
 **2659 pass, 0 fail**; `npm run test:integration` **166 pass, 0 fail** (both measured on 0.202.0, with
 the `run-lock.mjs` hash verified before staging and again after committing); `npm run release-check`
@@ -73,6 +73,7 @@ Codex batch may cover several focused commits while each finding retains separat
 | 0.200.0 | F10 / item 103 | an unexpected throw after the lock files a receipt instead of escaping |
 | 0.201.0 | item 77 | every cold role declares its supply, and the record is archived per run |
 | 0.202.0 | item 104 | a contender no longer refuses its own restored takeover claim |
+| 0.203.0 | F25 / item 80 | the command is withheld from the model's own Skill selection |
 
 **0.182.0 shipped mutation-testing scaffolding and 0.183.0 undoes it. Read this before trusting
 0.182.0's numbers.** A reviewing agent ran its mutation experiments against `scripts/run-lock.mjs`
