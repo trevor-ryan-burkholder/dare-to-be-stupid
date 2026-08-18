@@ -2301,7 +2301,7 @@ start a deliberately revised objective; it is never an ordinary Builder edit.
 starts new Oracle/review evidence; non-authoritative product documentation remains editable; and
 the digest is checked at the role and terminal boundaries in REVIEW F12.
 
-### 67. Prevent silent deterministic-gate roster shrink — IMPLEMENTED (0.190.0); REVIEW F13 open pending Codex
+### 67. Prevent silent deterministic-gate roster shrink — IMPLEMENTED (0.190.0, reopened and repaired at 0.198.0); REVIEW F13 open pending Codex
 
 **Problem solved:** the legacy `frontendOnly` predicate can remove a quality gate when current-tree
 markers disappear, bypassing the run's fixed declared capability set.
@@ -2346,6 +2346,22 @@ real `main`: the architect declares only `cli`, the tree shows `index.html`, the
 and `web-ui` stays armed, is recorded as lapsed, and is announced exactly once — then a second run
 over a tree that genuinely has no UI resolves without it, with the first run's manifest archived.
 Verified red by removing the established union.
+
+**Codex reopened this at 0.194.0, and the defence I wrote was the defect.** `establishedCapabilities`
+returned `[]` for an absent manifest *and* for a corrupt one, justified by the claim that a run which
+had lost its manifest already failed closed at `readDeclaredCapabilities` — and **nothing in the
+driver calls that function.** So a truncated or damaged manifest silently answered "nothing
+established", and a detected-only capability whose marker had also gone would drop its gate: the
+exact shrink this item exists to prevent, arriving through its own repair.
+
+**Repaired at 0.198.0 by separating two facts that are not the same.** An **absent** manifest is the
+first iteration's honest answer and yields `[]`. A manifest that is *there* and cannot be read is
+refused — an unreadable record of what this run established is not evidence that it established
+nothing. The same distinction the run lock draws between a missing lock and an unparseable one, and
+the same one F32 draws between a report that is gone and one that is nameless.
+
+One case keeps `[]` for a file that exists: a manifest with no `capabilities` key predates 0.190.0
+and genuinely established nothing under this rule. That is an upgrade path, not a fallback.
 
 ### 68. Seal Panel verdicts to an exact workspace identity — IMPLEMENTED (0.172.0); REVIEW F14 open pending Codex
 

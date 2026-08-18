@@ -64,9 +64,9 @@ import path from 'node:path';
 
 /** Thrown when a capability set cannot be trusted. */
 export class CapabilityError extends Error {
-  /** @param {string} message */
-  constructor(message) {
-    super(message);
+  /** @param {string} message @param {{ cause?: unknown }} [options] */
+  constructor(message, options) {
+    super(message, options);
     this.name = 'CapabilityError';
   }
 }
@@ -517,20 +517,42 @@ export function writeCapabilityManifest(meeseeksDir, resolved) {
  * so a builder that removed a file could remove the deterministic gate that judged its work, and the
  * roster shrank with no record that it ever contained more.
  *
- * Returns an empty list rather than throwing on an unreadable or absent manifest. This is the *first*
- * iteration's answer as much as it is a corrupt file's, and a run that has genuinely lost its
- * manifest already fails closed at `readDeclaredCapabilities`, which is the check that owns that.
+ * **Absent and corrupt are different facts, and conflating them was the defect** (REVIEW F13,
+ * reopened). This returned `[]` for both, defended by the claim that a run which had lost its
+ * manifest already failed closed at `readDeclaredCapabilities` — and nothing in the driver calls
+ * that function. So a manifest that was truncated, half-written or damaged silently answered
+ * "nothing established", and a detected-only capability whose marker had also gone would drop its
+ * gate: exactly the shrink this item exists to prevent, arriving through the repair.
+ *
+ * An **absent** manifest is the first iteration's honest answer and yields `[]`. A manifest that is
+ * *there* and cannot be read is refused, because an unreadable record of what this run established
+ * is not evidence that it established nothing. The same distinction the run lock draws between a
+ * missing lock and an unparseable one, and for the same reason.
  *
  * @param {string} meeseeksDir
  * @returns {Capability[]}
+ * @throws {CapabilityError} when the manifest exists and cannot be read
  */
 export function establishedCapabilities(meeseeksDir) {
+  const file = path.join(meeseeksDir, CAPABILITY_MANIFEST);
+  if (!existsSync(file)) return [];
+  /** @type {unknown} */
+  let parsed;
   try {
-    const parsed = JSON.parse(readFileSync(path.join(meeseeksDir, CAPABILITY_MANIFEST), 'utf8'));
-    return validateCapabilities(parsed?.capabilities ?? [], 'established capabilities');
-  } catch {
-    return [];
+    parsed = JSON.parse(readFileSync(file, 'utf8'));
+  } catch (error) {
+    throw new CapabilityError(
+      `${file} exists but could not be read as JSON (${/** @type {Error} */ (error).message}). It records the ` +
+        'capabilities this run has already established, so treating it as empty would silently disarm a gate the ' +
+        'run had agreed applied. Delete it only if you mean to re-resolve from the architect declaration.',
+      { cause: error },
+    );
   }
+  const record = parsed === null || typeof parsed !== 'object' ? {} : /** @type {Record<string, unknown>} */ (parsed);
+  // A manifest with no `capabilities` field at all predates 0.190.0 and honestly established
+  // nothing under this rule; a field that is present and malformed is damage and is refused.
+  if (!('capabilities' in record)) return [];
+  return validateCapabilities(record.capabilities, `${file} "capabilities"`);
 }
 
 /**

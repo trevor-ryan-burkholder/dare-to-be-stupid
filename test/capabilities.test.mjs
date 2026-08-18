@@ -667,13 +667,35 @@ describe('a capability this run established does not lapse with its marker (REVI
     assert.deepStrictEqual(resolved.lapsed, []);
   });
 
-  it('treats an unreadable or absent manifest as nothing established, not as a failure', () => {
-    // This is the first iteration's answer as much as a corrupt file's. A run that has genuinely
-    // lost its manifest already fails closed at `readDeclaredCapabilities`, which owns that.
+  it('treats an absent manifest as nothing established, which is the first iteration', () => {
+    assert.deepStrictEqual(establishedCapabilities(path.join(makeProject(), '.meeseeks')), []);
+  });
+
+  it('refuses a manifest that exists and cannot be read, rather than calling it empty', () => {
+    // **The reopening.** This used to answer `[]` for a corrupt file too, defended by the claim that
+    // a run which had lost its manifest failed closed at `readDeclaredCapabilities` — and nothing in
+    // the driver calls that function. So damage silently answered "nothing established", and a
+    // detected-only capability whose marker had also gone would drop its gate: the very shrink this
+    // item exists to prevent, arriving through the repair.
     const meeseeksDir = path.join(makeProject(), '.meeseeks');
-    assert.deepStrictEqual(establishedCapabilities(meeseeksDir), []);
     mkdirSync(meeseeksDir, { recursive: true });
     writeFileSync(path.join(meeseeksDir, CAPABILITY_MANIFEST), '{ not json', 'utf8');
+    assert.throws(() => establishedCapabilities(meeseeksDir), CapabilityError);
+  });
+
+  it('refuses a capabilities field that is present and malformed', () => {
+    const meeseeksDir = path.join(makeProject(), '.meeseeks');
+    mkdirSync(meeseeksDir, { recursive: true });
+    writeFileSync(path.join(meeseeksDir, CAPABILITY_MANIFEST), JSON.stringify({ capabilities: 'web-ui' }), 'utf8');
+    assert.throws(() => establishedCapabilities(meeseeksDir), CapabilityError);
+  });
+
+  it('reads a manifest written before the field existed as having established nothing', () => {
+    // The upgrade case, and the one place `[]` is still the honest answer for a file that is there:
+    // a manifest with no `capabilities` key predates 0.190.0 and established nothing under this rule.
+    const meeseeksDir = path.join(makeProject(), '.meeseeks');
+    mkdirSync(meeseeksDir, { recursive: true });
+    writeFileSync(path.join(meeseeksDir, CAPABILITY_MANIFEST), JSON.stringify({ declared: ['cli'] }), 'utf8');
     assert.deepStrictEqual(establishedCapabilities(meeseeksDir), []);
   });
 
