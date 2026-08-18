@@ -6367,3 +6367,83 @@ describe('every exit between acquiring the run lock and the loop gives the repos
     assert.equal(released.length >= 10, true, `expected the pre-loop phases to have many exits, found ${released.length}`);
   });
 });
+
+describe('spawnClaude enforces the supply boundary at the one door (PLAN item 77)', () => {
+  // Scoped here rather than reaching for the one nested in another describe block: a test that
+  // borrows a fixture out of scope is a test that breaks when the block above it is reorganised.
+  const SUCCESS_ENVELOPE = JSON.stringify({
+    type: 'result',
+    subtype: 'success',
+    is_error: false,
+    result: 'done',
+    total_cost_usd: 0,
+    usage: { input_tokens: 1, output_tokens: 1 },
+  });
+
+  /** @param {Partial<Record<string, unknown>>} extra @returns {Promise<any>} */
+  const spawnSupplying = (extra) =>
+    spawnClaude({
+      prompt: 'judge this',
+      model: 'claude-opus-5',
+      phase: 'review',
+      cwd: '/tmp',
+      env: {},
+      run: () => ({ ok: true, status: 0, stdout: SUCCESS_ENVELOPE, stderr: '', timedOut: false }),
+      ...extra,
+    });
+
+  it('refuses a cold reviewer offered a builder log, without spawning anything', async () => {
+    // The check lives here for the reason the context budget does: every child passes through this
+    // one door, so a phase added later cannot forget it. And it must be *before* the spawn — a cold
+    // role that has already read something cannot unread it.
+    let spawned = 0;
+    const result = await spawnClaude({
+      prompt: 'judge this',
+      model: 'claude-opus-5',
+      phase: 'review',
+      cwd: '/tmp',
+      env: {},
+      supply: [
+        { class: 'system-prompt', text: 'you are an auditor' },
+        { class: 'builder-log', text: 'the builder tried three times' },
+      ],
+      run: () => {
+        spawned += 1;
+        return { ok: true, status: 0, stdout: SUCCESS_ENVELOPE, stderr: '', timedOut: false };
+      },
+    });
+
+    assert.equal(spawned, 0, 'a child was paid for after the boundary was crossed');
+    assert.equal(result.ok, false);
+    assert.equal(result.raw.includes('builder-log'), true, result.raw);
+    assert.equal(result.raw.includes('supply policy forbids'), true, result.raw);
+  });
+
+  it('runs the reviewer, and hands its manifest back, when the supply is allowed', async () => {
+    const result = await spawnSupplying({
+      specification: 'sha256:spec',
+      supply: [
+        { class: 'system-prompt', text: 'you are an auditor' },
+        { class: 'brief', text: 'the requirements' },
+      ],
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.supply.role, 'review');
+    assert.equal(result.supply.specification, 'sha256:spec');
+    assert.deepStrictEqual(
+      result.supply.inputs.map((/** @type {{ class: string }} */ input) => input.class),
+      ['system-prompt', 'brief'],
+    );
+    // The manifest describes the prompt; it does not repeat it.
+    assert.equal(JSON.stringify(result.supply).includes('the requirements'), false);
+  });
+
+  it('leaves a caller that declares nothing exactly as it was', async () => {
+    // The threading is incremental — the cold roles first — so an undeclared caller must keep
+    // working. It is not silently trusted: there is simply nothing to check, and the classes that
+    // matter are declared where independence depends on them.
+    const result = await spawnSupplying({});
+    assert.equal(result.ok, true);
+    assert.equal(result.supply, undefined);
+  });
+});

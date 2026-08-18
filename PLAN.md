@@ -2640,7 +2640,7 @@ and observed model identities expose a forced substitution while an absent obser
 an unknown schema, claim type, or subject fails closed; and synthetic secrets do not appear. REVIEW
 F22 owns closure.
 
-### 77. Record and enforce the cold-role supply boundary — OPEN (BORROWED R44)
+### 77. Record and enforce the cold-role supply boundary — PARTIAL (0.194.0): boundary enforced and manifested at the one door; archiving and full call-site threading remain
 
 **Problem solved:** Panel and Oracle independence partly rely on `not supplied`: the Driver does
 not place Builder history, workflow synthesis, or held-out cases into a cold role's context. That
@@ -2665,6 +2665,39 @@ and byte count without the manifest storing those bytes again; item **54** reuse
 manifest for a role-internal workflow rather than
 creating another context ledger; and an integration fixture proves a cold Panel invocation cannot
 be assembled with Builder history even when a caller attempts it.
+
+**What landed (0.194.0), and what did not.** `scripts/role-supply.mjs` holds the input-class
+vocabulary, the per-role deny policy and the sanitized manifest; `spawnClaude` refuses a forbidden
+class **before** the spawn and returns the manifest with the result. The cold Panel declares its
+supply. That is the boundary and its record.
+
+**Not yet done, and named rather than implied:** the manifest is returned but not archived beside
+the role receipt, and only `review` declares a supply — `oracle-author`, `builder` and
+`security-escalation` have policies with no declaring call site yet, so their rules are enforced
+only if a caller opts in. Item **76** consumes the archived form, so that half lands with it. This
+entry is `PARTIAL` for exactly that reason: claiming the whole item on a half-threaded boundary is
+the overclaim this ledger keeps catching.
+
+**Design notes worth keeping.** The check sits at `spawnClaude` for the reason the context budget
+does: every child passes through one door, so a phase added later cannot forget it. The policy is a
+**deny** list per role, not an allow list — an allow list silently forbids each class somebody adds
+later, and that failure shows up as a role starved of something it needs rather than as a refusal.
+A role with no policy entry is unconstrained, because inventing prohibitions for the
+builder-facing phases would enforce a rule nobody stated. The manifest records class, digest and
+byte count and **never the bytes**: a verifier holding the assembled prompt recomputes every digest,
+and storing them again would make the record a second copy of the thing it describes.
+
+**And what it does not claim.** Only the deliberate prompt and brief channel. A reviewer with tools
+can still open any file in the candidate; F15 / item **69** owns that, and describing this as
+preventing a role from *reading* something would be writing `not supplied` as though it were
+`driver-owned` — the exact confusion `AGENTS.md` warns about.
+
+**Evidence.** `test/role-supply.test.mjs` offers **every** forbidden class to **every** constrained
+role from the policy table itself, so adding a rule adds its hostile case automatically; the benign
+neighbours prove each allowed class still arrives, that the builder keeps the history the panel may
+not have, and that an unconstrained role stays unconstrained. `test/driver.test.mjs` proves the
+refusal happens with **zero** children spawned, that an allowed supply returns a manifest which does
+not repeat the prompt, and that an undeclared caller is unchanged.
 
 ### 78. Retire the inert `styleModel` without breaking configuration silently — IMPLEMENTED (0.193.0); REVIEW F23 open pending Codex
 

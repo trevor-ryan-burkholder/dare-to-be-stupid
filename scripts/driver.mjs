@@ -91,6 +91,7 @@ import {
   writeLaunchReceipt,
 } from './launch.mjs';
 import { OUTCOME_FILE, writeRunOutcome } from './outcome.mjs';
+import { roleSupplyManifest } from './role-supply.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
 import { captureSpecification, verifySpecification } from './specification.mjs';
 import { installQualityPlugins } from './plugins.mjs';
@@ -1160,7 +1161,8 @@ export function childBudget(config, spentUsd) {
 /**
  * @typedef {{
  *   ok: boolean, text: string, costUsd: number, tokens: number, raw: string, exhausted?: boolean,
- *   denials?: string[]
+ *   denials?: string[],
+ *   supply?: import('./role-supply.mjs').RoleSupplyManifest
  * }} ClaudeResult
  *
  * `denials` carries any guard refusals the child's stderr reported. **Case J is why it exists:**
@@ -5457,6 +5459,8 @@ export async function shipTimeMutation(cwd, meeseeksDir, startCommit, timeoutMs)
  * @param {{ prompt: string, model: string, systemPrompt?: string, phase: string, effort?: string, cwd: string,
  *   env: Record<string, string | undefined>, contextLimit?: number, timeoutMs?: number,
  *   maxBudgetUsd?: number, maxTurns?: number, sandbox?: boolean,
+ *   supply?: { class: import('./role-supply.mjs').InputClass, text: string }[],
+ *   specification?: string | null,
  *   run?: (command: string, args: string[],
  *     options: { cwd: string, env?: Record<string, string | undefined>, input?: string, timeoutMs?: number }) =>
  *     ShellResult | Promise<ShellResult> }} options
@@ -5473,6 +5477,32 @@ export async function spawnClaude(options) {
     limit: options.contextLimit,
   });
   if (!budget.ok) return { ok: false, text: '', costUsd: 0, tokens: 0, raw: budget.detail };
+
+  // **The supply boundary, checked at the same one door and for the same reason** (BORROWED R44,
+  // PLAN item 77). Panel and Oracle independence rests on `not supplied`: the Driver does not place
+  // Builder history, workflow synthesis, or held-out cases into a cold role's context. That is a
+  // discipline about what this function is handed, and a discipline with no record is one a
+  // refactor breaks while every template-string test stays green.
+  //
+  // A caller that declares its input classes gets them checked before the child is spawned and a
+  // sanitized manifest back. A caller that declares nothing is not silently trusted — there is
+  // simply nothing to check, which is why `supply` is threaded from the cold roles first and why
+  // `roleSupplyManifest` refuses an unclassified class outright.
+  /** @type {ReturnType<typeof roleSupplyManifest> | null} */
+  let supply = null;
+  if (options.supply !== undefined) {
+    try {
+      supply = roleSupplyManifest({
+        role: options.phase,
+        specification: options.specification ?? null,
+        supply: options.supply,
+      });
+    } catch (error) {
+      // Refused, not spawned. The failure is the role's, so it reads as a failed child rather than
+      // as an exception nobody attributed.
+      return { ok: false, text: '', costUsd: 0, tokens: 0, raw: /** @type {Error} */ (error).message };
+    }
+  }
 
   const args = claudeArgs(options);
   const run = options.run ?? shell;
@@ -5552,7 +5582,10 @@ export async function spawnClaude(options) {
       ...(denials.length > 0 ? { denials } : {}),
     };
   }
-  return denials.length > 0 ? { ...parsed, denials } : parsed;
+  // The manifest travels with the result so the caller can archive it beside the role receipt
+  // (PLAN item 77). Attached rather than written here, because `spawnClaude` does not know where
+  // this run's state lives and should not learn.
+  return { ...parsed, ...(denials.length > 0 ? { denials } : {}), ...(supply === null ? {} : { supply }) };
 }
 
 /**
@@ -7125,9 +7158,11 @@ export async function main(argv, io = {}) {
         }),
       // Re-read per call rather than captured once, because the builder appends to it between
       // iterations and a stale copy would show the panel an older run's reasoning.
-      review: (reviewer, ids) =>
-        runChild({
-          prompt: [
+      review: (reviewer, ids) => {
+        // Assembled into a value first so the same bytes are both sent and declared (PLAN item 77).
+        // A manifest computed from a second construction of "the prompt" would describe something
+        // adjacent to what the reviewer read, which is worse than no manifest.
+        const reviewerBrief = [
             `You are the ${reviewer} auditor, one member of a panel of ${config.reviewers.length}.`,
             '',
             'You own the ids below and must return exactly one entry for each of them. The other',
@@ -7155,14 +7190,28 @@ export async function main(argv, io = {}) {
               }
               return rendered === '' ? [] : ['', rendered];
             })(),
-          ].join('\n'),
+          ].join('\n');
+        const reviewerSystem = template('reviewer-system.md');
+        return runChild({
+          prompt: reviewerBrief,
           model: config.reviewerModel,
-          systemPrompt: template('reviewer-system.md'),
+          systemPrompt: reviewerSystem,
           phase: 'review',
       effort: config.effort['review'],
           cwd,
           env,
-        }),
+          // **The cold panel declares what it was handed** (PLAN item 77). Independence here rests
+          // on `not supplied`, and a discipline with no record is one a refactor breaks while the
+          // template tests stay green. The policy refuses builder logs, iteration history, workflow
+          // synthesis, a previous panel's transcript and the held-out cases *before* the child is
+          // spawned — a cold role that has already read something cannot unread it.
+          supply: [
+            { class: 'system-prompt', text: reviewerSystem },
+            { class: 'brief', text: reviewerBrief },
+          ],
+          specification: specification.revision.digest,
+        });
+      },
       realityCheck: () =>
         runChild({
           prompt:
