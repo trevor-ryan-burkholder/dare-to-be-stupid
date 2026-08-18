@@ -131,7 +131,17 @@ function run(label, argv) {
   } catch (error) {
     process.stdout.write('FAILED\n');
     const out = /** @type {{ stdout?: string, stderr?: string }} */ (error);
-    process.stdout.write(`${(out.stdout ?? '').slice(-3000)}${(out.stderr ?? '').slice(-2000)}\n`);
+    const combined = `${out.stdout ?? ''}\n${out.stderr ?? ''}`;
+    // **Named, not just tailed.** The first version printed the last 3000 characters, which on a
+    // tier-2 run is npm's warning banner and nothing else — so a refusal said "it failed" and left
+    // the reader to re-run the suite by hand to find out what. A failing gate that cannot say which
+    // test failed is the same defect this repository keeps repairing one layer up.
+    const named = combined
+      .split('\n')
+      .filter((line) => /^\s*(✖|not ok |AssertionError|Error:)/.test(line))
+      .slice(0, 40);
+    if (named.length > 0) process.stdout.write(`${named.join('\n')}\n`);
+    else process.stdout.write(`${combined.slice(-3000)}\n`);
     return false;
   }
 }

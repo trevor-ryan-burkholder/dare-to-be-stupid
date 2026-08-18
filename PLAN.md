@@ -3677,6 +3677,19 @@ what "shipped" means, and the current gap admits only dev-config drift — which
 
 ## Observations recorded rather than repaired
 
+- **Tier 2 refused once and passed on an immediate re-run** (18 Aug 2026, committing 0.196.0 through
+  `slice-check`). Standalone `npm run test:integration` was 152/152 both before and after. No test
+  was named, because the harness printed the tail of a very long log — npm's warning banner — rather
+  than the failing assertion. That reporting gap is now closed (`tools/slice-check.mjs` filters for
+  failure lines), so the next occurrence identifies itself.
+
+  Recorded rather than shrugged at, because 0.176.0 landed F30 precisely to stop a flaky result
+  being treated as a pass, and the tier that judges this repository should be held to the standard
+  it enforces. The likely candidates are the timing-sensitive tier-2 cases — the run-lock races and
+  the concurrent-sibling termination case — under load from a full-suite run. If it recurs with a
+  name attached, it becomes an item.
+
+
 - **`test/live/improve-contract.live.test.mjs` is non-deterministic** (seen 17 Aug 2026 at 0.179.0).
   Across two full live runs it passed once and failed once; re-run alone it passed. The failure is
   downstream of `result.ok === true` — the child succeeded and wrote a document over 200 characters
