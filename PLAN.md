@@ -2505,7 +2505,7 @@ airtime, component receipts, and terminal outcomes derive from or reconcile agai
 cost enter `alreadySpent`; failed/exhausted parallel panels conserve all completed envelopes; no
 success path double-charges; and REVIEW F18's reproduction reports the actual 160 tokens and $6.01.
 
-### 73. Bound allocation for decision-bearing artifacts — OPEN (REVIEW F19)
+### 73. Bound allocation for decision-bearing artifacts — IMPLEMENTED (0.192.0); REVIEW F19 open pending Codex
 
 **Problem solved:** prompt-bound, parsed, and hashed files can be synchronously loaded without a
 size boundary, allowing a repository or generated report to exhaust the Driver.
@@ -2519,6 +2519,38 @@ sizes, documenting any configurable escape.
 **Done when:** oversized PRD, report, and evidence fixtures fail before allocation; a large tracked
 blob hashes with bounded memory; valid boundary neighbors work; and a refusal leaves the atomic
 terminal evidence required by item 64.
+
+**What landed (0.192.0).** `scripts/bounded-read.mjs` holds one policy table and two operations,
+and the split between them is the design: a file whose **contents** become evidence is refused above
+its limit, and a file that is only **hashed** has no limit and is streamed.
+
+**Refused, never truncated.** `stat` first so the allocation is avoided, then the same check again
+after the read, because `stat` failing while `read` succeeds is a race rather than a licence. A
+truncated report parses to fewer tests and a truncated document reads as a shorter one; either would
+be evidence nobody produced, which is the laundering the rest of this project exists to stop. The
+refusal names the artifact and both sizes.
+
+**Hashing has no limit, deliberately.** `workspaceHash` read every tracked file whole purely to
+digest it, on the decision path, every iteration. It streams now — a 64KB buffer regardless of file
+size — and the digest is byte-identical to the old one, so no workspace identity changes and no gate
+re-runs. Bounding it instead would make identity, and therefore the gate cache and the F14 verdict
+seal, unavailable on a repository that is merely big: a worse failure than the one being fixed.
+
+**Bounded now:** the specification (operator-supplied and prompt-bound), test reports (written by a
+gate the *target* controls, which is what makes "arbitrarily large" reachable), reviewer-cited
+evidence files, and the F17 definition digest. Limits are stated as values rather than described, so
+an edit that quietly drops one to a reachable size fails a test rather than an overnight run.
+
+**Evidence.** `test/bounded-read.test.mjs` covers under, exactly-at and one-byte-over, the
+unmeasurable path that only the post-read check catches, refusal-not-truncation, the async variant,
+the limit values themselves against the largest committed fixture, and the streaming digest agreeing
+with a whole-file digest for a file larger than any read limit. `test/reports.test.mjs` proves an
+oversized report lands in `irregular` rather than being parsed short. Verified red by restoring the
+unbounded report read.
+
+**The terminal-evidence half needs nothing new.** Item 64 already routes every post-lock exit through
+one atomic receipt, so a refusal that ends a run is recorded with its phase by construction — which
+is why this item listed 64 as its prerequisite.
 
 ### 74. Require repository-contained reporter identities — IMPLEMENTED (0.175.0); REVIEW F20 open pending Codex
 

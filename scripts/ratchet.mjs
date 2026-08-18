@@ -25,6 +25,7 @@ import { createHash } from 'node:crypto';
 import { lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 import { quarantineCorruptFile } from './quarantine.mjs';
 import { collapseByWorstStatus, parseReport } from './reporters/index.mjs';
 
@@ -409,7 +410,9 @@ export function evaluateIteration(state, nowPassing, iteration = {}) {
  */
 export function definitionDigest(rootDir, file) {
   try {
-    return createHash('sha256').update(readFileSync(path.resolve(rootDir, file))).digest('hex').slice(0, 32);
+    // Bounded (REVIEW F19). A test file over this size is pathological, and the failure direction is
+    // safe: `null` reads as "changed", which withholds credit rather than granting it.
+    return createHash('sha256').update(readBounded(path.resolve(rootDir, file), READ_LIMITS.evidence)).digest('hex').slice(0, 32);
   } catch {
     return null;
   }

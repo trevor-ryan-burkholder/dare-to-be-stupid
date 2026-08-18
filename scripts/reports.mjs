@@ -46,7 +46,9 @@
  * everything costs one re-run. A false reset costs the iteration's work.
  */
 
-import { lstatSync, readFileSync, rmSync } from 'node:fs';
+import { lstatSync, rmSync } from 'node:fs';
+
+import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 
 /**
  * @typedef {{ cleared: string[], stuck: string[] }} ClearOutcome
@@ -157,7 +159,11 @@ export function collectReports(files, cleared) {
       continue;
     }
     try {
-      contents.push(readFileSync(file, 'utf8'));
+      // Bounded (REVIEW F19). A gate the target controls writes this file, so an arbitrarily large
+      // one would be allocated and parsed on the decision path. Refused rather than truncated: a
+      // partly read report parses to fewer tests, and acting on that is acting on evidence nobody
+      // produced. The refusal lands in `irregular`, which the caller already treats as not-a-report.
+      contents.push(readBounded(file, READ_LIMITS.report));
       produced.push(file);
     } catch {
       irregular.push(file);

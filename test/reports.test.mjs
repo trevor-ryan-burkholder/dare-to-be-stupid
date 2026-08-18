@@ -27,6 +27,7 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { extractTestIds } from '../scripts/ratchet.mjs';
+import { READ_LIMITS } from '../scripts/bounded-read.mjs';
 import { clearReports, collectReports } from '../scripts/reports.mjs';
 
 /**
@@ -337,5 +338,25 @@ describe('the clear outcome is bound to the paths being collected (REVIEW F32)',
     // are opposite instructions: one says this attempt produced nothing, the other says nobody
     // knows what is there.
     assert.deepStrictEqual(collected.missing, []);
+  });
+});
+
+describe('an oversized report is refused rather than parsed (REVIEW F19)', () => {
+  it('does not allocate and parse a report the target made enormous', () => {
+    // A gate the *target* controls writes this file, so "arbitrarily large" is reachable by the
+    // thing being judged. It lands in `irregular`, which the caller already treats as not-a-report,
+    // rather than as a short report — a truncated report parses to fewer tests, and acting on that
+    // is acting on evidence nobody produced.
+    const dir = scratch();
+    const unit = path.join(dir, 'unit.json');
+    writeFileSync(unit, `[${'"x",'.repeat(2)}"x"]`, 'utf8');
+    const cleared = clearedAll([unit]);
+    assert.deepStrictEqual(collectReports([unit], cleared).produced, [unit], 'the ordinary case must still work');
+
+    writeFileSync(unit, 'x'.repeat(READ_LIMITS.report + 1), 'utf8');
+    const collected = collectReports([unit], cleared);
+    assert.deepStrictEqual(collected.contents, []);
+    assert.deepStrictEqual(collected.produced, []);
+    assert.deepStrictEqual(collected.irregular, [unit], 'an oversized report was read as something else');
   });
 });

@@ -1,8 +1,8 @@
 # START HERE — current handoff, last swept 18 August 2026
 
-**State:** `main` at `0.191.0`. The manifests and package-lock root metadata agree. Measured on the
+**State:** `main` at `0.192.0`. The manifests and package-lock root metadata agree. Measured on the
 current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean; `npm test`
-**2578 pass, 0 fail**; `npm run test:integration` **147 pass, 0 fail** (both measured on 0.191.0, with
+**2592 pass, 0 fail**; `npm run test:integration` **147 pass, 0 fail** (both measured on 0.192.0, with
 the `run-lock.mjs` hash verified before staging and again after committing); `npm run release-check`
 **ok**. The live tier **was re-run at 0.188.0 and passed 31 of 31**, which is the mandatory tier-3 canary
 F36/item 93 owes: that repair is inside `spawnClaude`, whose contract belongs to another binary. The
@@ -62,6 +62,7 @@ Codex batch may cover several focused commits while each finding retains separat
 | 0.189.0 | F10 / item 64 | one atomic terminal receipt, on every path after the lock |
 | 0.190.0 | F13 / item 67 | one arming vocabulary, and a capability set monotonic within a run |
 | 0.191.0 | F17 / item 71 | current credit bound to the current test definition |
+| 0.192.0 | F19 / item 73 | decision-bearing reads bounded; workspace hashing streamed |
 
 **0.182.0 shipped mutation-testing scaffolding and 0.183.0 undoes it. Read this before trusting
 0.182.0's numbers.** A reviewing agent ran its mutation experiments against `scripts/run-lock.mjs`

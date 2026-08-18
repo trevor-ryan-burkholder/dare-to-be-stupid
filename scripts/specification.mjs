@@ -29,6 +29,8 @@
 
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+
+import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 import path from 'node:path';
 
 /** Where the captured revision lives inside `.meeseeks/`. */
@@ -73,7 +75,8 @@ export function captureSpecification(options) {
   const full = path.join(options.root, file);
   let contents;
   try {
-    contents = readFileSync(full, 'utf8');
+    // Bounded (REVIEW F19): the specification is operator-supplied and prompt-bound.
+    contents = readBounded(full, READ_LIMITS.specification);
   } catch (error) {
     throw new SpecificationError(
       `the specification ${file} could not be read (${/** @type {Error} */ (error).message}), so this run has ` +
@@ -152,7 +155,8 @@ export function verifySpecification(options) {
   const full = path.join(options.root, revision.file);
   let contents;
   try {
-    contents = readFileSync(full, 'utf8');
+    // Bounded (REVIEW F19): the specification is operator-supplied and prompt-bound.
+    contents = readBounded(full, READ_LIMITS.specification);
   } catch {
     return {
       ok: false,

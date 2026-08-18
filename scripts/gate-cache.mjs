@@ -42,6 +42,8 @@
 
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+
+import { hashFileStreaming, measure } from './bounded-read.mjs';
 import path from 'node:path';
 
 /** The driver-owned cache file, under `.meeseeks/` and therefore positionally guarded (§6). */
@@ -132,22 +134,26 @@ export async function workspaceHash(options) {
   const unique = [...new Set([...tracked, ...untracked])].sort();
   const master = createHash('sha256');
   for (const relative of unique) {
-    /** @type {Buffer} */
-    let bytes;
-    try {
-      bytes = readFileSync(path.join(cwd, relative));
-    } catch {
+    const absolute = path.join(cwd, relative);
+    // **Streamed, not buffered** (REVIEW F19). This used to read every tracked file whole, so a
+    // repository holding one large blob copied it into memory purely to hash it — and workspace
+    // identity is computed on the decision path, every iteration. Streaming costs a 64KB buffer
+    // per file regardless of its size, and there is no reason to bound hashing: refusing to hash a
+    // large file would make the gate cache and the F14 verdict seal unavailable on a repository
+    // that is merely big, which is a worse failure than the one being fixed.
+    const size = measure(absolute);
+    const perFile = await hashFileStreaming(absolute);
+    if (perFile === null || size === null) {
       // A file git named but node cannot read — a symlink to nowhere, a submodule directory, a
       // file deleted in the microsecond since `ls-files`. The tree is not one we can hash, so the
       // whole hash is void and every gate re-runs.
       return null;
     }
     // Path and length framed so that renaming a file, or a file boundary shifting, cannot collide
-    // with a different tree. The per-file digest keeps only one file's bytes in memory at a time.
-    const perFile = createHash('sha256').update(bytes).digest('hex');
+    // with a different tree.
     master.update(relative, 'utf8');
     master.update('\0');
-    master.update(String(bytes.length));
+    master.update(String(size));
     master.update('\0');
     master.update(perFile);
     master.update('\n');

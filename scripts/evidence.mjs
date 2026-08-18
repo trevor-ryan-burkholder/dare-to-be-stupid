@@ -36,7 +36,9 @@
  * nothing here changes that — a file whose contents move a line down has not lost its evidence.
  */
 
-import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
+
+import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 import path from 'node:path';
 
 /** @typedef {{ ok: true, file: string, line: number } | { ok: false, reason: string }} Resolution */
@@ -140,7 +142,8 @@ export function resolveCitation(root, citation) {
 
   let contents;
   try {
-    contents = readFileSync(real, 'utf8');
+    // Bounded (REVIEW F19): a reviewer can cite any file in the candidate, including a huge one.
+    contents = readBounded(real, READ_LIMITS.evidence);
   } catch {
     return { ok: false, reason: 'the cited file could not be read' };
   }
