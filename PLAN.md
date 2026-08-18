@@ -3099,6 +3099,21 @@ synchronous create-and-write can only be observed empty by a process that is gon
 vanishes between the failed create and the read is now a retry rather than a raw `ENOENT` naming a
 file that no longer exists.
 
+**0.182.0 shipped the mutant, and 0.183.0 is the repair.** A reviewing agent ran its mutation
+experiments against `scripts/run-lock.mjs` in the working tree rather than a copy — gutting
+`sweepAbandonedTakeover` and adding a debug `process.stderr.write` to `releaseTakeoverClaim` — in the
+window between the tier-1 run and the commit. `git add` captured the mutant, so 0.182.0's commit
+message describes a guard its code does not contain, and its recorded tier-1 and tier-2 numbers were
+measured against different bytes than it shipped. The agent restored the file afterwards, which is
+exactly why the working tree looked right and the commit did not.
+
+Three things made it detectable rather than permanent, and they are the reason to keep all three:
+the hostile test is genuinely hostile (`does not sweep a live claim that replaced the abandoned one
+it read` fails against 0.182.0's module), the mutation left textual fingerprints a grep could find,
+and `d9632da` was scannable and proved clean. The structural fix is not vigilance: **a review panel
+that performs mutation experiments must run in an isolated git worktree**, so it physically cannot
+write to the tree being committed.
+
 **Two coverage gaps recorded rather than papered over.** The token guard in `releaseTakeoverClaim`
 can be deleted with both tiers still green: reaching it requires a foreign claim to appear at the
 path while a contender is inside its critical section, and the post-create ownership check now makes

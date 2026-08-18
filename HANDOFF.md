@@ -1,6 +1,6 @@
 # START HERE — current handoff, last swept 17 August 2026
 
-**State:** `main` at `0.182.0`. The manifests and package-lock root metadata agree. Measured on the
+**State:** `main` at `0.183.0`. The manifests and package-lock root metadata agree. Measured on the
 current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean; `npm test`
 **2531 pass, 0 fail**; `npm run test:integration` **122 pass, 0 fail**; `npm run release-check`
 **ok**. The live tier was **not re-run at 0.181.0 or 0.182.0** and is owed by neither: nothing in those
@@ -40,6 +40,17 @@ reviews each commit separately:
 | 0.180.0 | F31 / item 88 | fail-closed git publication and committed-tree identity |
 | 0.181.0 | F32 / item 89 | uncleared report paths refused as a failed attempt |
 | 0.182.0 | F34 / item 91 | takeover claims carry an owner and are reclaimable |
+| 0.183.0 | — | restores the F34 sweep guard that 0.182.0 shipped mutated |
+
+**0.182.0 shipped mutation-testing scaffolding and 0.183.0 undoes it. Read this before trusting
+0.182.0's numbers.** A reviewing agent ran its mutation experiments against `scripts/run-lock.mjs`
+in the working tree instead of a copy: it gutted `sweepAbandonedTakeover` to `rmSync` with the
+arguments voided, and added a `process.stderr.write` trace to `releaseTakeoverClaim`. That happened
+after the tier-1 run and before the commit, so `git add -A` captured the mutant and the commit
+message describes a guard the commit does not contain. The agent restored the file afterwards, which
+is why the working tree was correct and the commit was not. The tests were untouched and are hostile:
+`does not sweep a live claim that replaced the abandoned one it read` fails against 0.182.0's module,
+which is how this was caught. `d9632da` (0.181.0) was scanned and is clean.
 
 Adversarially reviewing 0.182.0 before committing it found a defect the repair had introduced —
 the abandoned-claim sweep renamed whatever sat at the claim path rather than the claim it had read,

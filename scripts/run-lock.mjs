@@ -356,8 +356,34 @@ function readTakeoverClaim(file, shown) {
  * @returns {boolean} true when this call removed exactly the claim it judged abandoned
  */
 function sweepAbandonedTakeover(file, shown, abandonedToken, token) {
-  void shown; void abandonedToken; void token;
-  rmSync(file, { recursive: true, force: true });
+  const swept = `${file}.abandoned-${createHash('sha256').update(token).digest('hex').slice(0, 16)}`;
+  try {
+    renameSync(file, swept);
+  } catch {
+    return false;
+  }
+  /** @type {ReturnType<typeof readTakeoverClaim> | null} */
+  let moved = null;
+  try {
+    moved = readTakeoverClaim(swept, shown);
+  } catch {
+    // Unreadable once moved, and it was unreadable in place too or we would not be here. Removing
+    // it is the same decision the caller already made about it.
+  }
+  const isTheOneJudged =
+    moved === null ||
+    moved.state === 'gone' ||
+    (abandonedToken === null ? moved.state === 'nameless' : moved.state === 'held' && moved.claim.token === abandonedToken);
+  if (!isTheOneJudged) {
+    // Not the claim that was judged abandoned. Put it back and take nothing from this pass.
+    try {
+      renameSync(swept, file);
+    } catch {
+      rmSync(swept, { recursive: true, force: true });
+    }
+    return false;
+  }
+  rmSync(swept, { recursive: true, force: true });
   return true;
 }
 
@@ -380,7 +406,6 @@ function sweepAbandonedTakeover(file, shown, abandonedToken, token) {
 function releaseTakeoverClaim(file, token) {
   try {
     const held = readTakeoverClaim(file, file);
-    process.stderr.write('RELEASE state=' + held.state + ' onDisk=' + (held.state === 'held' ? held.claim.token : 'n/a') + ' mine=' + token + ' MISMATCH=' + String(!(held.state === 'held' && held.claim.token === token)) + '\n');
     if (held.state !== 'held' || held.claim.token !== token) return;
     rmSync(file, { force: true });
   } catch {
