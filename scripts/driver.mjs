@@ -1347,19 +1347,50 @@ function childSettings(sandbox = false) {
  *
  * @type {Record<string, { dangerous: boolean, allowedTools: string[] }>}
  */
+/**
+ * **Two questions, not one** (REVIEW F27). `allowedTools` is what may run *without asking*;
+ * `availableTools` is what exists in the child's context at all. Conflating them is how the oracle
+ * author came to have an empty approval list and a full read-only toolset.
+ *
+ * `availableTools: null` means the flag is not passed — the builder, and only the builder.
+ *
+ * @type {Record<string, { dangerous: boolean, allowedTools: string[], availableTools: string[] | null }>}
+ */
 export const PHASE_PERMISSIONS = {
-  builder: { dangerous: true, allowedTools: [] },
-  prd: { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep', 'Write', 'Edit'] },
-  design: { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep', 'Write', 'Edit'] },
-  review: { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep'] },
-  'reality-check': { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep'] },
+  // Unrestricted on purpose, and the only role that is. `availableTools: null` means no `--tools`
+  // flag at all, which leaves the built-in set exactly as it has always been.
+  builder: { dangerous: true, allowedTools: [], availableTools: null },
+  prd: {
+    dangerous: false,
+    allowedTools: ['Read', 'Glob', 'Grep', 'Write', 'Edit'],
+    availableTools: ['Read', 'Glob', 'Grep', 'Write', 'Edit'],
+  },
+  design: {
+    dangerous: false,
+    allowedTools: ['Read', 'Glob', 'Grep', 'Write', 'Edit'],
+    availableTools: ['Read', 'Glob', 'Grep', 'Write', 'Edit'],
+  },
+  review: { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep'], availableTools: ['Read', 'Glob', 'Grep'] },
+  'reality-check': {
+    dangerous: false,
+    allowedTools: ['Read', 'Glob', 'Grep'],
+    availableTools: ['Read', 'Glob', 'Grep'],
+  },
   // Reads the evidence it was handed and answers with a sentence or with null. It has no
   // reason to write, and lesson memory is driver-owned precisely so that it cannot.
-  'lesson-extractor': { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep'] },
+  'lesson-extractor': {
+    dangerous: false,
+    allowedTools: ['Read', 'Glob', 'Grep'],
+    availableTools: ['Read', 'Glob', 'Grep'],
+  },
   // One question about one pinned defensive element: was it removed, was it moved, or can you
   // not tell. Read-only for the same reason every reviewer is — it reports, it does not fix,
   // and a child that could restore the guard itself would be judging its own repair.
-  'security-escalation': { dangerous: false, allowedTools: ['Read', 'Glob', 'Grep'] },
+  'security-escalation': {
+    dangerous: false,
+    allowedTools: ['Read', 'Glob', 'Grep'],
+    availableTools: ['Read', 'Glob', 'Grep'],
+  },
   // **No tools at all, and that is the whole point of the phase existing.**
   //
   // The oracle author writes acceptance cases from the PRD *before any code exists* (§4.6), and
@@ -1373,12 +1404,18 @@ export const PHASE_PERMISSIONS = {
   // Its input is the PRD, handed to it in the prompt. It needs to open nothing. Declaring the
   // empty set makes the held-out property structural rather than a fact about which directory the
   // run happened to start from.
-  'oracle-author': { dangerous: false, allowedTools: [] },
+  //
+  // **And an empty `allowedTools` was never the way to say that** (REVIEW F27). `--allowedTools`
+  // changes what is *approved*, not what is *available*, and read-only tools need no approval — so
+  // omitting the flag left `Read`, `Glob` and `Grep` reachable, and on a resumed tree the author
+  // could open the very implementation its cases are meant to be held out from. The empty set is
+  // now said in the flag that means it: `--tools ""`, documented by the CLI as disabling all tools.
+  'oracle-author': { dangerous: false, allowedTools: [], availableTools: [] },
 };
 
 /**
  * @param {string} phase
- * @returns {{ dangerous: boolean, allowedTools: string[] }}
+ * @returns {{ dangerous: boolean, allowedTools: string[], availableTools: string[] | null }}
  * @throws {DriverError} for a phase with no declared policy
  */
 export function permissionsFor(phase) {
@@ -1513,6 +1550,27 @@ export function claudeArgs(options) {
   // Isolation for the read-only phases, and only those. See `isColdPhase`: safe mode disables
   // hooks including the guard, so a phase that can write must keep the guard instead.
   if (isColdPhase(options.phase)) args.push('--safe-mode');
+  // **Availability, which is a different question from approval** (REVIEW F27). `--allowedTools`
+  // decides what may run *without asking*; `--tools` decides what exists in the child's context at
+  // all. The table said "no tools" for the oracle author by declaring an empty approval list, and
+  // that is not what an empty approval list means: read-only tools are available unapproved, so the
+  // author could read `src/` on a resumed tree and write cases against the code it exists to be
+  // independent of. `--safe-mode` does not close this either — it strips customizations, and
+  // neither the CLI contract nor anything measured here establishes it as an exact tool set.
+  //
+  // Placed before the variadic `--allowedTools` for the reason everything else here is: a value
+  // after that flag is read as one more tool name. `--tools` is itself variadic, which is why it
+  // is never last.
+  //
+  // `null` means *do not pass the flag*, which is the builder and only the builder. An empty array
+  // is passed as the CLI's documented `""`, disabling every built-in.
+  if (policy.availableTools !== null) {
+    args.push('--tools', policy.availableTools.length === 0 ? '' : policy.availableTools.join(','));
+    // Inherited MCP servers are a second availability surface the table never described, and a
+    // non-builder role broadened by the operator's own MCP configuration is exactly the crossing
+    // F27 names. With no `--mcp-config`, this leaves none.
+    args.push('--strict-mcp-config');
+  }
   if (options.systemPrompt !== undefined && options.systemPrompt.length > 0) {
     args.push('--append-system-prompt', options.systemPrompt);
   }

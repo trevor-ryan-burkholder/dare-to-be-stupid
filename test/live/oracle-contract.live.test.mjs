@@ -41,7 +41,11 @@ describe('the oracle authoring contract', { skip: ARMED ? false : 'MEESEEKS_LIVE
     const result = await spawnClaude({
       prompt: `${readFileSync(new URL('../../templates/oracle-author.md', import.meta.url), 'utf8')}\n\n---\n\nPRD.md:\n\n${PRD}`,
       model: 'claude-sonnet-5',
-      phase: 'review',
+      // **The production phase, not an adjacent one** (REVIEW F27). This ran as `review` while the
+      // thing it was proving was the oracle author's contract, so it exercised a policy with three
+      // read-only tools instead of the zero-tool policy the author actually runs under. A contract
+      // test aimed at the wrong role proves the wrong contract.
+      phase: 'oracle-author',
       effort: 'high',
       cwd: process.cwd(),
       env: process.env,

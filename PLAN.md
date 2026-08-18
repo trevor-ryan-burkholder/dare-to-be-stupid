@@ -2959,7 +2959,7 @@ pre-loop phase uses
 capturing file contents or secrets; and F1/F14 tests prove the new boundary neither races the run
 lock nor claims to solve post-review identity. REVIEW F26 owns closure.
 
-### 82. Enforce role tool availability, not only tool approval — OPEN (REVIEW F27)
+### 82. Enforce role tool availability, not only tool approval — IMPLEMENTED (0.204.0); REVIEW F27 open pending Codex
 
 **Problem solved:** `PHASE_PERMISSIONS` calls its field `allowedTools`, and `claudeArgs()` passes
 those names only through Claude Code's `--allowedTools`. Official semantics make that an approval
@@ -2987,6 +2987,45 @@ identities, distinguishes unavailable from denied, and refuses acceptance if eff
 cannot be observed. Items **77**, **82**, and **83** satisfy three of item **54**'s prerequisites;
 completion of Gate 0 and item **84**'s recorded outcome still govern admission. This slice closes
 only F27/item **82**.
+
+**What landed (0.204.0), and it was measured before it was written.** `PHASE_PERMISSIONS` now carries
+`availableTools` beside `allowedTools`, and `claudeArgs` passes `--tools` — `""` for the oracle
+author, the exact declared set for every other non-builder role, and **no flag at all** for the
+builder, which stays deliberately unrestricted. `--strict-mcp-config` goes with it, because inherited
+MCP servers are a second availability surface the table never described.
+
+**The reproduction, live, against `claude` 2.1.234 on 18 August 2026.** Three children in a temp
+directory holding one sentinel file:
+
+| argv | outcome |
+| --- | --- |
+| `--safe-mode` alone (the shipped oracle-author shape) | **read the file and printed the sentinel** |
+| `--tools ""` | no tools at all; it emitted tool-call syntax as prose and never got the sentinel |
+| `--tools Read --allowedTools Read` | read the file, so the flag is not merely breaking children |
+
+That first row is the finding: an empty approval list is not an empty toolset, because read-only
+tools need no approval. The author runs whenever the store is missing, which includes a **resumed**
+tree with the implementation already present — so the only held-out gate in the design was free to
+write its cases against the code.
+
+**Evidence.** `test/live/role-tools.live.test.mjs` is the canary: the oracle author cannot reach the
+sentinel, a `review` child can read that same file — the neighbour that keeps the first case from
+being satisfied by a broken child — and a `review` child cannot write, asserted against the
+filesystem rather than against what the child said about it. Red against the disabled control, green
+with it. `test/driver.test.mjs` pins the argv: the empty-string spelling, the exact set per phase, the
+untouched builder, `--tools` before the variadic `--allowedTools`, and the coherence rule that no
+role may approve a tool it cannot reach. `test/live/oracle-contract.live.test.mjs` now invokes
+`oracle-author` rather than `review`, because a contract test aimed at the wrong role proves the
+wrong contract — which is how this survived.
+
+**Live-tier flake, recorded rather than re-run away.** `improve-contract.live.test.mjs`'s "returns a
+grounded, bounded PRD" failed once with zero requirements, then passed twice. Two of three. It is
+model variability in a document-authoring prompt, not the tool policy — the same phase passes with
+the restriction in place — but a pass on re-run does not erase the failure.
+
+**Not claimed:** this bounds the *built-in* surface through the flag the CLI documents for it. It is
+not proof that a child cannot reach anything by other means, and `--safe-mode` remains a
+customization control rather than a tool set.
 
 ### 83. Enforce a measured Claude Code compatibility policy — OPEN (REVIEW F28)
 

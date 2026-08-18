@@ -994,6 +994,83 @@ describe('childBudget', () => {
   });
 });
 
+describe('available tools are a different question from approved tools (REVIEW F27)', () => {
+  // **Measured against the real binary on 18 August 2026, because argv is another program's
+  // contract.** Three children in `/tmp` with a sentinel file, `claude -p --safe-mode`, model
+  // `claude-haiku-4-5`:
+  //
+  // - the shipped oracle-author shape — no `--tools`, no `--allowedTools` — **read the file and
+  //   printed the sentinel**. That is the finding: an empty approval list is not an empty toolset,
+  //   because read-only tools need no approval.
+  // - `--tools ""` produced a child with no tools at all. It emitted tool-call *syntax as prose*
+  //   and never obtained the sentinel.
+  // - `--tools Read --allowedTools Read` read the file, so the flag is not simply breaking children.
+  //
+  // These assertions pin the argv that produces those behaviours. The behaviours themselves belong
+  // to `test/live/role-tools.live.test.mjs`, because no assertion about an array can hold them.
+
+  it('passes --tools "" for the oracle author, which is how the CLI spells no built-ins', () => {
+    const args = claudeArgs({ model: 'm', phase: 'oracle-author' });
+    const at = args.indexOf('--tools');
+    assert.notEqual(at, -1, 'the author was spawned with no availability control at all');
+    assert.equal(args[at + 1], '', `--tools received ${JSON.stringify(args[at + 1])}`);
+    // And an empty approval list stays absent, because approving nothing is not the control here.
+    assert.equal(args.includes('--allowedTools'), false);
+  });
+
+  it('gives every other non-builder role its exact declared set', () => {
+    for (const [phase, policy] of Object.entries(PHASE_PERMISSIONS)) {
+      if (policy.availableTools === null) continue;
+      const args = claudeArgs({ model: 'm', phase });
+      const at = args.indexOf('--tools');
+      assert.notEqual(at, -1, `${phase} has no availability control`);
+      assert.equal(args[at + 1], policy.availableTools.join(','), `${phase} was given the wrong set`);
+    }
+  });
+
+  it('leaves the builder unrestricted, which is deliberate and not an oversight', () => {
+    const args = claudeArgs({ model: 'm', phase: 'builder' });
+    assert.equal(args.includes('--tools'), false, 'the builder was restricted');
+    assert.equal(args.includes('--dangerously-skip-permissions'), true);
+    assert.equal(PHASE_PERMISSIONS.builder.availableTools, null);
+  });
+
+  it('never approves a tool the role cannot reach, because that policy means nothing', () => {
+    for (const [phase, policy] of Object.entries(PHASE_PERMISSIONS)) {
+      if (policy.availableTools === null) continue;
+      for (const approved of policy.allowedTools) {
+        assert.equal(
+          policy.availableTools.includes(approved),
+          true,
+          `${phase} approves ${approved} without making it available`,
+        );
+      }
+    }
+  });
+
+  it('keeps --tools before --allowedTools, because both are variadic', () => {
+    // The argv defect, again. A variadic flag swallows everything until the next flag, so the one
+    // that must be last is `--allowedTools` — and a `--tools` placed after it would be read as two
+    // more tool names rather than as a flag.
+    const args = claudeArgs({ model: 'm', phase: 'review' });
+    const tools = args.indexOf('--tools');
+    const allowed = args.indexOf('--allowedTools');
+    assert.notEqual(tools, -1);
+    assert.notEqual(allowed, -1);
+    assert.equal(tools < allowed, true, args.join(' '));
+    assert.equal(allowed, args.length - PHASE_PERMISSIONS.review.allowedTools.length - 1, 'something followed the tool list');
+  });
+
+  it('closes the inherited MCP surface for every restricted role', () => {
+    // A second availability surface the table never described. With no `--mcp-config` alongside it,
+    // this leaves the child none — so an operator's own MCP servers cannot broaden a cold role.
+    for (const [phase, policy] of Object.entries(PHASE_PERMISSIONS)) {
+      const args = claudeArgs({ model: 'm', phase });
+      assert.equal(args.includes('--strict-mcp-config'), policy.availableTools !== null, phase);
+    }
+  });
+});
+
 describe('claudeArgs and the permission policy', () => {
   it('asks for json and pins the model', () => {
     const args = claudeArgs({ model: 'claude-sonnet-5', phase: 'builder' });
