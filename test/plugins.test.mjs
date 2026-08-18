@@ -9,13 +9,21 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { OPENAPI_DOC } from '../scripts/driver.mjs';
-import { KNOWN_PLUGINS, PluginInstallError, installQualityPlugins, resolvePlugin } from '../scripts/plugins.mjs';
+import {
+  DETECT_TIMEOUT_MS,
+  INSTALL_TIMEOUT_MS,
+  KNOWN_PLUGINS,
+  PluginInstallError,
+  installQualityPlugins,
+  resolvePlugin,
+} from '../scripts/plugins.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -209,5 +217,65 @@ describe('the schemathesis plugin', () => {
 
   it('installs the same way semgrep does, which is the precedent for a Python gate', () => {
     assert.deepStrictEqual(spec.install, ['python3', '-m', 'pip', 'install', '--user', '--quiet', 'schemathesis']);
+  });
+});
+
+describe('provisioning commands have a deadline (REVIEW F41)', () => {
+  /** @param {{ cwd: string, timeoutMs?: number }[]} seen @returns {import('../scripts/plugins.mjs').Runner} */
+  const recording = (seen) => (command, args, options) => {
+    seen.push(options);
+    // Detected and already present, so the install branch is only reached where a test wants it.
+    return { ok: true, status: 0, stdout: '1.0.0', stderr: '' };
+  };
+
+  it('bounds detection, which is meant to answer instantly', async () => {
+    // **Provisioning had no deadline at all.** It runs before the loop and before the operator's
+    // wall clock, so `npx --no-install` resolving an unreachable registry hung the whole run with no
+    // gate result and no receipt — an unattended run started at midnight would still be sitting
+    // there in the morning.
+    /** @type {{ cwd: string, timeoutMs?: number }[]} */
+    const seen = [];
+    await installQualityPlugins({ cwd: '/tmp', plugins: ['knip'], runner: recording(seen) });
+    assert.equal(seen.length > 0, true, 'no command was run, so nothing was bounded');
+    for (const options of seen) {
+      assert.equal(options.timeoutMs, DETECT_TIMEOUT_MS, 'a detection ran without a deadline');
+    }
+  });
+
+  it('bounds installation, with the longer ceiling a real download needs', async () => {
+    /** @type {{ cwd: string, timeoutMs?: number }[]} */
+    const seen = [];
+    let call = 0;
+    await installQualityPlugins({
+      cwd: '/tmp',
+      plugins: ['knip'],
+      runner: (command, args, options) => {
+        seen.push(options);
+        call += 1;
+        // Absent on detection, so the install branch runs.
+        return call === 1
+          ? { ok: false, status: 1, stdout: '', stderr: 'not found' }
+          : { ok: true, status: 0, stdout: 'installed', stderr: '' };
+      },
+    });
+    assert.equal(seen.length >= 2, true, `expected a detect and an install, saw ${seen.length}`);
+    assert.equal(seen[0].timeoutMs, DETECT_TIMEOUT_MS);
+    assert.equal(seen[1].timeoutMs, INSTALL_TIMEOUT_MS);
+  });
+
+  it('gives installation the longer of the two, because only it may legitimately take minutes', () => {
+    // Asserted as values so an edit that quietly drops the install ceiling to the detect one — which
+    // would fail every real download — is a test failure rather than a broken overnight run.
+    assert.equal(DETECT_TIMEOUT_MS, 60_000);
+    assert.equal(INSTALL_TIMEOUT_MS, 10 * 60_000);
+    assert.equal(INSTALL_TIMEOUT_MS > DETECT_TIMEOUT_MS, true);
+  });
+
+  it('passes the deadline through to the real runner', () => {
+    // The wiring, not the constant. `defaultRunner` translates it into `execFileSync`'s own timeout,
+    // which kills the child rather than merely giving up on waiting for it.
+    const source = readFileSync(new URL('../scripts/plugins.mjs', import.meta.url), 'utf8');
+    const runner = source.slice(source.indexOf('export function defaultRunner('), source.indexOf('export function resolvePlugin'));
+    assert.equal(runner.includes('timeout: options.timeoutMs'), true, 'the runner ignores the deadline it is given');
   });
 });

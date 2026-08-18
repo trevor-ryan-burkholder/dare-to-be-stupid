@@ -3711,6 +3711,30 @@ compare those two files *ignoring the version fields*, or to narrow `CLAUDE.md`'
 what "shipped" means, and the current gap admits only dev-config drift — which is what discovered it
 (adding the `slice-check` script).
 
+### 101. Bound quality-plugin provisioning — IMPLEMENTED (0.199.0); REVIEW F41 open pending Codex
+
+**Problem solved:** provisioning had no deadline at all. `npx --no-install` resolving a registry, a
+`pip install` against an unreachable index, a package manager waiting on a lock another process
+holds — any of them can hang, and this runs **before** the loop, before the wall clock the operator
+configured, and before anything that would report it. An unattended run started at midnight would
+still be sitting there in the morning with no gate result and no receipt.
+
+**What landed.** Detection is bounded at 60s and installation at 10 minutes, and `defaultRunner`
+translates the deadline into `execFileSync`'s own timeout so the child is *killed* rather than
+merely stopped being waited on. The two ceilings differ because the operations differ: detection
+asks a tool already on the machine for its version and is meant to answer instantly; installation
+may genuinely download. Neither is a budget anybody should be spending — both are ceilings on a
+hang.
+
+**Evidence.** `test/plugins.test.mjs` records the options every provisioning command receives and
+asserts the deadline on both the detect and install branches, pins both constants as values so an
+edit that drops the install ceiling to the detect one fails here rather than in an overnight run,
+and scans `defaultRunner` for the translation — the constant being right is not the same as the
+runner honouring it. Verified red by removing the detect deadline.
+
+**It pairs with F10's other half.** 0.196.0 routed a provisioning *throw* through `releasing` so it
+files a receipt and releases the lock; this makes a provisioning *hang* become such a throw.
+
 ## Observations recorded rather than repaired
 
 - **Tier 2 refused once and passed on an immediate re-run** (18 Aug 2026, committing 0.196.0 through

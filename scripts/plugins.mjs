@@ -127,7 +127,16 @@ export const KNOWN_PLUGINS = {
  */
 export function defaultRunner(command, args, options) {
   try {
-    const stdout = execFileSync(command, args, { cwd: options.cwd, stdio: 'pipe', encoding: 'utf8' });
+    // **A deadline, because provisioning had none** (REVIEW F41). This runs before the loop and
+    // before the operator's wall clock, so a registry that never answers hung the whole run with no
+    // gate result and no receipt. `execFileSync` kills the child when the timeout fires and throws,
+    // which lands in the same failure shape the caller already handles.
+    const stdout = execFileSync(command, args, {
+      cwd: options.cwd,
+      stdio: 'pipe',
+      encoding: 'utf8',
+      ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
+    });
     return { ok: true, status: 0, stdout, stderr: '' };
   } catch (error) {
     const failure = /** @type {{ status?: number, stdout?: string, stderr?: string, message: string }} */ (error);
@@ -157,6 +166,23 @@ export function resolvePlugin(name) {
 }
 
 /**
+ * How long a provisioning command may take before it is a failure rather than a wait.
+ *
+ * **Provisioning had no deadline at all** (REVIEW F41). `npx --no-install` resolving a registry, a
+ * `pip install` against an unreachable index, a package manager waiting on a lock another process
+ * holds — any of them can hang, and this runs *before* the loop, before the wall clock the operator
+ * configured, and before anything that would report it. An unattended run started at midnight would
+ * still be sitting there in the morning with no gate result and no receipt.
+ *
+ * Detection is short because it is meant to answer instantly: it asks a tool already on the machine
+ * for its version. Installation is long because it may genuinely download. Both are ceilings on a
+ * hang, not budgets anybody should be spending.
+ */
+export const DETECT_TIMEOUT_MS = 60_000;
+/** @see DETECT_TIMEOUT_MS */
+export const INSTALL_TIMEOUT_MS = 10 * 60_000;
+
+/**
  * Install the configured quality plugins, idempotently.
  *
  * @param {{ cwd: string, plugins: string[], runner?: Runner }} options
@@ -182,11 +208,11 @@ export async function installQualityPlugins(options) {
   for (const name of plugins) {
     const spec = resolvePlugin(name);
 
-    const present = await run(spec.detect[0], spec.detect.slice(1), { cwd });
+    const present = await run(spec.detect[0], spec.detect.slice(1), { cwd, timeoutMs: DETECT_TIMEOUT_MS });
     if (present.ok) {
       skipped.push(spec.name);
     } else {
-      const result = await run(spec.install[0], spec.install.slice(1), { cwd });
+      const result = await run(spec.install[0], spec.install.slice(1), { cwd, timeoutMs: INSTALL_TIMEOUT_MS });
       if (!result.ok) {
         const detail = (result.stderr || result.stdout || `exit ${result.status}`).trim();
         if (spec.required) {
