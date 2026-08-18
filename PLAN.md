@@ -2203,7 +2203,7 @@ history boundary, separate from the write guard, but the ownership classificatio
 artifact, runs `git add -A`, and proves only the deliberate config carve-out may stage across
 supported platforms. REVIEW F9 owns closure.
 
-### 64. Record every terminal run outcome atomically — OPEN (REVIEW F10)
+### 64. Record every terminal run outcome atomically — IMPLEMENTED (0.189.0); REVIEW F10 open pending Codex
 
 **Problem solved:** paid pre-loop and outer-exception aborts can leave no `outcome.json`, and the
 existing direct overwrite can destroy the only terminal receipt on interruption.
@@ -2215,6 +2215,42 @@ Failure to write the receipt is loud but must not rewrite the terminal decision 
 **Done when:** PRD, Oracle, component, unexpected post-lock, budget, and ship paths each leave one
 correct parseable receipt; interruption leaves a complete old receipt or no accepted receipt, never
 truncated JSON; and component fail-closed behavior is unchanged. REVIEW F10 owns closure.
+
+**What landed (0.189.0).** The writer moved to `scripts/outcome.mjs`, is atomic (temp plus rename),
+and is at-most-once per run.
+
+**The run-start boundary is winning the lock.** An invocation becomes a *run* there, and from that
+line every non-crash exit routes through `releasing`, which files the receipt before giving the
+repository back. That is the same positional argument the guard hook uses: the previous "one door"
+was one door into `driveRun`, so a failed PRD child, an unreadable declaration, an Oracle that would
+not parse, a component that aborted, and an unexpected post-lock exception each printed `ABORTED`
+and left nothing durable — on paid paths, where a parent component correctly fails closed on a
+missing receipt and its operator then cannot recover the child's state or spend from the artifact
+that promised both.
+
+**At-most-once is load-bearing, not tidiness.** The loop's own `finish` and the outer exception
+handler can both be reached on the way out of one run; the first answer written is the decided one,
+so a generic `ABORTED` cannot overwrite a specific `SHIPPED`.
+
+**Unknown fields are omitted, not zeroed.** A pre-loop abort has no iteration count and no panel
+identity; `0` and `null` would state facts the run never established, which is what F10 means by not
+inventing unavailable usage. Spend is `preLoop`'s real total.
+
+**Evidence.** `test/outcome.test.mjs` covers the writer: at-most-once, omission of unknowns, spend
+when known, directory creation, no temp file left behind, replacement of a truncated receipt from
+the old in-place writer, and — the interruption property from the outside — a failed write leaving
+the **previous complete receipt** intact rather than half of one, failing loudly rather than
+skipping when the process can write to a read-only directory.
+`test/integration/outcome.integration.test.mjs` drives the real `main`: a failed design phase leaves
+a parseable ABORTED receipt naming the phase and the spend, the deliberate `--confirm-prd` stop is
+recorded as a stop rather than a crash, a run that reaches the loop keeps the loop's own answer, no
+temp file survives a real run, and a second run replaces the first's receipt rather than
+accumulating. Verified red: removing the pre-loop write fails the design case.
+
+**One test updated rather than worked around.** `test/driver.test.mjs`'s positional rule — every exit
+in the lock-owned region returns through `releasing` — anchors on the helper's signature, which
+gained the terminal argument. Its own benign-neighbour scan was updated with it, so a rule that
+matched nothing still cannot pass.
 
 ### 65. Prove and enforce Windows descendant cleanup — OPEN (REVIEW F11)
 

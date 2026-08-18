@@ -6299,7 +6299,7 @@ describe('every exit between acquiring the run lock and the loop gives the repos
 
   /** @returns {{ from: number, to: number }} */
   const lockOwnedRegion = () => {
-    const helper = source.findIndex((line) => line.includes('const releasing = (code) =>'));
+    const helper = source.findIndex((line) => line.includes('const releasing = (code, terminal) =>'));
     assert.notEqual(helper, -1, 'main no longer defines the releasing helper this rule is about');
     // The helper's own `return code;` is not an exit from `main`, so the region starts after it.
     const from = source.findIndex((line, index) => index > helper && line === '  };');
@@ -6324,7 +6324,7 @@ describe('every exit between acquiring the run lock and the loop gives the repos
     // The scan's own benign neighbour. A region with no `releasing(...)` calls in it would
     // satisfy the assertion above while proving nothing at all.
     const { from, to } = lockOwnedRegion();
-    const released = source.slice(from, to).filter((line) => /return releasing\(-?\d+\);/.test(line));
+    const released = source.slice(from, to).filter((line) => /return releasing\(-?\d+,/.test(line));
     assert.equal(released.length >= 10, true, `expected the pre-loop phases to have many exits, found ${released.length}`);
   });
 });

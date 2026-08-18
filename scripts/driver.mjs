@@ -89,6 +89,7 @@ import {
   revalidateLaunch,
   writeLaunchReceipt,
 } from './launch.mjs';
+import { OUTCOME_FILE, writeRunOutcome } from './outcome.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
 import { captureSpecification, verifySpecification } from './specification.mjs';
 import { installQualityPlugins } from './plugins.mjs';
@@ -607,7 +608,7 @@ export const REVIEW_RECORD = 'review.json';
  * ratchet's own reset reverted it. The result had to be reconstructed from `.meeseeks/`, `git log`
  * and the reflog.
  */
-export const OUTCOME_FILE = 'outcome.json';
+export { OUTCOME_FILE } from './outcome.mjs';
 
 /**
  * Persist what the panel actually decided.
@@ -1699,8 +1700,13 @@ export function repeatedRegressionNote(counts, regressions) {
  *   unitCommand?: string | null,
  *   gateNames?: string[],
  *   alreadySpent?: { tokens: number, costUsd: number },
+ *   receipt?: { done: boolean },
  *   effects: Effects,
  * }} options
+ *
+ * `receipt` is the run's at-most-once terminal-receipt flag (REVIEW F10), shared with `main` so the
+ * loop's specific answer wins over the outer handler's generic one. Absent in a caller that owns
+ * exactly one exit, which is every test that drives `driveRun` directly.
  *
  * `alreadySpent` carries what Phase 0 and Phase 1 cost, because they run before this function
  * exists and their spend is otherwise invisible to it. Without it the ceiling restarts at zero
@@ -1905,15 +1911,10 @@ export async function driveRun(options) {
     // ratchet never rewrites. Failing to write it does **not** fail the run: this is forensics,
     // and destroying a completed run's result because its receipt could not be filed would be
     // the wrong way round. The failure is reported instead.
-    try {
-      writeFileSync(
-        path.join(meeseeksDir, OUTCOME_FILE),
-        `${JSON.stringify({ version: 1, endedAt: effects.now(), ...outcome }, null, 2)}\n`,
-        'utf8',
-      );
-    } catch (error) {
-      effects.log(`could not write ${OUTCOME_FILE}: ${/** @type {Error} */ (error).message}`);
-    }
+    // Atomic, and shared with every terminal path outside this loop (REVIEW F10). It used to be a
+    // direct overwrite reachable only from here, so a kill mid-write destroyed the only record and
+    // every pre-loop abort left none at all.
+    writeRunOutcome(meeseeksDir, { ...outcome, phase: 'loop' }, { now: effects.now, log: effects.log, written: options.receipt });
     return outcome;
   };
 
@@ -5847,7 +5848,43 @@ export async function main(argv, io = {}) {
    * @param {number} code
    * @returns {number}
    */
-  const releasing = (code) => {
+  /**
+   * The run's at-most-once terminal receipt (REVIEW F10). An invocation becomes a *run* at the line
+   * above, where the lock is won; from here every non-crash exit leaves exactly one receipt, and
+   * the first answer written is the decided one.
+   */
+  // Declared above `releasing`, which reads it: the pre-loop exits it now writes a receipt for
+  // (REVIEW F10) include the launch refusal, which runs before the phases that spend anything.
+  const preLoop = { tokens: 0, costUsd: 0 };
+
+  const outcomeWritten = { done: false };
+
+  /**
+   * @param {number} code
+   * @param {{ state?: 'SHIPPED' | 'STALLED' | 'BUDGET' | 'ABORTED', reason: string, phase: string }} terminal
+   * @returns {number}
+   */
+  const releasing = (code, terminal) => {
+    // **Every paid pre-loop failure leaves a receipt** (REVIEW F10). The one door used to be one
+    // door into `driveRun`, so a PRD child that failed, an unreadable declaration, an Oracle that
+    // would not parse or a component that aborted printed ABORTED and returned with nothing durable
+    // written. A parent component then correctly refuses to trust a child with no receipt — and its
+    // operator cannot recover the child's state or its spend from the artifact that promised both.
+    //
+    // Spend is what is *known*: `preLoop` is the real total handed to children so far. Iterations
+    // and the panel identity are omitted rather than zeroed, because a run that never reached the
+    // loop has no iteration count and writing one would state a fact it never established.
+    writeRunOutcome(
+      meeseeksDir,
+      {
+        state: terminal.state ?? (code === 0 ? 'STALLED' : 'ABORTED'),
+        reason: terminal.reason,
+        phase: terminal.phase,
+        spentTokens: preLoop.tokens,
+        costUsd: preLoop.costUsd,
+      },
+      { now: () => new Date().toISOString(), log: (line) => write(verbatim(line)), written: outcomeWritten },
+    );
     releaseRunLock(meeseeksDir, runLock.lock.token);
     return code;
   };
@@ -5883,7 +5920,7 @@ export async function main(argv, io = {}) {
     // protecting the repository from.
     write(verbatim(`launch refused at HEAD ${launch.head === '' ? '(unreadable)' : launch.head}`));
     for (const failed of launch.failures) write(verbatim(`${failed.name}: ${failed.detail}\n${failed.fix}`));
-    return releasing(1);
+    return releasing(1, { reason: 'launch revalidation refused the tree', phase: 'launch' });
   }
 
   /**
@@ -5900,7 +5937,6 @@ export async function main(argv, io = {}) {
   // them the ceiling silently restarts at zero when the loop begins — the defect the first
   // dogfood run exposed, where a design child spent 2,965,864 tokens against a 2,000,000
   // ceiling and the airtime counter reported the full budget remaining.
-  const preLoop = { tokens: 0, costUsd: 0 };
 
   /**
    * Charge a pre-loop child and say whether the ceiling is now exhausted.
@@ -5948,7 +5984,7 @@ export async function main(argv, io = {}) {
     // Continuing here would destroy the evidence archiving exists to keep, which is a worse
     // outcome than not starting.
     write(verbatim(/** @type {Error} */ (error).message));
-    return releasing(1);
+    return releasing(1, { reason: 'the previous run could not be archived', phase: 'archive' });
   }
 
   // The first thing this run writes of its own, and only now: the archive above has already
@@ -6069,7 +6105,7 @@ export async function main(argv, io = {}) {
             'Give a PRD or an idea instead.',
         ),
       );
-      return releasing(1);
+      return releasing(1, { reason: 'no PRD and no idea to improve on', phase: 'improvement authoring' });
     }
     write(verbatim(input === '' ? 'authoring PRD.md from this repository' : `authoring PRD.md from this repository, focused on: ${input}`));
     const authored = await runChild({
@@ -6090,11 +6126,11 @@ export async function main(argv, io = {}) {
     if (!authored.ok) {
       write(verbatim(`improvement authoring failed: ${authored.raw.slice(0, 800)}`));
       write(stamp('ABORTED', { mode }));
-      return releasing(1);
+      return releasing(1, { reason: 'improvement authoring failed', phase: 'improvement authoring' });
     }
     if (chargePreLoop(authored)) {
       preLoopBudgetEnd('improvement authoring');
-      return releasing(1);
+      return releasing(1, { state: 'BUDGET', reason: 'token ceiling reached during improvement authoring', phase: 'improvement authoring' });
     }
     if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
   } else if (input !== '' && existsSync(path.resolve(cwd, input))) {
@@ -6109,7 +6145,7 @@ export async function main(argv, io = {}) {
           : '';
     if (idea === '') {
       write(verbatim('no PRD, no idea, and improvise is disabled. Nothing to build.'));
-      return releasing(1);
+      return releasing(1, { reason: 'no PRD, no idea, and improvise is disabled', phase: 'prd authoring' });
     }
     write(verbatim('authoring PRD.md'));
     const authored = await runChild({
@@ -6123,11 +6159,11 @@ export async function main(argv, io = {}) {
     if (!authored.ok) {
       write(verbatim(`PRD authoring failed: ${authored.raw.slice(0, 800)}`));
       write(stamp('ABORTED', { mode }));
-      return releasing(1);
+      return releasing(1, { reason: 'PRD authoring failed', phase: 'prd authoring' });
     }
     if (chargePreLoop(authored)) {
       preLoopBudgetEnd('PRD authoring');
-      return releasing(1);
+      return releasing(1, { state: 'BUDGET', reason: 'token ceiling reached during PRD authoring', phase: 'prd authoring' });
     }
     if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
   }
@@ -6143,11 +6179,11 @@ export async function main(argv, io = {}) {
     }))
   ) {
     write(stamp('ABORTED', { mode }));
-    return releasing(1);
+    return releasing(1, { reason: 'the authored PRD could not be committed', phase: 'prd authoring' });
   }
   if (confirmPrd) {
     write(verbatim('PRD.md is written and committed. Review it, then re-run without --confirm-prd.'));
-    return releasing(0);
+    return releasing(0, { state: 'STALLED', reason: 'stopped after writing PRD.md, as --confirm-prd asks', phase: 'prd authoring' });
   }
 
   // ---- The specification this run is held to (DESIGN.md §4, REVIEW F12) --
@@ -6168,7 +6204,7 @@ export async function main(argv, io = {}) {
   } catch (error) {
     write(verbatim(/** @type {Error} */ (error).message));
     write(stamp('ABORTED', { mode }));
-    return releasing(1);
+    return releasing(1, { reason: 'the specification could not be captured', phase: 'specification' });
   }
   write(verbatim(`specification: ${specification.revision.file} at ${specification.revision.digest}`));
 
@@ -6208,7 +6244,7 @@ export async function main(argv, io = {}) {
     if (!authored.ok) {
       write(verbatim(`oracle authoring failed: ${authored.raw.slice(0, 800)}`));
       write(stamp('ABORTED', { mode }));
-      return releasing(1);
+      return releasing(1, { reason: 'oracle authoring failed', phase: 'oracle authoring' });
     }
     // **Charged before it is parsed** (REVIEW F18). The oracle author is a paid `claude -p` child
     // like any other, and its result went from `runChild` straight to the parser without ever
@@ -6217,7 +6253,7 @@ export async function main(argv, io = {}) {
     // token ceiling that pre-loop work had already crossed.
     if (chargePreLoop(authored)) {
       preLoopBudgetEnd('oracle authoring');
-      return releasing(1);
+      return releasing(1, { state: 'BUDGET', reason: 'token ceiling reached during oracle authoring', phase: 'oracle authoring' });
     }
     try {
       const cases = parseOracleCases(authored.text);
@@ -6227,14 +6263,14 @@ export async function main(argv, io = {}) {
       const why = error instanceof OracleError ? error.message : String(error);
       write(verbatim(`oracle authoring returned nothing usable: ${why}`));
       write(stamp('ABORTED', { mode }));
-      return releasing(1);
+      return releasing(1, { reason: 'oracle authoring returned nothing usable', phase: 'oracle authoring' });
     }
     // The oracle author holds no tools at all (`PHASE_PERMISSIONS`), so the tree it leaves must be
     // the tree it found. Checked here rather than left for the design phase to discover, because a
     // stray file reported against the wrong phase is a wrong answer about who wrote it.
     if (!(await assertWroteNothing('oracle-author'))) {
       write(stamp('ABORTED', { mode }));
-      return releasing(1);
+      return releasing(1, { reason: 'the oracle author wrote to the tree, which it may not do', phase: 'oracle authoring' });
     }
   }
 
@@ -6251,7 +6287,7 @@ export async function main(argv, io = {}) {
   if (!designed.ok) {
     write(verbatim(`design phase failed: ${designed.raw.slice(0, 800)}`));
     write(stamp('ABORTED', { mode }));
-    return releasing(1);
+    return releasing(1, { reason: 'design phase failed', phase: 'design' });
   }
   // Charged, but not an early exit. If this blew the ceiling, `driveRun` ends the run BUDGET
   // on its first `shouldContinue` — after the run manifest has been written, which is an
@@ -6304,7 +6340,7 @@ export async function main(argv, io = {}) {
         ),
       );
       write(stamp('ABORTED', { mode }));
-      return releasing(1);
+      return releasing(1, { reason: 'the design declaration could not be read', phase: 'design' });
     }
   }
 
@@ -6330,7 +6366,7 @@ export async function main(argv, io = {}) {
   // Two commits, each staging an enumerated list, and only the first one is held to a template.
   if (!(await commitPhase({ phase: 'design', message: 'meeseeks: design documents', template: 'architect.md' }))) {
     write(stamp('ABORTED', { mode }));
-    return releasing(1);
+    return releasing(1, { reason: 'the design documents could not be committed', phase: 'design' });
   }
 
   const provisioning = await installQualityPlugins({ cwd, plugins: config.qualityPlugins, runner: shell });
@@ -6507,7 +6543,7 @@ export async function main(argv, io = {}) {
       const failure = /** @type {Error} */ (error);
       write(verbatim(failure instanceof ComponentError ? failure.message : `${failure.name}: ${failure.message}`));
       write(stamp('ABORTED', { mode }));
-      return releasing(1);
+      return releasing(1, { reason: 'a component sub-run aborted', phase: 'components' });
     }
   }
 
@@ -6971,6 +7007,7 @@ export async function main(argv, io = {}) {
   let outcome;
   try {
     outcome = await driveRun({
+    receipt: outcomeWritten,
     config,
     meeseeksDir,
     rootDir: cwd,
@@ -7262,6 +7299,22 @@ export async function main(argv, io = {}) {
     write(verbatim(`${/** @type {Error} */ (error).name}: ${/** @type {Error} */ (error).message}`));
     write(render({ kind: 'terminal', state: 'ABORTED' }, { mode }));
     write(stamp('ABORTED', { mode }));
+    // **An unexpected exception after the lock still leaves a receipt** (REVIEW F10). This was the
+    // one terminal path with no durable record at all: a ratchet that would not parse, a reset git
+    // refused, a report that would not read — all of them ended a paid run and left the operator
+    // nothing but stdout, which dogfood run 4 already proved unreliable. `writeRunOutcome` is
+    // at-most-once, so a loop that already decided a state keeps it and this adds nothing.
+    writeRunOutcome(
+      meeseeksDir,
+      {
+        state: 'ABORTED',
+        reason: `${/** @type {Error} */ (error).name}: ${/** @type {Error} */ (error).message}`.slice(0, 800),
+        phase: 'loop',
+        spentTokens: preLoop.tokens,
+        costUsd: preLoop.costUsd,
+      },
+      { now: () => new Date().toISOString(), log: (line) => write(verbatim(line)), written: outcomeWritten },
+    );
     return 1;
   } finally {
     // Released on every path out, including the ABORTED one above. A lock left behind by a run
