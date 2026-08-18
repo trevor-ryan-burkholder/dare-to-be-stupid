@@ -14,7 +14,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
@@ -193,15 +193,29 @@ describe('a start command that backgrounds the application and exits (REVIEW F37
    * The server writes its own pid and port to a file so the test can check the operating system
    * rather than the probe's opinion of itself.
    */
+  // **The shell records what it backgrounded, and that is the fixture's own repair.**
+  //
+  // The record used to be written by the server, from its `listen` callback — so it existed only if
+  // the orphan survived long enough to bind a port, while the sweep under test was busy killing it.
+  // Measured at roughly one run in three: the reap won, the file never appeared, and the case died
+  // with an ENOENT having reported nothing about cleanup. Moving the write to the server's first
+  // statement helped and did not fix it: node takes tens of milliseconds to boot, and the reap
+  // sometimes lands first.
+  //
+  // So the *leader* writes it, from `$!`, synchronously, before it exits — which is knowledge it has
+  // the instant it forks and cannot lose. That is also the more faithful fixture: what the sweep has
+  // to clean up is exactly what the start command left behind, and now the test asks the same
+  // question from the same place.
   const BACKGROUNDING_SERVER = `
     const http = require('node:http');
-    const fs = require('node:fs');
     const port = Number(process.env.PORT);
     const server = http.createServer((_req, res) => { res.writeHead(200); res.end('ok'); });
-    server.listen(port, '127.0.0.1', () => {
-      fs.writeFileSync(process.env.PIDFILE, JSON.stringify({ pid: process.pid, port }));
-    });
+    server.listen(port, '127.0.0.1');
   `;
+
+  /** A start command that backgrounds the server, records the pid it forked, and exits. */
+  const BACKGROUNDING_START =
+    'node server.js & printf \'{"pid": %d, "port": %s}\' "$!" "$PORT" > "$PIDFILE"; exit 0';
 
   /** @param {number} pid @returns {boolean} */
   const alive = (pid) => {
@@ -228,7 +242,7 @@ describe('a start command that backgrounds the application and exits (REVIEW F37
     });
 
   it('fails the probe and leaves neither the process nor its listener behind', async () => {
-    const app = makeApp({ server: BACKGROUNDING_SERVER, start: 'node server.js & exit 0' });
+    const app = makeApp({ server: BACKGROUNDING_SERVER, start: BACKGROUNDING_START });
     const pidfile = path.join(app, 'server.json');
 
     const result = await probeHealth({
@@ -241,7 +255,10 @@ describe('a start command that backgrounds the application and exits (REVIEW F37
     // The probe must fail: its leader ended before anything could be asked of the application.
     assert.equal(result.ok, false, `expected a failed probe, got: ${result.detail}`);
 
-    // The background server really did start, or this proves nothing about cleanup.
+    // The background server really was forked, or this proves nothing about cleanup. The leader
+    // writes this before it exits, so a missing file means the start command itself never ran —
+    // which would make the assertions below vacuous rather than passing.
+    assert.equal(existsSync(pidfile), true, 'the start command never forked anything, so nothing was reaped');
     const record = JSON.parse(readFileSync(pidfile, 'utf8'));
     assert.equal(Number.isInteger(record.pid), true, 'the backgrounded server never wrote its pid');
 

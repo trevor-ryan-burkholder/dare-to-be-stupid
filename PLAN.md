@@ -214,7 +214,9 @@ a recorded item **84** outcome; it does not enter the queue merely because the s
 exists. Item **55** remains **PARKED** until
 a real run demonstrates a provenance or invalidation failure that passes its admission test. Item
 **58** remains **PARKED** until a killed-run experiment proves that a lifecycle journal would close
-a forensic gap; it is not authorization for checkpoint/resume.
+a forensic gap; it is not authorization for checkpoint/resume. Item **106** remains **PARKED** until
+a concrete item **34** or **49** job requires one named authenticated external resource; configured
+connectivity or an available MCP server is not that admission evidence.
 
 **Deferred/post-DoD:** item **21** remains deferred until code-complete. Items **33–35** and
 **47–51** remain Phase 6; item **32** is parked there until calibrated evidence justifies one optional
@@ -224,7 +226,8 @@ parked on its native detachment experiment plus item **58**'s separate resume ad
 despite their chronological numbering. Item **59** is also post-DoD because it depends on item 35.
 Item **30** remains a research/measurement intake, not an implicit build. Item **86** is parked
 post-DoD; it cannot enter the queue until its containment and incremental-detection admission
-conditions are met.
+conditions are met. Item **106** is likewise post-DoD and admission-gated; it is not part of the
+default code-job path.
 
 `PLAN.md` owns these statuses. `HANDOFF.md` summarizes them and must not invent a second ledger.
 
@@ -1282,9 +1285,12 @@ profile is public HTTPS only: validate every redirect and connection target as p
 local/private/link-local addresses and non-HTTPS schemes, apply F4's absolute deadline/body-cap
 primitive, send no ambient cookies or credentials, and normalize source content to inert text without
 script or active-content execution. Authenticated, local, and private sources are refused until a
-separate normative security profile and hostile live evidence exist. Whether a source actually
-supports an inference, whether uncited counterevidence changes the conclusion, and whether the
-report answers the question remain cold-review judgments.
+separate normative security profile and hostile live evidence exist. An authenticated external
+source additionally requires item **106**'s exact job-scoped capability; authentication must never
+turn an account, service, or whole MCP catalog into ambient role authority. Local and private
+targets remain separately refused even when authenticated. Whether a source actually supports an
+inference, whether uncited counterevidence changes the conclusion, and whether the report answers
+the question remain cold-review judgments.
 
 One independently instantiated cold Panel member receives the final artifact, manifest, and bound
 source evidence under a factuality lens without the Researcher's scratch context. A separate cold
@@ -1499,6 +1505,11 @@ work is entirely at the toolchain layer; **no spine change, and a change that ne
   that identity. The code operations (`build`, `types`, `e2e`, `security-audit`) must **decline
   honestly and visibly**
   (§3.8): a gate list that silently shrinks reads as a job that never needed them.
+- **External effects are not artifact evidence.** An artifact job that must mutate an external
+  system depends on item **106**'s separately admitted action profile. Until then, it may produce a
+  proposed-action or item **50** terminal question artifact, but it may not report a simulated,
+  staged, queued, or merely requested effect as completed and may not use one to satisfy a
+  requirement, reviewer verdict, ratchet id, or `SHIPPED` decision.
 - **The held-out oracle remains deterministic** (34's core): a fact fixture is sealed **before** the
   content, never shown to the writer, and must name an executable observation with an exact expected
   result. Semantic support that cannot be reduced to that form remains cold Panel judgment or
@@ -1642,12 +1653,80 @@ and **fails on an unenforced one**; a staleness gate refuses a constitution that
 enforcement set (the `release-check` lesson — a discipline that keeps failing becomes a gate); and no
 reviewer prompt gains constitutional text as a side effect.
 
+### 106. Job-scoped external-resource capabilities — PARKED (post-DoD, admission-gated)
+
+**Problem solved:** item **34** deliberately starts with public HTTPS, while later research or artifact
+jobs may need one authenticated document, repository, account, or service. Supplying an ambient token,
+an entire preconfigured MCP server, or the operator's connector universe would let an unattended role
+reach resources and operations the job never authorized. Item **84** can constrain connectivity, but
+reachability is not permission. The missing boundary is an exact, revocable grant from one sealed job to
+one external resource and operation class.
+
+**Origin and smallest borrow:** Cloudflare OS was inspected at commit
+`2ab06431467dcb887133578d05365b15690187c6` (18 August 2026). Its useful invariant is the
+*introduction*: an agent receives a narrow resource capability rather than ambient account access.
+Its shared MCP boundary also defaults unknown operations to effectful, fingerprints policy-bearing
+catalog metadata, bounds untrusted catalogs and payloads, and claims a write before external I/O so an
+ambiguous restart cannot repeat it. Borrow those properties, not Cloudflare OS, Workers, Durable
+Objects, Gatekeepers, its UI, or its approval simulation. Research provenance and the negative controls
+are recorded as R48/R49 in `docs/research/BORROWED.md`.
+
+**Admission:** this item does not enter the queue until Gate 0 and items **56**, **76**, **77**, **82**,
+**83**, **84**, and **85** close; item **34** or **49** then demonstrates a concrete job that cannot meet
+its accepted DoD with public unauthenticated sources; and the operator authorizes the exact integration
+and data-handling class. A configured connector, an available MCP server, or general product ambition
+is not evidence. Start read-only. Effectful operations require a second, independently reviewed
+admission after read-only capability canaries pass; item **50** is the fallback when a necessary effect
+is not already authorized.
+
+**Meeseeks-native boundary:** extend the existing Driver-owned role/tool/receipt contracts; do not add a
+third-party control plane or change the Claude Code-native runtime. Before implementation, a bounded
+experiment must establish a broker or adapter shape in which the role receives an opaque, job-scoped
+capability and the raw credential is absent from its environment, argv, settings, prompt, target tree,
+logs, and receipts. If the current CLI cannot preserve that separation, reject the feature rather than
+renaming credential injection a capability. Only the operator/Driver may mint a grant. A target, MCP
+server, candidate tree, or role may request one but cannot assert, widen, or renew one.
+
+Each sealed grant binds the job/run identity, integration and resource identity, allowed read or exact
+action operations, expiry/revocation state, adapter and policy identity, fixed request/result limits,
+and the catalog/policy fingerprint the classification was made against. A changed catalog or policy
+invalidates the grant rather than silently widening it. Network access and capability authority remain
+separate receipts. External descriptions, schemas, annotations, and returned content are untrusted
+evidence under items **77** and **85**, never instructions. Server-supplied `readOnlyHint`-style metadata
+may narrow or corroborate Driver-owned policy but cannot authorize an observation; an unclassified or
+contradictory operation is effectful and refused. Bound catalog count, description/schema size,
+arguments, result bodies, pending proposals, redirects, and retained history before any of them enter a
+model context or durable artifact.
+
+**If external effects are later admitted:** the sealed brief must authorize the exact effect before the
+run; there is no mid-run approval wait. A proposal, simulation, queue entry, or predicted response never
+counts as an applied effect or as evidence for a requirement, reviewer verdict, ratchet id, or
+`SHIPPED`. Persist an idempotency identity and a durable `applying` claim before external I/O. The
+guarantee is at-most-once, not exactly-once: a crash, timeout, malformed response, or lost acknowledgement
+after dispatch records `outcome: unknown`, is not automatically retried, blocks terminal acceptance of
+the claimed effect, and requires independent reconciliation against the external system. Apply ordered
+effects only through the claimed sequence and stop at the first manual gate, refusal, failure, or unknown
+outcome; never skip ahead on assumptions that earlier effects landed. Do not infer that an inverse
+operation is safe compensation.
+
+**Done when:** disposable synthetic canaries prove an exact allowed resource/read works while a sibling
+resource, broadened query, unlisted operation, stale fingerprint, revoked grant, private redirect, and
+oversized catalog/request/result all refuse before disclosure; raw credential sentinels are absent from
+every role-visible and persisted surface; external content cannot change role authority; and receipts
+bind grant, policy, adapter, resource, and result identities without secrets. Any admitted action profile
+also proves a crash while still `pending` (before the durable claim) is retryable, any crash after the
+claim never automatically repeats the effect, unknown outcome cannot become `SHIPPED`, and ordered
+processing cannot bypass a stopped predecessor.
+Close this item as **REJECTED** if no concrete authenticated job appears or if raw credentials cannot be
+kept outside the role boundary without importing a new runtime/control plane.
+
 ## Current follow-ons and research-gated experiments
 
 This heading ends Phase 6. Items 52, 53, 56, 57, 77–85, and 87 are pre-DoD only in the order stated
 at the top of this file; items 54, 55, and 58 are conditional or research-gated; item 59 remains
 post-DoD because it depends on Phase-6 item 35. Item 86 is PARKED post-DoD behind its own admission
-conditions. Item numbering records chronology, not priority. Item **77** therefore lands before item
+conditions. Item 106 is PARKED post-DoD behind a demonstrated authenticated-resource job and its own
+capability canaries. Item numbering records chronology, not priority. Item **77** therefore lands before item
 **76** despite its later number. The top-level build order is authoritative when physical placement
 and execution order differ.
 
@@ -3196,6 +3275,12 @@ boundary remain intact; and the evidence supports one of three explicit outcomes
 portable stronger default, offer a capability-gated profile with truthful limitations, or reject the
 change and retain R19. No outcome is inferred from vendor marketing or a single successful child.
 
+**Capability boundary:** a successful containment experiment establishes where a child can connect;
+it does not authorize every resource reachable through that connection. Any later authenticated
+external source or effect uses item **106**'s separately sealed, job-scoped capability and receipt.
+Neither a role nor an external server may convert tool availability, network reachability, or its own
+annotations into authority.
+
 ### 85. Keep candidate instructions out of reviewer authority — OPEN (REVIEW F29)
 
 **Problem solved:** cold roles use `--safe-mode`, so current Claude Code does not automatically load
@@ -3959,6 +4044,24 @@ Measured after the repair: **0 failures in 20 runs** of the cohort race that had
 window microseconds wide; the race finds it statistically, which is what it is for, and the unit
 case pins the state deterministically. Recording both is the point — the race is what noticed.
 
+### 105. The F37 cleanup fixture raced the cleanup it was testing — IMPLEMENTED
+
+**Found in a gate run, measured rather than re-run.** `health-probe.integration.test.mjs`'s
+"leaves neither the process nor its listener behind" failed **2 in 6**, then **2 in 10**, with an
+`ENOENT` on the pid file rather than any statement about cleanup.
+
+**The fixture recorded the orphan from the orphan.** The backgrounded server wrote its pid from its
+`listen` callback, so the record existed only if it survived long enough to bind a port — while the
+sweep under test was busy killing it. Moving the write to the server's first statement helped and did
+not fix it: node takes tens of milliseconds to boot and the reap sometimes lands first.
+
+**The leader records what it forked.** The start command now writes `$!` synchronously before it
+exits — knowledge it has the instant it forks and cannot lose. That is also the more faithful
+fixture: what the sweep must clean is exactly what the start command left behind, and the test now
+asks the same question from the same place. **0 failures in 12 runs.**
+
+**Nothing about `health-probe.mjs` changed.** The product was right; the test could not see it.
+
 ## Observations recorded rather than repaired
 
 - **Tier 2 refused once and passed on an immediate re-run** (18 Aug 2026, committing 0.196.0 through
@@ -3993,11 +4096,13 @@ Recorded so a future session does not "helpfully" add them:
   staged development experiment over structured driver artifacts. Production roles never rewrite
   their own instructions, and sensitive child transcripts are not optimization input.
 - **A third-party agent framework as Driver or required sandbox backend** — borrow measured invariants,
-  not authority. Eve, its Workflow SDK, LangGraph, or a hosted sandbox would duplicate the durable
-  control plane and violate the dependency-free Claude-native core.
+  not authority. Eve, its Workflow SDK, LangGraph, Cloudflare OS/Workers/Gatekeepers, or a hosted
+  sandbox would duplicate the durable control plane and violate the dependency-free Claude-native
+  core.
 - **Persistent Panel/Oracle sessions or mid-run human-in-the-loop parking** — both weaken the cold,
   unattended contract. A required human decision ends with item 50's terminal question artifact; it
-  never leaves a paid run waiting overnight.
+  never leaves a paid run waiting overnight. A simulated, staged, or queued external effect likewise
+  never becomes completion evidence merely to let a role continue.
 - **Persistent kernel / REPL as the builder's environment** — breaks builder starvation; state
   leaks past `git reset --hard` and the ratchet's premise dies.
 - **Builder self-memory or self-grading** — breaks cold review; self-evaluation is the enemy the
