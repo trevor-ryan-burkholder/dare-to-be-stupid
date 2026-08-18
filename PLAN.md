@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 18 August at 0.185.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 18 August at candidate 0.208.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -43,15 +43,16 @@ implementation decision.
 
 ---
 
-## Build order — current traversal at 0.185.0
+## Build order — current traversal at candidate 0.208.0
 
-**Gate 0A — high-priority external review defects.** These are release-blocking implementation
-items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
+**Gate 0A — high-priority external review dependency ledger.** Closed repairs remain in this
+section only to preserve the dependency and evidence trail; they are not current work. Only entries
+explicitly marked OPEN or PARTIAL remain release-blocking, and `REVIEW.md` owns that status.
 Release-blocking does not mean session-blocking: implement eligible Gate 0 work continuously and
 queue Codex closure under the traversal protocol above.
 
-- **F1:** acquire the repository lock atomically before any work — **implemented at 0.165.0**;
-  `REVIEW.md` F1 stays OPEN until Codex has verified the repair. Winning is an exclusive create,
+- **F1:** acquire the repository lock atomically before any work — **implemented at 0.165.0;
+  REVIEW F1 CLOSED at 0.194.0**. Winning is an exclusive create,
   stale recovery is a serialized explicit retry, each acquisition carries an ownership token only
   its owner may clear, and the driver acquires before the `.gitignore` write, the archive, the
   first child, the install and every commit (`DESIGN.md` §3.5). Evidence:
@@ -59,70 +60,66 @@ queue Codex closure under the traversal protocol above.
   free and stale — and drives the real `main`; the same race against the 0.164.0 semantics
   produced six winners out of six.
 - **F26 / item 81:** after that lock, revalidate launch safety and admit only declared pre-loop phase
-  outputs — **implemented at 0.166.0**; `REVIEW.md` F26 stays OPEN until Codex has verified the
-  repair. See item 81 below for what landed.
+  outputs — **PARTIAL at 0.166.0, remaining clause closed in the 0.208.0 candidate (item 109);
+  REVIEW F26 OPEN pending Codex**. The launch checks and output allowlists landed at 0.166.0;
+  failed pre-loop Git operations are now propagated. See item 81, item 109 and REVIEW F26.
 - **F2:** make timeout and output-cap termination force and settle after a bounded SIGTERM grace
-  period — **implemented at 0.167.0**; `REVIEW.md` F2 stays OPEN until Codex has verified the
-  repair. `shell` now escalates `SIGTERM` → five-second grace → `SIGKILL`, settles without waiting
-  for a cooperative exit, sweeps descendants on the output-cap path as well as the ceiling, and
-  keeps the first termination's verdict. Evidence:
+  period — **PARTIAL at 0.167.0; REVIEW F2 OPEN**. `shell` now escalates `SIGTERM` → five-second
+  grace → `SIGKILL`, settles without waiting
+  for a cooperative exit, sweeps descendants on both termination paths when it captured their
+  pre-image, and keeps the first termination's verdict. Evidence:
   `test/integration/shell-termination.integration.test.mjs` — a resistant child and its descendants
   under both paths, a cooperative child that does not pay the grace, and the stale-sweep regression
   the escalation itself introduced. `DESIGN.md` §11.1 states the mechanism.
+  **Closed in the 0.208.0 candidate (item 109):** the ownership pre-image is now sampled for *every*
+  command rather than only when a ceiling was supplied, so the output cap sweeps descendants on a
+  call with no `timeoutMs`. That was the last open clause.
 - **F3:** prevent an unrelated local listener from satisfying the health gate — **implemented at
-  0.168.0**; `REVIEW.md` F3 stays OPEN until Codex has verified the repair. The probe polls only the
+  0.168.0; REVIEW F3 CLOSED at 0.194.0**. The probe polls only the
   assigned port, refuses a port something was already answering on, re-checks that the child is
   alive when the response arrives, and keeps `portContractHint` as the teaching diagnosis; `--port`
   is the driver/operator-owned contract that replaces the announced-port fallback. Evidence:
   `test/health-probe.test.mjs` — the decoy reproduction, the inverted two-masters test, the fixed
   port named by the driver, and the pre-existing listener a dead child cannot borrow.
 - **F6 / item 60:** resolve every passing reviewer citation to a contained, existing line before
-  Panel combination — **implemented at 0.169.0**; `REVIEW.md` F6 stays OPEN until Codex has
-  verified the repair. See item 60 below.
+  Panel combination — **implemented at 0.169.0; REVIEW F6 CLOSED at 0.194.0**. See item 60 below.
 - **F7 / item 61:** require both process success and envelope success from every Claude role —
-  **implemented at 0.179.0**; `REVIEW.md` F7 stays OPEN until Codex has verified the repair. See
+  **implemented at 0.179.0; REVIEW F7 CLOSED at 0.194.0**. See
   item 61 below. The mandatory tier-3 run was made: the operator authorised it, and the live tier is
   covered by their Claude Max subscription rather than being a per-run expenditure.
 - **F12 / item 66:** bind every role and terminal decision to one immutable specification revision —
-  **implemented at 0.170.0**; `REVIEW.md` F12 stays OPEN until Codex has verified the repair. See
+  **implemented at 0.170.0; REVIEW F12 CLOSED at 0.194.0**. See
   item 66 below.
 - **F8 / item 62:** bind held-out Oracle cases to that run and specification revision —
-  **implemented at 0.171.0**; `REVIEW.md` F8 stays OPEN until Codex has verified the repair. See
+  **implemented at 0.171.0; REVIEW F8 CLOSED at 0.194.0**. See
   item 62 below.
 - **F14 / item 68:** commit and tag only the exact workspace identity gated and reviewed —
-  **implemented at 0.172.0**; `REVIEW.md` F14 stays OPEN until Codex has verified the repair. See
+  **implemented at 0.172.0; REVIEW F14 CLOSED at 0.194.0**. See
   item 68 below.
 - **F16 / item 70:** accept only fresh successful test reports from the current gate attempt —
-  **implemented at 0.173.0**; `REVIEW.md` F16 stays OPEN until Codex has verified the repair. See
+  **implemented at 0.173.0; REVIEW F16 CLOSED at 0.194.0**. See
   item 70 below.
 - **F30 / item 87:** reject every normalized flaky test result before Panel or `SHIPPED`,
-  after items 70 and 74 bind the report — **implemented at 0.176.0**; `REVIEW.md` F30 stays OPEN
-  until Codex has verified the repair. See item 87 below.
+  after items 70 and 74 bind the report — **implemented at 0.176.0; REVIEW F30 CLOSED at
+  0.194.0**. See item 87 below.
 - **F18 / item 72:** conserve every completed child envelope into ceilings and terminal receipts —
-  **implemented at 0.174.0**; `REVIEW.md` F18 stays OPEN until Codex has verified the repair. See
+  **implemented at 0.174.0; REVIEW F18 CLOSED at 0.194.0**. See
   item 72 below.
-- **F29 / item 85:** keep candidate-tree instructions out of reviewer authority; candidate files
-  remain evidence, while binding review inputs come from identified immutable sources.
+- **F29 / item 85:** keep candidate-tree instructions out of reviewer authority — **partial at
+  0.206.0**. The Driver-owned authority boundary and pre-Panel rescan landed; the supply trust-class
+  report, reviewed-tree binding for the scan, and paid canary remain in item 85.
 
-**Gate 0B — external child/platform contracts.** F5 is implemented by item **56**: measure the real
+**Gate 0B — external child/platform contracts.** F5/item **56** is OPEN: measure the real
 child-environment contract before replacing ambient inheritance, then prove the boundary through a
-paid Claude child. F11 is item **65**: prove descendant cleanup on Windows rather than inferring it
-from POSIX process-group tests. F15/item **69** must either establish real Oracle read isolation or
-narrow the product guarantee based on a paid Builder probe. F21/item **75** adds the real-loader
-and disposable-cache release contract. F25/item **80** makes the shipped command user-invocable only
-under the current Claude Code command/skill contract without claiming to authenticate arbitrary
-direct Bash. F27/item **82** makes each non-Builder role's tool availability match its declared
-policy rather than only pre-approving named tools. F28/item **83** establishes and enforces the
-measured product-wide Claude Code compatibility policy and one-CLI-per-run identity. All close before
-feature fan-out.
+paid Claude child. F11/item **65**, F15/item **69**, F21/item **75**, and the installed-loader half
+of F25/item **80** remain open external-contract work. F27/item **82** is implemented at 0.204.0
+pending Codex verification. F28/item **83** is partial at 0.205.0: the measured version policy is
+enforced, while one-CLI-per-run binary identity and auto-update control remain. These contracts close
+before feature fan-out.
 
-**Gate 0D — repair gaps found by the second Codex pass (items 88–94).** F31–F37 record failure
-shapes newly exposed at 0.179.0, six of them incomplete repairs of earlier findings: F31→F14,
-F32→F16, F33→F2, F34→F1, F35→F20, F36→F7. F37 is pre-existing. Order is by severity and then by
-shared machinery: **88** and **89** are the two HIGHs and both fail open at an authority boundary;
-**91** then repairs lock arbitration; **90** and **94** share one process-lifetime state machine and
-land together; **92** and **93** close the reporter-identity and denial-visibility gaps, and 93
-carries a mandatory tier-3 run.
+**Gate 0D — closed repair gaps retained as history (items 88–94).** F31–F37 were found by the
+second Codex pass and are CLOSED in REVIEW at 0.194.0. Their item sections remain evidence for the
+repairs and dependency history; they are not a current ordering queue.
 
 **The common cause is worth recording once.** Four of the seven survived because the tests written
 with the original repair *confirmed the design instead of attacking it*: a fixture that committed
@@ -132,7 +129,7 @@ that recurs; and denial text injected only through a failed result. A hostile te
 mechanism it is testing is not a hostile test.
 
 **Gate 0C — remaining external review defects.** F4's absolute HTTP deadline and bounded body are
-**implemented at 0.177.0**; `REVIEW.md` F4 stays OPEN until Codex has verified the repair. Every
+**implemented at 0.177.0; REVIEW F4 CLOSED at 0.194.0**. Every
 attempt in `scripts/health-probe.mjs` now carries a wall-clock deadline bounded by what remains of
 the probe's own, treats response `aborted`, response `error` and a premature `close` as failed
 attempts, caps the body while receiving it, and applies all of that to the remote smoke check as
@@ -140,15 +137,13 @@ well. Evidence in `test/health-probe.test.mjs`: a continuously streaming endpoin
 response, an oversized body, a streaming remote check, and the ordinary local and remote responses
 that must still pass.
 
-F9's positional machine-state ignore boundary through item **63** is **implemented at 0.178.0**;
-`REVIEW.md` F9 stays OPEN until Codex has verified the repair. See item 63 below. Then close F10's complete atomic
-terminal receipt through item **64**, F13's non-shrinking gate roster through item **67**, F17's
-definition-bound test credit through item **71**, F19's bounded decision-artifact reads through item
-**73**, F22's durable exact-tree acceptance receipt through item **76**, F23's inert model
-configuration through item **78**, and F24's hidden PRD checkpoint through item **79**. F20's
-contained reporter identities through item **74** are **implemented at 0.175.0**, with REVIEW F20
-open pending Codex. F11 may share F2's process-lifecycle
-implementation, but retains its own platform evidence.
+F9's positional machine-state ignore boundary through item **63** is **implemented at 0.178.0;
+REVIEW F9 CLOSED at 0.194.0**. See item 63 below. F10/items **64**
+and **103**, F13/item **67**, F17/item **71**, F19/item **73**, F20/item **74**, F23/item **78**,
+and F24/item **79** are implemented; REVIEW has closed F20, F23, and F24, while F10, F13, F17,
+and F19 remain open pending verification of later repairs. Their item headings own the exact repair
+versions. F22/item **76** remains OPEN. F11 may share F2's process-lifecycle implementation, but
+retains its own platform evidence under item **65**.
 
 **Gate 0 dependency edges.** The A/B/C groups classify priority and external evidence; they are not
 permission to implement shared primitives in arbitrary order. Preserve these concrete edges:
@@ -2145,7 +2140,7 @@ its receipt and still
 goes through the ordinary shipped-file version bump and required live tier before release. A failed or
 inconclusive experiment closes the item without changing the production path.
 
-### 60. Resolve reviewer evidence before accepting a pass — IMPLEMENTED (0.169.0); REVIEW F6 open pending Codex
+### 60. Resolve reviewer evidence before accepting a pass — IMPLEMENTED (0.169.0); REVIEW F6 CLOSED at 0.194.0
 
 **Landed at 0.169.0** in `scripts/evidence.mjs`, applied by `resolveReportEvidence` between
 `parseReviewerReport` and `combinePanel` — to every panel report and to the carried report. A
@@ -2181,7 +2176,7 @@ and Windows-shaped neighbour; an integration case proves fake evidence cannot re
 and any parser/template contract change receives the required paid live check. This may batch with
 item 40, but F6 closure remains independently reviewer-owned.
 
-### 61. Conjoin Claude process and envelope success — IMPLEMENTED (0.179.0); REVIEW F7 open pending Codex
+### 61. Conjoin Claude process and envelope success — IMPLEMENTED (0.179.0); REVIEW F7 CLOSED at 0.194.0
 
 **Landed at 0.179.0.** `ClaudeResult.ok` now requires a successful shell result *and* a valid
 non-error envelope. `ShellResult` gained `overflowed`, so the output cap is a distinct kind rather
@@ -2213,9 +2208,9 @@ termination/failure representation with F2 instead of adding another parallel st
 
 **Done when:** unit and tier-2 cases keep nonzero, signal, timeout, and overflow failures failed even
 with a valid success envelope; normal success and `is_error:true` keep their meanings; and the
-mandatory paid tier-3 check observes the production `claude -p` contract. REVIEW F7 owns closure.
+mandatory paid tier-3 check observes the production `claude -p` contract. REVIEW F7 closed this at 0.194.0.
 
-### 62. Bind the Oracle store to one run and one PRD — IMPLEMENTED (0.171.0); REVIEW F8 open pending Codex
+### 62. Bind the Oracle store to one run and one PRD — IMPLEMENTED (0.171.0); REVIEW F8 CLOSED at 0.194.0
 
 **Landed at 0.171.0.** `.meeseeks/oracle.json` is now archived with its run (`PER_RUN_ARTIFACTS`),
 carries the item-66 specification digest it was authored from, is written temp-and-rename, and is
@@ -2241,9 +2236,9 @@ the store in item 63's machine-state boundary, and preserve PRD-only/no-tools Or
 
 **Done when:** different sequential PRDs cannot share cases; the previous store is archived with its
 run; interruption cannot produce accepted partial JSON; and target `git add -A` cannot stage the
-store. REVIEW F8 owns closure.
+store. REVIEW F8 closed this at 0.194.0.
 
-### 63. Make the machine-state Git boundary positional — IMPLEMENTED (0.178.0); REVIEW F9 open pending Codex
+### 63. Make the machine-state Git boundary positional — IMPLEMENTED (0.178.0); REVIEW F9 CLOSED at 0.194.0
 
 **Landed at 0.178.0.** `MEESEEKS_IGNORED_PATHS` is now `.meeseeks/*`, `!.meeseeks/config.json` and
 `*.log`. `.meeseeks/*` rather than `.meeseeks/` is load-bearing: git will not descend into an
@@ -2280,9 +2275,9 @@ history boundary, separate from the write guard, but the ownership classificatio
 
 **Done when:** an integration fixture materializes every current state writer plus an unknown future
 artifact, runs `git add -A`, and proves only the deliberate config carve-out may stage across
-supported platforms. REVIEW F9 owns closure.
+supported platforms. REVIEW F9 closed this at 0.194.0.
 
-### 64. Record every terminal run outcome atomically — IMPLEMENTED (0.189.0, reopened and repaired at 0.196.0); REVIEW F10 open pending Codex
+### 64. Record every terminal run outcome atomically — IMPLEMENTED (0.189.0; reopened and repaired at 0.196.0; the at-most-once latch corrected in the 0.208.0 candidate, item 109); REVIEW F10 open pending Codex
 
 **Problem solved:** paid pre-loop and outer-exception aborts can leave no `outcome.json`, and the
 existing direct overwrite can destroy the only terminal receipt on interruption.
@@ -2344,7 +2339,7 @@ POSIX process-group path.
 three disappear within the bound while an unrelated process survives; POSIX cleanup and successful
 health probes remain green. A POSIX-only result cannot close REVIEW F11.
 
-### 66. Bind the run to an immutable specification revision — IMPLEMENTED (0.170.0); REVIEW F12 open pending Codex
+### 66. Bind the run to an immutable specification revision — IMPLEMENTED (0.170.0); REVIEW F12 CLOSED at 0.194.0
 
 **Landed at 0.170.0** in `scripts/specification.mjs`. The Driver captures the canonical revision
 after the PRD commit and before the Oracle, design, Builder or Panel reads it, recording file,
@@ -2364,7 +2359,7 @@ through the real `main`, beside one that rewrites everything else and proceeds).
 
 **Still owed to F12 by later items:** giving Panel and terminal receipts the canonical revision as
 their *input* rather than only checking the working copy is item **85**'s reviewer-supply contract,
-which PLAN already sequences after this item. **REVIEW F12 owns closure.**
+which PLAN already sequences after this item. **REVIEW F12 closed this at 0.194.0.**
 
 **What it was for, as originally written:**
 
@@ -2442,7 +2437,7 @@ the same one F32 draws between a report that is gone and one that is nameless.
 One case keeps `[]` for a file that exists: a manifest with no `capabilities` key predates 0.190.0
 and genuinely established nothing under this rule. That is an upgrade path, not a fallback.
 
-### 68. Seal Panel verdicts to an exact workspace identity — IMPLEMENTED (0.172.0); REVIEW F14 open pending Codex
+### 68. Seal Panel verdicts to an exact workspace identity — IMPLEMENTED (0.172.0); REVIEW F14 CLOSED at 0.194.0
 
 **Landed at 0.172.0.** `driveRun` captures `workspaceHash`'s identity after the gates and before the
 first reviewer, rechecks it after every panel, immediately before the commit and once the commit has
@@ -2490,7 +2485,7 @@ denial is insufficient when arbitrary code can read the same path.
 terminal policy, and eval interpretation consistently state the narrower guarantee. The Oracle
 author and Panel remain independently contextualized.
 
-### 70. Make test reports fresh, successful, and attempt-bound — IMPLEMENTED (0.173.0); REVIEW F16 open pending Codex
+### 70. Make test reports fresh, successful, and attempt-bound — IMPLEMENTED (0.173.0); REVIEW F16 CLOSED at 0.194.0
 
 **Landed at 0.173.0.** `gateTree` clears the toolchain's declared report paths before every attempt,
 and `scripts/reports.mjs` reads back only regular files present afterwards — so absence means the
@@ -2520,7 +2515,7 @@ wrong-tree output. Scoped restore verification must check the unit result before
 attempts refuse; the stale-report reproduction falls through to the full reset; and report
 provenance survives archive/restart inspection.
 
-### 71. Bind current ratchet credit to the current test definition — IMPLEMENTED (0.191.0, reopened and repaired at 0.195.0); REVIEW F17 open pending Codex
+### 71. Bind current ratchet credit to the current test definition — IMPLEMENTED (0.191.0; reopened and repaired at 0.195.0; the unscoped exemptions closed in the 0.208.0 candidate, item 109); REVIEW F17 open pending Codex
 
 **Problem solved:** path/title identity survives an assertion rewrite, so weakened tests inherit
 credit earned by different bytes.
@@ -2587,7 +2582,7 @@ never calls `recordRedEvidence`, so those tests were asserting early banking *an
 asserting that an unproven id gets banked — the defect next door. The harness now takes an explicit
 `seedRed`, which states what a real gate run would have established.
 
-### 72. Conserve every child result in budget accounting — IMPLEMENTED (0.174.0); REVIEW F18 open pending Codex
+### 72. Conserve every child result in budget accounting — IMPLEMENTED (0.174.0); REVIEW F18 CLOSED at 0.194.0
 
 **Landed at 0.174.0.** The Oracle author is charged through `chargePreLoop` before its output is
 parsed, so its spend reaches `alreadySpent` and every ceiling downstream. The parallel Panel charges
@@ -2621,7 +2616,7 @@ airtime, component receipts, and terminal outcomes derive from or reconcile agai
 cost enter `alreadySpent`; failed/exhausted parallel panels conserve all completed envelopes; no
 success path double-charges; and REVIEW F18's reproduction reports the actual 160 tokens and $6.01.
 
-### 73. Bound allocation for decision-bearing artifacts — IMPLEMENTED (0.192.0, reopened and repaired at 0.197.0); REVIEW F19 open pending Codex
+### 73. Bound allocation for decision-bearing artifacts — IMPLEMENTED (0.192.0; reopened and repaired at 0.197.0; three unbounded callers closed in the 0.208.0 candidate, item 109); REVIEW F19 open pending Codex
 
 **Problem solved:** prompt-bound, parsed, and hashed files can be synchronously loaded without a
 size boundary, allowing a repository or generated report to exhaust the Driver.
@@ -2708,7 +2703,7 @@ from another pre-loop `await` still escapes, because the general fix is a `try` 
 pre-loop region and that is a structural change this slice did not take. Recorded so the next
 reviewer does not read the two repaired paths as the whole class.
 
-### 74. Require repository-contained reporter identities — IMPLEMENTED (0.175.0); REVIEW F20 open pending Codex
+### 74. Require repository-contained reporter identities — IMPLEMENTED (0.175.0); REVIEW F20 CLOSED at 0.194.0
 
 **Landed at 0.175.0** in `scripts/reporters/shared.mjs`, so both reporters inherit it from the one
 place ids are constructed. Containment is proved lexically and, when the path exists, through
@@ -2724,9 +2719,9 @@ Unicode, padded filenames, separators, absolute-inside, and a nonexistent genera
 every banked identity is a file the clone contains, refuses a real outside file, refuses the
 *origin's* copy when the clone is under review, and refuses a whole report over one bad record.
 
-**Coordination with item 71** (F17's definition digest) is still owed: this establishes that the
-accepted path is contained, and item 71 will bind it to the definition receiving current credit.
-That is item 71's slice, and this one does not pre-empt it.
+**Coordination with item 71** (F17's definition digest) landed later: this item establishes that the
+accepted path is contained, and item 71 binds it to the definition receiving current credit. REVIEW
+F20 closed this path at 0.194.0; REVIEW F17 remains open on the later definition-byte repair.
 
 **Problem solved:** Vitest or Playwright can name an absolute/traversing file and bank a passing
 ratchet ID for a test definition absent from the deliverable.
@@ -2881,7 +2876,7 @@ not have, and that an unconstrained role stays unconstrained. `test/driver.test.
 refusal happens with **zero** children spawned, that an allowed supply returns a manifest which does
 not repeat the prompt, and that an undeclared caller is unchanged.
 
-### 78. Retire the inert `styleModel` without breaking configuration silently — IMPLEMENTED (0.193.0); REVIEW F23 open pending Codex
+### 78. Retire the inert `styleModel` without breaking configuration silently — IMPLEMENTED (0.193.0); REVIEW F23 CLOSED at 0.194.0
 
 **Problem solved:** `styleModel` is a validated operator setting and `run.json` records it as an
 active model, but no `spawnClaude` path consumes it. Meeseeks narration is deterministic and bare
@@ -2926,7 +2921,7 @@ refused, the notice naming `prdModel`, a clean config producing no notice, and �
 nothing was wired up to consume it. The DESIGN §10 table row now records the retirement rather than
 the gap.
 
-### 79. Expose the existing `--confirm-prd` checkpoint in the shipped command — IMPLEMENTED (0.193.0); REVIEW F24 open pending Codex
+### 79. Expose the existing `--confirm-prd` checkpoint in the shipped command — IMPLEMENTED (0.193.0); REVIEW F24 CLOSED at 0.194.0
 
 **Problem solved:** the Driver and DESIGN support `--confirm-prd`, but the installed command's
 frontmatter hint and instructions claim there are only two flags and omit it. The only deliberate
@@ -2947,7 +2942,7 @@ observes a committed PRD and no later phase spawn, asserts that the exit instruc
 `/meeseeks ./PRD.md`, then starts that exact PRD without re-authoring it; `claude plugin validate`
 passes; and the shipped command/Driver change receives the required version bump. A paid
 slash-command invocation is not required unless implementation changes the external Claude Code
-loading or argument-passing contract. REVIEW F24 owns closure.
+loading or argument-passing contract. REVIEW F24 closed this at 0.194.0.
 
 ### 80. Make the supported `/meeseeks` command user-invocable only — PARTIAL (0.203.0): the control and its contract tests landed; the installed-loader canary is batched with items 79 and 75
 
@@ -2989,7 +2984,7 @@ invocation still loads it and reaches a deliberately safe preflight refusal; the
 actual CLI/plugin identities; and an unsupported or unobservable control fails acceptance rather
 than falling back to prompt wording. REVIEW F25 owns closure.
 
-### 81. Bind preflight and document phases to declared repository changes — IMPLEMENTED (0.166.0); REVIEW F26 open pending Codex
+### 81. Bind preflight and document phases to declared repository changes — IMPLEMENTED (0.166.0; last clause closed in the 0.208.0 candidate, item 109); REVIEW F26 open pending Codex
 
 **Landed at 0.166.0** in `scripts/launch.mjs`, wired into `main` immediately after F1's run lock.
 `revalidateLaunch` reuses preflight's clean-tree, positional tracked-state, non-production remote,
@@ -3004,7 +2999,11 @@ sentences. Evidence: `test/launch.test.mjs` and `test/integration/launch.integra
 (dirty tree, production remote, unsafe agent surface, hostile PRD and design neighbours, the benign
 full conditional design output, and a source rule that no pre-loop phase uses `git add -A`). The
 requested-sandbox refusal is proven at tier 1 with an injected probe, because whether `bwrap` exists
-is a property of the machine running the suite. **REVIEW F26 owns closure and remains open.**
+is a property of the machine running the suite.
+
+**Still outstanding:** `commitPhase()` does not propagate failed `git add` or `git commit` results,
+and the provisioning caller ignores its boolean. A failed pre-loop commit can therefore be recorded
+as admitted/committed and let the loop continue on the wrong provenance. REVIEW F26 owns closure.
 
 **Problem solved:** supported launch runs preflight in one interactive Claude tool call and starts
 the Driver in a later call. Claude Code's `allowed-tools` field pre-approves the two intended Bash
@@ -3174,10 +3173,10 @@ printing the measurements the bounds come from.
 
 **The bounds are a record, not a constant somebody liked.** F28 is explicit that inventing precision
 would be no better than the absent check, so the floor is **2.1.226**, the oldest release with live
-measurements in this repository, and the ceiling is **2.1.234**, the newest the full live tier has
-passed on. 2.1.136 is cited as *recorded incompatible* — no `--safe-mode` — which is why the true
+measurements in this repository, and the ceiling is **2.1.234**, the newest release whose full live
+tier passed. 2.1.136 is cited as *recorded incompatible* — no `--safe-mode` — which is why the true
 floor is unknown and the demonstrated one is named instead. A test requires every bound to appear in
-the evidence list.
+the evidence list. Item **107** records the attempted 2.1.235 widening and why it was not admitted.
 
 **Refusing forward is the uncomfortable half and is deliberate.** A greater version number is not
 evidence of compatibility, and the CLI documents a coming bare-mode default for `-p` that would
@@ -3204,7 +3203,9 @@ canonical binary at the run boundary, re-resolving and re-fingerprinting immedia
 spawn so a mid-run PATH shadow or same-version byte replacement refuses, binding a launcher's
 delegated entrypoint, and suppressing background auto-update through item **56**'s control set. A
 version check alone does not establish that the binary a later role resolves is the one preflight
-measured. `PARTIAL` for exactly that reason.
+measured. `checkClaudeCli` also runs only `claude --version`, which succeeds without proving
+non-interactive authentication; closure must add a measured fail-fast auth capability check or narrow
+the preflight guarantee explicitly. `PARTIAL` for those reasons.
 
 ### 84. Measure and admit fail-closed child containment — OPEN (live-contract first)
 
@@ -3399,7 +3400,7 @@ malformed finding evidence all terminate fail-closed without orphan descendants;
 distinguishes reproduced, rejected, unresolved, and unattempted coverage; and a measured pilot
 improves incremental defect discovery or morning acceptance enough to justify its added cost.
 
-### 87. Treat normalized flaky tests as a failed deterministic gate — IMPLEMENTED (0.176.0); REVIEW F30 open pending Codex
+### 87. Treat normalized flaky tests as a failed deterministic gate — IMPLEMENTED (0.176.0); REVIEW F30 CLOSED at 0.194.0
 
 **Landed at 0.176.0**, after items 70 (0.173.0) and 74 (0.175.0) had established the fresh attempt
 and the contained report identity this decision consumes. Reports are parsed once, before anything
@@ -3437,9 +3438,9 @@ passed/flaky records fails the iteration before Panel; a clean expected fixture 
 neighbours retain their existing semantics; duplicate pass+flaky records resolve to flaky; a prior
 ratcheted id still takes the reset path; bounded failure evidence names the exact attempt/report
 identity from items 70/74; and unit plus integration coverage proves no `SHIPPED` path can ignore a
-normalized flaky result. REVIEW F30 owns closure.
+normalized flaky result. REVIEW F30 closed this at 0.194.0.
 
-### 88. Fail-closed Git publication and exact committed-tree identity — IMPLEMENTED (0.180.0); REVIEW F31 open pending Codex
+### 88. Fail-closed Git publication and exact committed-tree identity — IMPLEMENTED (0.180.0); REVIEW F31 CLOSED at 0.194.0
 
 **Landed at 0.180.0.** The commit effect requires `git add`, the staged-change lookup, `git commit`
 and `rev-parse HEAD` each to succeed, with its own bounded diagnostic, and distinguishes *nothing
@@ -3477,9 +3478,9 @@ runner.
 **Done when:** a real-Git fixture makes commit fail after staging and proves deploy, tag and
 `SHIPPED` are unreachable; add, commit, lookup and tag failures keep distinct diagnostics; and the
 successful neighbour proves the published commit, sealed workspace identity, deploy input, tag and
-terminal receipt all converge. REVIEW F31 owns closure.
+terminal receipt all converge. REVIEW F31 closed this at 0.194.0.
 
-### 89. Refuse uncleared report paths before they can be banked — IMPLEMENTED (0.181.0); REVIEW F32 open pending Codex
+### 89. Refuse uncleared report paths before they can be banked — IMPLEMENTED (0.181.0); REVIEW F32 CLOSED at 0.194.0
 
 **Problem solved:** `clearReports` already returns the paths it could not remove, and the Driver
 logs them and runs the gate anyway. `collectReports` then accepts any regular file at a configured
@@ -3494,7 +3495,7 @@ weakening item 70's attempt identity.
 
 **Done when:** unit coverage forces removal failure and proves the survivor cannot be parsed or
 banked; a real-filesystem integration case proves an exit-zero gate cannot relabel it fresh; and the
-ordinary replace-and-collect path stays green. REVIEW F32 owns closure.
+ordinary replace-and-collect path stays green. REVIEW F32 closed this at 0.194.0.
 
 **What landed (0.181.0).** `collectReports` takes the clear's outcome as a **required argument**,
 binds it to the paths being collected (a path the record does not account for is uncleared, so an
@@ -3555,7 +3556,7 @@ driver-side composition.
 Tier 1 **2522 pass / 0 fail**, tier 2 **120 pass / 0 fail**. No tier 3: nothing here touches
 `spawnClaude`, `claudeArgs`, `childSettings`, envelope parsing or a template's output contract.
 
-### 90. Keep process cleanup off concurrent sibling children — IMPLEMENTED (0.185.0); REVIEW F33 open pending Codex
+### 90. Keep process cleanup off concurrent sibling children — IMPLEMENTED (0.185.0); REVIEW F33 CLOSED at 0.194.0
 
 **Problem solved:** the Panel starts reviewers under `Promise.all`, and every `shell` call snapshots
 the process-group population *before* its own spawn and later kills group members absent from that
@@ -3565,12 +3566,13 @@ reviewers whose independence is the point. The existing bystander test starts th
 the snapshot, so it proves preservation of an older process and not of a concurrent sibling.
 
 Scope cleanup to the invocation's own descendants or an owned group, or otherwise exclude active
-sibling children, without restoring the orphan leak item F2 closed.
+sibling children, without restoring the orphan leak F2's initial repair addressed. F2 remains open
+for the distinct no-timeout output-cap path recorded above.
 
 **Done when:** a tier-2 test starts two concurrent real `shell` calls where the first times out after
 the second is born, and the second survives and completes while the first child and its descendants
 are gone; reversed order and the overflow path exercise the same rule; and the Panel still combines
-completed results in declared reviewer order. REVIEW F33 owns closure.
+completed results in declared reviewer order. REVIEW F33 closed this at 0.194.0.
 
 **What landed (0.185.0).** Nothing is detached — that was measured and rejected, because a detached
 gate stops receiving the operator's Ctrl-C — so every child and grandchild shares the driver's one
@@ -3593,7 +3595,7 @@ sibling completes with its own output while the timed-out call's descendant is g
 pid reported reaped. The reversed order is asserted as the neighbour. Verified red by removing the
 exclusion.
 
-### 91. Make crashed stale-lock arbitration reclaimable — IMPLEMENTED (0.182.0); REVIEW F34 open pending Codex
+### 91. Make crashed stale-lock arbitration reclaimable — IMPLEMENTED (0.182.0); REVIEW F34 CLOSED at 0.194.0
 
 **Problem solved:** the takeover directory is named from the *stale* lock's token, and item F1's
 argument that orphans are inert assumed the stale lock always gets replaced. If the reclaimer dies
@@ -3695,7 +3697,7 @@ injection F34 asks for: a real process takes the real claim through production c
 cohort then produces exactly one winner whose token is the one on disk; the benign neighbour proves
 a *live* reclaimer still refuses everybody and the same directory recovers once it is gone.
 
-### 92. Require reproducible existing test definitions before ratchet credit — IMPLEMENTED (0.187.0); REVIEW F35 open pending Codex
+### 92. Require reproducible existing test definitions before ratchet credit — IMPLEMENTED (0.187.0); REVIEW F35 CLOSED at 0.194.0
 
 **Problem solved:** reporter normalisation falls back to a lexically contained relative path when
 `realpathSync` fails, so a runner naming a file that does not exist can still bank a passing id —
@@ -3710,7 +3712,7 @@ reproducible identity and content digest rather than treating a missing file as 
 
 **Done when:** nonexistent, directory, symlink-race and deleted-after-report definitions fail closed
 without credit; valid contained Windows and POSIX paths keep stable ids; and a clean-clone tier-2
-test resolves every banked definition. REVIEW F35 owns closure.
+test resolves every banked definition. REVIEW F35 closed this at 0.194.0.
 
 **What landed (0.187.0).** `fileBackedIds` credits an id only when its defining file resolves to an
 existing regular file inside the candidate; everything else is withheld and named in the log.
@@ -3750,7 +3752,7 @@ report fixtures named definitions that were not on disk — which after this rep
 case, not the ordinary one. The seeded set now includes the files those fixtures name, because a
 harness whose reports describe a tree it did not build is not modelling a repository.
 
-### 93. Preserve guard denials from successful children — IMPLEMENTED (0.188.0); REVIEW F36 open pending Codex
+### 93. Preserve guard denials from successful children — IMPLEMENTED (0.188.0); REVIEW F36 CLOSED at 0.194.0
 
 **Problem solved:** `shell` returns an empty `stderr` whenever a command exits zero, and
 `spawnClaude` searches exactly that field for `meeseeks-guard: denied` lines. A Claude child can hit
@@ -3766,7 +3768,7 @@ evidence; only the denial signal feeds the brief.
 **Done when:** a tier-2 child exits zero after writing a denial line and `spawnClaude` returns success
 while preserving it; clean-stderr and failed-envelope neighbours are unchanged; and the mandatory
 paid tier-3 guard canary has been run, because this crosses `spawnClaude` and the external CLI
-contract. REVIEW F36 owns closure.
+contract. REVIEW F36 closed this at 0.194.0.
 
 **What landed (0.188.0).** A denial travels on its own bounded field of `ShellResult` rather than
 being re-derived from `stderr`. `shell` extracts it on **every** exit status; `spawnClaude` reads
@@ -3792,7 +3794,7 @@ that always worked still does; the caps are asserted against a real stream. `tes
 covers `guardDenials` directly. Verified red: removing the success-path extraction fails the
 recovered-child case.
 
-### 94. Clean health-probe descendants after the shell leader exits — IMPLEMENTED (0.185.0); REVIEW F37 open pending Codex
+### 94. Clean health-probe descendants after the shell leader exits — IMPLEMENTED (0.185.0); REVIEW F37 CLOSED at 0.194.0
 
 **Problem solved:** the probe's `stop` returns after destroying pipes whenever the direct child
 already has an `exitCode` or `signalCode`, without signalling the captured process group. A start
@@ -3806,7 +3808,7 @@ before signalling, and preserve bounded stop behaviour and the long-running-serv
 **Done when:** a tier-2 fixture runs the equivalent of `node server & exit 0`, observes the failed
 probe, and proves the background server and its listener are gone; cooperative exit, timeout and
 already-empty group settle without killing unrelated processes; and Windows evidence stays owned by
-F11/item 65. REVIEW F37 owns closure.
+F11/item 65. REVIEW F37 closed this at 0.194.0.
 
 **What landed (0.185.0).** `stop` returned as soon as the direct child had an exit code, on the
 reasoning that a dead leader means a dead group. A start command that backgrounds the application
@@ -3863,7 +3865,7 @@ passed still resets exactly as now; `collected === 0` keeps its existing meaning
 drives the real `driveRun` through the reproduced livelock and shows it terminating instead.
 Item **89** is a prerequisite (it owns the `stuck` half of the same question).
 
-### 96. Re-verify the publication subject after deploy — IMPLEMENTED (0.186.0); REVIEW F38 open pending Codex
+### 96. Re-verify the publication subject after deploy — IMPLEMENTED (0.186.0); REVIEW F38 CLOSED at 0.194.0
 
 **Problem solved:** publication is verified before ship-time mutation and before the operator's
 arbitrary deploy command. After those mutation-capable steps the Driver rechecks only specification
@@ -3876,7 +3878,7 @@ commit rather than whatever `HEAD` names by then, and withhold `SHIPPED` on any 
 
 **Done when:** real-Git tier-2 cases cover a deploy that creates a commit and a deploy that leaves
 uncommitted changes, and neither ships; the clean neighbour tags exactly the reviewed commit and
-still reaches `SHIPPED`. REVIEW F38 owns closure.
+still reaches `SHIPPED`. REVIEW F38 closed this at 0.194.0.
 
 ### 97. Lose takeover arbitration on any post-rename read failure — IMPLEMENTED (0.185.0); REVIEW F39 open pending Codex
 
@@ -3896,7 +3898,7 @@ this contender's to destroy.
 read/rename window through the `isAlive` seam and proves the directory survives, the lock is
 untaken, and the current contender refuses. Verified red against the pre-F39 logic.
 
-### 98. Stop restating the queue in HANDOFF — IMPLEMENTED (0.185.0); REVIEW F40 open pending Codex
+### 98. Stop restating the queue in HANDOFF — IMPLEMENTED (0.185.0); REVIEW F40 CLOSED at 0.194.0
 
 **Problem solved:** `HANDOFF.md` restated the implementation order and the review counts, and both
 went stale — it recorded F7/item 61 as blocked on unauthorised expenditure three sections below its
@@ -3920,10 +3922,11 @@ test numbers belonged to other bytes.
 All three are the same mistake: **treating a green suite as evidence about the artifact.** A suite
 reports what the bytes did when they ran; it says nothing about which bytes get committed.
 
-`tools/slice-check.mjs` fingerprints the shipped surface, refuses known debugging scaffolding, runs
-the gates, **re-fingerprints and refuses if anything moved underneath**, then — in `commit` mode —
+`tools/slice-check.mjs` fingerprints its covered loader surface, refuses known debugging scaffolding,
+runs the gates, **re-fingerprints and refuses if anything moved underneath**, then — in `commit` mode —
 stages only named paths, checks the index against the fingerprint, commits from a message file, and
-checks `HEAD` against the fingerprint again. `npm run slice-check`.
+checks `HEAD` against the fingerprint again. `npm run slice-check`. Item 100 records the current
+`skills/` omission; the harness must not be described as covering that directory until it does.
 
 **Eval, and it is the point of the harness rather than a note about it.** Re-injecting the exact two
 mutants 0.182.0 shipped makes it refuse before a gate runs:
@@ -3941,21 +3944,27 @@ broken gate is worse than none; the buffer is 64MB, the same cap `shell` uses.
 **Not shipped, so no bump.** `tools/` is outside the release surface and an npm script is dev config;
 `npm run release-check` confirms rather than this asserting it.
 
-### 100. `release-check`'s shipped list omits the npm manifests — OPEN (observation, low)
+### 100. Release gates omit the shipped skill directory — DONE (0.208.0)
 
-`CLAUDE.md` says shipped means the five directories "and **the manifests**". `tools/release-check.mjs`'s
-`SHIPPED_PATHS` is `hooks, scripts, commands, templates, output-styles, .claude-plugin` — so
-`package.json` and `package-lock.json` are outside it. A non-version edit to either can therefore
-ship without a bump.
+`DESIGN.md` §7 and the plugin layout identify `skills/mr-meeseeks/SKILL.md` as an installed plugin
+surface, but `tools/release-check.mjs::SHIPPED_PATHS` and
+`tools/slice-check.mjs::SHIPPED_DIRS` omit `skills/`. Their tests encode the same omission while
+claiming to name every directory the loader reads. A skill-only change can therefore reuse an old
+plugin-cache version, and the slice harness will not fingerprint it.
 
-The omission is probably deliberate and cannot simply be removed: the bump itself edits
-`package.json`, so including it would make the check fire on every release. The honest repair is to
-compare those two files *ignoring the version fields*, or to narrow `CLAUDE.md`'s wording to
-`.claude-plugin/`. Recorded rather than changed because picking between them is a product call about
-what "shipped" means, and the current gap admits only dev-config drift — which is what discovered it
-(adding the `slice-check` script).
+The earlier npm-manifest ambiguity was documentation, not this runtime defect. `package.json` and
+`package-lock.json` are release metadata rather than Claude's loader inputs: their version fields
+must mirror `.claude-plugin/plugin.json`, but a non-version dev-script edit does not independently
+require a new plugin-cache directory. `CLAUDE.md` and `AGENTS.md` now say that explicitly.
 
-### 101. Bound quality-plugin provisioning — IMPLEMENTED (0.199.0); REVIEW F41 open pending Codex
+**Landed at 0.208.0.** `release-check.mjs` adds `skills/` to its loader boundary.
+`slice-check.mjs` now imports that predicate instead of maintaining a second directory list, then
+adds only `package.json` and `package-lock.json` to its broader candidate fingerprint. That also
+closes the adjacent unrecorded omission of `.claude-plugin/marketplace.json` from the slice
+fingerprint. Hostile tests prove a skill file and both plugin manifests are covered while repository
+documentation remains outside the loader boundary.
+
+### 101. Bound quality-plugin provisioning — IMPLEMENTED (0.199.0; the discarded timeout verdict fixed in the 0.208.0 candidate, item 109); REVIEW F41 open pending Codex
 
 **Problem solved:** provisioning had no deadline at all. `npx --no-install` resolving a registry, a
 `pip install` against an unreachable index, a package manager waiting on a lock another process
@@ -4100,6 +4109,125 @@ fixture: what the sweep must clean is exactly what the start command left behind
 asks the same question from the same place. **0 failures in 12 runs.**
 
 **Nothing about `health-probe.mjs` changed.** The product was right; the test could not see it.
+
+### 107. The next compatibility boundary was measured and not admitted — RECORDED (0.208.0)
+
+**The escape was exercised the same day the enforcement landed.** 0.205.0 set `VERIFIED_THROUGH` to
+2.1.234. The Claude Code CLI then background-updated itself to **2.1.235 mid-session** — observed in
+a child's `CLAUDE_CODE_EXECPATH` while probing something else — which is the forward drift F28
+describes, arriving within hours.
+
+The widening procedure ran against 2.1.235: `MEESEEKS_LIVE=1 npm run test:live` finished **33 of
+34**. That is useful compatibility evidence and not the clean full-tier pass DESIGN §3.5 and REVIEW
+F28 require, so `VERIFIED_THROUGH` remains 2.1.234. A host that auto-updated must pin an admitted
+binary until a complete run supplies the missing evidence.
+
+**Why the isolated retries do not replace the run.** `improve-contract`'s "returns a grounded,
+bounded PRD" failed once and passed twice on 2.1.235 — the same model-output variability seen on
+2.1.234. That diagnoses the failure; it does not turn the failed full-suite result into a pass. The
+escape remains available and intentionally fail-closed.
+
+### 108. Fail closed on malformed compatibility and nesting markers — IMPLEMENTED (0.208.0)
+
+`parseClaudeVersion` previously matched only the beginning of `claude --version`, so strings such as
+`2.1.234-`, `2.1.234+unverified`, and `2.1.234 warning` were accepted as the verified stable release.
+It now accepts only a bare release/prerelease or the exact measured ` (Claude Code)` decoration,
+rejects unsafe numeric components, and has hostile neighbours for every formerly accepted suffix.
+
+The Driver and guard separately used `parseInt` for `MEESEEKS_RUN_DEPTH`. A nested invocation could
+therefore turn `banana` into depth zero or `1garbage` into depth one and obtain room under the cap,
+contradicting DESIGN's fail-closed invariant. Both boundaries now require one exact non-negative safe
+integer; `childEnvironment` preserves a malformed marker so it cannot launder the state before the
+next boundary sees it. Driver and guard tests cover the deny path and valid neighbours.
+
+### 109. Re-baseline of every open REVIEW finding against 0.208.0 — IMPLEMENTED (0.208.0 candidate)
+
+Not a new feature: a trace of all seventeen findings still marked OPEN in `REVIEW.md` against the
+**current** tree rather than against their 0.194.0 coordinates, and the smallest root-cause
+correction for each clause that was still reproducible. Six were.
+
+**F26 — `commitPhase` inferred success it never observed.** `shell` resolves `{ ok: false }` rather
+than throwing, so discarding the results of `git add` and `git commit` was silent: the launch
+receipt recorded the phase as admitted *and committed*, the function returned `true`, and the run
+carried on over a tree that still held the changes. `driveRun`'s own commit closure has checked both
+since F31 — the pre-loop path had simply never been brought up to that standard, and the tier-2
+fixtures could not see it because they shell out to a real git that always succeeds. Both results are
+now observed, `git diff --cached` separates "nothing staged" from a fault, and the quality-plugins
+call site honours the boolean it used to discard. Evidence:
+`test/integration/phase-commit.integration.test.mjs` makes git genuinely fail with a read-only
+`.git/objects` — an ordinary disk-permission fault, which fails writes while leaving every read
+working, exactly the shape that slipped through. One case red against the old body.
+
+**F19 — three unbounded reads of target-controlled artifacts.** The reopened `readBounded`
+sub-defect was genuinely fixed, but the *callers* were not all converted. The operator's PRD was read
+whole by the copy that runs **before** `captureSpecification`'s bounded read, so an oversized
+specification died unbounded before the limit written for it could refuse it by name. Worse,
+`isSubstantial` (which decides `DoD-4-docs`) and `anySourceMatches` (which decides `observability` by
+reading *every source file in the tree*) both read whole — one generated bundle was enough to end a
+run inside a gate. All three are bounded now: the PRD refusal names the artifact and both sizes and
+reaches the terminal receipt; an over-limit document reads as substantial, because the question is a
+*minimum* and refusing would fail a gate on size alone; an over-limit source file is skipped, which
+fails closed. Evidence: `test/integration/bounded-inputs.integration.test.mjs` and four cases in
+`test/driver.test.mjs`.
+
+**The first draft of the gate tests proved nothing, and that is worth recording.** Asserting the gate
+*outcome* over an oversized file passed with the bounds removed — both answers are "no logger here".
+The discriminating fixture puts the match **inside** the oversized file: unbounded it is found,
+bounded it is skipped. The allocation bound itself is unobservable from a result, so that half is
+asserted positionally, exactly as `test/bounded-read.test.mjs` asserts it for `readBounded`.
+
+**F2 — the descendant sweep was gated on the wrong condition.** The ownership pre-image was sampled
+only when a `timeoutMs` was supplied, so on the 64MB output-cap path with no ceiling
+`sweepLeakedGroup` returned `[]` and every descendant of a flooding child survived; the direct child
+died, so the leak was invisible from the result. Production callers with no ceiling include
+`npx playwright install chromium`, the toolchain version probes and the smoke health-probe child —
+the last being the caller most likely to own descendants. The cost that justified the condition was
+**measured rather than assumed**: `ps -eo pid=,pgid=,comm=` is 4.3ms, about two `git rev-parse`
+calls, against iterations that are minutes long. Sampling is now unconditional. Evidence: a tier-2
+case that floods with no ceiling at all and asserts the descendant is gone and named in `reaped`.
+
+**F10 — at-most-once meant at most one *attempt*.** `writeRunOutcome` latched `written.done` before
+the write, so a transient ENOSPC, EACCES or rename race on the first exit path latched the run shut:
+every later path — including `main`'s crash guard, which exists precisely to file a receipt —
+declined to try, and the run ended with no durable record at all. The flag is now latched only once
+bytes are on disk. The rule being defended is "the first *decided* answer wins", and an attempt that
+wrote nothing decided nothing. Evidence: two cases in `test/outcome.test.mjs`, one red.
+
+**F17 — two of the three exemptions were never definition-scoped.** The reopened wiring half is
+genuinely closed: `driveRun` recomputes the rule and applies it at *both* advances, and
+`recordAdvance` banks from `credited`. But only `previousPassing` was scoped to the definition. An id
+that had ever been seen failing, or that was present at the first gating, kept that exemption
+**forever** — including after its defining file was rewritten — so a test could be replaced with a
+weaker one and inherit the credit its predecessor earned. That is the substitution the finding is
+about, surviving inside the repair for it.
+
+Red evidence now records the digest each observation was made under, per defining file, mirroring the
+ratchet's own `definitions` map; `changedDefinitions` compares against it and the resulting
+`staleEvidence` set defeats the `redSeen` and `baseline` exemptions exactly as it already defeated
+`previousPassing`. **The escape is preserved and is the load-bearing half:** observing the rewritten
+test fail records evidence under the current digest, so the exemption returns — a legitimate
+strengthening costs one observation, not permanent withholding. Nothing is deleted to make that work,
+and no id is reset or regressed: withholding only declines to *re-bank*, and `redEvidenceGate`
+reports rather than blocks, so there is no deadlock.
+
+**A store written before the digest field exists vouches for nothing**, because `changedDefinitions`
+reads an absent digest as changed. That is the correct direction — nobody can say which bytes such
+evidence was recorded against — and it costs nothing that matters: already-banked ids keep their
+ratchet protection. The tier-1 harness now seeds evidence against the tree it built, exactly as
+`gateTree` hands over the candidate directory; a fixture that seeded evidence without a tree was
+modelling evidence from nowhere.
+
+**F41 — the deadline fired and the caller discarded the verdict.** The ceilings reach production, but
+`installQualityPlugins` never read `timedOut`: a detection that hung for its full 60s was read as
+"the tool is not installed" and escalated straight into a ten-minute install attempt, so the operator
+saw eleven minutes of silence and then `exit 1` — the hang the deadline exists to prevent, wearing
+the report of a missing package. A timeout is now its own outcome on both commands, and a hung
+detection does not escalate.
+
+**Classified and not repaired, with reasons, in the report to the operator:** F13, F39 (fixed;
+residual gaps are test-coverage and a stale ledger row, not code), F5, F21, F22, F25, F27, F28, F29
+(reproducible or evidence-blocked, each needing either a paid live canary — withheld this session by
+operator instruction — or a slice of its own).
 
 ## Observations recorded rather than repaired
 

@@ -34,10 +34,24 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-/** Directories whose contents are shipped, from CLAUDE.md's release rule. */
-const SHIPPED_DIRS = ['hooks', 'scripts', 'commands', 'templates', 'output-styles'];
-/** Individual shipped files. */
-const SHIPPED_FILES = ['.claude-plugin/plugin.json', 'package.json', 'package-lock.json'];
+import { isShipped } from './release-check.mjs';
+
+/** Release metadata fingerprinted with the loader surface, though it is not itself loader input. */
+export const FINGERPRINT_FILES = ['package.json', 'package-lock.json'];
+
+/**
+ * One predicate for every byte the slice harness must keep stable.
+ *
+ * Loader paths come from `release-check.mjs`, so adding another installed surface cannot update the
+ * version gate while silently leaving this fingerprint behind. Package metadata is the deliberate
+ * extra: its versions label the loader snapshot and must describe the same candidate bytes.
+ *
+ * @param {string} file
+ * @returns {boolean}
+ */
+export function isFingerprintPath(file) {
+  return isShipped(file) || FINGERPRINT_FILES.includes(file);
+}
 
 /**
  * Text that should never reach a commit: the fingerprints of the mutation scaffolding that did.
@@ -61,9 +75,7 @@ function git(argv) {
 /** @returns {string[]} every tracked shipped path */
 function shippedPaths() {
   const tracked = git(['ls-files']).split('\n').filter(Boolean);
-  return tracked.filter(
-    (file) => SHIPPED_FILES.includes(file) || SHIPPED_DIRS.some((dir) => file.startsWith(`${dir}/`)),
-  );
+  return tracked.filter(isFingerprintPath);
 }
 
 /**
@@ -234,21 +246,26 @@ function commit(verified, paths, messageFile) {
   process.stdout.write('  every shipped file in HEAD matches the fingerprint the gates ran against\n');
 }
 
-const argv = process.argv.slice(2);
-const mode = argv[0] ?? 'verify';
-if (!['verify', 'commit'].includes(mode)) refuse(`unknown mode ${JSON.stringify(mode)}; use verify or commit`);
-const skipIntegration = argv.includes('--no-integration');
-const verified = verify({ integration: !skipIntegration });
+/** @param {string[]} [argv] */
+export function main(argv = process.argv.slice(2)) {
+  const mode = argv[0] ?? 'verify';
+  if (!['verify', 'commit'].includes(mode)) refuse(`unknown mode ${JSON.stringify(mode)}; use verify or commit`);
+  const skipIntegration = argv.includes('--no-integration');
+  const verified = verify({ integration: !skipIntegration });
 
-if (mode === 'commit') {
-  const at = argv.indexOf('-m');
-  if (at === -1 || argv[at + 1] === undefined) refuse('commit needs -m <file holding the message>');
-  const pathsAt = argv.indexOf('--paths');
-  const paths =
-    pathsAt === -1
-      ? git(['diff', '--name-only']).split('\n').filter(Boolean)
-      : argv.slice(pathsAt + 1).filter((entry) => !entry.startsWith('-'));
-  if (paths.length === 0) refuse('nothing to commit');
-  process.stdout.write(`\nstaging ${paths.length} path(s): ${paths.join(', ')}\n`);
-  commit(verified, paths, path.resolve(argv[at + 1]));
+  if (mode === 'commit') {
+    const at = argv.indexOf('-m');
+    if (at === -1 || argv[at + 1] === undefined) refuse('commit needs -m <file holding the message>');
+    const pathsAt = argv.indexOf('--paths');
+    const paths =
+      pathsAt === -1
+        ? git(['diff', '--name-only']).split('\n').filter(Boolean)
+        : argv.slice(pathsAt + 1).filter((entry) => !entry.startsWith('-'));
+    if (paths.length === 0) refuse('nothing to commit');
+    process.stdout.write(`\nstaging ${paths.length} path(s): ${paths.join(', ')}\n`);
+    commit(verified, paths, path.resolve(argv[at + 1]));
+  }
 }
+
+const invokedDirectly = typeof process.argv[1] === 'string' && process.argv[1].endsWith('slice-check.mjs');
+if (invokedDirectly) main();

@@ -179,18 +179,26 @@ and you edit them however you like.
 > **If a fix seems not to work, check this first.** Claude Code caches plugins by
 > `<marketplace>/<plugin>/<version>/`. An update at an unchanged version resolves to the old
 > folder and silently runs the previous build. `npm run release-check` refuses a release whose
-> shipped files moved without a version bump, precisely because nobody remembers this.
+> loader files moved without a version bump; `npm run slice-check -- verify` fingerprints that same
+> loader boundary plus the package manifests while it runs the validation gates.
 >
 > This project was previously called `dare-to-be-stupid`. **The rename is a fresh install, not an
 > upgrade** — if both are present, `/dare` and `/meeseeks` are two different programs. Remove the
 > old one.
 
-**Requirements:** Node ≥ 22.12, `git`, and the Claude Code CLI. Version 0.164.0 has no defensible
-declared compatibility range: preflight checks only that `claude --version` runs, so compatibility
-with older or newer releases is unclaimed. REVIEW F28 / PLAN item 83 own the measured, fail-closed
-policy and one-CLI-per-run install-form-specific invocation-closure identity; a path and self-reported
-version alone are insufficient. **No runtime dependencies** — the whole thing is `node:` builtins and
+**Requirements:** Node ≥ 22.12, `git`, an authenticated Claude Code **2.1.226 through 2.1.234**
+(inclusive), and network access for installation and missing quality-tool provisioning. Preflight
+refuses older, newer-unverified, prerelease, and unparseable CLI versions before a run starts. It
+does **not** yet make an independent authentication probe, so sign in first; an authentication
+failure otherwise appears when the first real role launches. This is a measured range, not a
+semantic-version promise; `scripts/claude-compat.mjs` is the
+runtime authority and records the evidence required to move either bound. REVIEW F28 / PLAN item 83
+still own the unfinished one-CLI-per-run invocation-closure seal: a path and self-reported version
+alone are not binary identity. **No runtime dependencies** — the whole thing is `node:` builtins and
 shelling out.
+
+Process-tree cleanup is currently evidenced on POSIX/WSL2. Native Windows descendant cleanup remains
+OPEN under REVIEW F11 / PLAN item 65; do not rely on a timed-out child being fully reaped there.
 
 ---
 
@@ -212,7 +220,9 @@ The plugin details shown by `/plugin` identify the installed copy; a source chec
 The wizard walks the common settings as prompts using the same validator as the driver. Blank
 keeps the shown default, and keys it does not ask about survive untouched. `--show` prints the
 config as written (file merged over defaults) without writing anything; run-time env overrides
-are not shown.
+are not shown. The example below is a common-settings excerpt, not the complete schema;
+`scripts/config.mjs::defaultConfig()` is the machine authority and `DESIGN.md` §10 documents every
+field.
 
 ```json
 {
@@ -275,7 +285,8 @@ npm run typecheck     # jsdoc via tsc-checkJs; we are not adding TypeScript
 npm test              # tier 1: unit + fixture, nothing but node
 npm run test:integration   # tier 2: real git, node, npm. No network, no API, no money
 MEESEEKS_LIVE=1 npm run test:live   # tier 3: real claude -p. SPENDS MONEY
-npm run release-check # refuses a release whose shipped files moved without a bump
+npm run release-check # refuses loader changes without a version bump
+npm run slice-check -- verify # gates one stable loader + package-metadata fingerprint
 ```
 
 **The tiers are separately runnable on purpose.** `claudeArgs` was once unit-tested and correct

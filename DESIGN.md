@@ -262,9 +262,10 @@ unavailable to Claude's autonomous Skill tool (`disable-model-invocation: true`)
 from the nested-run guard: an ordinary interactive session is not marked `MEESEEKS_RUNNING`, and
 command preflight supplies `--yes` internally, so neither mechanism replaces the command-level
 control. This is not an OS authentication wall against a model already granted arbitrary Bash and
-aware of a script path; direct script entry is an unsupported operator/development path. The
-current shipped command omits the Skill control; REVIEW F25 / PLAN item 80 own the versioned repair
-and real-loader evidence without claiming the broader wall.
+aware of a script path; direct script entry is an unsupported operator/development path. Since
+0.203.0, the shipped command sets `disable-model-invocation: true` and its contract tests pin the
+field. REVIEW F25 / PLAN item 80 remain open for the installed-loader canary, without claiming the
+broader wall.
 
 **The Driver revalidates mutable launch safety and owns pre-loop output provenance.** The command's
 preflight is useful operator feedback, not an authorization receipt that survives another model
@@ -312,7 +313,7 @@ verified the repair.
 | Check | Why | If missing |
 |---|---|---|
 | Node ≥ 22.12 | driver + impeccable installer | abort, print required version |
-| one resolved `claude` binary inside the measured compatibility policy, callable non-interactively and authed | driver and command rely on versioned flags, settings, hooks, Skill controls, envelope fields, and one unchanged CLI contract per run | abort, print detected identity, admitted policy, and the pin/install/sign-in fix |
+| one resolved `claude` binary inside the measured compatibility policy; non-interactive authentication is required but not yet independently preflighted | driver and command rely on versioned flags, settings, hooks, Skill controls, envelope fields, and one unchanged CLI contract per run | abort incompatible identity before the run; until item 83 closes, an auth failure can surface at the first role and names the sign-in fix |
 | Inside a git repository | every state transition and rollback is commit-based | abort, name the required repository |
 | Repository has at least one commit | worktrees, baselines and reset targets need a commit | abort, create the initial commit |
 | **Clean working tree** | ratchet does `git reset --hard` | abort, tell user to commit/stash |
@@ -342,17 +343,26 @@ entrypoint or package identity whose mutation changes invoked code. An install f
 invocation closure cannot be bounded and live-proven is unsupported rather than approximately sealed.
 A compatibility pass does not replace the paid live suite:
 flags such as `--safe-mode` have had behavior not fully specified by help text, and current official
-documentation says background updates take effect on a later launch. Current 0.164.0 checks only
-`claude --version` and refuses anything outside a measured range. `scripts/claude-compat.mjs` is the
+documentation says background updates take effect on a later launch. Since 0.205.0, preflight parses
+`claude --version` and refuses anything outside the measured range. `scripts/claude-compat.mjs` is the
 single runtime source: a floor of 2.1.226 (the oldest release with live measurements here), a ceiling
-of 2.1.234 (the newest the full live tier has passed on), the 2.1.136 binary recorded as
+of 2.1.234 (the newest release whose full live tier passed), the 2.1.136 binary recorded as
 incompatible for lacking `--safe-mode`, and the evidence for each. Both directions refuse, because a
 greater version number is not evidence of forward compatibility; the escape from the ceiling is to
-run the live tier against a newer CLI and move one constant. The **sealed-identity** half is not
-built: nothing yet fingerprints the resolved binary or re-resolves it before each role spawn, so a
-PATH shadow introduced mid-run is still unaddressed. REVIEW F28 / PLAN item 83 own the rest of the
-policy and
-enforcement.
+run the live tier against a newer CLI and move one constant with that evidence. The
+**sealed-identity** half is not built: nothing yet fingerprints the resolved binary or re-resolves it
+before each role spawn, so a PATH shadow introduced mid-run is still unaddressed. REVIEW F28 / PLAN
+item 83 own the remaining enforcement.
+
+The 2.1.235 boundary run finished 33 of 34. Its one failure passed on isolated retries and matches a
+known model-output flake, but the admission rule above is a clean full-tier pass, not a diagnosis of
+why one test failed. The release therefore remains measured but unadmitted until that evidence exists.
+
+**Authentication remains a requirement, not a completed preflight check.** `checkClaudeCli` currently
+runs `claude --version`; that establishes availability and the measured version policy but succeeds
+for an unsigned-in installation. Until item 83's installed discovery/authentication canary closes
+that gap, operators must sign in first and an authentication failure may appear only when the first
+real role launches.
 
 **The run lock is `.meeseeks/lock.json`; `.meeseeks/run.json` is the run manifest (§7.1).** The
 lock must be acquired atomically by the driver before Phase 0, before the first child spawn,
@@ -402,8 +412,8 @@ the nesting refusal in particular must keep its own message, because a nested ru
 thing that flag exists to permit. It is released by its owner on every path out, including the
 pre-loop refusals, which is enforced positionally rather than by a list somebody has to remember.
 
-`REVIEW.md` F1 records the defect and its acceptance evidence, and remains open until Codex has
-verified the repair.
+`REVIEW.md` F1 records the defect and its acceptance evidence; Codex closed it at the 0.194.0
+verification baseline.
 
 Living under `.meeseeks/` means §6's positional rule already protects it — a process marked
 `MEESEEKS_RUNNING` may not write there at any depth, so a builder cannot forge or clear it.
@@ -1485,10 +1495,11 @@ context.
 **That requires tool availability to be restricted, not merely unapproved.** Every non-Builder
 role has a closed built-in tool set; Oracle-author has none. Claude Code's `--allowedTools` changes
 approval only, while `--tools` controls which built-ins enter the model context and `--tools ""`
-disables them. Inherited MCP/settings surfaces must not reopen the set. Current 0.164.0 models the
-policy only as `allowedTools`, omits the flag for Oracle-author's empty list, and therefore does not
-establish the no-repository-context guarantee. REVIEW F27 / PLAN item 82 own the exact availability
-policy and pinned live evidence.
+disables them. Inherited MCP/settings surfaces must not reopen the set. Since 0.204.0, every
+non-Builder role passes an exact `--tools` set, Oracle-author passes the empty set, and
+`--strict-mcp-config` closes inherited MCP expansion; Builder remains deliberately unrestricted.
+The pinned live canary and unit evidence are recorded under PLAN item 82. REVIEW F27 still owns
+external acceptance of that repair.
 
 **Held out means *not supplied*, in §6.1's sense, and the distinction is stated rather than
 implied.** The store is under `.meeseeks/`, so §6's positional rule makes it driver-owned and a
@@ -2333,8 +2344,9 @@ of the CLI binary rather than guessed, since 2.1.228 answers a refused command w
 Only phases that keep the guard get it, and the split is **derived** from `isColdPhase` rather
 than listed, for the same reason the guard's is: a phase added later with write tools is
 sandboxed automatically. Cold phases run under `--safe-mode` to strip customizations. Safe mode is
-not the phase's closed tool-availability policy; REVIEW F27 / PLAN item 82 separately require an
-exact `--tools` surface and refusal of inherited MCP/settings expansion.
+not the phase's closed tool-availability policy; since 0.204.0, PLAN item 82 separately supplies an
+exact `--tools` surface and refuses inherited MCP expansion. REVIEW F27 remains open for external
+acceptance of that repair.
 
 **The driver refuses the fallback on the builder's behalf.** R19's recorded failure mode is an
 agent on a kernel where bubblewrap failed *asking to rerun unsandboxed*, and a sandbox that can be
@@ -2764,8 +2776,9 @@ The split of responsibility is the load-bearing part, so it is stated plainly:
 Excluding `flaky` from ratchet credit is necessary but not sufficient. A normalized flaky result
 must also fail the current iteration explicitly: retrying runners can exit zero, and without that
 second decision a new unstable test has neither prior ratchet credit to regress nor a failed gate to
-block Panel. It may establish RED history, never current passing evidence. REVIEW F30 / PLAN item 87
-own the current implementation gap.
+block Panel. It may establish RED history, never current passing evidence. Since 0.176.0, normalized
+flaky results explicitly fail the deterministic gate before Panel; PLAN item 87 records the repair
+and REVIEW F30 records its verified closure.
 
 Four behaviours must survive any widening, and each has a test. **Unidentifiable throws** —
 never an empty id set, which reads exactly like a green run. **Malformed throws**, naming what

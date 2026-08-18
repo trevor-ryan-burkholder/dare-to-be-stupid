@@ -1,7 +1,7 @@
 # Documentation index
 
 **Status:** canonical
-**Last swept:** 18 August 2026 at version 0.185.0
+**Last swept:** 18 August 2026 at candidate version 0.208.0
 
 This file is the control plane for project documentation. Read it first, then load only the
 document needed for the task. Historical and research documents are evidence, not instructions.
@@ -19,6 +19,12 @@ document needed for the task. Historical and research documents are evidence, no
 | `DOGFOOD.md` | Pending live experiments and current scenario status | Operational runbook | Completed results move to `docs/history/` |
 | `docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md` | Dynamic-workflow and explicit-provenance architecture note and experiment rationale | Supporting analysis; `DESIGN.md` §15 is normative | Update when official behavior is re-verified or an architecture decision changes |
 | `README.md` | Installation, use, and contributor quick start | User-facing summary | Link to canonical detail instead of duplicating it |
+| `commands/meeseeks.md` | Installed launcher contract and operator-visible flags | Shipped runtime instruction; `DESIGN.md` remains normative | Change with command behavior, contract tests, and a version bump |
+| `templates/*.md` | Role briefs, constraints, and machine-parsed output contracts | Shipped product code, not contributor documentation | Change with the parser/tests and a version bump; reviewer changes also require `DESIGN.md` §4 review |
+| `output-styles/*.md`, `skills/*/SKILL.md` | Cosmetic rendering and optional persona guidance | Shipped presentation/runtime instruction only; never decision authority | Keep behavior claims aligned with the command and Driver; version-bump shipped changes |
+| `docs/adr/*.md` | Accepted documentation and architecture decisions | Decision rationale; superseded by `DESIGN.md` on product behavior | Add or supersede an ADR when a durable decision changes |
+| `docs/history/*` | Frozen run, audit, handoff, and review evidence | Historical only | Do not update status in place; add a new dated record or manifest entry |
+| `docs/research/*` | Source-backed borrow/reject decisions | Non-normative evidence; accepted work must enter `PLAN.md` or `DESIGN.md` | Record provenance and current disposition; never infer priority from order |
 | `BORROWED.md` | Compatibility pointer to the research ledger | Non-normative | Research lives under `docs/research/` |
 | `BRIEF.md`, `COMPLETION.md`, `AUDIT.md` | Compatibility pointers to frozen snapshots | Historical only | Never use as a source of current work |
 

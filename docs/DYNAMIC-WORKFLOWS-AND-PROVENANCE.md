@@ -4,6 +4,7 @@ Status: supporting architecture analysis and experiment design; non-normative, w
 implementation yet.
 
 Last researched: 2026-08-17 against Claude Code documentation current on that date.
+Implementation claims last swept: 2026-08-18 at candidate 0.208.0.
 
 This note evaluates two related ideas:
 
@@ -37,8 +38,10 @@ change. Raw research remains under `docs/research/`.
   existing records before considering a separate claim DAG. A graph earns implementation
   only if real runs show stale evidence or unnecessarily broad rework that current
   structures cannot address.
-- **Reliability prerequisites come first.** PLAN Gate 0 and item 77 must close, and item 84 must
-  record the actual containment outcome, before one `claude -p` child may fan out into many agents.
+- **Reliability prerequisites come first.** PLAN Gate 0 must close and item 84 must record the
+  actual containment outcome before one `claude -p` child may fan out into many agents. Item 77's
+  cold-role supply boundary is implemented; it remains a prerequisite, not evidence for the still
+  open tool, environment, CLI-identity, and containment contracts.
 - **Verified Research: adopt first as a job type, independently of workflow adoption.** Item 34 may
   use item 49's artifact substrate without dynamic fan-out; a workflow inside Researcher is a later
   optimization and never its factuality verdict.
@@ -120,7 +123,7 @@ erDiagram
     COMPONENT_RUN ||--o| RUN_OUTCOME : must_return
 ```
 
-The diagram exposes six current limits rather than hiding them:
+The diagram exposes five current limits rather than hiding them:
 
 - `RUN` has no stable run id shared by all records; archive co-location and iteration numbers do
   most of that work today.
@@ -131,23 +134,20 @@ The diagram exposes six current limits rather than hiding them:
 - gate results and test reports are mostly iteration-transient, while the ratchet, red evidence,
   and negative gate cache retain only the relations their invariants require;
 - lessons are cross-run advisory records: an iteration may extract one and later runs may receive
-  it, so a lesson is not owned by exactly one run; and
-- the diagram shows the intended run-to-Oracle relationship, but the current implementation leaves
-  `oracle.json` in place across runs and does not bind it to the current PRD. `REVIEW.md` F8 is the
-  release-blocking lifecycle defect; the ERD is not evidence that the relationship is enforced.
+  it, so a lesson is not owned by exactly one run.
 
 ### ERD constraint audit
 
 | Relationship or entity | Current implementation | Constraint status |
 |---|---|---|
-| `RUN -> RUN_MANIFEST` | one atomic manifest exists only after design and before the main loop | pre-loop runs have no manifest/receipt; F10 defines the missing durable run boundary |
-| `RUN -> RUN_OUTCOME` | `driveRun.finish` writes one outcome, while earlier and outer failures bypass it | optional in practice and non-atomic; F10 |
-| `RUN -> ORACLE_STORE` | one unversioned `oracle.json` may survive multiple runs/specifications | intended one-to-zero-or-one cardinality is not enforced; F8/F12 |
+| `RUN -> RUN_MANIFEST` | the run manifest is created after design; launch and terminal receipts cover earlier post-lock phases | split durable records with exact identities; item 76 still owns one complete acceptance receipt |
+| `RUN -> RUN_OUTCOME` | one atomic terminal writer covers every path after the lock, including unexpected throws | enforced by the F10 repairs; REVIEW acceptance remains external |
+| `RUN -> ORACLE_STORE` | the store is per-run, specification-bound, atomically written, archived, and ignored | intended one-to-zero-or-one relation implemented by the F8/F12 repairs |
 | `RUN <-> LESSON` | lessons persist across runs; an iteration produces them and later briefs may consume them | many-to-many use with missing stable source/consumer run ids; advisory only |
 | `ITERATION -> GATE_RESULT` | gate results exist in memory; only selected failures enter `gate-skip.json` | runtime cardinality exists, durable passing provenance does not; F22 |
-| `ITERATION -> TEST_OBSERVATION` | reused report files are parsed into name-based IDs | attempt/tree/path/definition identity is incomplete; F16/F17/F20 |
-| `PANEL_RECORD -> REVIEW_ENTRY` | required ownership/cardinality is checked before and after review | enforced for IDs, but evidence and exact-tree identity remain F6/F14 |
-| `REVIEW_ENTRY -> REQUIREMENT_PIN` | a passing cited entry may establish a whole-file fingerprint | carry is a pre-filter only; current definition/source constraints remain F6/F12 |
+| `ITERATION -> TEST_OBSERVATION` | cleared report paths and reporter definitions are bound to the current attempt/tree before ratchet credit | attempt/path/definition identity implemented by the F16/F17/F20 repairs |
+| `PANEL_RECORD -> REVIEW_ENTRY` | ownership, evidence locations, and reviewed-tree identity are checked before authority is accepted | implemented by the F6/F14 repairs; candidate instructions remain evidence under item 85 |
+| `REVIEW_ENTRY -> REQUIREMENT_PIN` | a resolved passing entry may establish a whole-file fingerprint on the immutable specification/tree | carry remains a failed-iteration pre-filter only |
 | `COMPONENT_RUN -> RUN_OUTCOME` | the parent requires a readable child outcome before merge | child terminal authority is correctly a parent pre-filter, never inherited shipping authority |
 | `RUN -> acceptance proof` | outcome, Panel, ratchet, Oracle, deploy, and gates have no shared immutable receipt | relation is absent rather than a graph-storage request; F22/item 76 is the minimal repair |
 
@@ -322,11 +322,12 @@ flowchart LR
 
 The arrows describe intended supplied context and tool classes, not proof that the current runtime
 enforces perfect secrecy. Reviewers are fresh processes and are not handed Builder transcripts or
-iteration logs, but repository-readable files are not sealed from them. `REVIEW.md` F27 records
-that the current `allowedTools` table controls approval rather than exact availability, so the
-Oracle-author “no tools” edge and other role tool sets require PLAN item 82 before a workflow can
-inherit them safely. All Claude roles currently inherit the operator environment; that separate
-open trust-boundary defect is F5. The boundary must exclude ambient Claude control variables as well
+iteration logs, but repository-readable files are not sealed from them. PLAN item 82 now gives every
+non-Builder role an exact built-in `--tools` set, gives Oracle-author none, and refuses inherited MCP
+expansion; REVIEW F27 still owns external acceptance. That measured top-level role policy is not yet
+proof that a dynamic workflow inherits the same boundary. All Claude roles currently inherit the
+operator environment; that separate open trust-boundary defect is F5/item 56. The boundary must
+exclude ambient Claude control variables as well
 as credentials: retries, resume, workflow availability, model routing, permission posture, and
 budget timing are sealed role semantics, not operator-shell defaults. Dynamic workflows must remain
 inside one role box and may return only through that role's existing arrow to the Driver.
@@ -442,8 +443,10 @@ The Agent SDK exposes `interrupt()`, `stopTask()`, and `close()`. `close()` prom
 the underlying SDK process and clean resources. Official documentation does not promise
 that sending raw `SIGTERM` to a `claude -p` PID kills every workflow descendant.
 
-Meeseeks currently shells out to the CLI, so hard process-tree reaping is a prerequisite. Pin the
-CLI's post-turn background wait to a nonzero value within the role deadline and record it, but keep
+Meeseeks currently shells out to the CLI, so measured hard reaping of workflow descendants is a
+prerequisite. Existing POSIX termination evidence does not establish that workflow tasks are settled,
+and native Windows descendant cleanup is still open under F11/item 65. Pin the CLI's post-turn
+background wait to a nonzero value within the role deadline and record it, but keep
 the Driver's whole-role watchdog authoritative because the two timers start at different boundaries.
 A live test must prove that timeout removes the top-level Claude process, workflow tasks,
 shell children, grandchildren that ignore `SIGTERM`, temporary worktrees, and the run lock.

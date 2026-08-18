@@ -273,11 +273,16 @@ are the highest-leverage artifacts in the repo, and the reviewer prompt especial
 
 ## Releasing
 
-**Any change to a shipped file requires a version bump**, in `.claude-plugin/plugin.json`
-and `package.json` together. If `package-lock.json` exists, its top-level and root-package
-versions mirror `package.json`. Shipped means `hooks/`, `scripts/`, `commands/`,
-`templates/`, `output-styles/` and the manifests — everything except tests, docs and dev
-config.
+**Any change to a loader-shipped file requires a version bump**, in
+`.claude-plugin/plugin.json` and `package.json` together. If `package-lock.json` exists, its
+top-level and root-package versions mirror `package.json`. Loader-shipped means `hooks/`,
+`scripts/`, `commands/`, `templates/`, `output-styles/`, `skills/`, and `.claude-plugin/`.
+Tests, repository documentation outside those runtime directories, tools, and dev configuration do
+not independently require a bump.
+`package.json` and `package-lock.json` are release metadata rather than loader inputs: their
+version fields still mirror the plugin version, while a non-version dev-config edit does not by
+itself require a new plugin-cache directory. `release-check` and `slice-check` share the loader-path
+predicate, including `skills/`; the slice fingerprint additionally binds the two package manifests.
 
 This is not bookkeeping. Claude Code installs a plugin into
 `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` and reads it from there. That
@@ -301,10 +306,12 @@ Do not rely on remembering this. Run:
 npm run release-check
 ```
 
-It finds the commit that introduced the current version and refuses if any shipped file
-has changed since — comparing against the **working tree**, so it catches an uncommitted
-edit too. It fails when it cannot establish a baseline, because an unknown baseline is not
-evidence that nothing changed.
+It finds the commit that introduced the current version and refuses if any covered
+loader-shipped file has changed since — comparing against the **working tree**, so it catches an
+uncommitted edit too. It fails when it cannot establish a baseline, because an unknown baseline
+is not evidence that nothing changed. The release check and slice fingerprint use the same
+loader-path predicate, so a new installed directory is added to one authority rather than two
+lists that can drift.
 
 **It also refuses a version the `HANDOFF.md` header has not kept up with.** That header
 carries its own instruction to move with the version, and it went stale by _fourteen_

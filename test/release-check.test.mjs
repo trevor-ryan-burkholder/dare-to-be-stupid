@@ -21,6 +21,7 @@ import {
   main,
   statedHandoffVersion,
 } from '../tools/release-check.mjs';
+import { FINGERPRINT_FILES, isFingerprintPath } from '../tools/slice-check.mjs';
 
 describe('statedHandoffVersion', () => {
   it('reads the version out of the real header shape', () => {
@@ -69,6 +70,7 @@ describe('isShipped', () => {
     'commands/meeseeks.md',
     'templates/reviewer-system.md',
     'output-styles/meeseeks.md',
+    'skills/mr-meeseeks/SKILL.md',
     '.claude-plugin/plugin.json',
     '.claude-plugin/marketplace.json',
   ];
@@ -108,8 +110,34 @@ describe('isShipped', () => {
       'commands',
       'templates',
       'output-styles',
+      'skills',
       '.claude-plugin',
     ]);
+  });
+});
+
+describe('the slice fingerprint uses the same loader boundary', () => {
+  it('covers every loader path the release gate covers', () => {
+    for (const file of [
+      'hooks/guard.mjs',
+      'scripts/driver.mjs',
+      'commands/meeseeks.md',
+      'templates/reviewer-system.md',
+      'output-styles/meeseeks.md',
+      'skills/mr-meeseeks/SKILL.md',
+      '.claude-plugin/plugin.json',
+      '.claude-plugin/marketplace.json',
+    ]) {
+      assert.equal(isFingerprintPath(file), true, file);
+    }
+  });
+
+  it('also binds release metadata, without widening to repository documentation', () => {
+    assert.deepStrictEqual(FINGERPRINT_FILES, ['package.json', 'package-lock.json']);
+    assert.equal(isFingerprintPath('package.json'), true);
+    assert.equal(isFingerprintPath('package-lock.json'), true);
+    assert.equal(isFingerprintPath('README.md'), false);
+    assert.equal(isFingerprintPath('test/release-check.test.mjs'), false);
   });
 });
 
@@ -133,6 +161,12 @@ describe('evaluateRelease', () => {
     assert.equal(verdict.ok, false);
     assert.equal(verdict.problems[0].includes('scripts/driver.mjs'), true);
     assert.equal(verdict.problems[0].includes('README.md'), false, 'must not blame a doc');
+  });
+
+  it('fails a skill-only change, which previously bypassed the version gate', () => {
+    const verdict = evaluateRelease({ ...versions, changedFiles: ['skills/mr-meeseeks/SKILL.md'] });
+    assert.equal(verdict.ok, false);
+    assert.equal(verdict.problems[0].includes('skills/mr-meeseeks/SKILL.md'), true, verdict.problems[0]);
   });
 
   it('counts every shipped file, sorted', () => {

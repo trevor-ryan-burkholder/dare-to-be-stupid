@@ -151,6 +151,48 @@ describe('writeRunOutcome', () => {
     assert.equal(receiptIn(dir).state, 'ABORTED');
   });
 
+  it('does not latch the run shut when the write failed (REVIEW F10, reopened)', () => {
+    // **At-most-once must mean at most one *decision*, not at most one attempt.** The flag used to
+    // be set before the write, so a transient failure on the first exit path latched the run: every
+    // later path — including `main`'s crash guard, which exists precisely to file a receipt —
+    // declined to try, and the run ended with no durable record at all. That is the outcome the
+    // finding is about, reached through the guard written to prevent it.
+    const blocked = scratch();
+    mkdirSync(path.join(blocked, OUTCOME_FILE), { recursive: true });
+    const written = { done: false };
+    /** @type {string[]} */
+    const logs = [];
+
+    assert.equal(
+      writeRunOutcome(blocked, { state: 'ABORTED', reason: 'first exit', phase: 'design' }, { ...io(logs), written }),
+      false,
+    );
+    assert.equal(written.done, false, 'a failed attempt latched the flag');
+
+    // A later exit path, on a directory that works, still gets to record the run's answer.
+    const usable = scratch();
+    assert.equal(
+      writeRunOutcome(usable, { state: 'ABORTED', reason: 'later exit', phase: 'loop' }, { ...io(logs), written }),
+      true,
+    );
+    assert.equal(written.done, true);
+    assert.equal(receiptIn(usable).reason, 'later exit');
+  });
+
+  it('still refuses a second writer once one has succeeded, which is the rule being defended', () => {
+    // The neighbour. Relaxing the latch must not let a generic outer handler overwrite the loop's
+    // own specific terminal state — that is what at-most-once was for.
+    const dir = scratch();
+    const written = { done: false };
+    assert.equal(writeRunOutcome(dir, { state: 'SHIPPED', reason: 'the loop decided', phase: 'loop' }, { ...io([]), written }), true);
+    assert.equal(
+      writeRunOutcome(dir, { state: 'ABORTED', reason: 'an outer handler', phase: 'pre-loop' }, { ...io([]), written }),
+      false,
+    );
+    assert.equal(receiptIn(dir).reason, 'the loop decided');
+    assert.equal(receiptIn(dir).state, 'SHIPPED');
+  });
+
   it('reports a write failure without throwing, because forensics must not end a run', () => {
     // A directory where the file should be: the write fails and the caller keeps its terminal state.
     const dir = scratch();

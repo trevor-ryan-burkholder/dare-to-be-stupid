@@ -238,6 +238,36 @@ describe(
     assert.equal(died(child, 10_000), true, `the flooding child ${child} survived the cap`);
     assert.equal(died(grandchild, 10_000), true, `the descendant ${grandchild} survived the cap`);
   });
+
+  it('sweeps the descendants of a flooding child that was given no ceiling at all', async () => {
+    // **The gap F2's acceptance names, and it survived the first repair** (REVIEW F2, re-baselined
+    // at 0.208.0). The ownership pre-image was sampled only when a `timeoutMs` was supplied, on the
+    // reasoning that a command with no ceiling cannot time out — but the 64MB cap sweeps through the
+    // *same* pre-image, so without one `sweepLeakedGroup` returned `[]` and every descendant of a
+    // flooding child survived. The direct child still died, so the leak was invisible from the
+    // result: only the operating system knew.
+    //
+    // No `timeoutMs` here, deliberately. The cap must force the verdict on its own.
+    const dir = scratch();
+    const sleeper = script(dir, 'sleeper.mjs', SLEEPER);
+    const firehose = script(dir, 'firehose.mjs', resistant({ flood: true }));
+    const selfPid = path.join(dir, 'self.pid');
+    const grandPid = path.join(dir, 'grand.pid');
+
+    const result = await shell(process.execPath, [firehose, selfPid, grandPid, sleeper], { cwd: dir });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.timedOut, false, 'a command with no ceiling reported a timeout');
+
+    const child = pidFrom(selfPid);
+    const grandchild = pidFrom(grandPid);
+    toClean.push(child, grandchild);
+    assert.equal(died(child, 10_000), true, `the flooding child ${child} survived the cap`);
+    assert.equal(died(grandchild, 10_000), true, `the descendant ${grandchild} outlived a cap with no ceiling`);
+    // Reported, not silently reaped — and reported *at all*, which is what the pre-image bought.
+    assert.equal(Array.isArray(result.reaped), true, 'the overflow path swept nothing without a ceiling');
+    assert.equal(/** @type {number[]} */ (result.reaped).includes(grandchild), true, String(result.reaped));
+  });
 });
 
 describe('the benign neighbours the grace period must not disturb', { concurrency: 1, skip: process.platform === 'win32' }, () => {

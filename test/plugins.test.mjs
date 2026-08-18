@@ -279,3 +279,66 @@ describe('provisioning commands have a deadline (REVIEW F41)', () => {
     assert.equal(runner.includes('timeout: options.timeoutMs'), true, 'the runner ignores the deadline it is given');
   });
 });
+
+
+describe('a provisioning deadline that fires is reported as a deadline (REVIEW F41)', () => {
+  // **The ceilings landed and the caller discarded the verdict.** `timedOut` was never read, so a
+  // detection that hung for its full 60s was indistinguishable from "the tool is not installed" —
+  // and the code escalated straight into a ten-minute install attempt. The operator saw eleven
+  // minutes of silence and then `exit 1`: the hang the deadline exists to prevent, wearing the
+  // report of a missing package.
+
+  /** @param {{ detectTimedOut?: boolean, installTimedOut?: boolean }} shape */
+  const runner = (shape) => {
+    /** @type {string[][]} */
+    const calls = [];
+    /** @type {import('../scripts/plugins.mjs').Runner} */
+    const run = (command, args) => {
+      calls.push([command, ...args]);
+      const install = calls.length > 1;
+      if (!install && shape.detectTimedOut === true) {
+        return { ok: false, status: 1, stdout: '', stderr: '', timedOut: true };
+      }
+      if (install && shape.installTimedOut === true) {
+        return { ok: false, status: 1, stdout: '', stderr: '', timedOut: true };
+      }
+      return install
+        ? { ok: true, status: 0, stdout: 'installed', stderr: '' }
+        : { ok: false, status: 1, stdout: '', stderr: 'not found' };
+    };
+    return { run, calls };
+  };
+
+  it('does not escalate a hung detection into an install', async () => {
+    const { run, calls } = runner({ detectTimedOut: true });
+
+    const result = await installQualityPlugins({ cwd: '/tmp', plugins: ['knip'], runner: run });
+
+    assert.equal(calls.length, 1, `a hung detection still triggered an install: ${JSON.stringify(calls)}`);
+    assert.deepStrictEqual(result.installed, []);
+    assert.equal(result.warnings.length, 1, JSON.stringify(result.warnings));
+    assert.equal(result.warnings[0].includes('did not finish within'), true, result.warnings[0]);
+    assert.equal(result.warnings[0].includes('not read as absent'), true, result.warnings[0]);
+  });
+
+  it('reports a hung install as a deadline rather than as an exit code', async () => {
+    const { run } = runner({ installTimedOut: true });
+
+    const result = await installQualityPlugins({ cwd: '/tmp', plugins: ['knip'], runner: run });
+
+    assert.deepStrictEqual(result.installed, []);
+    assert.equal(result.warnings[0].includes('did not finish within'), true, result.warnings[0]);
+    assert.equal(result.warnings[0].includes('exit 1'), false, 'a timeout was reported as an ordinary failure');
+  });
+
+  it('still installs when nothing timed out, which is the ordinary path', async () => {
+    // The neighbour. Reading `timedOut` must not make an honest absence look like a hang.
+    const { run, calls } = runner({});
+
+    const result = await installQualityPlugins({ cwd: '/tmp', plugins: ['knip'], runner: run });
+
+    assert.equal(calls.length, 2, JSON.stringify(calls));
+    assert.deepStrictEqual(result.installed, ['knip']);
+    assert.deepStrictEqual(result.warnings, []);
+  });
+});

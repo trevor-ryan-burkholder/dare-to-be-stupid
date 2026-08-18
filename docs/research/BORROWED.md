@@ -25,7 +25,9 @@ current authorities are `DESIGN.md` for accepted architecture and `PLAN.md` for 
   result, and conditional lifecycle journal without establishing another consumer.
 - **Parked:** R45 becomes relevant only if one document is intentionally co-written by an operator
   and the Driver. No current artifact has that ownership shape, so an intra-document guard would be
-  speculative.
+  speculative. R48/R49 are represented by admission-gated PLAN item 106 and become relevant only
+  when a concrete item 34/49 job needs a named authenticated resource; configured connectors or an
+  interesting platform demo do not satisfy that admission condition.
 
 Before reopening a rejected or parked item, identify changed repository conditions or new evidence.
 Do not infer current priority from this file's physical order.
@@ -1112,3 +1114,108 @@ A clean, popular, MIT example of the exact failure modes the invariants were wri
 
 **Verdict: near-nothing worth stealing, recorded anyway** — every load-bearing mechanism is a weaker
 sibling of something meeseeks already hardened, which makes it useful evidence rather than useful code.
+
+---
+
+# Round eleven — Cloudflare OS, 18 August 2026 (Apache-2.0; early-access v2)
+
+**Source and method:** inspected Cloudflare's repository at exact commit
+[`2ab06431467dcb887133578d05365b15690187c6`](https://github.com/cloudflare/cloudflare-os/commit/2ab06431467dcb887133578d05365b15690187c6),
+including the root README/AGENTS/REVIEW contracts, `packages/mcp-shared`, the action store and
+auto-approval path, Blueprints, observer-sharing plan, and official Agents/Workflows documentation.
+The repository calls itself early access and a complete v2 rewrite, so its code establishes concrete
+mechanisms, not production-reliability evidence. The comparison target is its capability and
+side-effect discipline, not its office UI or Cloudflare-specific runtime.
+
+Primary paths: [shared MCP trust boundary](https://github.com/cloudflare/cloudflare-os/blob/2ab06431467dcb887133578d05365b15690187c6/packages/mcp-shared/README.md),
+[tool-policy chokepoint](https://github.com/cloudflare/cloudflare-os/blob/2ab06431467dcb887133578d05365b15690187c6/packages/mcp-shared/src/tools.ts),
+[action store](https://github.com/cloudflare/cloudflare-os/blob/2ab06431467dcb887133578d05365b15690187c6/packages/mcp-shared/src/action-store.ts),
+[ordered auto-approval](https://github.com/cloudflare/cloudflare-os/blob/2ab06431467dcb887133578d05365b15690187c6/packages/workshop-backend/src/auto-approval.ts),
+[Blueprint identity](https://github.com/cloudflare/cloudflare-os/blob/2ab06431467dcb887133578d05365b15690187c6/docs/blueprints.md),
+and [official Agents/Workflows guidance](https://developers.cloudflare.com/agents/concepts/workflows/).
+
+## R48. Introduce one resource; do not ambiently connect an account — **PARKED as PLAN item 106**
+
+Cloudflare OS gives each agent/Gadget no external access by default. A user introduces one resource,
+and a Gatekeeper holds authorization while exposing a narrower API. This addresses a real future
+Meeseeks gap: verified research intentionally starts with public HTTPS, but an authenticated report
+could otherwise inherit the operator's token or an entire MCP connector catalog.
+
+The Meeseeks-native adaptation is a Driver-minted, sealed, job-scoped resource capability behind the
+existing role/tool/receipt boundary. It binds the exact resource, operation class, policy/catalog
+identity, limits, expiry/revocation, and provenance; raw credentials must remain outside the role's
+environment, argv, settings, prompt, worktree, logs, and receipts. Connectivity remains separate from
+authority. External schemas, descriptions, annotations, and results are untrusted evidence; only
+Driver-owned policy can classify an operation as read-only, and unknown or contradictory metadata
+refuses as effectful. Fixed bounds apply before catalogs or payloads enter model context.
+
+This is **PARKED**, not approved implementation. PLAN item 106 names the prerequisite set, synthetic
+canaries, and rejection condition. It enters the queue only after a concrete item 34/49 job cannot meet
+an accepted DoD with public sources. If Claude's actual process/tool contract cannot keep the credential
+outside the role, reject the feature rather than importing Cloudflare's control plane or weakening the
+claim.
+
+## R49. Claim before an external write; ambiguous completion is not retryable — **folded into item 106**
+
+`packages/mcp-shared/src/action-store.ts` persists an `applying` claim before the external call. An
+interrupted applying record becomes a failed, non-retryable “may or may not have taken effect” outcome;
+the implementation promises at-most-once, not exactly-once. The ordered auto-approval drain rechecks
+eligibility immediately before dispatch and stops at the first manual gate or failure rather than
+skipping over an unmet predecessor. These are useful invariants for any future preauthorized Meeseeks
+side effect because a timeout after `send` must not cause an unattended retry and a duplicate email,
+API mutation, or payment. It corroborates item 36's requirement to classify every interrupted effect
+before any future replay path; it does not admit or reopen resumability.
+
+Item 106 therefore requires a durable idempotency identity and claim before I/O, an explicit `unknown`
+outcome after ambiguous dispatch, no automatic retry or inverse compensation, independent external
+reconciliation, and no terminal acceptance of the claimed effect while its outcome is unknown. This
+does not authorize external writes now. Read-only capability must pass first; effectful work gets a
+second admission and the sealed job brief must authorize the exact effect before the run.
+
+## Useful corroboration already covered
+
+- **One policy chokepoint.** Cloudflare's shared MCP layer is the only reader of policy-bearing tool
+  annotations, and its review guide treats capability minting as kernel code. Meeseeks already centralizes
+  Driver authority and tracks its load-bearing invariants in `DESIGN.md`, `CLAUDE.md`, `REVIEW.md`, and
+  planned item 51. The new resource classification belongs in item 106's one boundary, not every role.
+- **Policy fingerprints and bounded untrusted metadata.** Cloudflare fingerprints the relevant catalog
+  policy and caps tools, schemas, descriptions, arguments, results, pending actions, and retained history.
+  Meeseeks already binds CLI/prompt/evidence identities and caps fetched bodies/context; item 106 extends
+  that existing identity-and-budget discipline to a genuinely new connector surface.
+- **Template is not promotion.** A Blueprint snapshot excludes credentials and live connections, retains
+  version identity, and requires separate administrative promotion. Meeseeks already separates producer
+  output from Driver/Panel/Oracle authority and binds exact candidate/evidence identity. No new Blueprint
+  mechanism is needed.
+- **Durable workflow plus agent.** Cloudflare documents Agents for interactive reasoning and Workflows for
+  durable multi-step execution. Meeseeks already owns the stronger product-specific split: Driver controls
+  durable state and disposable dynamic workflows may compute inside a role (DESIGN §15; PLAN item 54).
+  This is corroboration, not a reason to replace the Driver.
+- **Read-derived sharing restrictions.** Cloudflare's observer design prevents sharing a Gadget with a
+  user who lacks access to data the Gadget has read. Meeseeks has no multi-user live-artifact sharing
+  surface. Provenance/targeted invalidation is separately admission-gated in item 55; importing this ACL
+  graph would solve no current problem.
+
+## Round eleven, not taken
+
+- **Cloudflare OS, Workers/workerd, Durable Objects, Dynamic Workers, Facets, Gatekeepers, Cap'n Web, or
+  its dependency graph as Meeseeks infrastructure** — rejected. They replace the Claude-native,
+  dependency-free control boundary to solve a hosted collaborative application problem Meeseeks does not
+  have. The capability invariants survive without the platform.
+- **Telling the role that an unapproved external effect succeeded and supplying simulated read-back** —
+  rejected as evidence. It may help an interactive workspace continue composing, but in Meeseeks it would
+  let fictional state satisfy later reasoning, checks, reviews, or `SHIPPED`. A proposal remains a
+  proposal and, when operator input is required, becomes item 50's terminal artifact.
+- **Leaving a paid run parked for later approval** — rejected by the unattended termination contract.
+  Preauthorized exact effects may eventually be admitted; everything else terminates honestly.
+- **Trusting a connector's `readOnlyHint` or self-declared ambience as authority** — rejected. External
+  metadata is attacker-controlled input. At most it can narrow or corroborate a Driver-owned rule.
+- **Persistent warm workspaces, collaborative Gadget state, multi-model provider abstraction, agent-ready
+  RPC for generated apps, and the office-suite UI** — rejected as unrelated product scope or direct
+  conflicts with fresh cold roles and Claude Code-native operation.
+- **Blueprint dirty-flag propagation and observer ACL machinery** — not promoted. Exact identity,
+  publication sealing, item 55's admission test, and item 58's killed-run admission already own the only
+  analogous Meeseeks problems. Add machinery only if those tests expose a gap.
+
+**Net:** two properties earned roadmap representation—job-scoped resource capabilities and
+at-most-once uncertain effects—and both fit one parked item. Everything else is already stronger in
+Meeseeks, belongs to a different product, or would corrupt the evidence/authority model.

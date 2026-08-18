@@ -28,7 +28,15 @@ import { fileURLToPath } from 'node:url';
  * carries the version that must agree, but editing a dev script in it changes nothing the
  * loader sees.
  */
-export const SHIPPED_PATHS = ['hooks', 'scripts', 'commands', 'templates', 'output-styles', '.claude-plugin'];
+export const SHIPPED_PATHS = [
+  'hooks',
+  'scripts',
+  'commands',
+  'templates',
+  'output-styles',
+  'skills',
+  '.claude-plugin',
+];
 
 /**
  * @param {string} file repo-relative path

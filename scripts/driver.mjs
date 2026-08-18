@@ -90,7 +90,7 @@ import {
   revalidateLaunch,
   writeLaunchReceipt,
 } from './launch.mjs';
-import { READ_LIMITS, readBounded } from './bounded-read.mjs';
+import { ArtifactTooLargeError, READ_LIMITS, readBounded } from './bounded-read.mjs';
 import { OUTCOME_FILE, writeRunOutcome } from './outcome.mjs';
 import { roleSupplyManifest } from './role-supply.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
@@ -194,6 +194,22 @@ export const MAX_BOX_DEPTH = 2;
 /** The wall clock `--give-them-the-box` imposes when the operator has not set one. */
 export const BOXED_DEADLINE_MS = 1_800_000;
 
+/**
+ * Parse the inherited nesting depth without turning corrupt state into permission.
+ *
+ * Absence is the top-level value. A present marker must be one exact, safely representable,
+ * non-negative integer; `parseInt` is deliberately insufficient because it accepts `1garbage`.
+ *
+ * @param {string | undefined} value
+ * @returns {number | null}
+ */
+function parseRunDepth(value) {
+  if (value === undefined || value === '') return 0;
+  if (!/^(0|[1-9]\d*)$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
 /** Thrown when a run must not start or must not continue. */
 export class DriverError extends Error {
   /** @param {string} message */
@@ -224,11 +240,16 @@ export function assertNotNested(env) {
   // still refused past `MAX_BOX_DEPTH`, because a joke that keeps spawning stops being one to
   // the machine running it.
   const permitted = env[BOX_ENV] !== undefined && env[BOX_ENV] !== '';
-  const parsed = Number.parseInt(env[DEPTH_ENV] ?? '0', 10);
-  const depth = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-  if (permitted && depth < MAX_BOX_DEPTH) return;
+  const depth = parseRunDepth(env[DEPTH_ENV]);
+  if (permitted && depth !== null && depth < MAX_BOX_DEPTH) return;
 
   if (permitted) {
+    if (depth === null) {
+      throw new DriverError(
+        `--give-them-the-box found an invalid ${DEPTH_ENV} marker. ` +
+          'A malformed nesting depth is refused rather than treated as room under the cap.',
+      );
+    }
     throw new DriverError(
       `--give-them-the-box permits nesting to depth ${MAX_BOX_DEPTH}, and this would be ${depth + 1}. ` +
         'Even the box has a bottom.',
@@ -1497,9 +1518,10 @@ export function childEnvironment(env) {
   // is exactly what such a driver would inherit. Only when the box is armed: with the flag
   // absent the key never appears, so an ordinary run's children carry nothing new at all.
   if (marked[BOX_ENV] !== undefined && marked[BOX_ENV] !== '') {
-    const parsed = Number.parseInt(marked[DEPTH_ENV] ?? '0', 10);
-    const depth = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-    marked[DEPTH_ENV] = String(depth + 1);
+    const depth = parseRunDepth(marked[DEPTH_ENV]);
+    // Preserve a malformed value so both the child's guard and any nested Driver refuse it. Turning
+    // it into `1` would launder corrupt state into fresh permission before either boundary sees it.
+    if (depth !== null) marked[DEPTH_ENV] = String(depth + 1);
   }
   return marked;
 }
@@ -2390,12 +2412,18 @@ export async function driveRun(options) {
     // green the whole time.
     const redEvidence = loadRedEvidence(meeseeksDir);
     const rewritten = changedDefinitions(passing, rootDir, state.definitions);
+    // The same comparison, against the digests the *evidence* was recorded under rather than the
+    // ones the ratchet credited (REVIEW F17). `changedDefinitions` already reads an absent or
+    // unreadable digest as changed, which is the answer that keeps a store written before this
+    // field existed from vouching for bytes nobody measured.
+    const staleEvidence = changedDefinitions(passing, rootDir, redEvidence.definitions);
     const withheld = unprovenIds({
       previousPassing: state.passing,
       passing,
       redSeen: redEvidence.seenFailing,
       baseline: redEvidence.baseline,
       changedDefinitions: rewritten,
+      staleEvidence,
     });
     const credited = new Set([...passing].filter((id) => !withheld.has(id)));
     if (withheld.size > 0) {
@@ -3580,8 +3608,13 @@ export function gateSummary(root, meeseeksDir) {
 function isSubstantial(file, minimumBytes) {
   if (!existsSync(file)) return false;
   try {
-    return readFileSync(file, 'utf8').replace(/\s+/g, ' ').trim().length >= minimumBytes;
-  } catch {
+    // **Bounded** (REVIEW F19). This decides a gate — `DoD-4-docs-observability` — over a file the
+    // target writes, so "arbitrarily large" is reachable by the thing being judged. The question is
+    // a *minimum*, so a document over the limit is certainly not a stub: it is answered `true`
+    // without reading it, rather than refused, because refusing would fail a gate on size alone.
+    return readBounded(file, READ_LIMITS.evidence).replace(/\s+/g, ' ').trim().length >= minimumBytes;
+  } catch (error) {
+    if (error instanceof ArtifactTooLargeError) return true;
     return false;
   }
 }
@@ -3631,7 +3664,11 @@ function anySourceMatches(dir, depth, predicate) {
     }
     if (!entry.isFile() || !/\.(mjs|cjs|js|jsx|ts|tsx|vue|svelte|py|go|rb)$/.test(entry.name)) continue;
     try {
-      if (predicate(readFileSync(full, 'utf8'))) return true;
+      // **Bounded, and this is the worst of the unbounded reads** (REVIEW F19): it walks the whole
+      // candidate tree and reads every source file whole, so one generated bundle is enough to kill
+      // a run inside a gate. A file over the limit is skipped exactly as an unreadable one is, which
+      // fails closed — the predicate reports "not found", and the gate fails rather than passes.
+      if (predicate(readBounded(full, READ_LIMITS.evidence))) return true;
     } catch {
       continue;
     }
@@ -4421,20 +4458,36 @@ export function suiteSensitivityEvidence(gateOutcome, redEvidence) {
  * @param {string} meeseeksDir
  * @param {{ now?: number, log?: (line: string) => void }} [quarantine] injected clock/log for the
  *   corrupt-file quarantine; both default inside {@link quarantineCorruptFile}
- * @returns {{ seenFailing: Set<string>, baseline: Set<string>, established: boolean }}
+ * @returns {{ seenFailing: Set<string>, baseline: Set<string>, definitions: Record<string, string>,
+ *   established: boolean }}
  */
 export function loadRedEvidence(meeseeksDir, quarantine = {}) {
   const file = path.join(meeseeksDir, RED_EVIDENCE);
-  const empty = { seenFailing: new Set(), baseline: new Set(), established: false };
+  const empty = { seenFailing: new Set(), baseline: new Set(), definitions: {}, established: false };
   if (!existsSync(file)) return empty;
   try {
     const parsed = JSON.parse(readFileSync(file, 'utf8'));
     /** @param {unknown} value */
     const ids = (value) =>
       new Set((Array.isArray(value) ? value : []).filter((id) => typeof id === 'string').map(String));
+    /** @param {unknown} value @returns {Record<string, string>} */
+    const digests = (value) => {
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return {};
+      /** @type {Record<string, string>} */
+      const map = {};
+      for (const [file, digest] of Object.entries(/** @type {Record<string, unknown>} */ (value))) {
+        if (typeof digest === 'string' && digest !== '') map[file] = digest;
+      }
+      return map;
+    };
     return {
       seenFailing: ids(parsed.seenFailing),
       baseline: ids(parsed.baseline),
+      // **Which bytes each piece of evidence was observed under** (REVIEW F17). A store written
+      // before this field existed has none, and `changedDefinitions` reads an absent digest as
+      // changed — so old evidence stops vouching for anything until it is observed again. That is
+      // the correct direction: nobody can say which definition it was recorded against.
+      definitions: digests(parsed.definitions),
       // A file that exists at all means the baseline moment has passed, even if the array is
       // empty — a project whose first gating found zero tests still had its first gating.
       established: true,
@@ -4452,9 +4505,13 @@ export function loadRedEvidence(meeseeksDir, quarantine = {}) {
  * @param {string} meeseeksDir
  * @param {Iterable<string>} nonPassing
  * @param {Iterable<string>} [passing] recorded as the baseline on the first gating only
- * @returns {{ seenFailing: Set<string>, baseline: Set<string>, established: boolean }}
+ * @param {string | null} [rootDir] the candidate tree, for stamping the digest each observation was
+ *   made under (REVIEW F17). Omitted only by callers that have no tree to hash, and then the
+ *   evidence records no digest — which later reads as unproven rather than as proven.
+ * @returns {{ seenFailing: Set<string>, baseline: Set<string>, definitions: Record<string, string>,
+ *   established: boolean }}
  */
-export function recordRedEvidence(meeseeksDir, nonPassing, passing = []) {
+export function recordRedEvidence(meeseeksDir, nonPassing, passing = [], rootDir = null) {
   const evidence = loadRedEvidence(meeseeksDir);
   for (const id of nonPassing) evidence.seenFailing.add(id);
 
@@ -4462,6 +4519,32 @@ export function recordRedEvidence(meeseeksDir, nonPassing, passing = []) {
   // is the escape from an unsatisfiable objective rather than a convenience. See
   // `redEvidenceGate` for why it has to exist and what still guards the ids it admits.
   const baseline = evidence.established ? evidence.baseline : new Set(passing);
+
+  // **Evidence is stamped with the bytes it was observed under** (REVIEW F17). Without this, an id
+  // seen failing once kept its exemption from red evidence forever — including after its defining
+  // file was rewritten — so a test could be replaced with a weaker one and inherit the credit its
+  // predecessor earned. `previousPassing` was scoped to the definition already; `redSeen` and
+  // `baseline` were not, and they are the two broader exemptions.
+  //
+  // Recorded per *file*, matching the ratchet's own `definitions` map, because a defining file is
+  // what `changedDefinitions` can compare and an id is not.
+  //
+  // **Only what was observed in *this* call is stamped**, and getting that wrong would have undone
+  // the whole repair: stamping the accumulated `seenFailing` set would refresh the digest of an id
+  // observed ten iterations ago whose file has been rewritten since, restoring its exemption with no
+  // new observation behind it. The baseline is included exactly once, at establishment, because
+  // those ids are being admitted on the strength of the bytes present at the first gating.
+  const definitions = { ...evidence.definitions };
+  if (rootDir !== null) {
+    const observedNow = new Set(nonPassing);
+    if (!evidence.established) for (const id of baseline) observedNow.add(id);
+    for (const id of observedNow) {
+      const file = testFilePath(id);
+      if (file === '') continue;
+      const digest = definitionDigest(rootDir, file);
+      if (digest !== null) definitions[file] = digest;
+    }
+  }
 
   mkdirSync(meeseeksDir, { recursive: true });
   // Atomic, the way the ratchet/pins/lessons writers already are (R34). red-evidence is
@@ -4472,11 +4555,15 @@ export function recordRedEvidence(meeseeksDir, nonPassing, passing = []) {
   const temporary = `${file}.tmp`;
   writeFileSync(
     temporary,
-    `${JSON.stringify({ seenFailing: [...evidence.seenFailing].sort(), baseline: [...baseline].sort() }, null, 2)}\n`,
+    `${JSON.stringify(
+      { seenFailing: [...evidence.seenFailing].sort(), baseline: [...baseline].sort(), definitions },
+      null,
+      2,
+    )}\n`,
     'utf8',
   );
   renameSync(temporary, file);
-  return { seenFailing: evidence.seenFailing, baseline, established: true };
+  return { seenFailing: evidence.seenFailing, baseline, definitions, established: true };
 }
 
 /**
@@ -4507,7 +4594,8 @@ export function recordRedEvidence(meeseeksDir, nonPassing, passing = []) {
  * satisfied for two that can.
  *
  * @param {{ previousPassing: Iterable<string>, passing: Iterable<string>, redSeen: Iterable<string>,
- *   baseline?: Iterable<string>, changedDefinitions?: Iterable<string> }} options
+ *   baseline?: Iterable<string>, changedDefinitions?: Iterable<string>,
+ *   staleEvidence?: Iterable<string> }} options
  * @returns {GateResult}
  */
 export function redEvidenceGate(options) {
@@ -4517,11 +4605,16 @@ export function redEvidenceGate(options) {
   // withholds, and two answers to "is this proven" would eventually disagree (REVIEW F17).
   const changed = new Set(options.changedDefinitions ?? []);
   const before = new Set([...options.previousPassing].filter((id) => !changed.has(id)));
+  // The same three-way scoping `unprovenIds` applies, and it has to be the same one: this reports
+  // what that withholds, and two answers to "is this proven" would eventually disagree.
+  const stale = new Set(options.staleEvidence ?? []);
+  const proven = new Set([...red].filter((id) => !stale.has(id)));
+  const admitted = new Set([...baseline].filter((id) => !stale.has(id)));
   const unproven = [...new Set(options.passing)]
-    .filter((id) => !before.has(id) && !red.has(id) && !baseline.has(id))
+    .filter((id) => !before.has(id) && !proven.has(id) && !admitted.has(id))
     .sort();
   const rewritten = [...new Set(options.passing)].filter((id) => changed.has(id)).length;
-  const baselined = [...new Set(options.passing)].filter((id) => baseline.has(id)).length;
+  const baselined = [...new Set(options.passing)].filter((id) => admitted.has(id)).length;
   return {
     name: 'red-evidence',
     // Reports; does not fail. See this function's header for why blocking deadlocked the
@@ -4564,7 +4657,9 @@ export function redEvidenceGate(options) {
  *
  * @param {{ passing: Iterable<string>, previousPassing: Iterable<string>,
  *   redSeen: Iterable<string>, baseline?: Iterable<string>,
- *   changedDefinitions?: Iterable<string> }} options
+ *   changedDefinitions?: Iterable<string>, staleEvidence?: Iterable<string> }} options
+ *   `staleEvidence` are the ids whose red/baseline evidence was recorded under different bytes
+ *   than the ones on disk, so that evidence no longer vouches for them (REVIEW F17).
  * @returns {Set<string>} the ids to withhold from the ratchet
  */
 export function unprovenIds(options) {
@@ -4582,8 +4677,17 @@ export function unprovenIds(options) {
   // credit. Which is also the path for legitimate strengthening, at the cost of one observation.
   const changed = new Set(options.changedDefinitions ?? []);
   const before = new Set([...options.previousPassing].filter((id) => !changed.has(id)));
+  // **The other two exemptions are scoped the same way** (REVIEW F17, re-baselined at 0.208.0).
+  // Only `previousPassing` was definition-scoped, so an id that had ever been seen failing — or that
+  // was present at the first gating — kept its exemption after its defining file was rewritten. A
+  // test could therefore be replaced with a weaker one and inherit the credit its predecessor
+  // earned, which is the substitution the finding is about. `staleEvidence` names the ids whose
+  // recorded observation digest is not the bytes on disk, and it defeats both.
+  const stale = new Set(options.staleEvidence ?? []);
+  const proven = new Set([...red].filter((id) => !stale.has(id)));
+  const admitted = new Set([...baseline].filter((id) => !stale.has(id)));
   return new Set(
-    [...new Set(options.passing)].filter((id) => !before.has(id) && !red.has(id) && !baseline.has(id)),
+    [...new Set(options.passing)].filter((id) => !before.has(id) && !proven.has(id) && !admitted.has(id)),
   );
 }
 
@@ -5159,10 +5263,18 @@ export const TERMINATION_GRACE_MS = 5_000;
  * @returns {Promise<ShellResult>}
  */
 export function shell(command, args, options) {
-  // Only sampled when a ceiling exists, because the sweep only runs when one fires. A caller
-  // with no timeout cannot time out, so the `ps` would be pure cost. Sampled before the spawn,
-  // which is the half of the subtraction that must precede the command.
-  const before = options.timeoutMs === undefined ? null : processGroupMembers();
+  // Sampled before the spawn, which is the half of the subtraction that must precede the command:
+  // afterwards there is no way to tell this command's survivors from processes that started
+  // meanwhile, which is why it cannot be taken lazily when a sweep turns out to be needed.
+  //
+  // **Unconditional as of the 0.208.0 candidate** (REVIEW F2). It used to be taken only when a `timeoutMs` was
+  // supplied, on the reasoning that a command with no ceiling cannot time out — but the 64MB output
+  // cap sweeps through the same pre-image, and with none sampled `sweepLeakedGroup` returns `[]` and
+  // every descendant of a flooding child survives. The cost that justified the condition was
+  // measured on 18 August 2026 rather than assumed: `ps -eo pid=,pgid=,comm=` is **4.3ms**, about
+  // two `git rev-parse` calls, against a run whose iterations are minutes long. Correctness on the
+  // overflow path is worth four milliseconds.
+  const before = processGroupMembers();
   return new Promise((resolve) => {
     /** @type {import('node:child_process').ChildProcess} */
     let child;
@@ -5266,10 +5378,9 @@ export function shell(command, args, options) {
         overflowed: true,
         // Swept for the same reason the timeout path is: a gate that backgrounded a dev server
         // and then flooded a stream leaks exactly the same descendants, and the cap is no more
-        // able to reap them than the ceiling was. Absent — rather than empty — when no ceiling
-        // was requested, because `before` is only sampled then: without that pre-image there is
-        // no way to tell this command's survivors from the driver's own processes, and killing
-        // by guess would be worse than reporting honestly that nothing was looked at.
+        // able to reap them than the ceiling was. The pre-image is now sampled for every command
+        // (REVIEW F2), so this is absent only where `ps` itself is unavailable — Windows, where
+        // F11 owns the question — rather than wherever a caller happened not to set a ceiling.
         ...(before === null ? {} : { reaped: sweepLeakedGroup(before, child.pid) }),
       });
     };
@@ -6406,9 +6517,39 @@ async function runInvocation(argv, io, crash) {
       staged = decision.admitted;
     }
     if (staged.length > 0) {
+      // **Observed, not inferred** (REVIEW F26). `shell` resolves `{ ok: false }` rather than
+      // throwing, so discarding these two results made a failed pre-loop commit indistinguishable
+      // from a successful one: the launch receipt recorded the phase as committed, `commitPhase`
+      // returned true, and the run proceeded on a tree that still held the changes. `driveRun`'s
+      // own commit closure has checked both since F31; this is the same rule, at the door.
+      //
       // `--` so a path that looks like a revision is still a path.
-      await shell('git', ['add', '--', ...staged], { cwd });
-      await shell('git', ['commit', '--no-verify', '-m', options.message], { cwd });
+      const added = await shell('git', ['add', '--', ...staged], { cwd });
+      if (!added.ok) {
+        write(verbatim(`${options.phase}: git add failed: ${(added.stderr || added.stdout).trim().slice(0, 400)}`));
+        return false;
+      }
+      // Asked rather than assumed, for the same reason the loop's closure asks: `git commit` exits
+      // non-zero when there is nothing staged, and that is an ordinary phase that produced no
+      // change rather than a fault. Only a *staged* tree that then fails to commit is a failure.
+      const pending = await shell('git', ['diff', '--cached', '--name-only'], { cwd });
+      if (!pending.ok) {
+        write(verbatim(`${options.phase}: git could not list the staged changes: ${(pending.stderr || '').trim().slice(0, 400)}`));
+        return false;
+      }
+      if (pending.stdout.trim() !== '') {
+        const committed = await shell('git', ['commit', '--no-verify', '-m', options.message], { cwd });
+        if (!committed.ok) {
+          write(
+            verbatim(
+              `${options.phase}: git commit failed: ${(committed.stderr || committed.stdout).trim().slice(0, 400)}. ` +
+                'The phase is refused rather than recorded, because a receipt naming a commit that did not happen is ' +
+                'worse than no receipt',
+            ),
+          );
+          return false;
+        }
+      }
     }
     receipt = recordPhase(receipt, { phase: options.phase, declared, staged });
     writeLaunchReceipt(meeseeksDir, receipt);
@@ -6486,7 +6627,26 @@ async function runInvocation(argv, io, crash) {
     if (!existsSync(prdPath)) writeFileSync(prdPath, authored.text, 'utf8');
   } else if (input !== '' && existsSync(path.resolve(cwd, input))) {
     write(verbatim(`using ${input}`));
-    if (path.resolve(cwd, input) !== prdPath) writeFileSync(prdPath, readFileSync(path.resolve(cwd, input), 'utf8'));
+    // **Bounded, because this is the first read of the operator's specification** (REVIEW F19).
+    // `captureSpecification` reads it under `READ_LIMITS.specification` a few lines later, but this
+    // copy happens first and read it whole — so an oversized PRD died here, unbounded, before the
+    // limit that exists for exactly this artifact could refuse it by name.
+    if (path.resolve(cwd, input) !== prdPath) {
+      /** @type {string} */
+      let document;
+      try {
+        document = readBounded(path.resolve(cwd, input), READ_LIMITS.specification);
+      } catch (error) {
+        // Named in the receipt, not only on stdout: the refusal says which artifact and how big.
+        write(verbatim(/** @type {Error} */ (error).message));
+        write(stamp('ABORTED', { mode }));
+        return releasing(1, {
+          reason: `${/** @type {Error} */ (error).message}`.slice(0, 400),
+          phase: 'prd authoring',
+        });
+      }
+      writeFileSync(prdPath, document);
+    }
   } else {
     const idea =
       input !== ''
@@ -6780,7 +6940,14 @@ async function runInvocation(argv, io, crash) {
     });
   }
   for (const warning of provisioning.warnings) write(verbatim(warning));
-  await commitPhase({ phase: 'quality-plugins', message: 'meeseeks: provision quality plugins', template: null });
+  // **The boolean is honoured here too** (REVIEW F26). The PRD and design phases both refuse on a
+  // failed `commitPhase`; this one discarded it, so an undeclared neighbour or a failed commit left
+  // the provisioning changes uncommitted while the run carried on into the loop — and the next
+  // phase's `changedPaths` then reported them against whichever phase happened to look next.
+  if (!(await commitPhase({ phase: 'quality-plugins', message: 'meeseeks: provision quality plugins', template: null }))) {
+    write(stamp('ABORTED', { mode }));
+    return releasing(1, { reason: 'the provisioned quality plugins could not be committed', phase: 'quality-plugins' });
+  }
 
   // ---- Phase 1c: components — driver-delegated sub-runs in worktrees (PLAN item 24) ------
   //
@@ -7251,7 +7418,9 @@ async function runInvocation(argv, io, crash) {
     }
     // Passing ids are handed over too, because the first gating of a project has to record
     // what it found as a baseline: those tests have no "before" to have been red in.
-    const red = freshness === null ? recordRedEvidence(treeStateDir, nonPassing, [...passing]) : null;
+    // `dir` is handed over so every observation is stamped with the bytes it was made under
+    // (REVIEW F17). Without it the evidence records no digest, which later reads as unproven.
+    const red = freshness === null ? recordRedEvidence(treeStateDir, nonPassing, [...passing], dir) : null;
     // **Which of these ids are still protected by the bytes that earned them** (REVIEW F17). A
     // changed defining file stops history vouching for its ids: they must be observed failing again
     // before they earn current credit. They stay in `passing` and are never a regression.
@@ -7259,7 +7428,15 @@ async function runInvocation(argv, io, crash) {
     const evidence =
       red === null
         ? null
-        : { previousPassing, passing, redSeen: red.seenFailing, baseline: red.baseline, changedDefinitions: rewritten };
+        : {
+            previousPassing,
+            passing,
+            redSeen: red.seenFailing,
+            baseline: red.baseline,
+            changedDefinitions: rewritten,
+            // The gate reports exactly what the ratchet withholds, so it needs the same scoping.
+            staleEvidence: changedDefinitions(passing, dir, red.definitions),
+          };
     const results = [
       // First, because it invalidates everything after it: a reader scanning the failures needs to
       // see that this attempt's evidence was withheld before reading gates judged without it.

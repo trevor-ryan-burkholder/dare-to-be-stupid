@@ -22,6 +22,8 @@ import { setTimeout } from 'node:timers';
 import { after, describe, it } from 'node:test';
 
 import { readAssumptions } from '../scripts/assumptions.mjs';
+import { changedDefinitions } from '../scripts/ratchet.mjs';
+import { READ_LIMITS } from '../scripts/bounded-read.mjs';
 import { MUTATION_CONFIG_CONTENTS } from '../scripts/toolchains/node.mjs';
 import { pinSecurityElement, quarantinePin, readPins, writePins } from '../scripts/pins.mjs';
 import { RUN_ARCHIVE_DIR } from '../scripts/run-manifest.mjs';
@@ -2174,7 +2176,12 @@ describe('driveRun', () => {
     // The first-gating baseline a real gate run writes (REVIEW F17). An injected `gates` double
     // never calls `recordRedEvidence`, so a fixture that needs its ids credited says so here rather
     // than accidentally asserting that an unproven id is banked.
-    if (seedRed.length > 0) recordRedEvidence(meeseeksDir, [], seedRed);
+    // Seeded **against the tree the harness just built** (REVIEW F17). Red evidence now records the
+    // digest each observation was made under, and an entry with no digest reads as unproven — which
+    // is the point: nobody can say which bytes it was recorded against. A fixture that seeds
+    // evidence without a tree is modelling evidence from nowhere, so it hands over `root` exactly
+    // as `gateTree` hands over the candidate directory.
+    if (seedRed.length > 0) recordRedEvidence(meeseeksDir, [], seedRed, root);
     if (seedPassing.length > 0) {
       // A seeded ratchet means a reset is reachable, and the reset really shells out to
       // git — so the root has to be a real repository with a real commit to return to.
@@ -4723,6 +4730,97 @@ describe('commandGates', () => {
   });
 });
 
+describe('a gate cannot be made to read an unbounded file (REVIEW F19)', () => {
+  // **These two readers decide gates over files the target writes**, which is what makes their size
+  // target-controlled: `isSubstantial` backs `DoD-4-docs`, and `anySourceMatches` backs
+  // `observability` by reading *every source file in the tree*. Both read whole. One generated
+  // bundle was enough to end a run inside a gate, with no bounded refusal and no receipt naming an
+  // artifact — the outcome F19 exists to prevent.
+  //
+  // The limits are large enough that these fixtures are slow to build honestly, so each writes one
+  // file just over `READ_LIMITS.evidence` and asserts the behaviour rather than the timing.
+
+  /** @param {string} dir @param {string} relative @param {number} bytes */
+  function oversized(dir, relative, bytes) {
+    const full = path.join(dir, relative);
+    mkdirSync(path.dirname(full), { recursive: true });
+    writeFileSync(full, 'x'.repeat(bytes), 'utf8');
+    return full;
+  }
+
+  it('does not find a logger hidden inside an oversized source file', async () => {
+    // **The discriminating case, and the first draft of this suite did not have one.** An oversized
+    // file that merely *exists* behaves the same bounded or not — both answers are "no logger here"
+    // — so the version of this test that only asserted the gate outcome passed with the bound
+    // removed. Putting the match *inside* the oversized file separates them: unbounded, the whole
+    // 4MB is read and the logger is found; bounded, the file is skipped and the gate reports it
+    // missing. Skipping fails closed, which is the correct direction for a gate.
+    const dir = makeTempDir();
+    mkdirSync(path.join(dir, 'src'), { recursive: true });
+    writeFileSync(
+      path.join(dir, 'src', 'bundle.js'),
+      `${'x'.repeat(READ_LIMITS.evidence)}\nimport pino from 'pino';\nexport const log = pino();\n`,
+      'utf8',
+    );
+
+    const gate = await observabilityGate(dir);
+
+    assert.equal(gate.ok, false);
+    assert.equal(gate.detail.includes('structured logging'), true, gate.detail);
+  });
+
+  it('reads neither document reader with an unbounded call', () => {
+    // **Positional, because the allocation bound is a property of the code and not of the result.**
+    // From outside, a 4MB read that succeeds and a bounded read that succeeds are identical; the
+    // criterion F19 states is "fails before full allocation". `test/bounded-read.test.mjs` scans
+    // `readBounded` for the same reason, and this is the same assertion one level up — at the two
+    // gate readers whose input the target writes.
+    const source = readFileSync(new URL('../scripts/driver.mjs', import.meta.url), 'utf8');
+    const substantial = source.slice(source.indexOf('function isSubstantial('), source.indexOf('const SKIPPED_SOURCE_DIRS'));
+    assert.equal(substantial.includes('readFileSync'), false, 'isSubstantial reads a target-controlled file whole');
+    assert.equal(substantial.includes('readBounded('), true, 'isSubstantial lost its bound');
+    const walker = source.slice(source.indexOf('function anySourceMatches('), source.indexOf('export function inspectCiWorkflows'));
+    assert.equal(walker.includes('readFileSync'), false, 'anySourceMatches reads every source file whole');
+    assert.equal(walker.includes('readBounded('), true, 'anySourceMatches lost its bound');
+  });
+
+  it('treats a README past the limit as substantial rather than refusing it', async () => {
+    // The question `isSubstantial` asks is a *minimum*, so a document over 4MB is certainly not a
+    // stub. Refusing it would fail a gate on size alone, which is a different wrong answer.
+    const dir = makeTempDir();
+    oversized(dir, 'README.md', READ_LIMITS.evidence + 1024);
+    mkdirSync(path.join(dir, 'docs'), { recursive: true });
+    writeFileSync(path.join(dir, 'docs', 'api-contract.md'), 'x'.repeat(400), 'utf8');
+
+    const docs = (await staticGates(dir)).find((gate) => gate.name === 'docs');
+
+    assert.notEqual(docs, undefined);
+    assert.equal(/** @type {any} */ (docs).ok, true, /** @type {any} */ (docs).detail);
+    assert.equal(/** @type {any} */ (docs).detail, 'README.md and docs/api-contract.md present and non-stub');
+  });
+
+  it('still fails the docs gate on a stub, which is what the gate is for', async () => {
+    // The neighbour. Bounding the read must not turn every document into a passing one.
+    const dir = makeTempDir();
+    writeFileSync(path.join(dir, 'README.md'), '# todo\n', 'utf8');
+
+    const docs = (await staticGates(dir)).find((gate) => gate.name === 'docs');
+
+    assert.equal(/** @type {any} */ (docs).ok, false);
+  });
+
+  it('still finds a logger in a source file under the limit', async () => {
+    // The neighbour again, and the one that proves the bound did not simply blind the detector.
+    const dir = makeTempDir();
+    mkdirSync(path.join(dir, 'src'), { recursive: true });
+    writeFileSync(path.join(dir, 'src', 'log.js'), "import pino from 'pino';\nexport const log = pino();\n", 'utf8');
+
+    const gate = await observabilityGate(dir);
+
+    assert.equal(gate.detail.includes('structured logging'), false, gate.detail);
+  });
+});
+
 describe('staticGates', () => {
   /** @param {Record<string, string>} files */
   function repoWith(files) {
@@ -5085,6 +5183,62 @@ describe('red-evidence', () => {
     assert.deepEqual([...withheld], []);
   });
 
+  it('stops red evidence vouching for a rewritten test (REVIEW F17, re-baselined)', () => {
+    // **The hole the first repair left.** Only `previousPassing` was scoped to the definition; an id
+    // that had ever been seen failing kept that exemption forever, including after its defining file
+    // was rewritten. So the credit could be inherited by different bytes through `redSeen` even
+    // though the `changedDefinitions` rule was working — a weaker test, same name, same protection.
+    const options = { previousPassing: [], passing: ['a::1'], redSeen: ['a::1'], changedDefinitions: ['a::1'] };
+    assert.deepEqual([...unprovenIds(options)], [], 'the pre-condition changed: this must be exempt without staleness');
+    assert.deepEqual(
+      [...unprovenIds({ ...options, staleEvidence: ['a::1'] })],
+      ['a::1'],
+      'evidence recorded under different bytes still vouched for the id',
+    );
+  });
+
+  it('stops the first-gating baseline vouching for a rewritten test', () => {
+    // The same hole through the other broad exemption. The baseline admits everything present at
+    // the first gating, which is the escape from an unsatisfiable objective — but it was admitting
+    // those ids permanently, whatever their files became afterwards.
+    const options = { previousPassing: [], passing: ['a::1'], redSeen: [], baseline: ['a::1'] };
+    assert.deepEqual([...unprovenIds(options)], [], 'the pre-condition changed: the baseline must admit this');
+    assert.deepEqual(
+      [...unprovenIds({ ...options, staleEvidence: ['a::1'] })],
+      ['a::1'],
+      'the baseline admitted an id whose defining file it never saw',
+    );
+  });
+
+  it('credits it again once it has been observed failing under the new bytes', () => {
+    // The escape, and it is the load-bearing half: a legitimate strengthening must not be withheld
+    // forever. Observing the rewritten test fail records evidence under the *current* digest, so it
+    // is no longer stale and the exemption returns. Nothing is deleted to make that work.
+    const withheld = unprovenIds({
+      previousPassing: [],
+      passing: ['a::1'],
+      redSeen: ['a::1'],
+      changedDefinitions: ['a::1'],
+      staleEvidence: [],
+    });
+    assert.deepEqual([...withheld], []);
+  });
+
+  it('reports exactly what the ratchet withholds, through the same scoping', () => {
+    // The two must agree. `redEvidenceGate` reports what `unprovenIds` withholds, and two answers
+    // to "is this proven" would eventually disagree — which is how a report becomes reassurance.
+    const options = {
+      previousPassing: [],
+      passing: ['a::1'],
+      redSeen: ['a::1'],
+      staleEvidence: ['a::1'],
+    };
+    const gate = redEvidenceGate(options);
+    assert.equal(gate.ok, true, 'red evidence reports; it does not fail');
+    assert.equal(gate.detail.includes('a::1'), true, gate.detail);
+    assert.deepEqual([...unprovenIds(options)], ['a::1']);
+  });
+
   it('reports the rewritten count in the red-evidence detail, so the withholding is legible', () => {
     const result = redEvidenceGate({
       previousPassing: ['a::1'],
@@ -5119,6 +5273,95 @@ describe('red-evidence', () => {
     recordRedEvidence(dir, ['b::2']);
     recordRedEvidence(dir, ['c::3', 'b::2']);
     assert.deepStrictEqual([...loadRedEvidence(dir).seenFailing].sort(), ['b::2', 'c::3']);
+  });
+
+  it('stamps each observation with the bytes it was made under, and goes stale when they change', () => {
+    // **The wiring, end to end, against the real functions.** The scoping rule is only worth
+    // anything if the *store* records what it was observed under and the loop compares against it —
+    // this repository's recurring defect is a correct rule nothing feeds. So: record real evidence
+    // against a real file, confirm it vouches, rewrite the file, confirm it stops.
+    const root = makeTempDir();
+    const stateDir = path.join(root, '.meeseeks');
+    mkdirSync(path.join(root, 'test'), { recursive: true });
+    const testFile = path.join(root, 'test', 'a.test.js');
+    writeFileSync(testFile, "it('works', () => expect(add(1, 1)).toBe(2));\n", 'utf8');
+    const id = 'test/a.test.js::works';
+
+    recordRedEvidence(stateDir, [id], [], root);
+    const recorded = loadRedEvidence(stateDir);
+
+    assert.equal(typeof recorded.definitions['test/a.test.js'], 'string');
+    assert.deepStrictEqual([...changedDefinitions([id], root, recorded.definitions)], [], 'fresh evidence read as stale');
+
+    // The substitution the finding is about: same id, same name, weaker assertions.
+    writeFileSync(testFile, "it('works', () => expect(true).toBe(true));\n", 'utf8');
+
+    assert.deepStrictEqual(
+      [...changedDefinitions([id], root, loadRedEvidence(stateDir).definitions)],
+      [id],
+      'evidence recorded under the old bytes still vouched for the new ones',
+    );
+  });
+
+  it('does not refresh an old observation\u2019s digest when a different test is observed', () => {
+    // **The defect the first draft of this repair contained**, caught by re-reading the diff rather
+    // than by a test — which is why it is a test now. Stamping the accumulated `seenFailing` set on
+    // every call would refresh the digest of an id observed ten iterations ago whose defining file
+    // has been rewritten since, restoring its exemption with no new observation behind it. That
+    // would have made the whole scoping decorative: the evidence would always look fresh.
+    const root = makeTempDir();
+    const stateDir = path.join(root, '.meeseeks');
+    mkdirSync(path.join(root, 'test'), { recursive: true });
+    const oldFile = path.join(root, 'test', 'a.test.js');
+    writeFileSync(oldFile, 'it("a", () => {});\n', 'utf8');
+    writeFileSync(path.join(root, 'test', 'b.test.js'), 'it("b", () => {});\n', 'utf8');
+
+    recordRedEvidence(stateDir, ['test/a.test.js::a'], [], root);
+    // The rewrite the finding is about, and then an unrelated observation on a different file.
+    writeFileSync(oldFile, 'it("a", () => expect(true).toBe(true));\n', 'utf8');
+    recordRedEvidence(stateDir, ['test/b.test.js::b'], [], root);
+
+    const after = loadRedEvidence(stateDir);
+    assert.deepStrictEqual(
+      [...changedDefinitions(['test/a.test.js::a'], root, after.definitions)],
+      ['test/a.test.js::a'],
+      'an unrelated observation refreshed a rewritten test\u2019s evidence',
+    );
+    // And the id that really was observed is fresh, or the rule would withhold everything forever.
+    assert.deepStrictEqual([...changedDefinitions(['test/b.test.js::b'], root, after.definitions)], []);
+  });
+
+  it('reads evidence written before digests existed as vouching for nothing', () => {
+    // The migration, and it fails closed on purpose. A store with no `definitions` cannot say which
+    // bytes it was recorded against, and "unknown" is not "proven" — so those ids are withheld until
+    // they are observed again. Withholding costs nothing that matters: an already-banked id keeps
+    // its ratchet protection, and `redEvidenceGate` reports rather than blocks.
+    const root = makeTempDir();
+    const stateDir = path.join(root, '.meeseeks');
+    mkdirSync(path.join(root, 'test'), { recursive: true });
+    writeFileSync(path.join(root, 'test', 'a.test.js'), 'it("works", () => {});\n', 'utf8');
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      path.join(stateDir, 'red-evidence.json'),
+      JSON.stringify({ seenFailing: ['test/a.test.js::works'], baseline: [] }),
+      'utf8',
+    );
+
+    const legacy = loadRedEvidence(stateDir);
+
+    assert.deepStrictEqual(legacy.definitions, {});
+    assert.deepStrictEqual(
+      [...changedDefinitions(['test/a.test.js::works'], root, legacy.definitions)],
+      ['test/a.test.js::works'],
+    );
+  });
+
+  it('records nothing about bytes when it was given no tree, rather than inventing a digest', () => {
+    // A caller with no candidate directory cannot stamp anything, and must not pretend otherwise:
+    // an invented digest would be a claim about bytes nobody hashed.
+    const dir = makeTempDir();
+    recordRedEvidence(dir, ['a::1']);
+    assert.deepStrictEqual(loadRedEvidence(dir).definitions, {});
   });
 
   it('treats unreadable evidence as no evidence, so new tests stay unproven', () => {
@@ -6311,10 +6554,13 @@ describe('--give-them-the-box: the refusal, and the one way past it', () => {
     assert.throws(() => assertNotNested({ ...boxed, [DEPTH_ENV]: '99' }), DriverError);
   });
 
-  it('treats an unreadable depth as the top, rather than as permission', () => {
-    // Fail-closed on a malformed marker: a garbled depth must not read as "plenty of room".
+  it('refuses malformed depth markers instead of treating them as room under the cap', () => {
+    // `parseInt` used to turn `1garbage` into 1 and every other malformed value into 0, granting
+    // exactly the nesting permission the marker is supposed to bound.
     const boxed = { [REENTRANCY_ENV]: '1', [BOX_ENV]: '1' };
-    assert.doesNotThrow(() => assertNotNested({ ...boxed, [DEPTH_ENV]: 'banana' }));
+    for (const marker of ['banana', '1garbage', '-1', '01', '9007199254740992']) {
+      assert.throws(() => assertNotNested({ ...boxed, [DEPTH_ENV]: marker }), DriverError, marker);
+    }
     assert.throws(() => assertNotNested({ [REENTRANCY_ENV]: '1', [DEPTH_ENV]: 'banana' }), DriverError);
   });
 
@@ -6332,11 +6578,15 @@ describe('--give-them-the-box: the refusal, and the one way past it', () => {
     assert.deepEqual(child, { PATH: '/usr/bin', [REENTRANCY_ENV]: '1' });
   });
 
-  it('counts depth into the child environment when it is armed', () => {
+  it('counts valid depth into the child environment when it is armed', () => {
     // A child's environment is exactly what a nested driver inherits, so the count belongs here.
     assert.equal(childEnvironment({ [BOX_ENV]: '1' })[DEPTH_ENV], '1');
     assert.equal(childEnvironment({ [BOX_ENV]: '1', [DEPTH_ENV]: '1' })[DEPTH_ENV], '2');
-    assert.equal(childEnvironment({ [BOX_ENV]: '1', [DEPTH_ENV]: 'banana' })[DEPTH_ENV], '1');
+  });
+
+  it('preserves a malformed child depth so neither downstream boundary can mistake it for permission', () => {
+    assert.equal(childEnvironment({ [BOX_ENV]: '1', [DEPTH_ENV]: 'banana' })[DEPTH_ENV], 'banana');
+    assert.equal(childEnvironment({ [BOX_ENV]: '1', [DEPTH_ENV]: '1garbage' })[DEPTH_ENV], '1garbage');
   });
 
   it('is a flag and never a config key, so nothing can inherit it quietly', () => {

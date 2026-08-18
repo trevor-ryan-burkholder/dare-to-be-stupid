@@ -1796,12 +1796,15 @@ describe('--give-them-the-box at the hook', () => {
     assert.equal(verdict.rule, 'nested-meeseeks');
   });
 
-  it('treats an unreadable depth as the top rather than as room to spare', () => {
-    const verdict = checkBashCommand(NESTED, '/repo', {
-      insideRun: true,
-      env: { MEESEEKS_GIVE_THEM_THE_BOX: '1', MEESEEKS_RUN_DEPTH: 'banana' },
-    });
-    assert.equal(verdict.decision, 'allow');
+  it('denies malformed depth markers rather than turning them into room under the cap', () => {
+    for (const marker of ['banana', '1garbage', '-1', '01', '9007199254740992']) {
+      const verdict = checkBashCommand(NESTED, '/repo', {
+        insideRun: true,
+        env: { MEESEEKS_GIVE_THEM_THE_BOX: '1', MEESEEKS_RUN_DEPTH: marker },
+      });
+      assert.equal(verdict.decision, 'deny', marker);
+      assert.equal(verdict.rule, 'nested-meeseeks', marker);
+    }
   });
 
   it('permits exactly one rule and no others', () => {

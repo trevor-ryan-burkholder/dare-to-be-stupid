@@ -40,6 +40,11 @@ export const SUPPORTED_FLOOR = '2.1.226';
  *
  * 2.1.234, on 18 August 2026: `npm run test:live` end to end, including the F27 role-tool canary
  * that measured `--tools ""`, and `claude plugin validate`.
+ *
+ * 2.1.235 was exercised after a background update, but the full live tier finished 33 of 34. The
+ * failing case passed on isolated retries and is a known model-output flake, but the compatibility
+ * rule requires one clean full-tier pass. A retry is diagnostic evidence, not a replacement result,
+ * so 2.1.235 remains outside the admitted range until the required run passes.
  */
 export const VERIFIED_THROUGH = '2.1.234';
 
@@ -49,14 +54,16 @@ export const COMPATIBILITY_EVIDENCE = [
   '2.1.226 — envelope and guard-registration contracts measured live',
   '2.1.228 — child budget and refusal-message contracts measured live',
   '2.1.234 — full npm run test:live passed, including the --tools canary (18 August 2026)',
+  '2.1.235 — not admitted: full npm run test:live finished 33 of 34 (18 August 2026)',
 ];
 
 /**
  * Read a version out of whatever `claude --version` printed.
  *
- * The real binary answers `2.1.234 (Claude Code)`, so the decoration is expected rather than
- * tolerated by accident. Anything that does not yield three integers is `null`, and a `null` is a
- * refusal at every call site: an unparseable version is not evidence of a compatible one.
+ * The real binary answers `2.1.234 (Claude Code)`, so that exact decoration is expected rather than
+ * tolerated by accident. Bare versions are accepted for pinned fixtures. Extra suffixes, partial
+ * prereleases, build metadata, and other decorations are `null`: a numeric prefix is not evidence
+ * that the whole report came from a measured Claude Code release.
  *
  * A prerelease suffix is *parsed* rather than discarded, because the caller has to be able to refuse
  * it. `2.2.0-beta.1` orders below `2.2.0` under semver and above it under naive numeric comparison,
@@ -67,15 +74,20 @@ export const COMPATIBILITY_EVIDENCE = [
  */
 export function parseClaudeVersion(output) {
   if (typeof output !== 'string') return null;
-  // Anchored to the start of the trimmed line: a version *mentioned* inside a sentence is not a
-  // version report, and matching one anywhere in the output would accept a warning that happens to
-  // name a release.
-  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?\b/.exec(output.trim());
+  // Anchored at both ends: a version *mentioned* inside a sentence, or followed by an unmeasured
+  // wrapper suffix, is not a version report. The previous start-only match accepted `2.1.234-`,
+  // `2.1.234+anything`, and `2.1.234 warning` as the verified stable release.
+  const match =
+    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:[ \t]+\(Claude Code\))?$/.exec(
+      output.trim(),
+    );
   if (match === null) return null;
+  const release = [Number(match[1]), Number(match[2]), Number(match[3])];
+  if (!release.every(Number.isSafeInteger)) return null;
   return {
-    major: Number(match[1]),
-    minor: Number(match[2]),
-    patch: Number(match[3]),
+    major: release[0],
+    minor: release[1],
+    patch: release[2],
     prerelease: match[4] === undefined ? null : match[4],
   };
 }
@@ -105,7 +117,9 @@ export function classifyClaudeVersion(output) {
     return {
       ok: false,
       reason: `claude --version printed ${JSON.stringify(String(output).trim().slice(0, 120))}, which is not a version`,
-      fix: `Expected something beginning \`MAJOR.MINOR.PATCH\`. An unreadable version is not evidence of a compatible one.`,
+      fix:
+        'Expected `MAJOR.MINOR.PATCH` or `MAJOR.MINOR.PATCH (Claude Code)` exactly. ' +
+        'An unreadable or partially matched version is not evidence of a compatible one.',
     };
   }
   if (version.prerelease !== null) {

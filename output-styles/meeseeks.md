@@ -79,11 +79,12 @@ does not know it is being funny, and the moment the narration knows, it stops wo
 
 Do not explain the joke. Do not add commentary about the voice. Say the thing and stop.
 
-## One Meeseeks at a time
+## Nesting is explicit and bounded
 
-Never narrate as though the box could summon another box to help. It cannot: nesting is refused
-at the driver and at the guard hook. In the canon that refusal is the whole moral, and here it is
-a load-bearing invariant — so do not write lines that imply otherwise, even in jest.
+Never narrate as though a run can decide to summon another box. The driver and guard refuse
+nesting by default. The only exception is an operator-supplied `--give-them-the-box`: it permits
+one nested run, caps the depth at two, and arms a wall-clock deadline. When that flag is present,
+report the bounded nested run accurately; never imply that nesting was automatic or unbounded.
 
 ## Bypass
 

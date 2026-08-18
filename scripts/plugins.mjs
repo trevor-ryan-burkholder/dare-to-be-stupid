@@ -209,10 +209,35 @@ export async function installQualityPlugins(options) {
     const spec = resolvePlugin(name);
 
     const present = await run(spec.detect[0], spec.detect.slice(1), { cwd, timeoutMs: DETECT_TIMEOUT_MS });
+    // **A deadline that fires is not an ordinary absence** (REVIEW F41). The ceilings were added and
+    // the *caller* then discarded `timedOut`, so a detection that hung for its full 60s was read as
+    // "the tool is not installed" and escalated straight into a ten-minute install attempt. The
+    // operator saw eleven minutes of silence and then `exit 1`, which is the hang the deadline was
+    // added to prevent, wearing the report of a missing package.
+    if (present.timedOut === true) {
+      const stalled =
+        `detecting quality plugin ${spec.name} did not finish within ${DETECT_TIMEOUT_MS}ms and was killed. ` +
+        'A detection that hangs says nothing about whether the tool is present, so it is not read as absent';
+      if (spec.required) throw new PluginInstallError(`${stalled}, and ${spec.name} is required (DESIGN.md §5).`);
+      warnings.push(`${stalled}; ${spec.name} is optional and was skipped.`);
+      continue;
+    }
     if (present.ok) {
       skipped.push(spec.name);
     } else {
       const result = await run(spec.install[0], spec.install.slice(1), { cwd, timeoutMs: INSTALL_TIMEOUT_MS });
+      if (result.timedOut === true) {
+        const stalled =
+          `installing quality plugin ${spec.name} did not finish within ${INSTALL_TIMEOUT_MS}ms and was killed`;
+        if (spec.required) {
+          throw new PluginInstallError(
+            `${stalled}. It contributes a definition-of-done line, and a run that silently drops it would ship ` +
+              'having never checked that line (DESIGN.md §5).',
+          );
+        }
+        warnings.push(`${stalled}; ${spec.name} is optional and was skipped.`);
+        continue;
+      }
       if (!result.ok) {
         const detail = (result.stderr || result.stdout || `exit ${result.status}`).trim();
         if (spec.required) {

@@ -1880,8 +1880,7 @@ const NESTED_REASON =
  * Everything else on this page is untouched by it. `.meeseeks/` stays protected, git history
  * stays protected, recursive removal stays refused. **The mode permits one thing.**
  *
- * Fail-closed on a malformed depth: an unreadable marker counts as the top of the stack rather
- * than as room to spare.
+ * Fail-closed on a malformed depth: an unreadable or partially numeric marker grants no exception.
  *
  * @param {Record<string, string | undefined>} env
  * @returns {boolean}
@@ -1889,8 +1888,10 @@ const NESTED_REASON =
 function boxPermitted(env) {
   const armed = env[BOX_MARKER_ENV];
   if (armed === undefined || armed === '') return false;
-  const parsed = Number.parseInt(env[DEPTH_MARKER_ENV] ?? '0', 10);
-  const depth = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  const marker = env[DEPTH_MARKER_ENV];
+  if (marker !== undefined && marker !== '' && !/^(0|[1-9]\d*)$/.test(marker)) return false;
+  const depth = Number(marker ?? '0');
+  if (!Number.isSafeInteger(depth)) return false;
   return depth < MAX_BOX_DEPTH;
 }
 

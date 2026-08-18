@@ -50,6 +50,24 @@ describe('parseClaudeVersion', () => {
     assert.equal(parseClaudeVersion('2.1'), null);
     assert.equal(parseClaudeVersion(/** @type {any} */ (undefined)), null);
   });
+
+  it('refuses a valid numeric prefix followed by an unmeasured suffix', () => {
+    // The compatibility decision covers the complete report, not the first three numbers in it.
+    // Every one of these used to parse as the verified stable release.
+    for (const output of [
+      '2.1.234-',
+      '2.1.234+unverified',
+      '2.1.234.extra',
+      '2.1.234 warning',
+      '2.1.234 (not Claude Code)',
+    ]) {
+      assert.equal(parseClaudeVersion(output), null, output);
+    }
+  });
+
+  it('refuses release numbers that cannot be represented exactly', () => {
+    assert.equal(parseClaudeVersion('2.1.9007199254740992'), null);
+  });
 });
 
 describe('compareVersions', () => {
@@ -72,6 +90,14 @@ describe('classifyClaudeVersion', () => {
 
   it('accepts the ceiling, for the same reason', () => {
     assert.equal(classifyClaudeVersion(VERIFIED_THROUGH).ok, true);
+  });
+
+  it('does not admit a release whose full live tier failed', () => {
+    // 2.1.235 finished 33 of 34. Isolated retries diagnose the known model-output flake, but the
+    // repository's compatibility rule requires the staged candidate's full tier to pass.
+    const verdict = classifyClaudeVersion('2.1.235 (Claude Code)');
+    assert.equal(verdict.ok, false);
+    assert.equal(/** @type {any} */ (verdict).reason.includes('newer than'), true, JSON.stringify(verdict));
   });
 
   it('accepts a version inside the range', () => {
@@ -131,6 +157,7 @@ describe('the policy itself', () => {
     assert.equal(evidence.includes(SUPPORTED_FLOOR), true, evidence);
     assert.equal(evidence.includes(VERIFIED_THROUGH), true, evidence);
     assert.equal(evidence.includes('2.1.136'), true, 'the recorded incompatible version is not cited');
+    assert.equal(evidence.includes('2.1.235 — not admitted'), true, 'the failed boundary run is not recorded');
     for (const line of COMPATIBILITY_EVIDENCE) {
       assert.match(line, /^\d+\.\d+\.\d+ — .{20,}$/, `evidence too thin to check: ${line}`);
     }

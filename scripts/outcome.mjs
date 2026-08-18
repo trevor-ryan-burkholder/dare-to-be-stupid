@@ -67,13 +67,20 @@ export const OUTCOME_FILE = 'outcome.json';
  */
 export function writeRunOutcome(meeseeksDir, receipt, io) {
   if (io.written?.done === true) return false;
-  if (io.written !== undefined) io.written.done = true;
   const file = path.join(meeseeksDir, OUTCOME_FILE);
   const temporary = `${file}.tmp`;
   try {
     mkdirSync(meeseeksDir, { recursive: true });
     writeFileSync(temporary, `${JSON.stringify({ version: 1, endedAt: io.now(), ...receipt }, null, 2)}\n`, 'utf8');
     renameSync(temporary, file);
+    // **Latched only once something is actually on disk** (REVIEW F10). The flag used to be set
+    // before the write was attempted, so at-most-once meant at most one *attempt*: a transient
+    // ENOSPC, EACCES or rename race on the first exit latched the run shut, and every later path —
+    // including `main`'s crash guard, which exists for exactly this — then declined to try. The run
+    // ended with no receipt at all, which is the outcome the finding is about, reached through the
+    // guard written to prevent it. The rule being defended is "the first *decided* answer wins",
+    // and an attempt that wrote nothing decided nothing.
+    if (io.written !== undefined) io.written.done = true;
     return true;
   } catch (error) {
     io.log(`could not write ${OUTCOME_FILE}: ${/** @type {Error} */ (error).message}`);
