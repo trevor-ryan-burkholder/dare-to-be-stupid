@@ -505,19 +505,37 @@ export function acquireRunLock(meeseeksDir, options = {}) {
         sweepAbandonedTakeover(takeover, takeoverName, null, mine.token);
         continue;
       }
-      if (isAlive(reclaimer.claim.pid)) {
-        return refused(
-          `another driver is already reclaiming the stale lock left by ${describeHolder(held)}: ` +
-            `${describeHolder(reclaimer.claim)} holds ${takeoverName}`,
-          `Wait for it to finish, or delete ${takeoverName} and ${lockName} if no driver is running.`,
-        );
+      // **It may be this contender's own claim, and refusing that is a repository nobody can take.**
+      // A claim is created and then verified, and a *different* contender's sweep can rename it away
+      // in between. The sweep restores what it finds it did not judge, so the claim comes back owned
+      // by whoever made it — while its owner, having read `gone`, looked again. On that next pass the
+      // create fails against its own restored claim, and reading it finds a live pid because the
+      // live pid is this process. Without the token check the contender refuses *itself*, every
+      // other contender refuses the live claim it can see, and the round ends with zero winners and
+      // a claim file that blocks the repository until somebody deletes it by hand: the denial of
+      // service F34 is about, reached through the repair for F34.
+      //
+      // Safe because the token is a fresh UUID per acquisition, so a claim carrying it cannot have
+      // been written by anybody else. Proceeding is not a second reclaimer, it is the same one
+      // continuing — and the reclaim below re-verifies the claim and the lock before touching either.
+      //
+      // Found by the F34 cohort race failing about one run in ten with every contender refused. The
+      // interleaving is rare; the state it leaves is permanent.
+      if (reclaimer.claim.token !== mine.token) {
+        if (isAlive(reclaimer.claim.pid)) {
+          return refused(
+            `another driver is already reclaiming the stale lock left by ${describeHolder(held)}: ` +
+              `${describeHolder(reclaimer.claim)} holds ${takeoverName}`,
+            `Wait for it to finish, or delete ${takeoverName} and ${lockName} if no driver is running.`,
+          );
+        }
+        // **The claim is abandoned too** (REVIEW F34). Its owner died between winning it and
+        // replacing the lock, so the stale token — and therefore this exact path — recurs for every
+        // later contender. Sweeping is arbitrated in its own right, and whoever loses the sweep
+        // looks again rather than refusing: by then the repository may be genuinely free.
+        sweepAbandonedTakeover(takeover, takeoverName, reclaimer.claim.token, mine.token);
+        continue;
       }
-      // **The claim is abandoned too** (REVIEW F34). Its owner died between winning it and replacing
-      // the lock, so the stale token — and therefore this exact path — recurs for every later
-      // contender. Sweeping is arbitrated in its own right, and whoever loses the sweep looks again
-      // rather than refusing: by then the repository may be genuinely free.
-      sweepAbandonedTakeover(takeover, takeoverName, reclaimer.claim.token, mine.token);
-      continue;
     }
     // **The claim was created; confirm it is still ours before touching the lock.** A contender that
     // judged an earlier claim abandoned can rename this one away in the instant after it appears,

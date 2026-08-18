@@ -546,6 +546,63 @@ describe('a reclaimer that died mid-takeover (REVIEW F34)', () => {
   });
 });
 
+describe('a contender recognizes its own restored claim', () => {
+  // **The zero-winner state, and it is permanent.** A claim is created and then verified, and
+  // another contender's sweep can rename it away in between; the sweep restores what it finds it
+  // did not judge, so the claim returns owned by whoever made it, while that owner — having read
+  // `gone` — looks again. On the next pass its own create fails against its own claim, and the pid
+  // in it is alive because it is this process. It refused itself, everybody else refused the live
+  // claim they could see, and the claim file stayed on disk blocking the repository until somebody
+  // deleted it by hand.
+  //
+  // Found the honest way: the F34 cohort race failed about one run in ten with *every* contender
+  // refused, which is not a shape a working lock produces. Reproduced here as the state that
+  // interleaving leaves — a stale lock, and a claim already carrying this contender's own token.
+
+  it('reclaims through a claim it already holds, rather than refusing itself', () => {
+    const meeseeksDir = makeMeeseeksDir();
+    acquireRunLock(meeseeksDir, { pid: DEAD_OWNER_PID, startedAt: 'a', token: 'dead-owner' });
+    claimTakeover(meeseeksDir, 'dead-owner', { pid: process.pid, startedAt: 'b', token: 'mine' });
+
+    const result = acquireRunLock(meeseeksDir, { pid: process.pid, token: 'mine', isAlive: realLiveness });
+
+    assert.equal(result.ok, true, 'a contender refused itself, so nothing can take this repository');
+    assert.equal(readRunLock(meeseeksDir)?.token, 'mine');
+    // And it does not leave its own arbitration behind to block the next run.
+    assert.equal(existsSync(takeoverLockPath(meeseeksDir, 'dead-owner')), false, 'the claim outlived the reclaim');
+  });
+
+  it('still refuses a live claim belonging to somebody else, which is the whole serialization', () => {
+    // The neighbour, and the one that keeps the repair from being "proceed regardless". A token
+    // is a fresh UUID per acquisition, so a claim carrying *this* contender's token cannot have
+    // been written by anybody else — and one carrying a different token must still stop it.
+    const meeseeksDir = makeMeeseeksDir();
+    acquireRunLock(meeseeksDir, { pid: DEAD_OWNER_PID, startedAt: 'a', token: 'dead-owner' });
+    claimTakeover(meeseeksDir, 'dead-owner', { pid: process.pid, startedAt: 'b', token: 'somebody-else' });
+
+    const result = acquireRunLock(meeseeksDir, { pid: 99, token: 'mine', isAlive: realLiveness });
+
+    assert.equal(result.ok, false, 'a contender reclaimed past a live claim that was not its own');
+    const survivor = JSON.parse(readFileSync(takeoverLockPath(meeseeksDir, 'dead-owner'), 'utf8'));
+    assert.equal(survivor.token, 'somebody-else', 'the live claim was cleared by a contender that lost');
+    assert.equal(readRunLock(meeseeksDir)?.token, 'dead-owner');
+  });
+
+  it('still sweeps a dead claim belonging to somebody else', () => {
+    // The other neighbour. Recognizing its own claim must not make a contender stop recognizing an
+    // abandoned one, which is the case F34 exists for.
+    const meeseeksDir = makeMeeseeksDir();
+    acquireRunLock(meeseeksDir, { pid: DEAD_OWNER_PID, startedAt: 'a', token: 'dead-owner' });
+    // A pid that is certainly not running, and a token that is certainly not this contender's.
+    claimTakeover(meeseeksDir, 'dead-owner', { pid: 2 ** 31 - 1, startedAt: 'b', token: 'the-reclaimer-that-died' });
+
+    const result = acquireRunLock(meeseeksDir, { pid: 99, token: 'mine', isAlive: realLiveness });
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(readRunLock(meeseeksDir)?.token, 'mine');
+  });
+});
+
 describe('releaseTakeoverClaim: only the owner may clear a claim (REVIEW F34)', () => {
   // **Tested directly, because behaviour cannot reach it.** The window this guard covers is a
   // foreign claim occupying the path while a contender unwinds, and nothing outside `acquireRunLock`

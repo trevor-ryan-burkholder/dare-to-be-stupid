@@ -3832,6 +3832,39 @@ it. Replaced with a non-array argv, which throws on the entry point's first line
 
 **Evidence.** Tier 1 2650 pass / 0 fail, tier 2 161 pass / 0 fail.
 
+### 104. A contender refused its own restored takeover claim — IMPLEMENTED (0.202.0)
+
+**Found by a flake, and it was not a flake.** The F34 cohort race — five real contenders against a
+stale lock whose reclaimer was killed mid-takeover — failed about **one run in ten** with *zero*
+winners. Zero is not a shape a working lock produces: one winner is the invariant and two is the
+defect the tier exists to catch, but nobody can take a repository nothing holds.
+
+**The interleaving.** A contender creates its claim, then verifies it still holds it before touching
+the lock. Between those two steps another contender's sweep can rename the claim away — the sweep
+reads what it moved, finds it is not the claim it judged abandoned, and restores it. So the claim
+returns owned by whoever made it, while that owner, having read `gone` in the window, looked again.
+On the next pass its own `claimTakeover` fails **against its own restored claim**, it reads the claim
+and finds a live pid — because the live pid is itself — and refuses with "another driver is already
+reclaiming". Every other contender refuses the same live claim, and the claim file stays on disk
+blocking the repository until somebody deletes it by hand. **A permanent denial of service reached
+through the repair for a denial of service.**
+
+**The repair is one comparison.** A token is a fresh UUID per acquisition, so a claim carrying this
+contender's token cannot have been written by anybody else; recognizing it and continuing is not a
+second reclaimer, it is the same one resuming, and the reclaim below re-verifies both the claim and
+the lock before touching either.
+
+**Evidence.** `test/run-lock.test.mjs` arranges the state that interleaving leaves — a stale lock and
+a claim already carrying this contender's token — and requires the reclaim to succeed and the claim
+not to outlive it. Red against the unrepaired branch. Two neighbours keep it from becoming "proceed
+regardless": a live claim with a *different* token still refuses, and a dead one is still swept.
+Measured after the repair: **0 failures in 20 runs** of the cohort race that had been failing 2 in
+20 before it.
+
+**Why no tier-2 test reproduces it directly.** The interleaving needs two contenders inside a
+window microseconds wide; the race finds it statistically, which is what it is for, and the unit
+case pins the state deterministically. Recording both is the point — the race is what noticed.
+
 ## Observations recorded rather than repaired
 
 - **Tier 2 refused once and passed on an immediate re-run** (18 Aug 2026, committing 0.196.0 through
