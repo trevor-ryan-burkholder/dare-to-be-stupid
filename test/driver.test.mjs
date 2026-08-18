@@ -1658,14 +1658,42 @@ describe('a failed Claude process cannot be talked into a success (REVIEW F7)', 
   });
 
   it('keeps a guard denial visible without letting it turn a failure into a success', async () => {
+    // `denials` is `shell`'s own channel now (REVIEW F36), not something re-derived from stderr.
     const result = await spawnWith({
       ok: false,
       status: 9,
       stdout: SUCCESS_ENVELOPE,
       stderr: 'meeseeks-guard: denied Write to .meeseeks/state.json',
+      denials: ['meeseeks-guard: denied Write to .meeseeks/state.json'],
     });
     assert.equal(result.ok, false);
     assert.deepStrictEqual(result.denials, ['meeseeks-guard: denied Write to .meeseeks/state.json']);
+  });
+
+  it('keeps a guard denial from a child that recovered and exited zero', async () => {
+    // **The path the old test could not reach** (REVIEW F36). A denied tool call does not fail a
+    // child: the model is told no and carries on. The previous case injected denial text only
+    // through a *failed* synthetic result, so it never exercised the exit-zero path — which is the
+    // common one, and the one where `shell` discards stderr. `test/integration/guard-denial.integration.test.mjs`
+    // proves the extraction itself against a real child; this proves `spawnClaude` carries it while
+    // still reporting the child as the success it was.
+    const result = await spawnWith({
+      ok: true,
+      status: 0,
+      stdout: SUCCESS_ENVELOPE,
+      stderr: '',
+      denials: ['meeseeks-guard: denied Write to .meeseeks/state.json'],
+    });
+    assert.equal(result.ok, true, 'a recovered child was reported as a failure');
+    assert.deepStrictEqual(result.denials, ['meeseeks-guard: denied Write to .meeseeks/state.json']);
+  });
+
+  it('reports no denials for an ordinary successful child', async () => {
+    // The neighbour. Ordinary successful stderr must not become evidence or output; only the guard
+    // signal feeds the brief.
+    const result = await spawnWith({ ok: true, status: 0, stdout: SUCCESS_ENVELOPE, stderr: '' });
+    assert.equal(result.ok, true);
+    assert.equal(result.denials, undefined);
   });
 
   it('carries the exhaustion signal off a failed child, so the run ends BUDGET rather than ABORTED', async () => {

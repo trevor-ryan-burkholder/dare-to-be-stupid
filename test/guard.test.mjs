@@ -32,7 +32,7 @@ import {
   renderDecision,
   tokenizeCommand,
 } from '../hooks/guard.mjs';
-import { PHASE_PERMISSIONS, claudeArgs } from '../scripts/driver.mjs';
+import { DENIAL_LIMIT, DENIAL_LINE_LIMIT, PHASE_PERMISSIONS, claudeArgs, guardDenials } from '../scripts/driver.mjs';
 
 const execFileAsync = promisify(execFile);
 const FIXTURE_DIR = new URL('./fixtures/hook-events/', import.meta.url);
@@ -1850,5 +1850,47 @@ describe('a denial is announced on stderr as well as decided on stdout', () => {
     const result = runHook('echo hello', {});
     assert.equal(result.stderr.trim(), '');
     assert.equal(result.stdout.trim(), '');
+  });
+});
+
+describe('guardDenials: the bounded channel a refusal travels on (REVIEW F36)', () => {
+  it('finds a refusal and leaves everything else behind', () => {
+    const stream = [
+      'npm warn something irrelevant',
+      'meeseeks-guard: denied Write to .meeseeks/state.json',
+      'some other tool being chatty',
+    ].join('\n');
+    assert.deepStrictEqual(guardDenials(stream), ['meeseeks-guard: denied Write to .meeseeks/state.json']);
+  });
+
+  it('reports nothing for a stream with no refusal, so ordinary stderr never becomes evidence', () => {
+    assert.deepStrictEqual(guardDenials('npm warn a\nbuild finished\n'), []);
+    assert.deepStrictEqual(guardDenials(''), []);
+  });
+
+  it('says the same refusal once, however many times the child hit it', () => {
+    // A model that retries a denied call forty times has learned one fact, not forty.
+    const stream = Array.from({ length: 40 }, () => 'meeseeks-guard: denied Write to .meeseeks/state.json').join('\n');
+    assert.deepStrictEqual(guardDenials(stream), ['meeseeks-guard: denied Write to .meeseeks/state.json']);
+  });
+
+  it('stops at the cap, because this text reaches a builder brief', () => {
+    const stream = Array.from({ length: DENIAL_LIMIT + 5 }, (_unused, index) =>
+      `meeseeks-guard: denied Write to .meeseeks/file-${index}.json`,
+    ).join('\n');
+    assert.equal(guardDenials(stream).length, DENIAL_LIMIT);
+  });
+
+  it('truncates a single enormous refusal rather than carrying it whole', () => {
+    const long = `meeseeks-guard: denied Write to ${'x'.repeat(2_000)}`;
+    const [only] = guardDenials(long);
+    assert.equal(only.length, DENIAL_LINE_LIMIT);
+    assert.equal(only.startsWith('meeseeks-guard: denied Write to xxx'), true);
+  });
+
+  it('accepts a refusal that arrives with surrounding whitespace', () => {
+    assert.deepStrictEqual(guardDenials('   meeseeks-guard: denied Bash rm -rf .meeseeks   '), [
+      'meeseeks-guard: denied Bash rm -rf .meeseeks',
+    ]);
   });
 });

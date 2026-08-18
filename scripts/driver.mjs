@@ -4690,8 +4690,11 @@ export function requiredIdsFor(prd) {
  *
  * @typedef {{
  *   ok: boolean, status: number, stdout: string, stderr: string,
- *   timedOut?: boolean, overflowed?: boolean, reaped?: number[]
+ *   timedOut?: boolean, overflowed?: boolean, reaped?: number[], denials?: string[]
  * }} ShellResult
+ *   `denials` is the guard's refusals, carried on **every** exit status (REVIEW F36). It exists
+ *   because `stderr` is discarded on success and a denied tool call does not fail a child, so the
+ *   one diagnostic the loop can act on travelled only on the path where it was least needed.
  *   `timedOut` and `overflowed` are **distinct kinds**, not two ways of saying failure
  *   (REVIEW F7). The cap had no field of its own, so a caller could not tell a child that was
  *   killed for flooding from one that merely exited badly — and valid JSON emitted before the
@@ -4882,6 +4885,50 @@ function sweepLeakedGroup(before, selfPid) {
     }
   }
   return killed;
+}
+
+/**
+ * How many guard denials a shell result carries, and how long each may be.
+ *
+ * Bounded because this text reaches a builder's brief. A child that hits the same refusal in a loop
+ * would otherwise hand the next iteration a wall of identical lines instead of a repair objective.
+ */
+export const DENIAL_LIMIT = 20;
+/** @see DENIAL_LIMIT */
+export const DENIAL_LINE_LIMIT = 400;
+
+/** What the guard hook writes when it refuses a tool call. */
+const DENIAL_PREFIX = 'meeseeks-guard: denied';
+
+/**
+ * The guard refusals in a stream, as their own bounded channel (REVIEW F36).
+ *
+ * **Why a channel rather than the stderr it came from.** `shell` discards stderr on success, which
+ * is deliberate — a successful command's diagnostics are not evidence, and a consumer that learned
+ * to read them would be reading whatever a tool happened to warn about. But a denied tool call
+ * *does not fail a child*: the model is told no and carries on, so the one message the loop needs is
+ * on the one stream it throws away. `spawnClaude` used to search `result.stderr` for it, which
+ * worked only for children that also failed — and a child that recovers is the ordinary case.
+ *
+ * Extracting here keeps both properties: the denial survives every exit status, and ordinary stderr
+ * still never becomes output or evidence. Deduplicated, because the same refusal repeated forty
+ * times is one fact.
+ *
+ * @param {string} stream
+ * @returns {string[]} at most `DENIAL_LIMIT` lines, each at most `DENIAL_LINE_LIMIT` characters
+ */
+export function guardDenials(stream) {
+  /** @type {string[]} */
+  const found = [];
+  for (const line of stream.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith(DENIAL_PREFIX)) continue;
+    const bounded = trimmed.slice(0, DENIAL_LINE_LIMIT);
+    if (found.includes(bounded)) continue;
+    found.push(bounded);
+    if (found.length === DENIAL_LIMIT) break;
+  }
+  return found;
 }
 
 /** The output cap `execFileSync` enforced, kept at the same 64MB now the collection is manual. */
@@ -5149,7 +5196,20 @@ export function shell(command, args, options) {
         // stderr is discarded on success, which is what the sync call returned. A consumer
         // that needs a successful command's stderr must not learn to expect it here while the
         // injected doubles are the only place it can appear.
-        settle({ ok: true, status: 0, stdout: text(outChunks), stderr: '', timedOut: false });
+        //
+        // **Except the guard's refusals, which travel on their own channel** (REVIEW F36). A denied
+        // tool call does not fail a child — the model is told no and carries on — so discarding
+        // stderr here discarded the only repairable explanation the loop had, on the exit status
+        // where it happens most.
+        const denied = guardDenials(text(errChunks));
+        settle({
+          ok: true,
+          status: 0,
+          stdout: text(outChunks),
+          stderr: '',
+          timedOut: false,
+          ...(denied.length > 0 ? { denials: denied } : {}),
+        });
         return;
       }
       settle({
@@ -5160,6 +5220,9 @@ export function shell(command, args, options) {
         stdout: text(outChunks),
         stderr: text(errChunks),
         timedOut: false,
+        // Also on the failing path, so `spawnClaude` reads one field rather than two sources that
+        // can disagree (REVIEW F36).
+        ...(guardDenials(text(errChunks)).length > 0 ? { denials: guardDenials(text(errChunks)) } : {}),
       });
     });
 
@@ -5406,13 +5469,13 @@ export async function spawnClaude(options) {
         'Nothing it may have written was read, because a killed child has no verdict',
     };
   }
-  // Read off stderr regardless of whether the child succeeded, because a denied tool call does
-  // not fail a child — the model is told no and carries on, which is exactly why the refusal was
-  // invisible.
-  const denials = (result.stderr ?? '')
-    .split('\n')
-    .filter((line) => line.startsWith('meeseeks-guard: denied'))
-    .map((line) => line.trim());
+  // **From the result's own channel, not from stderr** (REVIEW F36). Reading `result.stderr` worked
+  // only for children that also *failed*, because `shell` discards stderr on success — and a child
+  // that hits a denial, is told no, and carries on to exit zero is the ordinary case, not the
+  // exception. The refusal was therefore erased on exactly the path where it happens most, and the
+  // test that covered this injected denial text through a synthetic failed result, so it never
+  // touched the production success path at all.
+  const denials = result.denials ?? [];
 
   // The cap, with its own answer (REVIEW F7). Valid JSON emitted *before* 64MB was reached
   // survives inside the truncated stdout, so a flooding child that had already printed a

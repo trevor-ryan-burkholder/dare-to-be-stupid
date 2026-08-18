@@ -3242,7 +3242,7 @@ report fixtures named definitions that were not on disk — which after this rep
 case, not the ordinary one. The seeded set now includes the files those fixtures name, because a
 harness whose reports describe a tree it did not build is not modelling a repository.
 
-### 93. Preserve guard denials from successful children — OPEN (REVIEW F36; needs tier 3)
+### 93. Preserve guard denials from successful children — IMPLEMENTED (0.188.0); REVIEW F36 open pending Codex
 
 **Problem solved:** `shell` returns an empty `stderr` whenever a command exits zero, and
 `spawnClaude` searches exactly that field for `meeseeks-guard: denied` lines. A Claude child can hit
@@ -3259,6 +3259,30 @@ evidence; only the denial signal feeds the brief.
 while preserving it; clean-stderr and failed-envelope neighbours are unchanged; and the mandatory
 paid tier-3 guard canary has been run, because this crosses `spawnClaude` and the external CLI
 contract. REVIEW F36 owns closure.
+
+**What landed (0.188.0).** A denial travels on its own bounded field of `ShellResult` rather than
+being re-derived from `stderr`. `shell` extracts it on **every** exit status; `spawnClaude` reads
+`result.denials` and nothing else.
+
+**Why a channel and not "stop discarding stderr on success".** Both halves of the required
+resolution have to hold at once. Discarding a successful command's stderr is deliberate — a consumer
+that learned to read it would be reading whatever a tool happened to warn about, and every
+`npm warn` would become a decision input. But a denied tool call *does not fail a child*: the guard
+says no, the model carries on, the process exits zero. So the one message the loop can act on lived
+on the one stream that path throws away. A separate field keeps the refusal and keeps ordinary
+stderr inert.
+
+Bounded at `DENIAL_LIMIT` lines of `DENIAL_LINE_LIMIT` characters and deduplicated, because this
+text reaches a builder's brief: a model that retries a denied call forty times has learned one fact,
+not forty.
+
+**Evidence.** `test/integration/guard-denial.integration.test.mjs` runs a **real child that writes a
+denial to stderr and exits zero** — the production path the old test could not reach, because it
+injected denial text through a *failed synthetic result*, which is that path's opposite. The
+ordinary-noisy-stderr neighbour proves nothing else crosses; the failed-child case proves the path
+that always worked still does; the caps are asserted against a real stream. `test/guard.test.mjs`
+covers `guardDenials` directly. Verified red: removing the success-path extraction fails the
+recovered-child case.
 
 ### 94. Clean health-probe descendants after the shell leader exits — IMPLEMENTED (0.185.0); REVIEW F37 open pending Codex
 
