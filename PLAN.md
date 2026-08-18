@@ -2301,7 +2301,7 @@ start a deliberately revised objective; it is never an ordinary Builder edit.
 starts new Oracle/review evidence; non-authoritative product documentation remains editable; and
 the digest is checked at the role and terminal boundaries in REVIEW F12.
 
-### 67. Prevent silent deterministic-gate roster shrink — OPEN (REVIEW F13)
+### 67. Prevent silent deterministic-gate roster shrink — IMPLEMENTED (0.190.0); REVIEW F13 open pending Codex
 
 **Problem solved:** the legacy `frontendOnly` predicate can remove a quality gate when current-tree
 markers disappear, bypassing the run's fixed declared capability set.
@@ -2313,6 +2313,39 @@ because one detector returned false on a later tree.
 **Done when:** declared UI work retains its quality gate through marker deletion, detected-only
 removal is visible and independently justified, temporary experiments do not create permanent
 unsatisfiable gates, and roster-diff tests cover both directions.
+
+**What landed (0.190.0).** `frontendOnly` is gone. `impeccable` is armed by the `web-ui` capability
+like every other conditional gate, so there is now **one** arming vocabulary instead of two. The
+run's capability set is monotonic *within a run*: `resolveCapabilities` unions the architect's fixed
+declaration, the current detection, and everything the run already established, read back from the
+manifest.
+
+**Why the old flag was the whole defect.** The declared set was already unioned and monotonic — the
+finding says so. `frontendOnly` bypassed it by asking `hasFrontend(dir)` about the *current tree* on
+every gate pass, so a builder deleting `index.html` deleted the gate that judged its design work,
+with no skipped-gate record and no memory that it had ever applied. Correct primitives, wired
+around.
+
+**A lapse is named rather than absorbed.** `resolved.lapsed` is what the run established and the
+detector no longer sees. It is recorded in `capabilities.json` and announced once — once, not per
+gate pass, because a warning repeated every iteration is one an operator learns to scroll past.
+
+**The escape, designed before the enforcement, as `CLAUDE.md` requires of a monotonic property.**
+`capabilities.json` is now a per-run artifact, so the set is monotonic *within* a run and re-resolved
+by the next one. Without that, a project that genuinely stopped being a web UI would carry an
+unsatisfiable design gate forever — a temporary experiment made permanent. A new run re-resolves
+from the architect's fresh declaration against the captured specification, which is finite and
+independently made, and the previous run's manifest is archived rather than overwritten, which is
+the durable evidence. Archiving it is independently right for the same reason the specification and
+the oracle store are archived: it describes one run's resolution.
+
+**Evidence.** `test/capabilities.test.mjs` covers the union, the lapse report, the growth direction,
+the declared capability that never lapses, and an unreadable manifest reading as nothing established
+rather than as a failure. `test/integration/capability-monotonicity.integration.test.mjs` drives the
+real `main`: the architect declares only `cli`, the tree shows `index.html`, the builder deletes it,
+and `web-ui` stays armed, is recorded as lapsed, and is announced exactly once — then a second run
+over a tree that genuinely has no UI resolves without it, with the first run's manifest archived.
+Verified red by removing the established union.
 
 ### 68. Seal Panel verdicts to an exact workspace identity — IMPLEMENTED (0.172.0); REVIEW F14 open pending Codex
 

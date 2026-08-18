@@ -23,6 +23,7 @@ import {
   CapabilityError,
   UNDETECTABLE,
   detectCapabilities,
+  establishedCapabilities,
   hasFrontend,
   parseCapabilityDeclaration,
   readDeclaredCapabilities,
@@ -527,6 +528,9 @@ describe('the capability manifest on disk', () => {
       detected: ['web-ui'],
       capabilities: ['web-ui', 'cli'],
       evidence: { 'web-ui': 'dependency react' },
+      // Empty, and recorded rather than omitted (REVIEW F13): a reader needs to see that nothing
+      // was held open by monotonicity, not have to infer it from an absent field.
+      lapsed: [],
     });
   });
 
@@ -612,5 +616,73 @@ describe('PRODUCT.md and the capability manifest do not overlap', () => {
     for (const capability of CAPABILITY_ORDER) {
       assert.equal(productRow.includes(capability), false, `the PRODUCT.md instruction names ${capability}`);
     }
+  });
+});
+
+describe('a capability this run established does not lapse with its marker (REVIEW F13)', () => {
+  // **The reproduction Codex recorded.** The same declaration retained `cli`; adding `index.html`
+  // resolved `web-ui, cli`, and deleting it resolved `cli` alone. A quality gate armed by the
+  // frontend predicate therefore disappeared from the roster when the builder deleted a file —
+  // deterministic coverage shrinking after the builder changed the detection input, with no
+  // skipped-gate record and no memory that the gate had ever applied.
+
+  it('keeps a detected-only capability after its marker is gone', () => {
+    const resolved = resolveCapabilities({
+      root: makeProject(),
+      declared: ['cli'],
+      detected: {},
+      established: ['web-ui', 'cli'],
+    });
+    assert.deepStrictEqual(resolved.capabilities, ['web-ui', 'cli']);
+    assert.deepStrictEqual(resolved.lapsed, ['web-ui'], 'the lapse must be named, not merely survived');
+  });
+
+  it('keeps a declared capability after its marker is gone, which always held', () => {
+    const resolved = resolveCapabilities({ root: makeProject(), declared: ['web-ui'], detected: {}, established: [] });
+    assert.deepStrictEqual(resolved.capabilities, ['web-ui']);
+    assert.deepStrictEqual(resolved.lapsed, [], 'a declared capability never lapsed and must not be reported as such');
+  });
+
+  it('reports nothing lapsed while the detector still agrees', () => {
+    // The benign neighbour. An ordinary iteration must not accumulate warnings about capabilities
+    // that are plainly still there.
+    const resolved = resolveCapabilities({
+      root: makeProject(),
+      declared: ['cli'],
+      detected: { 'web-ui': 'dependency react' },
+      established: ['web-ui', 'cli'],
+    });
+    assert.deepStrictEqual(resolved.lapsed, []);
+    assert.deepStrictEqual(resolved.capabilities, ['web-ui', 'cli']);
+  });
+
+  it('grows the set when detection finds something new, because monotonic means only upward', () => {
+    const resolved = resolveCapabilities({
+      root: makeProject(),
+      declared: ['cli'],
+      detected: { api: 'docs/openapi.yaml' },
+      established: ['cli'],
+    });
+    assert.deepStrictEqual(resolved.capabilities, ['cli', 'api']);
+    assert.deepStrictEqual(resolved.lapsed, []);
+  });
+
+  it('treats an unreadable or absent manifest as nothing established, not as a failure', () => {
+    // This is the first iteration's answer as much as a corrupt file's. A run that has genuinely
+    // lost its manifest already fails closed at `readDeclaredCapabilities`, which owns that.
+    const meeseeksDir = path.join(makeProject(), '.meeseeks');
+    assert.deepStrictEqual(establishedCapabilities(meeseeksDir), []);
+    mkdirSync(meeseeksDir, { recursive: true });
+    writeFileSync(path.join(meeseeksDir, CAPABILITY_MANIFEST), '{ not json', 'utf8');
+    assert.deepStrictEqual(establishedCapabilities(meeseeksDir), []);
+  });
+
+  it('reads back what the previous iteration established', () => {
+    const meeseeksDir = path.join(makeProject(), '.meeseeks');
+    writeCapabilityManifest(
+      meeseeksDir,
+      resolveCapabilities({ root: makeProject(), declared: ['cli'], detected: { 'web-ui': 'dependency react' } }),
+    );
+    assert.deepStrictEqual(establishedCapabilities(meeseeksDir), ['web-ui', 'cli']);
   });
 });

@@ -91,7 +91,7 @@ describe('installQualityPlugins', () => {
     const { runner } = fakeRunner({ [DETECT]: { ok: true } });
     const result = await installQualityPlugins({ cwd, plugins: ['impeccable'], runner });
     assert.deepStrictEqual(result.gates, [
-      { plugin: 'impeccable', command: ['npx', 'impeccable', 'detect', 'src/'], frontendOnly: true },
+      { plugin: 'impeccable', command: ['npx', 'impeccable', 'detect', 'src/'], capability: 'web-ui' },
     ]);
   });
 
@@ -109,7 +109,7 @@ describe('installQualityPlugins', () => {
     const { runner } = fakeRunner({ [DETECT]: { ok: true } });
     const result = await installQualityPlugins({ cwd, plugins: ['impeccable'], runner });
     assert.deepStrictEqual(result.gates, [
-      { plugin: 'impeccable', command: ['npx', 'impeccable', 'detect', 'src/'], frontendOnly: true },
+      { plugin: 'impeccable', command: ['npx', 'impeccable', 'detect', 'src/'], capability: 'web-ui' },
     ]);
     assert.deepStrictEqual(result.warnings, []);
   });
@@ -119,7 +119,7 @@ describe('installQualityPlugins', () => {
     const { runner } = fakeRunner({ ['npx --no-install knip --version']: { ok: true } });
     const result = await installQualityPlugins({ cwd, plugins: ['knip'], runner });
     assert.equal(result.gates.length, 1);
-    assert.equal(result.gates[0].frontendOnly, false);
+    assert.equal(result.gates[0].capability, undefined);
   });
 
   it('warns rather than aborting when an optional detector will not install', async () => {
@@ -177,7 +177,8 @@ describe('resolvePlugin', () => {
 
   it('marks impeccable required and frontend-only', () => {
     assert.equal(KNOWN_PLUGINS.impeccable.required, true);
-    assert.equal(KNOWN_PLUGINS.impeccable.frontendOnly, true);
+    // REVIEW F13: armed by the run's monotonic capability set, not by a detector on the current tree.
+    assert.equal(KNOWN_PLUGINS.impeccable.capability, 'web-ui');
   });
 });
 
@@ -190,9 +191,8 @@ describe('the schemathesis plugin', () => {
     assert.equal(spec.required, false);
   });
 
-  it('is armed by the api capability rather than by the ad-hoc frontend flag', () => {
+  it('is armed by the api capability, which is now the only arming mechanism', () => {
     assert.equal(spec.capability, 'api');
-    assert.equal(spec.frontendOnly, false);
   });
 
   // Every element of this argv was executed against schemathesis 3.39.16, which is the rule

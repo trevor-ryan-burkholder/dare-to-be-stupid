@@ -38,7 +38,7 @@ import { execFileSync } from 'node:child_process';
  */
 /**
  * @typedef {{
- *   name: string, required: boolean, frontendOnly: boolean, capability?: string,
+ *   name: string, required: boolean, capability?: string,
  *   detect: string[], install: string[], gate: string[] | null, note: string
  * }} PluginSpec
  */
@@ -62,7 +62,10 @@ export const KNOWN_PLUGINS = {
   impeccable: {
     name: 'impeccable',
     required: true,
-    frontendOnly: true,
+    // Armed by the run's `web-ui` capability rather than by a detector run against the current tree
+    // (REVIEW F13). The old `frontendOnly` flag re-asked "does this repo render a UI" on every gate
+    // pass, so a builder deleting `index.html` deleted the gate that judged its design work.
+    capability: 'web-ui',
     detect: ['npx', '--no-install', 'impeccable', '--version'],
     install: ['npx', '-y', 'impeccable', 'install'],
     gate: ['npx', 'impeccable', 'detect', 'src/'],
@@ -71,7 +74,6 @@ export const KNOWN_PLUGINS = {
   knip: {
     name: 'knip',
     required: false,
-    frontendOnly: false,
     detect: ['npx', '--no-install', 'knip', '--version'],
     install: ['npm', 'install', '--save-dev', '--no-audit', '--no-fund', 'knip'],
     // Deliberately narrowed to files and dependencies. knip's unused-*exports* analysis is
@@ -85,7 +87,6 @@ export const KNOWN_PLUGINS = {
   schemathesis: {
     name: 'schemathesis',
     required: false,
-    frontendOnly: false,
     // R18. Armed by the `api` capability, the way `impeccable` should eventually be armed by
     // `web-ui` (BORROWED.md R7) rather than by the ad-hoc `frontendOnly` flag beside it.
     capability: 'api',
@@ -109,7 +110,6 @@ export const KNOWN_PLUGINS = {
   semgrep: {
     name: 'semgrep',
     required: false,
-    frontendOnly: false,
     detect: ['semgrep', '--version'],
     install: ['python3', '-m', 'pip', 'install', '--user', '--quiet', 'semgrep'],
     // `security-audit` is `npm audit`, which only ever inspects declared dependencies. It
@@ -162,7 +162,7 @@ export function resolvePlugin(name) {
  * @param {{ cwd: string, plugins: string[], runner?: Runner }} options
  * @returns {Promise<{
  *   installed: string[], skipped: string[], warnings: string[],
- *   gates: { plugin: string, command: string[], frontendOnly: boolean, capability?: string }[]
+ *   gates: { plugin: string, command: string[], capability?: string }[]
  * }>}
  * @throws {PluginInstallError} when a required plugin cannot be provisioned
  */
@@ -176,7 +176,7 @@ export async function installQualityPlugins(options) {
   const skipped = [];
   /** @type {string[]} */
   const warnings = [];
-  /** @type {{ plugin: string, command: string[], frontendOnly: boolean, capability?: string }[]} */
+  /** @type {{ plugin: string, command: string[], capability?: string }[]} */
   const gates = [];
 
   for (const name of plugins) {
@@ -202,7 +202,7 @@ export async function installQualityPlugins(options) {
     }
 
     if (spec.gate === null) continue;
-    // `frontendOnly` is carried, not resolved. Provisioning happens once, before the builder
+    // The capability is carried, not resolved. Provisioning happens once, before the builder
     // has written a line; asking "does this repo have a frontend" here asks it of a
     // directory containing a PRD and nothing else, and the answer is always no. That
     // disarmed the design gate for every greenfield run — which is the entire use case.
@@ -213,7 +213,6 @@ export async function installQualityPlugins(options) {
     gates.push({
       plugin: spec.name,
       command: spec.gate,
-      frontendOnly: spec.frontendOnly,
       ...(spec.capability === undefined ? {} : { capability: spec.capability }),
     });
   }

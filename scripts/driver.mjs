@@ -34,6 +34,7 @@ import {
   hasFrontend,
   parseCapabilityDeclaration,
   resolveCapabilities,
+  establishedCapabilities,
   writeCapabilityManifest,
 } from './capabilities.mjs';
 import {
@@ -5316,11 +5317,10 @@ export function isSecurityId(id) {
  * capability — says so, because the alternative is a builder reading "every iteration must
  * pass" over a command that will never run against this project.
  *
- * @param {{ frontendOnly?: boolean, capability?: string }} gate
+ * @param {{ capability?: string }} gate
  * @returns {string}
  */
 export function armingNote(gate) {
-  if (gate.frontendOnly === true) return ' (armed once this repo renders a UI)';
   if (gate.capability !== undefined) return ` (armed only for a ${gate.capability} project)`;
   return '';
 }
@@ -5351,9 +5351,9 @@ export function armingNote(gate) {
  * Operator gates carry no arming condition. An operator who declared a gate is the arming
  * condition, and there is nothing to detect.
  *
- * @param {{ plugin: string, command: string[], frontendOnly: boolean, capability?: string }[]} qualityGates
+ * @param {{ plugin: string, command: string[], capability?: string }[]} qualityGates
  * @param {{ name: string, command: string[] }[]} extraGates
- * @returns {{ name: string, command: string[], text: string, frontendOnly: boolean, capability?: string }[]}
+ * @returns {{ name: string, command: string[], text: string, capability?: string }[]}
  */
 export function overlayGates(qualityGates, extraGates) {
   return [
@@ -5361,14 +5361,12 @@ export function overlayGates(qualityGates, extraGates) {
       name: `quality:${gate.plugin}`,
       command: gate.command,
       text: `quality:${gate.plugin}: ${gate.command.join(' ')}${armingNote(gate)}`,
-      frontendOnly: gate.frontendOnly,
       ...(gate.capability === undefined ? {} : { capability: gate.capability }),
     })),
     ...extraGates.map((gate) => ({
       name: `operator:${gate.name}`,
       command: gate.command,
       text: `operator:${gate.name}: ${gate.command.join(' ')}`,
-      frontendOnly: false,
     })),
   ];
 }
@@ -6353,9 +6351,29 @@ export async function main(argv, io = {}) {
    *
    * @returns {string[]}
    */
+  /** Capabilities already named as lapsed, so the announcement is made once rather than every gate run. */
+  const announcedLapses = new Set();
   const runCapabilities = () => {
-    const resolved = resolveCapabilities({ root: cwd, declared: declaredCapabilities });
+    // **Monotonic, and loud when it has to be** (REVIEW F13). The set unions the architect's fixed
+    // declaration, the current detection, and everything this run already established — so a
+    // builder deleting `index.html` can no longer remove the deterministic gate that judges its UI.
+    const resolved = resolveCapabilities({
+      root: cwd,
+      declared: declaredCapabilities,
+      established: establishedCapabilities(meeseeksDir),
+    });
     writeCapabilityManifest(meeseeksDir, resolved);
+    for (const capability of resolved.lapsed) {
+      if (announcedLapses.has(capability)) continue;
+      announcedLapses.add(capability);
+      write(
+        verbatim(
+          `capability ${capability} is no longer detected in this tree but stays armed: a gate this run already ` +
+            'established as applicable is not dropped because a marker went away. Remove it deliberately, in the ' +
+            'specification, rather than by deleting a file',
+        ),
+      );
+    }
     return resolved.capabilities;
   };
   write(verbatim(`this project is: ${runCapabilities().join(', ')}`));
@@ -6708,13 +6726,15 @@ export async function main(argv, io = {}) {
         // things debugged very differently. Required like everything else: a declared gate that
         // only warns is a comment.
         //
-        // Two arming questions, and they should be one. `frontendOnly` is the older ad-hoc
-        // flag; `capability` is the general form (BORROWED.md R7), and collapsing the first
-        // into the second is a separate item. A gate whose capability is absent is not run
-        // and not warned about: it does not apply, which is different from failing.
+        // One arming question, since 0.190.0 (REVIEW F13). A gate whose capability is absent is
+        // not run and not warned about: it does not apply, which is different from failing.
         ...overlayGates(provisioning.gates, config.extraGates)
-          .filter((gate) => !gate.frontendOnly || hasFrontend(dir))
-          .filter((gate) => gate.capability === undefined || capabilities.includes(gate.capability))
+          // **No `frontendOnly` any more** (REVIEW F13). It filtered the roster through a fresh
+          // `hasFrontend(dir)` on the *current* tree, bypassing the run's capability set entirely —
+          // so deleting a marker deleted the gate, with no skipped-gate record and no memory that it
+          // had ever applied. `impeccable` is armed by `web-ui` like every other conditional gate,
+          // and that set is monotonic for the run.
+          .filter((gate) => gate.capability === undefined || capabilities.includes(/** @type {any} */ (gate.capability)))
           .map((gate) => ({ name: gate.name, command: gate.command, required: true })),
       ],
       capabilities,

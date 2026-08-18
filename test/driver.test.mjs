@@ -4369,9 +4369,9 @@ describe('repeatedRegressionNote', () => {
 
 describe('overlayGates', () => {
   const QUALITY = [
-    { plugin: 'knip', command: ['npx', 'knip'], frontendOnly: false },
-    { plugin: 'impeccable', command: ['npx', 'impeccable', 'detect', 'src/'], frontendOnly: true },
-    { plugin: 'schemathesis', command: ['schemathesis', 'run'], frontendOnly: false, capability: 'api' },
+    { plugin: 'knip', command: ['npx', 'knip'] },
+    { plugin: 'impeccable', command: ['npx', 'impeccable', 'detect', 'src/'], capability: 'web-ui' },
+    { plugin: 'schemathesis', command: ['schemathesis', 'run'], capability: 'api' },
   ];
   const EXTRA = [{ name: 'release-check', command: ['npm', 'run', 'release-check'] }];
 
@@ -4394,7 +4394,7 @@ describe('overlayGates', () => {
 
   it('annotates an arming condition in the text rather than dropping the gate', () => {
     const gates = overlayGates(QUALITY, []);
-    assert.equal(gates[1].text.endsWith('(armed once this repo renders a UI)'), true, gates[1].text);
+    assert.equal(gates[1].text.endsWith('(armed only for a web-ui project)'), true, gates[1].text);
     assert.equal(gates[2].text.endsWith('(armed only for a api project)'), true, gates[2].text);
     // Capabilities are re-detected every iteration, so a list that silently dropped a
     // not-yet-armed gate would read as a list that never had it.
@@ -4403,14 +4403,14 @@ describe('overlayGates', () => {
 
   it('carries the arming fields the executing filter reads, and only where they belong', () => {
     const gates = overlayGates(QUALITY, EXTRA);
-    assert.equal(gates[1].frontendOnly, true);
+    assert.equal(gates[1].capability, 'web-ui');
     assert.equal(gates[2].capability, 'api');
     assert.equal('capability' in gates[0], false, 'an unarmed gate gained a capability key');
   });
 
   it('arms an operator gate unconditionally: the operator declaring it is the condition', () => {
     const [gate] = overlayGates([], EXTRA);
-    assert.equal(gate.frontendOnly, false);
+    assert.equal(gate.capability, undefined);
     assert.equal('capability' in gate, false);
     assert.deepStrictEqual(gate.command, ['npm', 'run', 'release-check']);
   });
@@ -5872,21 +5872,23 @@ describe('isTestEvidence', () => {
 describe('armingNote', () => {
   it('says nothing for a gate that always applies', () => {
     assert.equal(armingNote({}), '');
-    assert.equal(armingNote({ frontendOnly: false }), '');
+    assert.equal(armingNote({}), '');
   });
 
   it('names the frontend condition, as it always did', () => {
-    assert.equal(armingNote({ frontendOnly: true }), ' (armed once this repo renders a UI)');
+    assert.equal(armingNote({ capability: 'web-ui' }), ' (armed only for a web-ui project)');
   });
 
   it('names a capability condition, which is what was missing', () => {
     assert.equal(armingNote({ capability: 'api' }), ' (armed only for a api project)');
   });
 
-  it('prefers the frontend wording when a gate somehow carries both', () => {
-    // Not a shape any current plugin has. Asserted so the answer is decided rather than
-    // whichever branch happens to come first after an edit.
-    assert.equal(armingNote({ frontendOnly: true, capability: 'api' }), ' (armed once this repo renders a UI)');
+  it('has one arming vocabulary now, so there is no second wording to prefer', () => {
+    // There used to be two: an ad-hoc frontend flag and the capability. REVIEW F13 removed the
+    // first, because a gate armed by a fresh look at the current tree can be disarmed by deleting a
+    // file. The note is asserted here so the collapse cannot silently lose the annotation.
+    assert.equal(armingNote({ capability: 'web-ui' }), ' (armed only for a web-ui project)');
+    assert.equal(armingNote({ capability: 'api' }), ' (armed only for a api project)');
   });
 });
 

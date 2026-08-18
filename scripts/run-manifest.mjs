@@ -30,6 +30,7 @@ import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'n
 import path from 'node:path';
 
 import { ASSUMPTIONS_FILE } from './assumptions.mjs';
+import { CAPABILITY_MANIFEST } from './capabilities.mjs';
 import { LAUNCH_RECEIPT_FILE } from './launch.mjs';
 import { ORACLE_FILE } from './oracle.mjs';
 import { SPECIFICATION_FILE } from './specification.mjs';
@@ -96,6 +97,15 @@ const PER_RUN_ARTIFACTS = [
   // specification rather than the implementation execute a previous objective's cases and report a
   // clean pass over nothing.
   ORACLE_FILE,
+  // The resolved capability set (REVIEW F13). Per-run, and this is **the escape for a monotonic
+  // property**. Within a run the set only grows, so a builder cannot delete `index.html` to remove
+  // the gate that judges its UI. Across runs it must be able to shrink, or a project that genuinely
+  // stopped being a web UI would carry an unsatisfiable design gate forever — a temporary
+  // experiment made permanent, which is exactly what `CLAUDE.md` says to design for *before*
+  // enforcing monotonicity. A new run re-resolves from the architect's fresh declaration against
+  // the captured specification, and the previous run's manifest is archived rather than lost, so
+  // the removal is deliberate, independently made, and leaves durable evidence.
+  CAPABILITY_MANIFEST,
 ];
 
 /** The manifest's own schema version, bumped when a field's meaning changes. */

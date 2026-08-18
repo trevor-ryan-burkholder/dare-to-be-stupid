@@ -54,8 +54,12 @@ import path from 'node:path';
 /**
  * @typedef {{
  *   capabilities: Capability[], declared: Capability[], detected: Capability[],
- *   evidence: CapabilityEvidence
+ *   evidence: CapabilityEvidence, lapsed: Capability[]
  * }} ResolvedCapabilities
+ *
+ * `lapsed` is what this run had already established and the current tree no longer shows
+ * (REVIEW F13). It is kept in `capabilities` regardless — the point is that it is *named*, so a
+ * roster that stops shrinking silently starts saying why it did not.
  */
 
 /** Thrown when a capability set cannot be trusted. */
@@ -374,9 +378,10 @@ export function validateCapabilities(value, where) {
 /**
  * Combine what the architect declared with what the tree shows: declared OR detected.
  *
- * @param {{ root: string, declared?: unknown, detected?: CapabilityEvidence }} options
+ * @param {{ root: string, declared?: unknown, detected?: CapabilityEvidence, established?: unknown }} options
  *        `detected` is injectable so a caller that already ran detection does not pay for it
- *        twice, and so the union logic is testable without a directory tree.
+ *        twice, and so the union logic is testable without a directory tree. `established` is what
+ *        the run already resolved on an earlier iteration, which makes the set monotonic.
  * @returns {ResolvedCapabilities}
  * @throws {CapabilityError} when the declaration is invalid, or the union is empty
  */
@@ -384,9 +389,16 @@ export function resolveCapabilities(options) {
   const declared = validateCapabilities(options.declared ?? [], 'declared capabilities');
   const evidence = options.detected ?? detectCapabilities(options.root);
   const detected = validateCapabilities(Object.keys(evidence), 'detected capabilities');
+  // **Monotonic across iterations** (REVIEW F13). A capability this run already established stays
+  // established: the absence of a current detector is not authority to drop a gate the run had
+  // already agreed applied. `lapsed` names what detection no longer sees, so the caller can say so
+  // out loud rather than letting the roster shrink silently — and so a genuine removal has
+  // something to point at.
+  const established = validateCapabilities(options.established ?? [], 'established capabilities');
 
-  const union = new Set([...declared, ...detected]);
+  const union = new Set([...declared, ...detected, ...established]);
   const capabilities = CAPABILITY_ORDER.filter((capability) => union.has(capability));
+  const lapsed = established.filter((capability) => !declared.includes(capability) && !detected.includes(capability));
 
   if (capabilities.length === 0) {
     throw new CapabilityError(
@@ -396,7 +408,7 @@ export function resolveCapabilities(options) {
     );
   }
 
-  return { capabilities, declared, detected, evidence };
+  return { capabilities, declared, detected, evidence, lapsed };
 }
 
 /**
@@ -486,10 +498,39 @@ export function writeCapabilityManifest(meeseeksDir, resolved) {
     detected: resolved.detected,
     capabilities: resolved.capabilities,
     evidence: resolved.evidence,
+    // Recorded, not just logged: an operator reading the manifest after the run needs to see that a
+    // capability was held open by monotonicity rather than by a detector (REVIEW F13).
+    lapsed: resolved.lapsed,
   };
   writeFileSync(temporary, `${JSON.stringify(body, null, 2)}\n`, 'utf8');
   renameSync(temporary, file);
   return file;
+}
+
+/**
+ * Capabilities this run has already established, from the manifest it wrote last iteration.
+ *
+ * **Why anything is remembered at all** (REVIEW F13). `resolveCapabilities` unions the architect's
+ * fixed declaration with a *fresh detection of the current tree*, so a capability that was only ever
+ * detected disappears the moment its marker does. Codex's reproduction: the same declaration
+ * retained `cli`, adding `index.html` resolved `web-ui, cli`, and deleting it resolved `cli` alone —
+ * so a builder that removed a file could remove the deterministic gate that judged its work, and the
+ * roster shrank with no record that it ever contained more.
+ *
+ * Returns an empty list rather than throwing on an unreadable or absent manifest. This is the *first*
+ * iteration's answer as much as it is a corrupt file's, and a run that has genuinely lost its
+ * manifest already fails closed at `readDeclaredCapabilities`, which is the check that owns that.
+ *
+ * @param {string} meeseeksDir
+ * @returns {Capability[]}
+ */
+export function establishedCapabilities(meeseeksDir) {
+  try {
+    const parsed = JSON.parse(readFileSync(path.join(meeseeksDir, CAPABILITY_MANIFEST), 'utf8'));
+    return validateCapabilities(parsed?.capabilities ?? [], 'established capabilities');
+  } catch {
+    return [];
+  }
 }
 
 /**
