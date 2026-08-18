@@ -1,4 +1,4 @@
-# Codex code review — 16–17 August 2026
+# Codex code review — 16–18 August 2026
 
 > **Ownership:** This is the Codex reviewer document. Codex records and verifies findings here;
 > Claude Code owns implementation. Do not treat an entry as closed until Codex has reviewed the
@@ -10,7 +10,7 @@
 their repairs. F31–F37 cite the current 0.179.0 tree and record newly exposed failure shapes,
 including incomplete repairs for F1, F2, F7, F14, F16, and F20. Finding status is authoritative
 only here.
-**Verdict:** **CHANGES REQUESTED** — nineteen high-priority defects and eighteen medium-priority
+**Verdict:** **CHANGES REQUESTED** — twenty-one high-priority defects and nineteen medium-priority
 defects are open.
 
 This remains a read-only review of the Claude-native implementation. Recording the extension does
@@ -1469,6 +1469,64 @@ occupy the assigned port, mutate the workspace, and contaminate subsequent healt
 - Cooperative exit, timeout, and already-empty group cases settle without killing unrelated
   processes.
 - Windows evidence remains owned separately by F11/item 65. PLAN item 94 owns closure.
+
+### F38 — HIGH: deploy-time repository changes can be tagged as reviewed and `SHIPPED`
+
+**Status:** OPEN
+**Affected:** `scripts/driver.mjs:2826-2934`, `scripts/driver.mjs:6990-7014`
+
+Publication is verified before ship-time mutation and the arbitrary deploy command. After those
+mutation-capable steps the Driver rechecks only specification drift, then `ship()` tags implicit
+current `HEAD` rather than the captured reviewed commit. A successful deploy can therefore edit
+and commit tracked source, receive both tags, and cause `SHIPPED` on bytes neither gates nor Panel
+reviewed.
+
+**Impact:** an external command can move the publication subject after the final review seal,
+extending F31's false-completion class.
+
+**Required resolution:** revalidate workspace and HEAD after mutation/deploy, tag the explicit
+reviewed commit, and withhold `SHIPPED` on any drift.
+
+**Acceptance evidence:** real-Git tier-2 cases cover deploy-created commits and uncommitted deploy
+changes; neither ships. Clean neighbours tag exactly the reviewed commit.
+
+### F39 — HIGH: read failure deletes an unidentified takeover replacement
+
+**Status:** OPEN
+**Affected:** `scripts/run-lock.mjs:358-386`, `test/run-lock.test.mjs:400-478`
+
+A read failure after `sweepAbandonedTakeover()` renames the claim leaves `moved === null`;
+`isTheOneJudged` treats that as a match and recursively deletes it. Between the original read and
+rename, another process can replace the abandoned JSON claim with a legacy takeover directory or
+malformed live claim. A current contender can therefore delete a live pre-0.182.0 directory claim
+and proceed while the legacy driver also reclaims the stale lock.
+
+Existing tests cover a parseable JSON replacement and a legacy directory present at initial read,
+but not a directory replacement inside the read/rename window.
+
+**Impact:** the compatibility path can admit two reclaimers, reopening F1 through F34's recovery.
+
+**Required resolution:** every post-rename read failure or disappearance loses arbitration. Remove
+only an exact expected token or expected nameless-state match; restore or quarantine everything else.
+
+**Acceptance evidence:** a deterministic replacement-with-directory test and a mixed-version tier-2
+race prove legacy and current reclaimers cannot both win.
+
+### F40 — MEDIUM: the handoff's current-order section contradicts current state
+
+**Status:** OPEN
+**Affected:** `HANDOFF.md:1-21`, `HANDOFF.md:74-104`
+
+HANDOFF records F7 implemented and live-validated at 0.179.0, then says F7 is blocked because the same
+live expenditure is unauthorized. Its header also reports seventeen high and thirteen medium
+findings while REVIEW already reported nineteen high and eighteen medium before this extension.
+
+**Impact:** a fresh agent can pause completed work, misstate blockers, and follow obsolete sequencing.
+
+**Required resolution:** remove the stale snapshot or defer mutable ordering to `PLAN.md`, and
+reconcile counts without copying another long-lived queue into HANDOFF.
+
+**Acceptance evidence:** one current F7 status, one authoritative order, and matching finding counts.
 
 ## Audit coverage maps
 
