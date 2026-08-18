@@ -4,12 +4,13 @@
 > Claude Code owns implementation. Do not treat an entry as closed until Codex has reviewed the
 > repair and the relevant verification has passed.
 
-**Reviewed executable baseline:** `12f2004`; manifests at `0.179.0`. This extends the original
-`be19c9c` / 0.164.0 review through the fifteen repair releases recorded in `HANDOFF.md`.
-**Runtime continuity:** F1–F30 retain their original evidence and remain open until Codex verifies
-their repairs. F31–F37 cite the current 0.179.0 tree and record newly exposed failure shapes,
-including incomplete repairs for F1, F2, F7, F14, F16, and F20. Finding status is authoritative
-only here.
+**Reviewed executable baselines:** `be19c9c` / 0.164.0 for F1–F30; `12f2004` /
+0.179.0 for F31–F37; and `d88946d` / 0.184.0 for F38–F40.
+**Runtime continuity:** F1–F30 retain their original evidence. F31–F37 record newly exposed failure
+shapes, including incomplete repairs for F1, F2, F7, F14, F16, and F20. F38 extends F31's
+publication boundary, F39 extends F34's stale-claim boundary, and F40 records handoff-state drift.
+Later implementation commits remain unverified until Codex reviews their exact diffs. Finding
+status is authoritative only here.
 **Verdict:** **CHANGES REQUESTED** — twenty-one high-priority defects and nineteen medium-priority
 defects are open.
 
@@ -1683,20 +1684,27 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 
 ## Verification performed
 
-All existing non-paid gates were green after this documentation repair; the executable tree
-remains byte-identical to the reviewed tree:
+The original 0.164.0 review baseline recorded:
 
-- `npm run lint`
-- `npm run typecheck`
+- `npm run lint` — clean
+- `npm run typecheck` — clean
 - `npm test` — **2,307 passed, 0 failed**
 - `npm run test:integration` — **51 passed, 0 failed**
-- `npm run release-check` — **ok** at `0.164.0`; no shipped file has changed since release and
-  `HANDOFF.md` agrees
+- `npm run release-check` — **ok**
 
-The paid live tier was not run. Existing green tests do not cover the thirty failure shapes above.
+Those are historical reviewer results, not proof about the current tree. Later repair validation and
+the 0.179.0 paid-live measurements are recorded in `HANDOFF.md`; they remain implementer evidence
+until Codex verifies the exact repair commits. Green tests do not cover or close the open failure
+shapes above.
 
 ## Closure protocol
 
-Claude Code may implement the repairs in any order that preserves `DESIGN.md` and the repository
-invariants. After implementation, ask Codex to re-review the exact diff. Codex will change an item
-to `CLOSED` only after tracing the repair and checking the stated acceptance evidence.
+Claude Code implements repairs in PLAN dependency order while preserving `DESIGN.md` and repository
+invariants. A repaired finding remains OPEN, but **review-pending is not a development stop**. Keep
+each slice in a focused commit, record acceptance evidence in PLAN/HANDOFF, and continue all
+independent eligible work.
+
+Request Codex review when the next step depends on an unverified high-risk repair, before a release
+or acceptance claim, when no independent eligible work remains, or when the operator explicitly
+asks. Submit one exact commit range and finding list for a coherent batch; Codex still traces and
+closes each finding separately against its stated acceptance evidence.

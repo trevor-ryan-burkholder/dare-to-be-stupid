@@ -1,7 +1,7 @@
 # Documentation index
 
 **Status:** canonical
-**Last swept:** 17 August 2026 at version 0.164.0
+**Last swept:** 18 August 2026 at version 0.185.0
 
 This file is the control plane for project documentation. Read it first, then load only the
 document needed for the task. Historical and research documents are evidence, not instructions.
@@ -11,10 +11,10 @@ document needed for the task. Historical and research documents are evidence, no
 | Document | Purpose | Authority | Update rule |
 |---|---|---|---|
 | `DESIGN.md` | Product requirements, invariants, and system architecture | Normative source of truth | Change with the implementation or accepted design decision |
-| `CLAUDE.md` | Contributor and agent operating rules | Normative where it does not conflict with `DESIGN.md` | Edit here, then mirror the body into `AGENTS.md` |
+| `CLAUDE.md` | Contributor execution contract, stop conditions, and engineering rules | Normative where it does not conflict with `DESIGN.md` | Edit here, then mirror the body into `AGENTS.md` |
 | `AGENTS.md` | Agent-neutral mirror of `CLAUDE.md` | Mirror only | Do not edit independently |
-| `PLAN.md` | Live implementation backlog and ordering | Only live implementation plan | Update status in the same commit as the work |
-| `REVIEW.md` | Codex-owned external findings and closure evidence | Release gate for reviewed defects | Claude Code may repair; Codex closes after verification |
+| `PLAN.md` | Live backlog, dependency traversal, and review-queue state | Only live implementation plan | Update status in the same commit as the work |
+| `REVIEW.md` | Codex-owned findings and closure evidence | Release gate, not a per-repair session stop | Claude may repair and continue; Codex closes at a dependency/release boundary |
 | `HANDOFF.md` | Current repository state and immediate handoff | Operational summary | Keep short; move chronology to `docs/history/` |
 | `DOGFOOD.md` | Pending live experiments and current scenario status | Operational runbook | Completed results move to `docs/history/` |
 | `docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md` | Dynamic-workflow and explicit-provenance architecture note and experiment rationale | Supporting analysis; `DESIGN.md` §15 is normative | Update when official behavior is re-verified or an architecture decision changes |
@@ -33,6 +33,9 @@ When documents disagree, use this order:
 ## Reader routes
 
 - **Using the plugin:** `README.md`, then `DESIGN.md` only when deeper guarantees matter.
+- **Autonomous development:** `CLAUDE.md` for execution/stop rules, then `PLAN.md` for
+  dependency traversal. Review-pending repairs remain OPEN in `REVIEW.md` but do not pause
+  independent implementation.
 - **Changing code:** `CLAUDE.md`, the relevant `DESIGN.md` section, `PLAN.md`, and open
   `REVIEW.md` findings that touch the change.
 - **Reviewing code:** `REVIEW.md`, the relevant invariant in `DESIGN.md`, and the exact diff.
@@ -58,4 +61,6 @@ The following facts must have one canonical owner:
 - Live backlog status: `PLAN.md`; other documents link to item numbers instead of restating status.
 - External defect status: `REVIEW.md`; PLAN and HANDOFF link to finding IDs instead of copying
   acceptance criteria.
+- Autonomous stop conditions: `CLAUDE.md`; PLAN owns traversal/status semantics, and other
+  documents must not invent permission checkpoints or treat review-pending as blocked.
 - Completed-run evidence: files under `docs/history/`; current documents summarize and link.

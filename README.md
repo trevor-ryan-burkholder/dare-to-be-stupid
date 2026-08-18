@@ -265,7 +265,9 @@ from an exhausted budget from an abort has lost information to a punchline.
 ## Working on this repo
 
 Read `docs/INDEX.md` first for document authority and task-specific read routes. Historical
-ledgers are evidence, not implementation instructions.
+ledgers are evidence, not implementation instructions. Claude Code follows `CLAUDE.md`'s autonomous
+loop: finish and commit complete slices, continue past review-pending repairs, and stop for Codex only
+at a documented dependency or release boundary.
 
 ```bash
 npm run lint          # style and obvious errors

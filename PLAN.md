@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 17 August at 0.179.0
+# PLAN — what remains. Compiled 13 August 2026; statuses last swept 18 August at 0.185.0
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -16,12 +16,39 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 `PARKED` (intentionally outside the current queue until its admission condition is met),
 `DROPPED` (operator refused), and `DEFERRED` (operator postponed).
 
+`IMPLEMENTED (...); REVIEW ... open pending Codex` means **implementation complete, review queued**.
+It does not mean the development session is blocked. Use `REVIEW REQUIRED` only when verification
+is a dependency for the next available work or for a release/acceptance claim.
+
+## Autonomous traversal protocol
+
+`PLAN.md` is an executable dependency queue, not a menu for the operator. A development agent:
+
+1. selects the highest-priority current item whose named prerequisites are satisfied;
+2. finishes its implementation, hostile tests, required gates, version/docs updates, and commit;
+3. records implementation status here without changing Codex-owned finding status;
+4. queues review evidence and continues the next independent eligible item; and
+5. repeats until the objective is complete or every remaining path is genuinely blocked.
+
+Release-blocking and execution-blocking are different. An open REVIEW finding prevents release
+acceptance; it does not prevent independent implementation. Batch coherent repairs for Codex while
+preserving one slice per commit. Require review only when the next change relies on an unverified
+high-risk boundary, before claiming the candidate accepted/releasable, or when review is the sole
+remaining dependency.
+
+`BLOCKED`, `PARKED`, `PREPARED`, and operator-reserved experiments are traversal facts, not
+prompts to ask what to do. Skip them, continue eligible work, and revisit only when their documented
+admission condition changes. Choose the safest smallest sound implementation; do not stop for an
+implementation decision.
+
 ---
 
-## Build order — current traversal at 0.179.0
+## Build order — current traversal at 0.185.0
 
 **Gate 0A — high-priority external review defects.** These are release-blocking implementation
 items; the full requirements and closure evidence remain reviewer-owned in `REVIEW.md`.
+Release-blocking does not mean session-blocking: implement eligible Gate 0 work continuously and
+queue Codex closure under the traversal protocol above.
 
 - **F1:** acquire the repository lock atomically before any work — **implemented at 0.165.0**;
   `REVIEW.md` F1 stays OPEN until Codex has verified the repair. Winning is an exclusive create,

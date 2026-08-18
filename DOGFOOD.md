@@ -1,11 +1,15 @@
 # Dogfood — current scenarios and pending runs
 
 **Document status:** current operational runbook
-**Last swept:** 17 August 2026 at version 0.164.0
+**Last swept:** 18 August 2026 at version 0.185.0
 
 Completed run logs, recipes, autopsies, and measurements are preserved at
 [`docs/history/DOGFOOD-through-2026-08-15.md`](docs/history/DOGFOOD-through-2026-08-15.md).
 The table below is the current status; historical headings do not override it.
+
+Scenario states are not general development stop signals. Skip `BLOCKED`, `PARKED`, or
+watched/paid runs whose admission conditions are unmet, continue every independent eligible PLAN
+item, and return here only when the scenario becomes the next real dependency.
 
 | Scenario | Status | Current decision |
 |---|---|---|

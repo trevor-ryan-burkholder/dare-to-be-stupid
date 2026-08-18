@@ -1,4 +1,4 @@
-# START HERE — current handoff, last swept 17 August 2026
+# START HERE — current handoff, last swept 18 August 2026
 
 **State:** `main` at `0.185.0`. The manifests and package-lock root metadata agree. Measured on the
 current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean; `npm test`
@@ -15,12 +15,15 @@ long-lived queue into a short-lived summary. The review includes a
 guarantee-strength audit, durable-artifact registry, failure-shape matrix, and explicit
 negative-guarantee sheet. These are the first implementation gates in `PLAN.md`. Claude Code may
 implement them; Codex owns closure after reviewing the exact repair and its acceptance evidence.
+Review-pending repairs do **not** pause development: Claude continues through every independent
+eligible PLAN item and requests one evidence-complete review batch only at a dependency/release
+boundary or when no independent work remains.
 
-**Implemented, awaiting Codex verification.** Eighteen findings have repairs. A second Codex pass at
+**Implemented, awaiting Codex verification.** Twenty-two findings have repairs. A second Codex pass at
 0.179.0 recorded F31–F37, six of them incomplete repairs of the first fifteen; PLAN items 88–94 own
 them and Gate 0D records the order. Each
-remains **OPEN** in `REVIEW.md` — implementation and passing self-tests are not acceptance, and Codex
-reviews each commit separately:
+remains **OPEN** in `REVIEW.md` — implementation and passing self-tests are not acceptance. A coherent
+Codex batch may cover several focused commits while each finding retains separate closure evidence:
 
 | version | finding | what landed |
 |---|---|---|
