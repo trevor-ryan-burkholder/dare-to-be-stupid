@@ -14,10 +14,11 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import { setTimeout } from 'node:timers';
 import { after, before, describe, it } from 'node:test';
 
 import { startCommand } from '../../scripts/driver.mjs';
@@ -179,5 +180,88 @@ describe('runSmoke against a real server', () => {
     // A deploy verified by an empty list is the stub again, reporting a pass over nothing.
     const outcome = await runSmoke({ url: base, checks: [], timeout: 1_000 });
     assert.equal(outcome.ok, false);
+  });
+});
+
+describe('a start command that backgrounds the application and exits (REVIEW F37)', { skip: process.platform === 'win32' }, () => {
+  /**
+   * The shape the probe used to leak. `node server.js & exit 0` is an ordinary thing for a start
+   * script to do, and it makes the direct child — the shell — exit immediately while the server it
+   * started keeps listening. `stop` saw an exit code on the child and returned without signalling
+   * the group, so the probe failed *and* left a live server holding the port.
+   *
+   * The server writes its own pid and port to a file so the test can check the operating system
+   * rather than the probe's opinion of itself.
+   */
+  const BACKGROUNDING_SERVER = `
+    const http = require('node:http');
+    const fs = require('node:fs');
+    const port = Number(process.env.PORT);
+    const server = http.createServer((_req, res) => { res.writeHead(200); res.end('ok'); });
+    server.listen(port, '127.0.0.1', () => {
+      fs.writeFileSync(process.env.PIDFILE, JSON.stringify({ pid: process.pid, port }));
+    });
+  `;
+
+  /** @param {number} pid @returns {boolean} */
+  const alive = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      return /** @type {{ code?: string }} */ (error).code === 'EPERM';
+    }
+  };
+
+  /** @param {number} port @returns {Promise<boolean>} */
+  const listening = (port) =>
+    new Promise((resolve) => {
+      const request = http.get({ host: '127.0.0.1', port, path: '/health', timeout: 1_500 }, (response) => {
+        response.resume();
+        resolve(true);
+      });
+      request.on('error', () => resolve(false));
+      request.on('timeout', () => {
+        request.destroy();
+        resolve(false);
+      });
+    });
+
+  it('fails the probe and leaves neither the process nor its listener behind', async () => {
+    const app = makeApp({ server: BACKGROUNDING_SERVER, start: 'node server.js & exit 0' });
+    const pidfile = path.join(app, 'server.json');
+
+    const result = await probeHealth({
+      command: `PIDFILE=${JSON.stringify(pidfile)} npm start`,
+      path: '/health',
+      timeout: TIMEOUT,
+      cwd: app,
+    });
+
+    // The probe must fail: its leader ended before anything could be asked of the application.
+    assert.equal(result.ok, false, `expected a failed probe, got: ${result.detail}`);
+
+    // The background server really did start, or this proves nothing about cleanup.
+    const record = JSON.parse(readFileSync(pidfile, 'utf8'));
+    assert.equal(Number.isInteger(record.pid), true, 'the backgrounded server never wrote its pid');
+
+    // Give the reap a moment to land, then check the operating system rather than the probe.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    assert.equal(alive(record.pid), false, `the backgrounded server (pid ${record.pid}) outlived the probe`);
+    assert.equal(await listening(record.port), false, `port ${record.port} is still being served`);
+  });
+
+  it('still leaves a cooperative long-running server alone until it is asked to stop', async () => {
+    // The benign neighbour. Reaping an orphaned group must not become reaping every group: the
+    // ordinary case is a start command that stays in the foreground, and it must still pass.
+    const app = makeApp({
+      server: `
+        const http = require('node:http');
+        http.createServer((_req, res) => { res.writeHead(200); res.end('ok'); })
+          .listen(Number(process.env.PORT), '127.0.0.1');
+      `,
+    });
+    const result = await probeHealth({ command: 'npm start', path: '/health', timeout: TIMEOUT, cwd: app });
+    assert.equal(result.ok, true, result.detail);
   });
 });

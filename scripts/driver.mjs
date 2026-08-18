@@ -4686,6 +4686,84 @@ function processGroupMembers() {
 }
 
 /**
+ * One `ps` reading: who is in this process's group, and who is whose child.
+ *
+ * @returns {{ group: Set<number>, childrenOf: Map<number, number[]> } | null} null when `ps`
+ *   cannot answer, which the callers read as "sweep nothing" — nothing defaults to killable.
+ */
+function processSnapshot() {
+  if (process.platform === 'win32') return null;
+  try {
+    const out = execFileSync('ps', ['-eo', 'pid=,ppid=,pgid=,comm='], {
+      stdio: 'pipe',
+      encoding: 'utf8',
+      timeout: 10_000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    /** @type {Map<number, number[]>} */
+    const childrenOf = new Map();
+    /** @type {{ pid: number, pgid: number }[]} */
+    const rows = [];
+    for (const line of out.split('\n')) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 4) continue;
+      const [pid, ppid, pgid] = parts.slice(0, 3).map(Number);
+      if (!Number.isInteger(pid) || !Number.isInteger(ppid) || !Number.isInteger(pgid)) continue;
+      if (parts.slice(3).join(' ') === 'ps') continue;
+      childrenOf.set(ppid, [...(childrenOf.get(ppid) ?? []), pid]);
+      rows.push({ pid, pgid });
+    }
+    const self = rows.find((row) => row.pid === process.pid);
+    if (self === undefined) return null;
+    return { group: new Set(rows.filter((row) => row.pgid === self.pgid).map((row) => row.pid)), childrenOf };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `rootPid` and everything under it, from a snapshot.
+ *
+ * @param {Map<number, number[]>} childrenOf
+ * @param {number} rootPid
+ * @returns {Set<number>}
+ */
+function subtreeOf(childrenOf, rootPid) {
+  /** @type {Set<number>} */
+  const found = new Set([rootPid]);
+  /** @type {number[]} */
+  const queue = [rootPid];
+  while (queue.length > 0) {
+    const pid = /** @type {number} */ (queue.pop());
+    for (const child of childrenOf.get(pid) ?? []) {
+      if (found.has(child)) continue;
+      found.add(child);
+      queue.push(child);
+    }
+  }
+  return found;
+}
+
+/**
+ * The direct children of every `shell` call currently in flight.
+ *
+ * **This registry is what makes the sweep safe under concurrency** (REVIEW F33). Nothing is
+ * detached, so every `shell` child and grandchild shares the driver's one process group, and
+ * membership alone cannot tell one call's leaked orphan from another call's healthy child. The
+ * Panel runs its reviewers under `Promise.all`: reviewer A samples the group before B and C exist,
+ * and on timing out classifies them as its own survivors and kills them — one reviewer's failure
+ * manufacturing failures in the cold reviewers whose independence is the point of the Panel.
+ *
+ * Parentage answers it, and the asymmetry is what makes it work: the sweeper's *own* child is dead
+ * by the time it sweeps, so its orphans have been reparented and cannot be identified by parentage
+ * — but every sibling it must protect is by definition still **alive**, so a sibling's subtree can
+ * be read straight out of `ps` at the moment of the sweep.
+ *
+ * @type {Set<number>}
+ */
+const inFlightShellChildren = new Set();
+
+/**
  * Kill whatever joined this process group while a command was running, and report it.
  *
  * **The defect this closes** (`HANDOFF.md`, "the real hang"): `execFileSync`'s timeout signals
@@ -4711,17 +4789,30 @@ function processGroupMembers() {
  * deploy starts a server and then probes it, so a sweep on the success path would kill the
  * thing the smoke check is about to talk to.
  *
+ * **Subtraction, minus every live sibling's subtree** (REVIEW F33). A pid is swept when it joined
+ * the group after this command started and does not belong to another `shell` call that is still
+ * running. The subtraction is what reaches a reparented orphan whose parent link is gone; the
+ * sibling exclusion is what stops one timed-out call from reaping another's healthy children.
+ *
  * @param {Set<number> | null} before membership sampled before the command started
+ * @param {number | undefined} selfPid this call's own child, which is not a sibling of itself
  * @returns {number[]} pids killed, newest-arrival order not guaranteed
  */
-function sweepLeakedGroup(before) {
+function sweepLeakedGroup(before, selfPid) {
   if (before === null) return [];
-  const after = processGroupMembers();
-  if (after === null) return [];
+  const snapshot = processSnapshot();
+  if (snapshot === null) return [];
+  const { group: after, childrenOf } = snapshot;
+  /** @type {Set<number>} */
+  const siblings = new Set();
+  for (const child of inFlightShellChildren) {
+    if (child === selfPid) continue;
+    for (const pid of subtreeOf(childrenOf, child)) siblings.add(pid);
+  }
   /** @type {number[]} */
   const killed = [];
   for (const pid of after) {
-    if (pid === process.pid || before.has(pid)) continue;
+    if (pid === process.pid || before.has(pid) || siblings.has(pid)) continue;
     try {
       process.kill(pid, 'SIGKILL');
       killed.push(pid);
@@ -4803,6 +4894,10 @@ export function shell(command, args, options) {
       resolve({ ok: false, status: 1, stdout: '', stderr: /** @type {Error} */ (error).message, timedOut: false });
       return;
     }
+    // Registered for the length of this call so a *concurrent* `shell` that times out can tell this
+    // command's children from its own leaked ones (REVIEW F33). Removed in `settle`, on every path
+    // out, so a finished call protects nothing and a crashed one leaves no permanent exclusion.
+    if (typeof child.pid === 'number') inFlightShellChildren.add(child.pid);
 
     /** @type {Buffer[]} */
     const outChunks = [];
@@ -4832,6 +4927,9 @@ export function shell(command, args, options) {
     const settle = (result) => {
       if (settled) return;
       settled = true;
+      // Deregistered before the sweep runs, not after: the sweep is an argument to `settle`, and a
+      // call must not protect itself from its own cleanup.
+      if (typeof child.pid === 'number') inFlightShellChildren.delete(child.pid);
       if (timer !== undefined) clearTimeout(timer);
       if (graceTimer !== undefined) clearTimeout(graceTimer);
       // Close this side of the pipes. On the timed-out path a leaked descendant may still hold
@@ -4866,7 +4964,7 @@ export function shell(command, args, options) {
         // Absent rather than empty when no sweep ran, so a reader can tell "swept, found
         // nothing" from "never looked". `before` was sampled above; the survivors are killed
         // here, after the command is done being waited on.
-        reaped: sweepLeakedGroup(before),
+        reaped: sweepLeakedGroup(before, child.pid),
       });
     };
 
@@ -4887,7 +4985,7 @@ export function shell(command, args, options) {
         // was requested, because `before` is only sampled then: without that pre-image there is
         // no way to tell this command's survivors from the driver's own processes, and killing
         // by guess would be worse than reporting honestly that nothing was looked at.
-        ...(before === null ? {} : { reaped: sweepLeakedGroup(before) }),
+        ...(before === null ? {} : { reaped: sweepLeakedGroup(before, child.pid) }),
       });
     };
 

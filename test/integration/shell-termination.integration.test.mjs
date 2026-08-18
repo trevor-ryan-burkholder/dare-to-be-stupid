@@ -21,6 +21,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
+import { setTimeout } from 'node:timers';
 
 import { TERMINATION_GRACE_MS, shell } from '../../scripts/driver.mjs';
 
@@ -348,5 +349,86 @@ describe('the benign neighbours the grace period must not disturb', { concurrenc
     toClean.push(pidFrom(path.join(dir, 'self.pid')), pidFrom(path.join(dir, 'grand.pid')));
 
     assert.equal(alive(pid), true, `the sweep killed a bystander (${pid}) it did not start`);
+  });
+});
+
+describe('one timed-out call does not reap a concurrent sibling (REVIEW F33)', { concurrency: 1, skip: process.platform === 'win32' }, () => {
+  /**
+   * **Why the existing bystander case could not see this.** It starts its bystander *before* the
+   * target's snapshot, so the bystander is in `before` and the subtraction protects it for free.
+   * The Panel's shape is the opposite: reviewers start under `Promise.all`, so reviewer A samples
+   * the group before B and C exist, and every one of them lands in `after` minus `before`. When A
+   * times out, its sweep classified its own colleagues as leaked descendants and killed them — one
+   * reviewer's failure manufacturing failures in the cold reviewers whose independence is the whole
+   * point of running a panel.
+   *
+   * So the sibling here is born *after* the timing-out call has taken its snapshot, and it is still
+   * running when the sweep fires.
+   */
+
+  /** A sibling that takes its time and then reports, so its survival is provable rather than assumed. */
+  const PATIENT = `
+import { setTimeout as later } from 'node:timers';
+later(() => process.stdout.write('sibling-finished'), 4_000);
+`;
+
+  it('lets the sibling finish while the timed-out call and its descendants are gone', async () => {
+    const dir = scratch();
+    const grandPid = path.join(dir, 'grand.pid');
+    const sleeper = script(dir, 'sleeper.mjs', SLEEPER);
+    const patient = script(dir, 'patient.mjs', PATIENT);
+
+    // A: snapshots now, backgrounds a descendant, and is killed at 2s — after B exists.
+    const timingOut = shell(
+      'sh',
+      // `exec` so the shell *becomes* the sleep: the call then leaks exactly one descendant, which
+      // is what makes the reaped count below a statement about ownership rather than about how many
+      // processes `sh` happens to fork.
+      ['-c', `${JSON.stringify(process.execPath)} ${JSON.stringify(sleeper)} ${JSON.stringify(grandPid)} & exec sleep 30`],
+      { cwd: dir, timeoutMs: 2_000 },
+    );
+
+    // B: born ~400ms later, so it is absent from A's snapshot and present in the group at the sweep.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 400);
+    });
+    const sibling = shell(process.execPath, [patient], { cwd: dir, timeoutMs: 30_000 });
+
+    const [killed, survivor] = await Promise.all([timingOut, sibling]);
+
+    assert.equal(killed.timedOut, true, 'the first call did not time out, so nothing swept');
+    assert.equal(survivor.ok, true, `the sibling was reaped by the timed-out call: ${survivor.stderr}`);
+    assert.equal(survivor.stdout.includes('sibling-finished'), true, survivor.stdout);
+    assert.equal(survivor.timedOut, false, 'the sibling reports a timeout it never had');
+
+    // And F2 is intact: the timed-out call's own descendant is still taken.
+    const grand = pidFrom(grandPid);
+    toClean.push(grand);
+    assert.equal(died(grand, 10_000), true, `the leaked descendant ${grand} survived`);
+    assert.equal((killed.reaped ?? []).includes(grand), true, `the sweep did not report it: ${JSON.stringify(killed.reaped)}`);
+    assert.deepStrictEqual(
+      killed.reaped,
+      [grand],
+      'the sweep took something that was not its own descendant',
+    );
+  });
+
+  it('holds in the other order too, with the older call the one that dies', async () => {
+    // The neighbour. Here the survivor predates the snapshot, so subtraction alone would protect
+    // it — which is exactly why the original test passed while the defect was live. Asserted so
+    // the sibling exclusion cannot be "fixed" in a way that breaks the case that already worked.
+    const dir = scratch();
+    const patient = script(dir, 'patient.mjs', PATIENT);
+
+    const sibling = shell(process.execPath, [patient], { cwd: dir, timeoutMs: 30_000 });
+    await new Promise((resolve) => {
+      setTimeout(resolve, 400);
+    });
+    const timingOut = shell('sh', ['-c', 'sleep 30'], { cwd: dir, timeoutMs: 2_000 });
+
+    const [survivor, killed] = await Promise.all([sibling, timingOut]);
+    assert.equal(killed.timedOut, true);
+    assert.equal(survivor.ok, true, `the older sibling was reaped: ${survivor.stderr}`);
+    assert.equal(survivor.stdout.includes('sibling-finished'), true, survivor.stdout);
   });
 });

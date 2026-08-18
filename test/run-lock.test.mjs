@@ -18,7 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -477,6 +477,41 @@ describe('a reclaimer that died mid-takeover (REVIEW F34)', () => {
     const survivor = JSON.parse(readFileSync(claimPath, 'utf8'));
     assert.equal(survivor.token, 'the-live-one', 'the live claim was swept by a contender that never read it');
     assert.equal(readRunLock(meeseeksDir)?.token, 'dead-owner', 'the stale lock was taken while two reclaimers ran');
+  });
+
+  it('does not delete a legacy directory that replaced the claim inside the rename window', () => {
+    // REVIEW F39. The window is between reading the claim and renaming it: another process can put
+    // a *pre-0.182.0 takeover directory* there, which `readTakeoverClaim` refuses rather than
+    // parses. Treating that read failure as "the claim I judged" deleted a live legacy reclaimer's
+    // arbitration and let both drivers reclaim the same stale lock — F1 through F34's own recovery.
+    //
+    // `isAlive` is the seam: it is consulted with the abandoned claim's pid immediately before the
+    // sweep, so the replacement lands exactly where the race does.
+    const meeseeksDir = makeMeeseeksDir();
+    acquireRunLock(meeseeksDir, { pid: DEAD_OWNER_PID, startedAt: 'a', token: 'dead-owner' });
+    abandonedClaim(meeseeksDir, 'dead-owner', DEAD_RECLAIMER_PID);
+    const claimPath = takeoverLockPath(meeseeksDir, 'dead-owner');
+    let replaced = 0;
+
+    const result = acquireRunLock(meeseeksDir, {
+      pid: 99,
+      token: 'the-current-version',
+      isAlive: (pid) => {
+        if (pid === DEAD_RECLAIMER_PID && replaced === 0) {
+          replaced += 1;
+          rmSync(claimPath, { force: true });
+          mkdirSync(claimPath); // a driver before 0.182.0, reclaiming the same stale lock
+          return false;
+        }
+        return realLiveness(pid);
+      },
+    });
+
+    assert.equal(replaced, 1, 'the window was never reached, so this proves nothing');
+    assert.equal(result.ok, false, 'a current driver reclaimed alongside a legacy one');
+    assert.equal(existsSync(claimPath), true, 'the legacy reclaimer’s claim was deleted');
+    assert.equal(lstatSync(claimPath).isDirectory(), true, 'the legacy claim was replaced rather than restored');
+    assert.equal(readRunLock(meeseeksDir)?.token, 'dead-owner', 'the stale lock was taken by two reclaimers');
   });
 
   it('treats a zero-length claim as the crash that produced it, rather than bricking on it', () => {

@@ -3020,7 +3020,7 @@ driver-side composition.
 Tier 1 **2522 pass / 0 fail**, tier 2 **120 pass / 0 fail**. No tier 3: nothing here touches
 `spawnClaude`, `claudeArgs`, `childSettings`, envelope parsing or a template's output contract.
 
-### 90. Keep process cleanup off concurrent sibling children — OPEN (REVIEW F33)
+### 90. Keep process cleanup off concurrent sibling children — IMPLEMENTED (0.185.0); REVIEW F33 open pending Codex
 
 **Problem solved:** the Panel starts reviewers under `Promise.all`, and every `shell` call snapshots
 the process-group population *before* its own spawn and later kills group members absent from that
@@ -3036,6 +3036,27 @@ sibling children, without restoring the orphan leak item F2 closed.
 the second is born, and the second survives and completes while the first child and its descendants
 are gone; reversed order and the overflow path exercise the same rule; and the Panel still combines
 completed results in declared reviewer order. REVIEW F33 owns closure.
+
+**What landed (0.185.0).** Nothing is detached — that was measured and rejected, because a detached
+gate stops receiving the operator's Ctrl-C — so every child and grandchild shares the driver's one
+process group and membership alone cannot separate one call's orphan from another call's healthy
+child. The sweep keeps its subtraction and now excludes the **subtree of every `shell` call still in
+flight**, from a module-level registry of live child pids. The asymmetry is what makes it work: the
+sweeper's own child is dead by the time it sweeps, so its orphans have been reparented and cannot be
+identified by parentage — but every sibling it must protect is by definition alive, so a sibling's
+subtree reads straight out of `ps` at the moment of the sweep.
+
+**A first attempt was wrong and the existing suite caught it.** Sampling the sweeper's *own*
+descendants while its child lived looked more precise and broke F2: the measured leak shape is
+`sh -c 'thing & echo'`, where the shell exits immediately, so by the time the ceiling fires there is
+no parent link left to sample. Recorded because the wrong design is the more attractive one.
+
+**Evidence.** `test/integration/shell-termination.integration.test.mjs` starts the sibling **after**
+the timing-out call's snapshot — the Panel's shape, and the half the old bystander case could not
+see, since its bystander predated the snapshot and was protected by subtraction for free. The
+sibling completes with its own output while the timed-out call's descendant is gone and is the only
+pid reported reaped. The reversed order is asserted as the neighbour. Verified red by removing the
+exclusion.
 
 ### 91. Make crashed stale-lock arbitration reclaimable — IMPLEMENTED (0.182.0); REVIEW F34 open pending Codex
 
@@ -3174,7 +3195,7 @@ while preserving it; clean-stderr and failed-envelope neighbours are unchanged; 
 paid tier-3 guard canary has been run, because this crosses `spawnClaude` and the external CLI
 contract. REVIEW F36 owns closure.
 
-### 94. Clean health-probe descendants after the shell leader exits — OPEN (REVIEW F37)
+### 94. Clean health-probe descendants after the shell leader exits — IMPLEMENTED (0.185.0); REVIEW F37 open pending Codex
 
 **Problem solved:** the probe's `stop` returns after destroying pipes whenever the direct child
 already has an `exitCode` or `signalCode`, without signalling the captured process group. A start
@@ -3189,6 +3210,24 @@ before signalling, and preserve bounded stop behaviour and the long-running-serv
 probe, and proves the background server and its listener are gone; cooperative exit, timeout and
 already-empty group settle without killing unrelated processes; and Windows evidence stays owned by
 F11/item 65. REVIEW F37 owns closure.
+
+**What landed (0.185.0).** `stop` returned as soon as the direct child had an exit code, on the
+reasoning that a dead leader means a dead group. A start command that backgrounds the application
+and exits — `node server.js & exit 0`, ordinary in a start script — fails the probe *because* its
+leader ended and leaves the server listening on the assigned port. The group is reaped in that
+branch too now.
+
+**Members are signalled individually rather than by `-pgid`, and that is the reuse defence.** A
+group id is its leader's pid, so once the leader exits `kill(-pgid)` is a bet that nothing has been
+assigned that number since. If a live process now holds that pid the id has been reused and this
+signals nothing, because killing a stranger is worse than leaking a server; otherwise the remaining
+members of that group are the probe's orphans and are killed one at a time.
+
+**Evidence.** `test/integration/health-probe.integration.test.mjs` runs a real `npm start` of
+`node server.js & exit 0`, has the server record its own pid and port, asserts the probe fails, and
+then asks the operating system — not the probe — whether that pid is alive and whether the port
+still answers. The cooperative long-running server is the neighbour. Verified red by removing the
+reap.
 
 ### 95. Do not read an absent report as a regression when its gate did not produce one — OPEN (found reviewing item 89)
 
@@ -3226,6 +3265,51 @@ as a regression and triggers no reset; the same id genuinely failing under a gat
 passed still resets exactly as now; `collected === 0` keeps its existing meaning; and a tier-2 case
 drives the real `driveRun` through the reproduced livelock and shows it terminating instead.
 Item **89** is a prerequisite (it owns the `stuck` half of the same question).
+
+### 96. Re-verify the publication subject after deploy — OPEN (REVIEW F38, HIGH)
+
+**Problem solved:** publication is verified before ship-time mutation and before the operator's
+arbitrary deploy command. After those mutation-capable steps the Driver rechecks only specification
+drift, and `ship()` tags implicit current `HEAD` rather than the captured reviewed commit. A deploy
+that edits and commits tracked source therefore receives both tags and a `SHIPPED` over bytes no
+gate and no reviewer ever saw — F31's false-completion class, one step later in the pipeline.
+
+Revalidate the workspace identity and `HEAD` after mutation and deploy, tag the **explicit** reviewed
+commit rather than whatever `HEAD` names by then, and withhold `SHIPPED` on any drift.
+
+**Done when:** real-Git tier-2 cases cover a deploy that creates a commit and a deploy that leaves
+uncommitted changes, and neither ships; the clean neighbour tags exactly the reviewed commit and
+still reaches `SHIPPED`. REVIEW F38 owns closure.
+
+### 97. Lose takeover arbitration on any post-rename read failure — IMPLEMENTED (0.185.0); REVIEW F39 open pending Codex
+
+**Problem solved:** item 91's sweep treated a failed read of the file it had just renamed as a match
+and deleted it. Between the original read and the rename another process can replace the JSON claim
+with a **pre-0.182.0 takeover directory**, which `readTakeoverClaim` refuses rather than parses — so
+the failure path deleted a live legacy reclaimer's arbitration and let both drivers reclaim one
+stale lock, reopening F1 through F34's own recovery path.
+
+**What landed.** Only an exact match is removed: the expected token, or the expected nameless state
+for a claim that named nobody. Every other outcome — a read that throws, a file that vanished, a
+directory — loses the pass, and the moved file is restored. When restoration is impossible the file
+is **quarantined under its swept name rather than deleted**, because an unidentified artifact is not
+this contender's to destroy.
+
+**Evidence.** `test/run-lock.test.mjs` replaces the claim with a legacy directory inside the
+read/rename window through the `isAlive` seam and proves the directory survives, the lock is
+untaken, and the current contender refuses. Verified red against the pre-F39 logic.
+
+### 98. Stop restating the queue in HANDOFF — IMPLEMENTED (0.185.0); REVIEW F40 open pending Codex
+
+**Problem solved:** `HANDOFF.md` restated the implementation order and the review counts, and both
+went stale — it recorded F7/item 61 as blocked on unauthorised expenditure three sections below its
+own table recording F7 implemented and live-validated at 0.179.0, and carried a
+seventeen-high/thirteen-medium snapshot the ledger had long passed. A fresh agent would pause
+finished work and follow an order nobody holds.
+
+**What landed.** The ordering section is a pointer to `PLAN.md`, which `docs/INDEX.md` already names
+as the sole owner of live status; the header stops restating counts and points at `REVIEW.md`; the
+F7 sentence says implemented, once. `HANDOFF.md` keeps only the measured state of the tree.
 
 ## Observations recorded rather than repaired
 

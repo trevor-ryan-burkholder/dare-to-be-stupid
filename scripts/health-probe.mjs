@@ -19,7 +19,7 @@
  * symptom of that looks nothing like its cause.
  */
 
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
@@ -461,6 +461,63 @@ function killTree(child, signal) {
 }
 
 /**
+ * Kill what is left of a process group whose leader has already exited (REVIEW F37).
+ *
+ * **The hole this closes.** `stop` returned as soon as the direct child had an exit code, on the
+ * reasoning that a dead leader means a dead group. It does not. A start command that backgrounds
+ * the application and exits — `node server & exit 0`, which is an ordinary thing for a shell script
+ * to do — fails the probe *because* its leader ended, and leaves the server listening. That server
+ * then holds the assigned port, mutates the workspace, and contaminates every later health check.
+ *
+ * **Why members are signalled individually rather than by `-pgid`.** Once the leader is gone its
+ * pid is free, and a process-group id is just its leader's pid — so `kill(-pgid)` after the leader
+ * exits is a bet that nothing has been assigned that number since. The bet is cheap to avoid: if a
+ * live process now *holds* that pid, the id has been reused and this refuses to signal anything,
+ * because killing a stranger is worse than leaking a server. Otherwise the remaining members of
+ * that group are this probe's orphans and are killed one at a time.
+ *
+ * Windows has no process groups, so this is a no-op there; that gap is F11's and item 65's.
+ *
+ * @param {number} pgid the exited leader's pid, which is also its group id
+ * @returns {number[]} pids signalled
+ */
+function reapOrphanedGroup(pgid) {
+  if (process.platform === 'win32') return [];
+  /** @type {{ pid: number, pgid: number }[]} */
+  const rows = [];
+  try {
+    const out = execFileSync('ps', ['-eo', 'pid=,pgid='], {
+      stdio: 'pipe',
+      encoding: 'utf8',
+      timeout: 10_000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    for (const line of out.split('\n')) {
+      const [pid, group] = line.trim().split(/\s+/).map(Number);
+      if (Number.isInteger(pid) && Number.isInteger(group)) rows.push({ pid, pgid: group });
+    }
+  } catch {
+    // No answer is not the answer "nothing is there". Sweep nothing rather than guess, the same
+    // way the driver's group sweep treats an unreadable `ps`.
+    return [];
+  }
+  // The leader's pid is live again: this group id belongs to somebody else now.
+  if (rows.some((row) => row.pid === pgid)) return [];
+  /** @type {number[]} */
+  const killed = [];
+  for (const row of rows) {
+    if (row.pgid !== pgid || row.pid === process.pid) continue;
+    try {
+      process.kill(row.pid, 'SIGKILL');
+      killed.push(row.pid);
+    } catch {
+      // Gone between the listing and the signal. The job is that nothing survives.
+    }
+  }
+  return killed;
+}
+
+/**
  * @param {import('node:child_process').ChildProcess} child
  * @returns {Promise<void>}
  */
@@ -474,6 +531,10 @@ function stop(child) {
     };
 
     if (child.exitCode !== null || child.signalCode !== null) {
+      // **The leader is gone; the application it started may not be** (REVIEW F37). This used to
+      // return here, which is the whole defect: a start command that backgrounds the app and exits
+      // fails the probe and leaves the app listening.
+      if (typeof child.pid === 'number') reapOrphanedGroup(child.pid);
       done();
       return;
     }

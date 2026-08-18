@@ -1,16 +1,17 @@
 # START HERE — current handoff, last swept 17 August 2026
 
-**State:** `main` at `0.184.0`. The manifests and package-lock root metadata agree. Measured on the
+**State:** `main` at `0.185.0`. The manifests and package-lock root metadata agree. Measured on the
 current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean; `npm test`
-**2535 pass, 0 fail**; `npm run test:integration` **122 pass, 0 fail** (both measured on 0.184.0, with
+**2536 pass, 0 fail**; `npm run test:integration` **126 pass, 0 fail** (both measured on 0.185.0, with
 the `run-lock.mjs` hash verified before staging and again after committing); `npm run release-check`
 **ok**. The live tier was **not re-run at 0.181.0 or 0.182.0** and is owed by neither: nothing in those
 changes touches `spawnClaude`, `claudeArgs`, `childSettings`, envelope parsing or a template's output
 contract. Its last measurement, at 0.179.0, was **30 pass, 1 fail** — see the live-tier note below.
 
-**External review:** `REVIEW.md` is **CHANGES REQUESTED** with seventeen high-priority defects
-(F1–F3, F5–F8, F12, F14, F16, F18, F25–F30) and thirteen medium-priority defects
-(F4, F9–F11, F13, F15, F17, F19–F24). The expanded review includes a
+**External review:** `REVIEW.md` is **CHANGES REQUESTED**. The counts and the finding list live
+there and are **not restated here** (REVIEW F40): this file carried a seventeen-high/thirteen-medium
+snapshot long after the ledger had moved past it, which is the reliable outcome of copying a
+long-lived queue into a short-lived summary. The review includes a
 guarantee-strength audit, durable-artifact registry, failure-shape matrix, and explicit
 negative-guarantee sheet. These are the first implementation gates in `PLAN.md`. Claude Code may
 implement them; Codex owns closure after reviewing the exact repair and its acceptance evidence.
@@ -43,6 +44,7 @@ reviews each commit separately:
 | 0.182.0 | F34 / item 91 | takeover claims carry an owner and are reclaimable |
 | 0.183.0 | — | restores the F34 sweep guard that 0.182.0 shipped mutated |
 | 0.184.0 | F34 / item 91 | the claim release guard, exported and tested directly |
+| 0.185.0 | F33, F37, F39, F40 | sibling-safe sweep, post-exit group reap, exact-match sweep, HANDOFF de-duplicated |
 
 **0.182.0 shipped mutation-testing scaffolding and 0.183.0 undoes it. Read this before trusting
 0.182.0's numbers.** A reviewing agent ran its mutation experiments against `scripts/run-lock.mjs`
@@ -73,8 +75,9 @@ state the mechanisms.
 
 **The live tier is not a blocker.** The operator's Claude Max subscription covers it, so
 `MEESEEKS_LIVE=1 npm run test:live` is a time question rather than a money one. F7/item 61 sat
-unstarted for one session on a mistaken reading of that; it is now implemented with its mandatory
-tier-3 run recorded below.
+unstarted for one session on a mistaken reading of that; **it is implemented at 0.179.0 and its
+mandatory tier-3 run is recorded below.** It is not blocked, and nothing in this file should say
+otherwise.
 
 **Live tier:** run twice at 0.179.0 against the `claude` the driver actually spawns, about ten
 minutes each. The first run was **31 pass, 0 fail**. The second was **30 pass, 1 fail**, and the
@@ -97,67 +100,15 @@ before release. The full chronology is in the archived handoff.
 
 ## Current implementation order
 
-1. Close the locally implementable high-priority defects: F1–F3, F6/item 60, F7/item 61,
-   F12/item 66, F8/item 62, F14/item 68, F16/item 70, F18/item 72, and F26/item 81. **F1 (0.165.0),
-   F26/item 81 (0.166.0), F2 (0.167.0), F3 (0.168.0), F6/item 60 (0.169.0), F12/item 66 (0.170.0)
-   F8/item 62 (0.171.0), F14/item 68 (0.172.0), F16/item 70 (0.173.0), F18/item 72 (0.174.0), F20/item 74 (0.175.0) and F30/item 87 (0.176.0) are implemented and awaiting Codex verification. **F7/item 61 is blocked**: its acceptance makes
-   the paid tier-3 `claude -p` child contract mandatory, and that expenditure is unauthorised.** Item 81
-   followed F1 so launch revalidation and pre-loop output admission occur under the atomic owner.
-   Item 66 supplies the specification identity consumed by items 62 and 68; F2 includes the
-   resistant output-cap path. F30/item 87 is also high priority, but it lands only after item 70
-   here and F20/item 74 in step 3 bind the accepted report; item 67 must retain the resulting
-   stability gate in the required roster.
-2. Close the external contracts before feature fan-out: F5/item 56 through a paid child-environment
-   probe, F11/item 65 through real Windows descendant-cleanup evidence, and F15/item 69 through an
-   Oracle-read canary and an honest confidentiality decision. Add F21/item 75's disposable real
-   loader/cache release check and F25/item 80's user-only command-surface canary in the same
-   external-contract campaign; batch item 80 with F24/item 79's versioned command repair. Close
-   F27/item 82 with pinned role-tool availability canaries, including the real Oracle-author phase.
-   Close F28/item 83 in that same pinned matrix by deriving a tested compatibility policy, resolving
-   one install-form-specific invocation identity: canonical real target, reported version, and
-   fingerprints for the mutable invocation closure. Fingerprint before and after compatibility probes,
-   spawn every later probe/role through the sealed path, apply item 56's no-background-update control
-   to each, and recheck the same complete identity before every role. Same-version target, symlink,
-   and delegated-entrypoint replacement canaries must refuse;
-   greater version numbers do not replace live canaries. After item 66
-   from step 1, close item 77's cold-role supply manifest here, before its consumers in items 76
-   and 85. Then close F29/item 85 after items 66/68/77/82/83: candidate files remain evidence, while reviewer
-   authority comes only from identified pre-Builder and Driver-owned sources. Its reviewer contract
-   is not PLAN item 51's general constitution.
-3. Close F4, F9/item 63, F10/item 64, F17/item 71, F19/item 73, F20/item 74, F22/item 76,
-   and F23/item 78. Item 76 includes requested-versus-observed model identity per role,
-   closing the provenance owner already assigned by F23. F24/item 79 already lands once in step 2's
-   shared command/loader
-   slice; its Gate 0C classification does not create a second implementation pass. After items 70
-   and 74 establish the accepted report identity, close F30/item 87 before Panel or shipping work.
-   Close F13/item 67 after item 87 so the non-shrinking roster includes the new required stability
-   result; item 67 may build earlier, but it cannot close against the pre-87 roster.
-4. Complete item 40's reviewer contract after F6. Item 77 already lands in step 2 because F29
-   consumes it; it complements but does not close F15's filesystem-confidentiality question. Then
-   finish item 42 and item 29. Item 41 is closed as inapplicable because no Panel diff-package path
-   exists.
-5. Complete the live evidence for item 24, add item 57's machine-readable acceptance result, run
-   dogfood cases A and B in item 20, and run the staged Ateliers capstone in item 31. Case C remains
-   parked by operator decision. Item 57's comparative campaign must use its precommitted clean,
-   task-audited, uncertainty-bounded, counterbalanced, private-final protocol; an exploratory run
-   cannot become readiness evidence, and an opened final package is retired.
-6. After items 56/82/83 establish the environment, tool, and CLI identities, run item 84's paid
-   child-containment experiment. Record a portable default, a capability-gated profile, or rejection;
-   do not infer a stronger default from documentation or settings registration.
-7. Take items 52 and 53 only after the safety/reviewer work.
-8. Consult PLAN's research-gated and conditional entries for items 32, 36, 54, 55, and 58 only
-   after the queued implementation work. Item 32 is an optional heterogeneous cold-role experiment,
-   not a Codex-native or model-agnostic runtime. Item 36 keeps terminal detachment separate from
-   resume: the former gets a native experiment after item 80, while the latter remains parked on
-   item 58's evidence and idempotency boundary. Item 54 additionally requires item 77 and item 84's
-   recorded containment outcome; PLAN alone decides when any enters the queue.
-9. Keep item 21 deferred until the repository is code-complete; Phase 6 and PLAN item 59 remain
-   post-DoD. Item 86 remains parked behind its containment and incremental-detection admission
-   conditions. The operator must set item 57's minimum morning-acceptance threshold, minimum
-   practically meaningful improvement, and non-compensable severe-failure tolerance before the
-   first comparative campaign.
+**It is in `PLAN.md`, and only there** (REVIEW F40). This section used to restate the queue, and a
+restated queue is a queue that goes stale: it recorded F7/item 61 as *blocked on unauthorised
+expenditure* three sections below the table recording F7 implemented and live-validated at 0.179.0,
+and it kept a sequencing narrative that later gates had already overtaken. A fresh agent reading it
+would pause finished work and follow an order nobody holds any more.
 
-PLAN owns the statuses. This file deliberately does not duplicate their acceptance criteria.
+`docs/INDEX.md` already names `PLAN.md` as the single owner of live status and ordering. Read
+`PLAN.md`'s gate sections for what is next; read `REVIEW.md` for what is still open against the
+product. Nothing about either belongs here except the measured state at the top of this file.
 
 ## Architecture analysis
 

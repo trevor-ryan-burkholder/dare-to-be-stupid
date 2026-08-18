@@ -367,19 +367,28 @@ function sweepAbandonedTakeover(file, shown, abandonedToken, token) {
   try {
     moved = readTakeoverClaim(swept, shown);
   } catch {
-    // Unreadable once moved, and it was unreadable in place too or we would not be here. Removing
-    // it is the same decision the caller already made about it.
+    // Left null deliberately. See below: an unreadable answer loses arbitration.
   }
+  // **Only an exact match is removed** (REVIEW F39). The first version of this guard treated a
+  // failed read as a match, on the reasoning that something unreadable here was unreadable in place
+  // too. It is not: between the original read and this rename another process can replace the JSON
+  // claim with a *pre-0.182.0 takeover directory*, which `readTakeoverClaim` refuses rather than
+  // parses — so the failure path deleted a live legacy reclaimer's claim and let both drivers
+  // reclaim the same stale lock. Every other outcome, including a read that throws and a file that
+  // vanished, loses this pass.
   const isTheOneJudged =
-    moved === null ||
-    moved.state === 'gone' ||
-    (abandonedToken === null ? moved.state === 'nameless' : moved.state === 'held' && moved.claim.token === abandonedToken);
+    moved !== null &&
+    (abandonedToken === null
+      ? moved.state === 'nameless'
+      : moved.state === 'held' && moved.claim.token === abandonedToken);
   if (!isTheOneJudged) {
     // Not the claim that was judged abandoned. Put it back and take nothing from this pass.
     try {
       renameSync(swept, file);
     } catch {
-      rmSync(swept, { recursive: true, force: true });
+      // Could not restore — something already occupies the path. **Quarantined rather than
+      // deleted**: what is under `swept` is unidentified, and this contender has no standing to
+      // destroy it. It blocks nobody there, and it is named so an operator can see it.
     }
     return false;
   }
