@@ -96,6 +96,7 @@ import { roleSupplyManifest } from './role-supply.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
 import { captureSpecification, verifySpecification } from './specification.mjs';
 import { installQualityPlugins } from './plugins.mjs';
+import { appendSupplyRecord } from './role-supply.mjs';
 import {
   applyWinner,
   createWorktrees,
@@ -5563,6 +5564,7 @@ export async function spawnClaude(options) {
       raw:
         `the ${options.phase} child did not return within ${options.timeoutMs}ms and was killed. ` +
         'Nothing it may have written was read, because a killed child has no verdict',
+      ...(supply === null ? {} : { supply }),
     };
   }
   // **From the result's own channel, not from stderr** (REVIEW F36). Reading `result.stderr` worked
@@ -5586,6 +5588,7 @@ export async function spawnClaude(options) {
       raw:
         `the ${options.phase} child was killed for exceeding the output cap. Its stdout was truncated ` +
         'mid-stream, so nothing in it is a complete answer',
+      ...(supply === null ? {} : { supply }),
     };
   }
 
@@ -5612,6 +5615,11 @@ export async function spawnClaude(options) {
       raw: detail,
       ...(parsed.exhausted === true ? { exhausted: true } : {}),
       ...(denials.length > 0 ? { denials } : {}),
+      // **A child that failed still received what it received** (PLAN item 77). Attaching the
+      // manifest only to success would leave the record silent about exactly the invocations an
+      // incident is about, and item 76's receipt has to bind a model identity to the prompt every
+      // invocation was handed — not only the ones that came back.
+      ...(supply === null ? {} : { supply }),
     };
   }
   // The manifest travels with the result so the caller can archive it beside the role receipt
@@ -5833,6 +5841,26 @@ async function runInvocation(argv, io, crash) {
    * @returns {ReturnType<typeof spawnClaude>}
    */
   const runChild = async (options) => {
+    // **Declared here as well as at `spawnClaude`, and the duplication is the point** (PLAN item
+    // 77). `spawnClaude` is the door every child passes through, including a component's, and its
+    // refusal is what makes the boundary real. This is the door every child *in the loop* passes
+    // through, and it is the only one that knows where this run's state lives — so the durable
+    // record is built here. `roleSupplyManifest` is pure, so the two constructions cannot disagree.
+    /** @type {import('./role-supply.mjs').RoleSupplyManifest | null} */
+    let manifest = null;
+    if (options.supply !== undefined) {
+      try {
+        manifest = roleSupplyManifest({
+          role: options.phase,
+          specification: options.specification ?? null,
+          supply: options.supply,
+        });
+      } catch (error) {
+        // Refused before anything is spent, and reported as the role's own failure rather than as
+        // an exception nobody attributed — the same shape `spawnClaude` returns.
+        return { ok: false, text: '', costUsd: 0, tokens: 0, raw: /** @type {Error} */ (error).message };
+      }
+    }
     const measured = measurePrompt({ systemPrompt: options.systemPrompt, prompt: options.prompt });
     write(verbatim(childStartLine(options.phase, options.model, measured.characters, config.childTimeoutMs)));
     const startedAt = Date.now();
@@ -5868,6 +5896,30 @@ async function runInvocation(argv, io, crash) {
     // Surfaced, once, per child. A guard refusal is the loop's own limit doing its job and the
     // operator has no other way to learn it happened.
     for (const denial of result.denials ?? []) write(verbatim(`${options.phase}: ${denial}`));
+    // **The manifest is archived here, at the same one door** (PLAN item 77, consumed by item 76).
+    // `spawnClaude` builds it and deliberately does not know where this run's state lives; this
+    // function is the only place every child in the loop passes through, so a phase added later
+    // cannot forget to record what it was handed.
+    //
+    // A failure to write is reported and does not end the run: this is evidence for an acceptance
+    // receipt, not a decision, and the store itself records its own discontinuity when it finds one.
+    //
+    // Written *after* the child returns, so it records what a role was actually handed rather than
+    // what one was about to be offered — a child `spawnClaude` refuses never received anything.
+    if (manifest !== null) {
+      try {
+        appendSupplyRecord(meeseeksDir, {
+          role: options.phase,
+          at: new Date().toISOString(),
+          // The driver's pre-loop phases have no iteration, and writing one would state a fact the
+          // run had not established.
+          iteration: null,
+          manifest,
+        });
+      } catch (error) {
+        write(verbatim(`could not record the supply manifest for ${options.phase}: ${/** @type {Error} */ (error).message}`));
+      }
+    }
     return result;
   };
 
@@ -6435,13 +6487,27 @@ async function runInvocation(argv, io, crash) {
       write(verbatim('the held-out oracle on disk does not belong to this specification; authoring a fresh one'));
     }
     write(verbatim('authoring held-out acceptance cases from the PRD'));
+    // Assembled into a value first so the same bytes are both sent and declared (PLAN item 77). A
+    // manifest computed from a second construction of "the prompt" would describe something
+    // adjacent to what the child read.
+    const oracleTemplate = template('oracle-author.md');
+    const oraclePrompt = `${oracleTemplate}\n\n---\n\nPRD.md:\n\n${prd}`;
     const authored = await runChild({
-      prompt: `${template('oracle-author.md')}\n\n---\n\nPRD.md:\n\n${prd}`,
+      prompt: oraclePrompt,
       model: config.reviewerModel,
       phase: 'oracle-author',
       effort: config.effort['oracle-author'],
       cwd,
       env,
+      // **PRD-only, by construction** (PLAN item 77). The policy refuses the candidate, the builder
+      // log, iteration history, workflow synthesis and a panel transcript before the child is
+      // spawned: cases authored from the implementation test the implementation, which is the one
+      // thing a held-out gate cannot be allowed to do.
+      supply: [
+        { class: 'template', text: oracleTemplate },
+        { class: 'specification', text: prd },
+      ],
+      specification: specification.revision.digest,
     });
     if (!authored.ok) {
       write(verbatim(`oracle authoring failed: ${authored.raw.slice(0, 800)}`));
@@ -7195,14 +7261,23 @@ async function runInvocation(argv, io, crash) {
         });
         writeBrief(meeseeksDir, iteration, candidateBrief, worktree.index);
 
+        const candidateSystem = builderSystemPrompt(cwd);
         const built = await runChild({
           prompt: candidateBrief,
           model: config.builderModel,
-          systemPrompt: builderSystemPrompt(cwd),
+          systemPrompt: candidateSystem,
           phase: 'builder',
       effort: config.effort['builder'],
           cwd: worktree.dir,
           env,
+          // The builder is not cold, and its policy says so: it keeps its own log and history, and
+          // is refused only the held-out cases and the panel's reasoning about them. A builder that
+          // can read the cases can satisfy them without satisfying the requirement.
+          supply: [
+            { class: 'system-prompt', text: candidateSystem },
+            { class: 'brief', text: candidateBrief },
+          ],
+          specification: specification.revision.digest,
         });
         tokens += built.tokens;
         costUsd += built.costUsd;
@@ -7269,16 +7344,23 @@ async function runInvocation(argv, io, crash) {
     // rather than a Node-shaped guess. Three places state this contract; all three now derive it.
     unitCommand: unitGateCommand(cwd, meeseeksDir),
     effects: {
-      build: (brief) =>
-        runChild({
+      build: (brief) => {
+        const builderSystem = builderSystemPrompt(cwd);
+        return runChild({
           prompt: brief,
           model: config.builderModel,
-          systemPrompt: builderSystemPrompt(cwd),
+          systemPrompt: builderSystem,
           phase: 'builder',
       effort: config.effort['builder'],
           cwd,
           env,
-        }),
+          supply: [
+            { class: 'system-prompt', text: builderSystem },
+            { class: 'brief', text: brief },
+          ],
+          specification: specification.revision.digest,
+        });
+      },
       // Reads one file from the tree for pin re-verification. Returns null rather than
       // throwing on a missing file, because "the file is gone" is an answer the caller has a
       // rule for and an exception is not.
@@ -7295,15 +7377,23 @@ async function runInvocation(argv, io, crash) {
       // tightly because the alternative to asking is a hard reset on a formatter run, and
       // because a broad question here would re-audit the repository at panel prices every
       // time somebody reindented a file.
-      securityEscalation: (pin) =>
-        runChild({
-          prompt: renderTemplate('security-escalation.md', { evidence: pin.evidence, snippet: pin.snippet }),
+      securityEscalation: (pin) => {
+        const escalation = renderTemplate('security-escalation.md', { evidence: pin.evidence, snippet: pin.snippet });
+        return runChild({
+          prompt: escalation,
           model: config.reviewerModel,
           phase: 'security-escalation',
       effort: config.effort['security-escalation'],
           cwd,
           env,
-        }),
+          // **Scope is the safety property here** (PLAN item 77). One narrow question about one
+          // element; the policy refuses the builder log, iteration history, the held-out cases and a
+          // panel transcript, because a scoped question answered from the whole run is not a scoped
+          // question — and the alternative to asking is a hard reset on a formatter run.
+          supply: [{ class: 'candidate-evidence', text: escalation }],
+          specification: specification.revision.digest,
+        });
+      },
       // Re-read per call rather than captured once, because the builder appends to it between
       // iterations and a stale copy would show the panel an older run's reasoning.
       review: (reviewer, ids) => {

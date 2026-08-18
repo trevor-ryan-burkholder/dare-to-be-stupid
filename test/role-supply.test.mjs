@@ -17,15 +17,27 @@
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { describe, it } from 'node:test';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { after, describe, it } from 'node:test';
 
 import {
   INPUT_CLASSES,
+  SUPPLY_FILE,
+  appendSupplyRecord,
   ROLE_SUPPLY_POLICY,
   SupplyBoundaryError,
   classify,
   roleSupplyManifest,
 } from '../scripts/role-supply.mjs';
+
+/** @type {string[]} */
+const temporaryDirs = [];
+
+after(() => {
+  for (const dir of temporaryDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 /** @param {string} text @returns {string} */
 const digestOf = (text) => `sha256:${createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 32)}`;
@@ -184,5 +196,105 @@ describe('the policy itself', () => {
     for (const [role, policy] of Object.entries(ROLE_SUPPLY_POLICY)) {
       assert.equal(policy.why.trim().length > 30, true, `${role}'s reason is too thin to audit`);
     }
+  });
+});
+
+describe('appendSupplyRecord: the record that outlives the process (PLAN item 77)', () => {
+  /** @param {string} role @returns {import('../scripts/role-supply.mjs').SupplyRecord} */
+  const recordFor = (role) => ({
+    role,
+    at: '2026-08-18T00:00:00.000Z',
+    iteration: null,
+    manifest: roleSupplyManifest({ role, supply: [{ class: 'brief', text: `${role}'s brief` }] }),
+  });
+
+  /** @returns {string} */
+  function scratch() {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-supply-'));
+    temporaryDirs.push(dir);
+    return dir;
+  }
+
+  /** @param {string} dir @returns {any} */
+  const store = (dir) => JSON.parse(readFileSync(path.join(dir, SUPPLY_FILE), 'utf8'));
+
+  it('records the role, the moment and the manifest, and not the prompt', () => {
+    const dir = scratch();
+    appendSupplyRecord(dir, recordFor('review'));
+
+    const written = store(dir);
+    assert.equal(written.version, 1);
+    assert.equal(written.entries.length, 1);
+    assert.equal(written.entries[0].role, 'review');
+    assert.equal(written.entries[0].iteration, null);
+    assert.deepStrictEqual(
+      written.entries[0].manifest.inputs.map((/** @type {{ class: string }} */ input) => input.class),
+      ['brief'],
+    );
+    // The record describes the prompt; it must not become a second copy of it.
+    assert.equal(readFileSync(path.join(dir, SUPPLY_FILE), 'utf8').includes("review's brief"), false);
+  });
+
+  it('appends rather than replacing, because a run has many invocations', () => {
+    const dir = scratch();
+    appendSupplyRecord(dir, recordFor('oracle-author'));
+    appendSupplyRecord(dir, recordFor('builder'));
+    appendSupplyRecord(dir, recordFor('review'));
+
+    assert.deepStrictEqual(
+      store(dir).entries.map((/** @type {{ role: string }} */ entry) => entry.role),
+      ['oracle-author', 'builder', 'review'],
+    );
+  });
+
+  it('leaves no temp file, so a reader never finds half a store', () => {
+    const dir = scratch();
+    appendSupplyRecord(dir, recordFor('review'));
+    assert.deepStrictEqual(
+      readdirSync(dir).filter((name) => name.endsWith('.tmp')),
+      [],
+    );
+  });
+
+  it('says so in the record when the previous store could not be read', () => {
+    // **A store that quietly started over would be worse than a missing one.** A verifier counting
+    // invocations cannot tell "nothing was recorded" from "nothing happened", so the discontinuity
+    // is the first thing the new store says and the damaged bytes are kept under a findable name.
+    const dir = scratch();
+    writeFileSync(path.join(dir, SUPPLY_FILE), '{ this is not json', 'utf8');
+    appendSupplyRecord(dir, recordFor('review'), { now: () => '2026-08-18T00:00:00.000Z' });
+
+    const written = store(dir);
+    assert.equal(written.entries.length, 2);
+    assert.equal(
+      written.entries[0].lapse,
+      'the previous supply store could not be read, so this run’s record is not continuous',
+    );
+    assert.equal(written.entries[1].role, 'review');
+    // The damaged bytes are still on disk, under the name the lapse points at.
+    assert.equal(existsSync(written.entries[0].movedTo), true, written.entries[0].movedTo);
+    assert.equal(readFileSync(written.entries[0].movedTo, 'utf8'), '{ this is not json');
+  });
+
+  it('treats a store from a schema it does not know the same way', () => {
+    // Parseable is not the same as interpretable. Appending to entries whose fields mean something
+    // else would produce a record that reads as continuous and is not.
+    const dir = scratch();
+    writeFileSync(path.join(dir, SUPPLY_FILE), JSON.stringify({ version: 99, entries: [{ role: 'review' }] }), 'utf8');
+    appendSupplyRecord(dir, recordFor('review'));
+
+    const written = store(dir);
+    assert.equal(written.version, 1);
+    assert.equal(typeof written.entries[0].lapse, 'string');
+    assert.equal(written.entries.length, 2);
+  });
+
+  it('does not report a lapse for a store it can read, which is the ordinary case', () => {
+    // The neighbour. Reporting discontinuity on every append would make the signal worthless.
+    const dir = scratch();
+    appendSupplyRecord(dir, recordFor('builder'));
+    appendSupplyRecord(dir, recordFor('review'));
+
+    for (const entry of store(dir).entries) assert.equal('lapse' in entry, false, JSON.stringify(entry));
   });
 });

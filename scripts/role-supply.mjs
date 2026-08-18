@@ -24,6 +24,8 @@
  */
 
 import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 
 /**
  * The kinds of thing that can go into a role's context.
@@ -160,4 +162,98 @@ export function roleSupplyManifest(invocation) {
     specification: invocation.specification ?? null,
     inputs,
   };
+}
+
+/** Driver-owned. Protected by the `.meeseeks/**` invariant (§6) with no rule of its own. */
+export const SUPPLY_FILE = 'supply.json';
+
+/** The store's own schema version, bumped when a field's meaning changes. */
+const SUPPLY_VERSION = 1;
+
+/**
+ * The durable record of what every cold role was handed (PLAN item 77, consumed by item 76).
+ *
+ * **Why it is written at all.** The manifest already refuses a forbidden class before the spawn, so
+ * the *boundary* holds without any of this. What was missing is the account afterwards: item 76's
+ * acceptance receipt has to bind each role invocation's model identity to the prompt and policy
+ * that invocation actually received, and a record that lives only in a returned value dies with the
+ * process. `run.json` records what a run *was* and `review.json` what the panel *said*; this
+ * records what each cold role was *given*.
+ *
+ * **It records, it does not decide** — the same rule `run.json` states. Nothing in the loop reads
+ * this file back, and no gate result, ratchet state or verdict may ever depend on it.
+ *
+ * @typedef {{ role: string, at: string, iteration: number | null,
+ *   manifest: RoleSupplyManifest }} SupplyRecord
+ */
+
+/**
+ * A hole in the record, written into the record.
+ *
+ * **A store that quietly started over would be worse than a missing one**, because a later verifier
+ * counting invocations cannot distinguish "nothing was recorded" from "nothing happened". So an
+ * unreadable store is moved aside under a name an operator can find, and the fresh one opens with an
+ * entry saying what was lost and where it went. The run continues: this is evidence for an
+ * acceptance receipt, not a decision, and killing a healthy run over a damaged log would be
+ * confusing a record with a gate.
+ *
+ * @typedef {{ lapse: string, at: string, movedTo: string | null }} SupplyLapse
+ */
+
+/**
+ * Append one role invocation's manifest to the run's supply store.
+ *
+ * Atomic in the same way the terminal receipt is — written to a temp file in the same directory and
+ * renamed over — so a kill mid-write leaves the previous complete store rather than truncated JSON.
+ *
+ * @param {string} meeseeksDir
+ * @param {SupplyRecord} record
+ * @param {{ now?: () => string }} [options]
+ * @returns {void}
+ */
+export function appendSupplyRecord(meeseeksDir, record, options = {}) {
+  const now = options.now ?? (() => new Date().toISOString());
+  const file = path.join(meeseeksDir, SUPPLY_FILE);
+  /** @type {{ version: number, entries: (SupplyRecord | SupplyLapse)[] }} */
+  let store = { version: SUPPLY_VERSION, entries: [] };
+  if (existsSync(file)) {
+    /** @type {unknown} */
+    let parsed;
+    try {
+      parsed = JSON.parse(readFileSync(file, 'utf8'));
+    } catch {
+      // Unreadable is handled below, identically to a schema this build does not know: both mean
+      // the record is no longer continuous, and both are said out loud rather than papered over.
+      parsed = null;
+    }
+    const held = /** @type {{ version?: unknown, entries?: unknown }} */ (parsed ?? {});
+    if (held.version === SUPPLY_VERSION && Array.isArray(held.entries)) {
+      store = { version: SUPPLY_VERSION, entries: held.entries };
+    } else {
+      // Unreadable or from a schema this build does not know. Moved aside rather than overwritten,
+      // and the loss is the first thing the new store says.
+      const movedTo = `${file}.unreadable-${createHash('sha256').update(now()).digest('hex').slice(0, 16)}`;
+      /** @type {string | null} */
+      let landed = movedTo;
+      try {
+        renameSync(file, movedTo);
+      } catch {
+        landed = null;
+      }
+      store = {
+        version: SUPPLY_VERSION,
+        entries: [
+          {
+            lapse: 'the previous supply store could not be read, so this run’s record is not continuous',
+            at: now(),
+            movedTo: landed,
+          },
+        ],
+      };
+    }
+  }
+  store.entries.push(record);
+  const temporary = `${file}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  renameSync(temporary, file);
 }

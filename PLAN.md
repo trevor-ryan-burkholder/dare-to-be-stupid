@@ -2717,7 +2717,7 @@ and observed model identities expose a forced substitution while an absent obser
 an unknown schema, claim type, or subject fails closed; and synthetic secrets do not appear. REVIEW
 F22 owns closure.
 
-### 77. Record and enforce the cold-role supply boundary — PARTIAL (0.194.0): boundary enforced and manifested at the one door; archiving and full call-site threading remain
+### 77. Record and enforce the cold-role supply boundary — IMPLEMENTED (0.201.0)
 
 **Problem solved:** Panel and Oracle independence partly rely on `not supplied`: the Driver does
 not place Builder history, workflow synthesis, or held-out cases into a cold role's context. That
@@ -2748,12 +2748,28 @@ vocabulary, the per-role deny policy and the sanitized manifest; `spawnClaude` r
 class **before** the spawn and returns the manifest with the result. The cold Panel declares its
 supply. That is the boundary and its record.
 
-**Not yet done, and named rather than implied:** the manifest is returned but not archived beside
-the role receipt, and only `review` declares a supply — `oracle-author`, `builder` and
-`security-escalation` have policies with no declaring call site yet, so their rules are enforced
-only if a caller opts in. Item **76** consumes the archived form, so that half lands with it. This
-entry is `PARTIAL` for exactly that reason: claiming the whole item on a half-threaded boundary is
-the overclaim this ledger keeps catching.
+**What 0.201.0 added, which is the half that was inert.** Three of the four constrained roles
+declared *nothing* — `oracle-author`, `builder` and `security-escalation` had policies with no
+declaring call site, so their rules were enforced only if a caller opted in. That is the guard-hook
+shape exactly: correct logic that nothing proved was invoked, with every unit test green throughout.
+All four now declare, and the manifest is archived.
+
+`scripts/role-supply.mjs` gained `supply.json`, a durable per-run store written atomically — temp
+file, rename — and added to `PER_RUN_ARTIFACTS`, because nothing resets it and a second run would
+otherwise append its invocations beside the first's indistinguishably, which is the fault
+`assumptions.json` is on that list for. **It records, it does not decide:** nothing in the loop reads
+it back, and no gate result, ratchet state or verdict may depend on it. An unreadable store is moved
+aside under a findable name and the fresh one opens with a `lapse` entry saying so — a store that
+quietly started over would be worse than a missing one, because a verifier counting invocations
+cannot tell "nothing was recorded" from "nothing happened". A write failure is reported and does not
+end the run: this is evidence for an acceptance receipt, not a decision.
+
+**The manifest is built in two places on purpose.** `spawnClaude` refuses, because it is the door
+*every* child passes through including a component's. `runChild` builds and records, because it is
+the door every child *in the loop* passes through and the only one that knows where this run's state
+lives. `roleSupplyManifest` is pure, so the two constructions cannot disagree — and the tier-2 test
+below is only possible because of the split: an injected `spawn` replaces the whole of `spawnClaude`,
+so a record built there is invisible to exactly the test that would prove the threading.
 
 **Design notes worth keeping.** The check sits at `spawnClaude` for the reason the context budget
 does: every child passes through one door, so a phase added later cannot forget it. The policy is a
@@ -2769,8 +2785,18 @@ can still open any file in the candidate; F15 / item **69** owns that, and descr
 preventing a role from *reading* something would be writing `not supplied` as though it were
 `driver-owned` — the exact confusion `AGENTS.md` warns about.
 
-**Evidence.** `test/role-supply.test.mjs` offers **every** forbidden class to **every** constrained
-role from the policy table itself, so adding a rule adds its hostile case automatically; the benign
+**Evidence (0.201.0).** `test/integration/role-supply.integration.test.mjs` drives the real `main`
+with canned children and asks the durable record what each role was given — asserted against the
+**policy table** rather than a list written in the test, so adding a constrained role adds its
+obligation automatically instead of leaving it silently unthreaded. It also proves the record
+describes the prompts without repeating them, binds each invocation to the specification revision it
+was held to, and is archived rather than appended to by the next run. Verified red by removing the
+oracle author's declaration. `test/role-supply.test.mjs` adds the store's own cases: append rather
+than replace, no temp file left behind, and the lapse entry when the previous store cannot be read
+or came from a schema this build does not know.
+
+**Evidence (0.194.0).** `test/role-supply.test.mjs` offers **every** forbidden class to **every**
+constrained role from the policy table itself, so adding a rule adds its hostile case automatically; the benign
 neighbours prove each allowed class still arrives, that the builder keeps the history the panel may
 not have, and that an unconstrained role stays unconstrained. `test/driver.test.mjs` proves the
 refusal happens with **zero** children spawned, that an allowed supply returns a manifest which does
