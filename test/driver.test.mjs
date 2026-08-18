@@ -4794,6 +4794,43 @@ describe('red-evidence', () => {
     assert.deepEqual([...unprovenIds({ previousPassing: [], passing: ['a::1', 'b::2'], redSeen: ['a::1'] })], ['b::2']);
   });
 
+  it('stops history vouching for an id whose definition changed (REVIEW F17)', () => {
+    // `previousPassing` was a permanent exemption from red evidence attached to a *string*. A test
+    // identity is a path, a title chain and a project, so replacing the assertions inside a test
+    // while keeping its name inherited the credit the old bytes earned. A changed definition is now
+    // simply not exempt: it must be observed failing again, exactly as a new test must.
+    const options = { previousPassing: ['a::1'], passing: ['a::1'], redSeen: [] };
+    assert.deepEqual([...unprovenIds(options)], [], 'an unchanged definition lost its exemption');
+    assert.deepEqual(
+      [...unprovenIds({ ...options, changedDefinitions: ['a::1'] })],
+      ['a::1'],
+      'a rewritten definition inherited credit earned by different bytes',
+    );
+  });
+
+  it('credits a changed definition again once it has been seen failing', () => {
+    // The legitimate-strengthening path, and it needs no new mechanism: observe the new definition
+    // red, and it is credited. History is never deleted to make this work.
+    const withheld = unprovenIds({
+      previousPassing: ['a::1'],
+      passing: ['a::1'],
+      redSeen: ['a::1'],
+      changedDefinitions: ['a::1'],
+    });
+    assert.deepEqual([...withheld], []);
+  });
+
+  it('reports the rewritten count in the red-evidence detail, so the withholding is legible', () => {
+    const result = redEvidenceGate({
+      previousPassing: ['a::1'],
+      passing: ['a::1'],
+      redSeen: [],
+      changedDefinitions: ['a::1'],
+    });
+    assert.equal(result.ok, true, 'red evidence reports; it does not fail');
+    assert.equal(result.detail.includes('a defining file that changed since it earned credit'), true, result.detail);
+  });
+
   it('never blocks an iteration, whatever it finds', () => {
     // The deadlock in one assertion. Advancing the ratchet requires every gate to pass;
     // red-evidence used to be a gate that could only pass once the ratchet had advanced.

@@ -108,6 +108,9 @@ import { collapseByWorstStatus, parseReport } from './reporters/index.mjs';
 import { clearReports, collectReports } from './reports.mjs';
 import {
   evaluateIteration,
+  changedDefinitions,
+  definitionDigest,
+  testFilePath,
   extractTestIds,
   fileBackedIds,
   restorePaths,
@@ -2313,7 +2316,18 @@ export async function driveRun(options) {
 
     // ---- Phase 4: ratchet ----------------------------------------------
     const state = loadState(meeseeksDir);
-    const decision = evaluateIteration(state, passing, { commit: null, collected });
+    // The digests of the files the credited ids came from, recorded with the advance (REVIEW F17)
+    // so a later iteration can tell "this definition still protects the behaviour" from "an id with
+    // this name once passed".
+    /** @type {Record<string, string>} */
+    const definitions = {};
+    for (const id of passing) {
+      const file = testFilePath(id);
+      if (file === '' || definitions[file] !== undefined) continue;
+      const digest = definitionDigest(rootDir, file);
+      if (digest !== null) definitions[file] = digest;
+    }
+    const decision = evaluateIteration(state, passing, { commit: null, collected, definitions });
 
     // ---- bank the ids as soon as the suite has proven them -------------
     // **Case I is why this is here.** `saveState` used to be reachable only from Phase 6, after
@@ -4352,16 +4366,20 @@ export function recordRedEvidence(meeseeksDir, nonPassing, passing = []) {
  * satisfied for two that can.
  *
  * @param {{ previousPassing: Iterable<string>, passing: Iterable<string>, redSeen: Iterable<string>,
- *   baseline?: Iterable<string> }} options
+ *   baseline?: Iterable<string>, changedDefinitions?: Iterable<string> }} options
  * @returns {GateResult}
  */
 export function redEvidenceGate(options) {
-  const before = new Set(options.previousPassing);
   const red = new Set(options.redSeen);
   const baseline = new Set(options.baseline ?? []);
+  // The same exemption rule as `unprovenIds`, and it has to be the same one: this reports what that
+  // withholds, and two answers to "is this proven" would eventually disagree (REVIEW F17).
+  const changed = new Set(options.changedDefinitions ?? []);
+  const before = new Set([...options.previousPassing].filter((id) => !changed.has(id)));
   const unproven = [...new Set(options.passing)]
     .filter((id) => !before.has(id) && !red.has(id) && !baseline.has(id))
     .sort();
+  const rewritten = [...new Set(options.passing)].filter((id) => changed.has(id)).length;
   const baselined = [...new Set(options.passing)].filter((id) => baseline.has(id)).length;
   return {
     name: 'red-evidence',
@@ -4371,7 +4389,12 @@ export function redEvidenceGate(options) {
     status: 0,
     detail:
       unproven.length > 0
-        ? `${unproven.length} test(s) never observed failing, so earning no ratchet credit: ${unproven.join(', ')}`
+        ? `${unproven.length} test(s) never observed failing under their current definition, so earning no ` +
+          `ratchet credit: ${unproven.join(', ')}` +
+          (rewritten > 0
+            ? `. ${rewritten} of the passing tests have a defining file that changed since it earned credit, so ` +
+              'history no longer vouches for them (REVIEW F17); observe them failing to credit them again'
+            : '')
         : baselined > 0
           ? `every newly passing test was seen failing first; ${baselined} in the first-gating baseline, ` +
             'which red evidence cannot cover and mutation and assertion checks do'
@@ -4399,13 +4422,25 @@ export function redEvidenceGate(options) {
  * elsewhere — `gate-integrity`'s assertion check (§4) and the conditional mutation pass (§4.4).
  *
  * @param {{ passing: Iterable<string>, previousPassing: Iterable<string>,
- *   redSeen: Iterable<string>, baseline?: Iterable<string> }} options
+ *   redSeen: Iterable<string>, baseline?: Iterable<string>,
+ *   changedDefinitions?: Iterable<string> }} options
  * @returns {Set<string>} the ids to withhold from the ratchet
  */
 export function unprovenIds(options) {
-  const before = new Set(options.previousPassing);
   const red = new Set(options.redSeen);
   const baseline = new Set(options.baseline ?? []);
+  // **History vouches for an id only while its definition is the one that earned the credit**
+  // (REVIEW F17). A test identity is a path, a title chain and a project; the ratchet stored only
+  // those, so replacing the assertions inside a test while keeping its name was indistinguishable
+  // from the original test continuing to pass. `previousPassing` was therefore a permanent
+  // exemption from red evidence, attached to a string rather than to any bytes.
+  //
+  // A changed definition simply stops being exempt. It is not removed from `passing` and it is not
+  // a regression — that would rewrite the monotonic record to state something about the present,
+  // which the finding refuses — it just has to be observed failing again before it earns current
+  // credit. Which is also the path for legitimate strengthening, at the cost of one observation.
+  const changed = new Set(options.changedDefinitions ?? []);
+  const before = new Set([...options.previousPassing].filter((id) => !changed.has(id)));
   return new Set(
     [...new Set(options.passing)].filter((id) => !before.has(id) && !red.has(id) && !baseline.has(id)),
   );
@@ -6860,8 +6895,14 @@ export async function main(argv, io = {}) {
     // Passing ids are handed over too, because the first gating of a project has to record
     // what it found as a baseline: those tests have no "before" to have been red in.
     const red = freshness === null ? recordRedEvidence(treeStateDir, nonPassing, [...passing]) : null;
+    // **Which of these ids are still protected by the bytes that earned them** (REVIEW F17). A
+    // changed defining file stops history vouching for its ids: they must be observed failing again
+    // before they earn current credit. They stay in `passing` and are never a regression.
+    const rewritten = changedDefinitions(passing, dir, loadState(meeseeksDir).definitions);
     const evidence =
-      red === null ? null : { previousPassing, passing, redSeen: red.seenFailing, baseline: red.baseline };
+      red === null
+        ? null
+        : { previousPassing, passing, redSeen: red.seenFailing, baseline: red.baseline, changedDefinitions: rewritten };
     const results = [
       // First, because it invalidates everything after it: a reader scanning the failures needs to
       // see that this attempt's evidence was withheld before reading gates judged without it.

@@ -12,13 +12,15 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import {
   RatchetStateError,
+  changedDefinitions,
+  definitionDigest,
   diffAgainstRatchet,
   emptyState,
   evaluateIteration,
@@ -99,6 +101,7 @@ describe('recordAdvance is monotonic', () => {
       iteration: 8,
       passing: ['a::1', 'm::1', 'z::1'],
       lastGoodCommit: null,
+      definitions: {},
     });
   });
 
@@ -151,7 +154,7 @@ describe('evaluateIteration advances', () => {
     assert.deepStrictEqual(decision, {
       action: 'advance',
       gained: ['a::1', 'b::2'],
-      state: { version: 1, iteration: 1, passing: ['a::1', 'b::2'], lastGoodCommit: 'aaaaaaa' },
+      state: { version: 1, iteration: 1, passing: ['a::1', 'b::2'], lastGoodCommit: 'aaaaaaa' , definitions: {}},
     });
   });
 
@@ -282,6 +285,7 @@ describe('loadState', () => {
       iteration: 0,
       passing: [],
       lastGoodCommit: null,
+      definitions: {},
     });
   });
 
@@ -292,12 +296,14 @@ describe('loadState', () => {
       iteration: 12,
       passing: ['b::2', 'a::1'],
       lastGoodCommit: 'abc1234',
+      definitions: {},
     });
     assert.deepStrictEqual(loadState(dir), {
       version: 1,
       iteration: 12,
       passing: ['a::1', 'b::2'],
       lastGoodCommit: 'abc1234',
+      definitions: {},
     });
   });
 
@@ -367,7 +373,7 @@ describe('loadState', () => {
     /** @type {string[]} */
     const logged = [];
     const state = loadState(dir, { now: 1700000000000, log: (line) => logged.push(line) });
-    assert.deepStrictEqual(state, { version: 1, iteration: 4, passing: ['a::1', 'b::2'], lastGoodCommit: 'c0ffee' });
+    assert.deepStrictEqual(state, { version: 1, iteration: 4, passing: ['a::1', 'b::2'], lastGoodCommit: 'c0ffee' , definitions: {}});
     // No sibling was written and nothing was announced: a readable ratchet is left untouched.
     assert.deepStrictEqual(readdirSync(dir).sort(), ['state.json']);
     assert.deepStrictEqual(logged, []);
@@ -392,7 +398,7 @@ describe('saveState', () => {
     saveState(dir, stateWith({ iteration: 2, passing: ['z::1', 'a::1'], lastGoodCommit: 'abc1234' }));
     assert.equal(
       readFileSync(path.join(dir, 'state.json'), 'utf8'),
-      `${JSON.stringify({ version: 1, iteration: 2, passing: ['a::1', 'z::1'], lastGoodCommit: 'abc1234' }, null, 2)}\n`,
+      `${JSON.stringify({ version: 1, iteration: 2, passing: ['a::1', 'z::1'], lastGoodCommit: 'abc1234' , definitions: {}}, null, 2)}\n`,
     );
   });
 
@@ -405,6 +411,7 @@ describe('saveState', () => {
       iteration: 1,
       passing: ['a::1', 'b::2'],
       lastGoodCommit: null,
+      definitions: {},
     });
   });
 });
@@ -559,6 +566,7 @@ describe('a run across several iterations', () => {
       iteration: 3,
       passing: ['a::1', 'b::2', 'c::3', 'd::4'],
       lastGoodCommit: 'commit4',
+      definitions: {},
     });
   });
 });
@@ -649,5 +657,86 @@ describe('restorePaths refuses the shapes that are not smaller restores', () => 
   it('refuses an empty path list rather than restoring everything', () => {
     // `git checkout <commit> --` with no paths is not an error to git and not a small restore.
     assert.throws(() => restorePaths({ cwd: '/repo', commit: 'abc123', paths: [] }), RatchetStateError);
+  });
+});
+
+describe('current credit is bound to the current definition (REVIEW F17)', () => {
+  /**
+   * A test file on disk, and the id a runner would report for it.
+   *
+   * @param {string} dir @param {string} body @returns {string} the id
+   */
+  function definition(dir, body) {
+    mkdirSync(path.join(dir, 'test'), { recursive: true });
+    writeFileSync(path.join(dir, 'test', 'a.test.js'), body, 'utf8');
+    return 'test/a.test.js::protects behavior';
+  }
+
+  const STRONG = 'test("protects behavior", () => { expect(charge(-1)).toThrow(); });\n';
+  const WEAKENED = 'test("protects behavior", () => { expect(true).toBe(true); });\n';
+
+  it('detects a replacement definition behind an unchanged name', () => {
+    // **Codex's reproduction.** `test/a.test.js::protects behavior` was banked, presented again
+    // under a replacement definition, and `evaluateIteration` answered `advance` — a stable name
+    // preserving credit for behaviour nobody was checking any more.
+    const dir = makeTempDir();
+    const id = definition(dir, STRONG);
+    const recorded = { 'test/a.test.js': definitionDigest(dir, 'test/a.test.js') ?? '' };
+
+    assert.deepStrictEqual(changedDefinitions([id], dir, recorded), new Set(), 'the same bytes read as changed');
+    definition(dir, WEAKENED);
+    assert.deepStrictEqual(changedDefinitions([id], dir, recorded), new Set([id]), 'a rewritten assertion went unseen');
+  });
+
+  it('treats a whitespace-only edit as changed, which is the formatting policy stated out loud', () => {
+    // F17 asks for this to be decided rather than guessed. Raw bytes, and the asymmetry is the
+    // argument: a normaliser that mistakes a semantic change for formatting silently preserves
+    // credit for a weakened test, which is unrecoverable. Raw bytes err the other way, and the cost
+    // is one re-observation per file a formatter touched — credit is withheld, never reset.
+    const dir = makeTempDir();
+    const id = definition(dir, STRONG);
+    const recorded = { 'test/a.test.js': definitionDigest(dir, 'test/a.test.js') ?? '' };
+    definition(dir, STRONG.replace('() => {', '() => {  '));
+    assert.deepStrictEqual(changedDefinitions([id], dir, recorded), new Set([id]));
+  });
+
+  it('treats an unrecorded or unreadable definition as changed, because neither is evidence', () => {
+    const dir = makeTempDir();
+    const id = definition(dir, STRONG);
+    assert.deepStrictEqual(changedDefinitions([id], dir, {}), new Set([id]), 'an unknown digest vouched for an id');
+    assert.deepStrictEqual(changedDefinitions([id], dir, undefined), new Set([id]));
+    rmSync(path.join(dir, 'test', 'a.test.js'));
+    assert.deepStrictEqual(changedDefinitions([id], dir, { 'test/a.test.js': 'whatever' }), new Set([id]));
+  });
+
+  it('says nothing about an id that names no file', () => {
+    assert.deepStrictEqual(changedDefinitions(['a bare title'], makeTempDir(), {}), new Set());
+  });
+
+  it('keeps the historical record intact when a definition changes', () => {
+    // The third acceptance bullet, and the one that decides the shape of the whole repair. "This id
+    // once passed" is append-only and must not be rewritten to express "this definition protects
+    // the behaviour now" — so a changed definition is neither removed from `passing` nor counted as
+    // a regression. It simply stops being exempt from red evidence.
+    const dir = makeTempDir();
+    const id = definition(dir, STRONG);
+    const banked = recordAdvance(emptyState(), {
+      passing: [id],
+      definitions: { 'test/a.test.js': definitionDigest(dir, 'test/a.test.js') ?? '' },
+    });
+    definition(dir, WEAKENED);
+
+    const decision = evaluateIteration(banked, [id], { collected: 1 });
+    assert.equal(decision.action, 'advance', 'a rewritten definition was read as a regression');
+    assert.deepStrictEqual(banked.passing, [id], 'history was rewritten');
+    assert.deepStrictEqual(changedDefinitions([id], dir, banked.definitions), new Set([id]));
+  });
+
+  it('records the digest that earned the credit, and keeps digests it did not re-observe', () => {
+    // A file whose tests did not run this iteration must keep the digest it was credited under,
+    // or the next iteration would read it as unknown and ask for red evidence it already has.
+    const first = recordAdvance(emptyState(), { passing: ['a/x.test.js::one'], definitions: { 'a/x.test.js': 'aaa' } });
+    const second = recordAdvance(first, { passing: ['b/y.test.js::two'], definitions: { 'b/y.test.js': 'bbb' } });
+    assert.deepStrictEqual(second.definitions, { 'a/x.test.js': 'aaa', 'b/y.test.js': 'bbb' });
   });
 });

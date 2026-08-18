@@ -2425,7 +2425,7 @@ wrong-tree output. Scoped restore verification must check the unit result before
 attempts refuse; the stale-report reproduction falls through to the full reset; and report
 provenance survives archive/restart inspection.
 
-### 71. Bind current ratchet credit to the current test definition — OPEN (REVIEW F17)
+### 71. Bind current ratchet credit to the current test definition — IMPLEMENTED (0.191.0); REVIEW F17 open pending Codex
 
 **Problem solved:** path/title identity survives an assertion rewrite, so weakened tests inherit
 credit earned by different bytes.
@@ -2438,6 +2438,38 @@ deterministic normalization or conservatively revalidate.
 **Done when:** same-name assertion changes are detected, legitimate strengthening can regain credit
 without deleting history, and a weakened replacement cannot ship on its predecessor's ratchet
 identity.
+
+**What landed (0.191.0).** `state.json` gains `definitions`: a digest of each credited test's
+defining file, recorded when its ids earned credit. `changedDefinitions` names the ids whose file is
+no longer the one that earned them, and `unprovenIds`/`redEvidenceGate` stop treating those ids as
+exempt from red evidence.
+
+**The shape is the finding's third bullet, and it decides everything else.** "This id once passed"
+and "this definition protects the behaviour" are separate facts. `passing` stays append-only and is
+never rewritten, so a changed definition is **not** removed and **not** a regression — it just loses
+the permanent exemption `previousPassing` used to grant to a *string*. It must be observed failing
+again before it earns current credit, which is also the legitimate-strengthening path: strengthen
+the test, see it red, be credited. No new mechanism, no deletion of history.
+
+**Formatting policy, decided rather than guessed** (F17 asks explicitly). The digest is over **raw
+bytes**. A normaliser would have to decide which edits are cosmetic, and that decision is
+unrecoverable in one direction: mistaking a semantic change for formatting silently preserves credit
+for a weakened test, which is the defect itself. Raw bytes err the other way, and the cost is one
+re-observation per file a formatter touched — credit is *withheld*, never failed or reset.
+
+**Unknown and unreadable read as changed**, because neither is evidence that the bytes on disk are
+the bytes that earned the credit. That also makes the upgrade honest: a `state.json` written before
+0.191.0 has no digests, so its ids are observed once more and then credited. A malformed
+`definitions` map is dropped rather than throwing — it is an additional fact about credit, losing it
+costs one re-observation, and refusing to run would strand a repository on a field that did not
+exist a version ago.
+
+**Evidence.** `test/ratchet.test.mjs` runs Codex's reproduction — the same id, a replacement
+definition — and proves it is detected while `passing` and the advance decision are untouched; plus
+the whitespace-only case that pins the formatting policy, the unknown/unreadable cases, and the
+digest merge that keeps a file whose tests did not run this iteration. `test/driver.test.mjs` proves
+the exemption rule directly and that red evidence re-credits a changed definition. Verified red by
+restoring the unconditional `previousPassing` exemption.
 
 ### 72. Conserve every child result in budget accounting — IMPLEMENTED (0.174.0); REVIEW F18 open pending Codex
 

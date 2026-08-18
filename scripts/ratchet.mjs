@@ -21,6 +21,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -81,7 +82,20 @@ export function extractTestIds(input, options) {
 // {@link hardReset} is the one exception, because the reset is the ratchet's own act.
 // ===========================================================================
 
-/** @typedef {{ version: 1, iteration: number, passing: string[], lastGoodCommit: string | null }} RatchetState */
+/**
+ * @typedef {{ version: 1, iteration: number, passing: string[], lastGoodCommit: string | null,
+ *   definitions?: Record<string, string> }} RatchetState
+ *
+ * `definitions` maps a test file's repository-relative path to a digest of its bytes at the moment
+ * ids from it earned credit (REVIEW F17). `passing` stays exactly what it was — the append-only
+ * historical record that an id once passed — because the finding is explicit that the two must not
+ * be conflated: rewriting the monotonic record when a definition changes would destroy history to
+ * express a fact about the present.
+ *
+ * Optional, so a state file written before 0.191.0 loads unchanged. An absent digest is not
+ * evidence that the definition is the one that earned the credit, so `changedDefinitions` treats it
+ * as changed and asks for red evidence again — one re-observation, once, on upgrade.
+ */
 /** @typedef {{ action: 'advance', gained: string[], state: RatchetState }} AdvanceDecision */
 /** @typedef {{ action: 'reset', regressions: string[], task: string, target: string | null, reason: string }} ResetDecision */
 /** @typedef {{ action: 'reject', reason: string }} RejectDecision */
@@ -104,7 +118,7 @@ export class RatchetStateError extends Error {
  * @returns {RatchetState}
  */
 export function emptyState() {
-  return { version: STATE_VERSION, iteration: 0, passing: [], lastGoodCommit: null };
+  return { version: STATE_VERSION, iteration: 0, passing: [], lastGoodCommit: null, definitions: {} };
 }
 
 /**
@@ -132,11 +146,27 @@ function validateState(value, file) {
   if (record.lastGoodCommit !== null && typeof record.lastGoodCommit !== 'string') {
     throw new RatchetStateError(`${file} has a lastGoodCommit that is neither a string nor null.`);
   }
+  // Definition digests (REVIEW F17). Optional, so a state file written before 0.191.0 loads
+  // unchanged. A malformed map is dropped rather than throwing: it is an *additional* fact about
+  // credit, and losing it costs one re-observation per file, while refusing to run over it would
+  // strand a repository on a field that did not exist a version ago. Losing it is safe in the
+  // right direction — an absent digest reads as "changed", which withholds credit rather than
+  // granting it.
+  const digests = record.definitions;
+  const definitions =
+    digests !== null && typeof digests === 'object' && !Array.isArray(digests)
+      ? Object.fromEntries(
+          Object.entries(/** @type {Record<string, unknown>} */ (digests)).filter(
+            ([file, digest]) => typeof file === 'string' && typeof digest === 'string',
+          ),
+        )
+      : {};
   return {
     version: STATE_VERSION,
     iteration: record.iteration,
     passing: [.../** @type {string[]} */ (record.passing)],
     lastGoodCommit: record.lastGoodCommit,
+    definitions: /** @type {Record<string, string>} */ (definitions),
   };
 }
 
@@ -207,6 +237,8 @@ export function saveState(meeseeksDir, state) {
     iteration: state.iteration,
     passing: [...state.passing].sort(),
     lastGoodCommit: state.lastGoodCommit,
+    // Sorted by path for the same reason `passing` is: this file is read in diffs (REVIEW F17).
+    definitions: Object.fromEntries(Object.entries(state.definitions ?? {}).sort(([a], [b]) => (a < b ? -1 : 1))),
   };
   writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
   renameSync(temporary, file);
@@ -236,7 +268,7 @@ export function diffAgainstRatchet(everPassed, nowPassing) {
  * through {@link evaluateIteration}.
  *
  * @param {RatchetState} state
- * @param {{ passing: Iterable<string>, commit?: string | null }} iteration
+ * @param {{ passing: Iterable<string>, commit?: string | null, definitions?: Record<string, string> }} iteration
  * @returns {RatchetState}
  */
 export function recordAdvance(state, iteration) {
@@ -247,6 +279,9 @@ export function recordAdvance(state, iteration) {
     iteration: state.iteration + 1,
     passing: [...union].sort(),
     lastGoodCommit: iteration.commit ?? state.lastGoodCommit,
+    // The bytes that earned this credit (REVIEW F17). Merged rather than replaced, so a file whose
+    // tests did not run this iteration keeps the digest it was credited under instead of losing it.
+    definitions: { ...(state.definitions ?? {}), ...(iteration.definitions ?? {}) },
   };
 }
 
@@ -310,7 +345,7 @@ export function formatBlooperRecord(event) {
  *
  * @param {RatchetState} state
  * @param {Iterable<string>} nowPassing ids that passed this iteration
- * @param {{ commit?: string | null, collected?: number }} [iteration]
+ * @param {{ commit?: string | null, collected?: number, definitions?: Record<string, string> }} [iteration]
  *        `collected` is how many test ids the report yielded at all, passing or not
  * @returns {RatchetDecision}
  */
@@ -350,7 +385,79 @@ export function evaluateIteration(state, nowPassing, iteration = {}) {
     };
   }
 
-  return { action: 'advance', gained, state: recordAdvance(state, { passing: after, commit: iteration.commit }) };
+  return {
+    action: 'advance',
+    gained,
+    state: recordAdvance(state, { passing: after, commit: iteration.commit, definitions: iteration.definitions }),
+  };
+}
+
+/**
+ * A digest of a test file's bytes, as the ratchet records them.
+ *
+ * **Raw bytes, and the choice is deliberate rather than lazy** (REVIEW F17 asks for it explicitly).
+ * Normalising first — stripping whitespace, reformatting — would decide that some edits are
+ * cosmetic, and that decision is unrecoverable in the wrong direction: a normaliser that treats a
+ * semantic change as formatting silently preserves credit for a weakened test, which is the defect.
+ * Raw bytes err the other way. A formatter run over the suite costs one re-observation per touched
+ * file and nothing else, because a changed definition is *withheld* from current credit rather than
+ * failed or reset.
+ *
+ * @param {string} rootDir
+ * @param {string} file repository-relative
+ * @returns {string | null} null when the file cannot be read, which is not evidence it is unchanged
+ */
+export function definitionDigest(rootDir, file) {
+  try {
+    return createHash('sha256').update(readFileSync(path.resolve(rootDir, file))).digest('hex').slice(0, 32);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ids whose defining file is not the one that earned their credit.
+ *
+ * **The hole this closes.** A test identity is a path, a title chain and an optional project. The
+ * ratchet stored only those strings, so replacing the assertions inside a test while keeping its
+ * name was indistinguishable from the original test continuing to pass — Codex banked
+ * `test/a.test.js::protects behavior`, presented a replacement definition under the same id, and
+ * `evaluateIteration` answered `advance`. A stable name preserved credit for behaviour nobody was
+ * checking any more.
+ *
+ * What the caller does with this is the other half, and it is deliberately narrow: a changed
+ * definition stops being *vouched for by history*, so it needs fresh red evidence before it earns
+ * current credit again. It is **not** removed from `passing` and it does **not** count as a
+ * regression — that would rewrite the monotonic record to express a fact about the present, which
+ * the finding explicitly refuses. Legitimate strengthening therefore regains credit the ordinary
+ * way: the new definition is observed failing, and it is credited again.
+ *
+ * @param {Iterable<string>} ids
+ * @param {string} rootDir
+ * @param {Record<string, string> | undefined} recorded digests from the state file
+ * @returns {Set<string>}
+ */
+export function changedDefinitions(ids, rootDir, recorded) {
+  const known = recorded ?? {};
+  /** @type {Map<string, boolean>} */
+  const verdict = new Map();
+  /** @type {Set<string>} */
+  const changed = new Set();
+  for (const id of ids) {
+    const file = testFilePath(id);
+    if (file === '') continue;
+    let differs = verdict.get(file);
+    if (differs === undefined) {
+      const was = known[file];
+      const now = definitionDigest(rootDir, file);
+      // Unknown or unreadable is treated as changed. Neither is evidence that the bytes that
+      // earned the credit are the bytes on disk, and nothing defaults to credited.
+      differs = was === undefined || now === null || now !== was;
+      verdict.set(file, differs);
+    }
+    if (differs) changed.add(id);
+  }
+  return changed;
 }
 
 /**
