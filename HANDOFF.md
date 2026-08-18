@@ -1,8 +1,8 @@
 # START HERE — current handoff, last swept 18 August 2026
 
-**State:** `main` at `0.185.0`. The manifests and package-lock root metadata agree. Measured on the
+**State:** `main` at `0.186.0`. The manifests and package-lock root metadata agree. Measured on the
 current tree with Node 24.14.1: `npm run lint` and `npm run typecheck` clean; `npm test`
-**2536 pass, 0 fail**; `npm run test:integration` **126 pass, 0 fail** (both measured on 0.185.0, with
+**2536 pass, 0 fail**; `npm run test:integration` **130 pass, 0 fail** (both measured on 0.186.0, with
 the `run-lock.mjs` hash verified before staging and again after committing); `npm run release-check`
 **ok**. The live tier was **not re-run at 0.181.0 or 0.182.0** and is owed by neither: nothing in those
 changes touches `spawnClaude`, `claudeArgs`, `childSettings`, envelope parsing or a template's output
@@ -48,6 +48,7 @@ Codex batch may cover several focused commits while each finding retains separat
 | 0.183.0 | — | restores the F34 sweep guard that 0.182.0 shipped mutated |
 | 0.184.0 | F34 / item 91 | the claim release guard, exported and tested directly |
 | 0.185.0 | F33, F37, F39, F40 | sibling-safe sweep, post-exit group reap, exact-match sweep, HANDOFF de-duplicated |
+| 0.186.0 | F38 / item 96 | the publication subject re-established after deploy |
 
 **0.182.0 shipped mutation-testing scaffolding and 0.183.0 undoes it. Read this before trusting
 0.182.0's numbers.** A reviewing agent ran its mutation experiments against `scripts/run-lock.mjs`

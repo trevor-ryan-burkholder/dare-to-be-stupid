@@ -1655,12 +1655,13 @@ export function repeatedRegressionNote(counts, regressions) {
  *   shipTimeMutation?: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
  *   checkSpecification: () => { ok: boolean, digest: string, detail: string },
  *   workspaceIdentity: () => string | null | Promise<string | null>,
- *   verifyPublication: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
+ *   verifyPublication: () => { ok: boolean, detail: string, head?: string | null }
+ *     | Promise<{ ok: boolean, detail: string, head?: string | null }>,
  *   readTestReports: () => unknown[],
  *   commit: (message: string) => string | Promise<string>,
  *   diffStat: () => string | Promise<string>,
  *   deploy?: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
- *   ship: (iteration: number) => void | Promise<void>,
+ *   ship: (iteration: number, commit: string) => void | Promise<void>,
  *   now: () => string,
  *   log: (line: string) => void,
  *   event?: (event: import('./style.mjs').StyleEvent) => void,
@@ -2929,9 +2930,50 @@ export async function driveRun(options) {
       // mutation gate — has had the opportunity to run beside a writer.
       const driftedBeforeShip = specificationDrift();
       if (driftedBeforeShip !== null) return driftedBeforeShip;
+
+      // **The publication subject is re-established after the mutation-capable steps** (REVIEW
+      // F38). Everything above proved the *commit* was the reviewed tree — and then two things ran
+      // that can write to the repository: the ship-time mutation gate, and the operator's arbitrary
+      // deploy command. A deploy that edits and commits tracked source moved `HEAD` off the
+      // reviewed commit, and only the specification was rechecked afterwards, so both tags landed
+      // on bytes no gate and no reviewer had seen. That is F31's false-completion class arriving
+      // one step later in the pipeline.
+      //
+      // Three questions, because they fail in three different ways: the working tree is still the
+      // sealed one, git holds it rather than merely having it on disk, and `HEAD` is still the
+      // exact commit that was verified. Any drift withholds the ship rather than failing the
+      // iteration — the work stands, the claim about it does not.
+      /** @type {string | null} */
+      let shipDrift = null;
+      if (!(await workspaceStillMatches(reviewedWorkspace))) {
+        shipDrift = 'the working tree changed after the deploy, so it is no longer the tree that was reviewed';
+      } else {
+        const republished = await effects.verifyPublication();
+        if (!republished.ok) shipDrift = `after the deploy, ${republished.detail}`;
+        else if (typeof republished.head === 'string' && republished.head !== commit) {
+          shipDrift =
+            `the deploy moved HEAD from the reviewed commit ${commit.slice(0, 12)} to ` +
+            `${republished.head.slice(0, 12)}, so a tag here would name a tree nothing reviewed`;
+        }
+      }
+      if (shipDrift !== null) {
+        effects.log(`cannot ship: ${shipDrift}`);
+        objective = {
+          kind: 'review',
+          headline: 'The repository moved after the deploy, so the ship would name the wrong tree.',
+          reason:
+            `the panel passed and the deploy came up, but ${shipDrift}. A ship is a claim about a specific ` +
+            'commit, so it is withheld and the gates run again against whatever is there now',
+          findings: [shipDrift],
+        };
+        await closeIteration(iterationNumber, ['ship:post-deploy-drift'], score, passing.size);
+        continue;
+      }
+
       effects.event?.({ kind: 'ship', iteration: iterationNumber });
       try {
-        await effects.ship(iterationNumber);
+        // The **explicit** reviewed commit, not whatever `HEAD` names by now (REVIEW F38).
+        await effects.ship(iterationNumber, commit);
       } catch (error) {
         // A tag that could not be written is not a ship (REVIEW F31). `SHIPPED` is a claim about an
         // artifact somebody can go and look at, so a failure here ends the run rather than
@@ -7064,6 +7106,9 @@ export async function main(argv, io = {}) {
         if (!head.ok || !/^[0-9a-f]{7,}$/.test(head.stdout.trim())) {
           return { ok: false, detail: 'git could not name HEAD, so nothing can be said about what would be published' };
         }
+        // Reported, not just validated (REVIEW F38): the caller re-runs this after the deploy and
+        // has to compare `HEAD` against the commit it verified, which it cannot do from `ok` alone.
+        const sha = head.stdout.trim();
         const status = await shell('git', ['status', '--porcelain'], { cwd });
         if (!status.ok) {
           return { ok: false, detail: 'git could not describe the tree, so its cleanliness at publication is unknown' };
@@ -7077,15 +7122,23 @@ export async function main(argv, io = {}) {
               `tree that was reviewed: ${dirty.slice(0, 20).map((line) => line.slice(3)).join(', ')}`,
           };
         }
-        return { ok: true, detail: `published ${head.stdout.trim().slice(0, 7)} with a clean tree` };
+        return { ok: true, detail: `published ${sha.slice(0, 7)} with a clean tree`, head: sha };
       },
       diffStat: async () => (await shell('git', ['diff', '--stat', 'HEAD~1'], { cwd })).stdout.trim(),
-      ship: async (iteration) => {
+      ship: async (iteration, commit) => {
         const tag = `meeseeks/iter-${String(iteration).padStart(3, '0')}`;
+        // **Both tags name the reviewed commit explicitly** (REVIEW F38). `git tag -f <name>` with
+        // no commit tags whatever `HEAD` happens to be, and by this point the ship-time mutation
+        // gate and the operator's deploy have both had the chance to move it. The caller has just
+        // re-proved that `HEAD` *is* this commit; naming it anyway is what makes the tag a
+        // statement about a specific tree rather than about a moment.
+        if (!/^[0-9a-f]{7,}$/.test(commit)) {
+          throw new DriverError(`refusing to tag: ${JSON.stringify(commit)} is not a commit this run published`);
+        }
         // Both tag operations are required (REVIEW F31). A tag that silently failed to be written
         // leaves a run reporting `SHIPPED` with no artifact identifying what shipped, which is the
         // audit that could not verify the first `SHIPPED` at all, repeated.
-        const iterationTag = await shell('git', ['tag', '-f', tag], { cwd });
+        const iterationTag = await shell('git', ['tag', '-f', tag, commit], { cwd });
         if (!iterationTag.ok) {
           throw new DriverError(
             `git could not write the iteration tag ${tag}: ${(iterationTag.stderr || '').trim().slice(0, 400)}`,
@@ -7103,6 +7156,7 @@ export async function main(argv, io = {}) {
             '-m',
             `SHIPPED: panel ${config.requireUnanimous ? 'unanimous' : 'majority'} on ` +
               `${requiredIds.length} requirement(s). Verdicts in .meeseeks/${REVIEW_RECORD}.`,
+            commit,
           ],
           { cwd },
         );

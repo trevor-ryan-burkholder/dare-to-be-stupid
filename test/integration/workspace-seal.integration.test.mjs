@@ -61,8 +61,9 @@ function repo() {
  * Drive one iteration against a real tree, with the real workspace hash.
  *
  * @param {string} root
- * @param {{ onReview?: () => void }} [hooks]
- * @returns {Promise<{ outcome: import('../../scripts/driver.mjs').RunOutcome, committed: string[], shipped: number, logs: string[] }>}
+ * @param {{ onReview?: () => void, onDeploy?: () => void | Promise<void> }} [hooks]
+ * @returns {Promise<{ outcome: import('../../scripts/driver.mjs').RunOutcome, committed: string[],
+ *   shipped: number, shippedCommit: string | null, logs: string[] }>}
  */
 async function driveOnce(root, hooks = {}) {
   /** @type {string[]} */
@@ -70,6 +71,8 @@ async function driveOnce(root, hooks = {}) {
   /** @type {string[]} */
   const committed = [];
   let shipped = 0;
+  /** @type {string | null} */
+  let shippedCommit = null;
   const outcome = await driveRun({
     config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
     meeseeksDir: path.join(root, '.meeseeks'),
@@ -120,9 +123,12 @@ async function driveOnce(root, hooks = {}) {
         const status = await shell('git', ['status', '--porcelain'], { cwd: root });
         if (!status.ok) return { ok: false, detail: 'git could not describe the tree' };
         const dirty = status.stdout.split('\n').filter((line) => line.trim() !== '');
+        // `head` is reported because the caller re-runs this after the deploy and compares it to
+        // the commit it verified (REVIEW F38); `ok` alone cannot answer "did HEAD move".
+        const head = git(root, ['rev-parse', 'HEAD']);
         return dirty.length === 0
-          ? { ok: true, detail: 'clean' }
-          : { ok: false, detail: `${dirty.length} path(s) uncommitted after the commit` };
+          ? { ok: true, detail: 'clean', head }
+          : { ok: false, detail: `${dirty.length} path(s) uncommitted after the commit`, head };
       },
       // The real thing, over the real tree.
       workspaceIdentity: () => workspaceHash({ cwd: root, run: shell }),
@@ -142,14 +148,21 @@ async function driveOnce(root, hooks = {}) {
         return git(root, ['rev-parse', 'HEAD']);
       },
       diffStat: () => ' 1 file changed',
-      ship: () => {
+      // A real deploy is an arbitrary operator command with write access to the repository, which
+      // is the whole of REVIEW F38.
+      deploy: async () => {
+        await hooks.onDeploy?.();
+        return { ok: true, detail: 'deployed' };
+      },
+      ship: (_iteration, commit) => {
         shipped += 1;
+        shippedCommit = commit;
       },
       now: () => '2026-08-17T00:00:00.000Z',
       log: (line) => logs.push(line),
     },
   });
-  return { outcome, committed, shipped, logs };
+  return { outcome, committed, shipped, shippedCommit, logs };
 }
 
 describe('a real write during a real review cannot reach the commit', () => {
@@ -445,5 +458,79 @@ describe('a failed git publication cannot reach deploy, tag or SHIPPED', () => {
     assert.equal(driven.outcome.state, 'SHIPPED', driven.logs.join('\n').slice(-600));
     assert.equal(driven.shipped, 1);
     assert.equal(git(root, ['status', '--porcelain']), '', 'the shipped tree was not clean');
+  });
+});
+
+describe('a deploy cannot move what gets tagged (REVIEW F38)', () => {
+  // The deploy is an arbitrary operator command that runs *after* the publication check and after
+  // the ship-time mutation gate, with full write access to the repository. Only specification drift
+  // was rechecked afterwards, and `ship()` tagged implicit `HEAD` — so a deploy could commit its own
+  // source and receive both tags and a `SHIPPED` over bytes no gate and no reviewer had seen. F31's
+  // false-completion class, one step later in the pipeline.
+
+  it('withholds the ship when the deploy commits without touching the working tree', async () => {
+    // The case only the HEAD comparison can catch: an empty commit leaves the working tree byte
+    // identical, so the sealed identity still matches and the tree is still clean. Everything the
+    // pipeline checked before the deploy still says yes, and the tag would name the wrong commit.
+    const root = repo();
+    const driven = await driveOnce(root, {
+      onDeploy: () => {
+        git(root, ['commit', '--allow-empty', '--no-verify', '-m', 'deploy: a commit nobody reviewed']);
+      },
+    });
+
+    const all = driven.logs.join('\n');
+    assert.notEqual(driven.outcome.state, 'SHIPPED');
+    assert.equal(driven.shipped, 0, 'a tag was written over a commit the deploy created');
+    assert.equal(driven.shippedCommit, null);
+    assert.equal(all.includes('the deploy moved HEAD from the reviewed commit'), true, all.slice(-900));
+    // The deploy's commit is left alone: this withholds a claim, it does not repair the repository.
+    assert.equal(git(root, ['log', '-1', '--format=%s']), 'deploy: a commit nobody reviewed');
+  });
+
+  it('withholds the ship when the deploy commits changed source', async () => {
+    const root = repo();
+    const driven = await driveOnce(root, {
+      onDeploy: () => {
+        writeFileSync(path.join(root, 'src', 'a.js'), 'export const a = "written by the deploy";\n');
+        git(root, ['add', '-A']);
+        git(root, ['commit', '--no-verify', '-m', 'deploy: edited source']);
+      },
+    });
+
+    assert.notEqual(driven.outcome.state, 'SHIPPED');
+    assert.equal(driven.shipped, 0, 'bytes the deploy wrote were tagged as reviewed');
+    assert.equal(
+      driven.logs.join('\n').includes('cannot ship:'),
+      true,
+      driven.logs.join('\n').slice(-900),
+    );
+    assert.equal(readFileSync(path.join(root, 'src', 'a.js'), 'utf8').includes('written by the deploy'), true);
+  });
+
+  it('withholds the ship when the deploy leaves the tree dirty', async () => {
+    const root = repo();
+    const driven = await driveOnce(root, {
+      onDeploy: () => {
+        writeFileSync(path.join(root, 'src', 'a.js'), 'export const a = "uncommitted deploy edit";\n');
+      },
+    });
+
+    assert.notEqual(driven.outcome.state, 'SHIPPED');
+    assert.equal(driven.shipped, 0);
+    assert.equal(driven.logs.join('\n').includes('cannot ship:'), true, driven.logs.join('\n').slice(-900));
+  });
+
+  it('ships a clean deploy, and tags exactly the commit that was reviewed', async () => {
+    // The neighbour. Withholding every ship is not a guarantee, it is a broken product: an ordinary
+    // deploy that touches nothing must still reach SHIPPED, and the tag must name the reviewed
+    // commit explicitly rather than whatever `HEAD` happens to be by then.
+    const root = repo();
+    const driven = await driveOnce(root, { onDeploy: () => {} });
+
+    assert.equal(driven.outcome.state, 'SHIPPED', driven.logs.join('\n').slice(-900));
+    assert.equal(driven.shipped, 1);
+    assert.equal(driven.shippedCommit, git(root, ['rev-parse', 'HEAD']), 'the tag did not name the reviewed commit');
+    assert.deepStrictEqual(driven.committed, ['meeseeks: iteration 1']);
   });
 });

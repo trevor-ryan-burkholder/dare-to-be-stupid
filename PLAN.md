@@ -3293,7 +3293,7 @@ passed still resets exactly as now; `collected === 0` keeps its existing meaning
 drives the real `driveRun` through the reproduced livelock and shows it terminating instead.
 Item **89** is a prerequisite (it owns the `stuck` half of the same question).
 
-### 96. Re-verify the publication subject after deploy — OPEN (REVIEW F38, HIGH)
+### 96. Re-verify the publication subject after deploy — IMPLEMENTED (0.186.0); REVIEW F38 open pending Codex
 
 **Problem solved:** publication is verified before ship-time mutation and before the operator's
 arbitrary deploy command. After those mutation-capable steps the Driver rechecks only specification
