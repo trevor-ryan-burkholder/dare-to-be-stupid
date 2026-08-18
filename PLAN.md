@@ -2526,7 +2526,7 @@ airtime, component receipts, and terminal outcomes derive from or reconcile agai
 cost enter `alreadySpent`; failed/exhausted parallel panels conserve all completed envelopes; no
 success path double-charges; and REVIEW F18's reproduction reports the actual 160 tokens and $6.01.
 
-### 73. Bound allocation for decision-bearing artifacts — IMPLEMENTED (0.192.0); REVIEW F19 open pending Codex
+### 73. Bound allocation for decision-bearing artifacts — IMPLEMENTED (0.192.0, reopened and repaired at 0.197.0); REVIEW F19 open pending Codex
 
 **Problem solved:** prompt-bound, parsed, and hashed files can be synchronously loaded without a
 size boundary, allowing a repository or generated report to exhaust the Driver.
@@ -2568,6 +2568,26 @@ the limit values themselves against the largest committed fixture, and the strea
 with a whole-file digest for a file larger than any read limit. `test/reports.test.mjs` proves an
 oversized report lands in `irregular` rather than being parsed short. Verified red by restoring the
 unbounded report read.
+
+**Codex reopened this at 0.194.0 on two counts, both correct.**
+
+*The bound was checked, not enforced.* `readBounded` stat'd and then read the whole file, so a file
+that grew between the two — or one `stat` could not size at all — was fully allocated before the
+refusal. The acceptance criterion is specifically *fails before full allocation*, and a check after
+the allocation is not that. It now reads into a buffer of exactly `limit + 1`: one byte over is
+enough to know, and no more than that is ever held. `readBoundedAsync` delegates to it rather than
+keeping a second whole-file path that could drift.
+
+*Three first reads were still unbounded.* The pin source reread (target-controlled, decision-bearing,
+the same class as a report) and `specification.json` (driver-owned, but under `.meeseeks/` in a
+repository the operator also edits, and parsed on the decision path every iteration) are bounded now.
+
+**The allocation bound is asserted positionally, and that is stated rather than hidden.** From
+outside, a whole-file read that refuses afterwards and a bounded read that refuses at the ceiling
+look identical — both throw. So the test scans the function's source for the whole-file read and for
+the buffer size, the way `test/driver.test.mjs` scans the lock-owned region rather than trying to
+observe a leaked lock. The behavioural half — growth race, unmeasurable path, exact reported size,
+whole-file fidelity and a multi-byte character straddling a read boundary — is tested normally.
 
 **The terminal-evidence half needs nothing new.** Item 64 already routes every post-lock exit through
 one atomic receipt, so a refusal that ends a run is recorded with its phase by construction — which

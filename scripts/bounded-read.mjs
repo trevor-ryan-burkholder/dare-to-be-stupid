@@ -27,8 +27,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { createReadStream, readFileSync, statSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { closeSync, createReadStream, openSync, readSync, statSync } from 'node:fs';
 
 /**
  * Limits by artifact class, in bytes.
@@ -107,14 +106,29 @@ export function measure(file) {
 export function readBounded(file, limit) {
   const size = measure(file);
   if (size !== null && size > limit) throw new ArtifactTooLargeError(file, size, limit);
-  const contents = readFileSync(file, 'utf8');
-  // Checked again after reading, because `stat` failing while `read` succeeds is a race rather than
-  // a licence: the first check is the one that avoids the allocation, and this one is the one that
-  // cannot be skipped.
-  if (Buffer.byteLength(contents, 'utf8') > limit) {
-    throw new ArtifactTooLargeError(file, Buffer.byteLength(contents, 'utf8'), limit);
+  // **Never allocate past the limit** (REVIEW F19, reopened). The first version stat'd and then read
+  // the whole file, so a file that grew between the two — or one `stat` could not size — was fully
+  // allocated before the refusal, which is the allocation the limit exists to prevent. Reading into
+  // a buffer of exactly `limit + 1` makes the ceiling real rather than checked afterwards: one byte
+  // over is enough to know, and no more than that is ever held.
+  const descriptor = openSync(file, 'r');
+  try {
+    const buffer = Buffer.allocUnsafe(limit + 1);
+    let read = 0;
+    while (read < buffer.length) {
+      const got = readSync(descriptor, buffer, read, buffer.length - read, null);
+      if (got === 0) break;
+      read += got;
+    }
+    if (read > limit) {
+      // The exact size if the filesystem will still say; otherwise the fact that matters, which is
+      // that it is over. Never a guess presented as a measurement.
+      throw new ArtifactTooLargeError(file, measure(file) ?? read, limit);
+    }
+    return buffer.subarray(0, read).toString('utf8');
+  } finally {
+    closeSync(descriptor);
   }
-  return contents;
 }
 
 /**
@@ -149,11 +163,7 @@ export async function hashFileStreaming(file, algorithm = 'sha256') {
  * @throws {ArtifactTooLargeError}
  */
 export async function readBoundedAsync(file, limit) {
-  const size = measure(file);
-  if (size !== null && size > limit) throw new ArtifactTooLargeError(file, size, limit);
-  const contents = await readFile(file, 'utf8');
-  if (Buffer.byteLength(contents, 'utf8') > limit) {
-    throw new ArtifactTooLargeError(file, Buffer.byteLength(contents, 'utf8'), limit);
-  }
-  return contents;
+  // Same ceiling, same reason (REVIEW F19, reopened): the bound is enforced by the size of the
+  // buffer rather than by a check after the allocation.
+  return readBounded(file, limit);
 }

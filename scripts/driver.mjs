@@ -90,6 +90,7 @@ import {
   revalidateLaunch,
   writeLaunchReceipt,
 } from './launch.mjs';
+import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 import { OUTCOME_FILE, writeRunOutcome } from './outcome.mjs';
 import { roleSupplyManifest } from './role-supply.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
@@ -7215,7 +7216,9 @@ export async function main(argv, io = {}) {
       // rule for and an exception is not.
       readSource: (file) => {
         try {
-          return readFileSync(path.join(cwd, file), 'utf8');
+          // Bounded (REVIEW F19, reopened). A pin's source file is reread to re-verify the pin, so
+          // it is decision-bearing and target-controlled — the same class as a report.
+          return readBounded(path.join(cwd, file), READ_LIMITS.evidence);
         } catch {
           return null;
         }

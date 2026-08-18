@@ -28,7 +28,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, renameSync, writeFileSync } from 'node:fs';
 
 import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 import path from 'node:path';
@@ -120,7 +120,9 @@ export function readSpecification(meeseeksDir) {
   }
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync(target, 'utf8'));
+    // Bounded (REVIEW F19, reopened). Driver-owned, but under `.meeseeks/` in a repository the
+    // operator also edits, and it is parsed on the decision path every iteration.
+    parsed = JSON.parse(readBounded(target, READ_LIMITS.record));
   } catch (error) {
     throw new SpecificationError(
       `${path.join('.meeseeks', SPECIFICATION_FILE)} could not be read as JSON ` +

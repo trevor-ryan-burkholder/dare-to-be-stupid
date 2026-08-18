@@ -158,3 +158,74 @@ describe('hashFileStreaming', () => {
     assert.equal(await hashFileStreaming(path.join(dir, 'link.bin')), null);
   });
 });
+
+describe('the limit is a ceiling on allocation, not a check after it (REVIEW F19, reopened)', () => {
+  it('refuses a file that grew past the limit after it was measured', () => {
+    // The growth race Codex named. `stat` then whole-file read means a file that grows between the
+    // two is fully allocated before the refusal — and acceptance required refusal *before* full
+    // allocation. Reading into a buffer of exactly `limit + 1` makes the ceiling real: one byte over
+    // is enough to know, and no more than that is ever held.
+    //
+    // Simulated by measuring a small file and then reading it against a limit smaller than it has
+    // since become, which is the same code path a real growth takes.
+    const dir = scratch();
+    const file = path.join(dir, 'growing.json');
+    writeFileSync(file, 'x'.repeat(64), 'utf8');
+    assert.equal(measure(file), 64);
+    writeFileSync(file, 'x'.repeat(4096), 'utf8');
+    assert.throws(() => readBounded(file, 1024), ArtifactTooLargeError);
+  });
+
+  it('reports the size the filesystem still gives, rather than the buffer it stopped at', () => {
+    const dir = scratch();
+    const file = fileOf(dir, 'over.json', 5000);
+    assert.throws(
+      () => readBounded(file, 1024),
+      (/** @type {unknown} */ error) => {
+        assert.equal(/** @type {ArtifactTooLargeError} */ (error).size, 5000, 'the reported size was a guess');
+        return true;
+      },
+    );
+  });
+
+  it('reads a file whose size cannot be measured, bounded by the buffer alone', () => {
+    // A path `measure` refuses to size still gets a ceiling, because the ceiling is the buffer.
+    const dir = scratch();
+    mkdirSync(path.join(dir, 'a-directory'), { recursive: true });
+    assert.equal(measure(path.join(dir, 'a-directory')), null);
+    assert.throws(() => readBounded(path.join(dir, 'a-directory'), 512));
+  });
+
+  it('never reaches for a whole-file read, which no behavioural test can observe', () => {
+    // **The allocation bound is a property of the code, not of the result.** From outside, a
+    // whole-file read that refuses afterwards and a bounded read that refuses at the ceiling look
+    // identical — both throw. The acceptance criterion is specifically "fails before full
+    // allocation", so the assertion is positional, the way `test/driver.test.mjs` scans the
+    // lock-owned region rather than trying to observe a leaked lock.
+    const source = readFileSync(new URL('../scripts/bounded-read.mjs', import.meta.url), 'utf8');
+    const bounded = source.slice(source.indexOf('export function readBounded('), source.indexOf('export async function hashFileStreaming'));
+    assert.equal(bounded.includes('readFileSync'), false, 'readBounded allocates the whole file before refusing');
+    assert.equal(bounded.includes('Buffer.allocUnsafe(limit + 1)'), true, 'the ceiling is no longer the buffer size');
+    // And the async form must not quietly reintroduce it.
+    assert.equal(source.includes("from 'node:fs/promises'"), false, 'a promises-based whole-file read is back');
+  });
+
+  it('still returns the whole of a file that fits, byte for byte', () => {
+    // The neighbour. A chunked read that dropped the tail would be worse than an unbounded one.
+    const dir = scratch();
+    const body = Array.from({ length: 5000 }, (_unused, index) => `line ${index}`).join('\n');
+    const file = path.join(dir, 'exact.txt');
+    writeFileSync(file, body, 'utf8');
+    assert.equal(readBounded(file, Buffer.byteLength(body, 'utf8')), body);
+  });
+
+  it('reads a multi-byte file without splitting a character across the boundary', () => {
+    // The chunked read reassembles bytes before decoding, so a character straddling a read boundary
+    // is not corrupted into a replacement character.
+    const dir = scratch();
+    const body = '→'.repeat(20_000);
+    const file = path.join(dir, 'unicode.txt');
+    writeFileSync(file, body, 'utf8');
+    assert.equal(readBounded(file, 1024 * 1024), body);
+  });
+});
