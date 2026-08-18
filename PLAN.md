@@ -3735,6 +3735,43 @@ runner honouring it. Verified red by removing the detect deadline.
 **It pairs with F10's other half.** 0.196.0 routed a provisioning *throw* through `releasing` so it
 files a receipt and releases the lock; this makes a provisioning *hang* become such a throw.
 
+### 102. The mixed-version takeover race — IMPLEMENTED; REVIEW F39 open pending Codex
+
+**What F39 still wanted.** The code repair landed at 0.183.0 — only an exact token or nameless match
+is removed, everything else is restored or quarantined — and the deterministic
+replacement-with-directory unit test landed with it. The acceptance evidence also asked for a
+**mixed-version tier-2 race**, and that was missing.
+
+**Why it needs a fixture rather than a description.** A plugin installs into a version-keyed cache
+directory, so an un-updated machine keeps running an old driver against a repository a current one
+reclaims. `test/fixtures/run-lock/run-lock-0.165.0.mjs` is that other side, committed **verbatim**
+from `git show e38ac8e:scripts/run-lock.mjs` — its takeover claim is an anonymous directory, which
+is the whole of F34 and the reason deleting an unidentified replacement mattered. Reconstructing it
+in the test would have proved things about the reconstruction, which is the mistake `AGENTS.md`
+names about reporter fixtures.
+
+**Four cases.** Three current drivers and three 0.165.0 drivers racing one stale lock, exactly one
+winner and the lock on disk is theirs. A legacy directory found at the initial read, refused without
+going near the sweep. The window itself: a current contender that has judged an abandoned claim
+dead, a real legacy process replacing it between the read and the rename, and the requirement that
+the current one **loses arbitration** rather than deleting what it could not read. And the
+neighbour, a stale lock with no legacy driver anywhere near it, still reclaimed.
+
+**The first draft of this was theatre and is worth recording.** A pure outcome race — six mixed
+processes, assert one winner — passed against the reverted repair, because the window is
+microseconds wide and luck never opened it. So the window is *arranged*: the current contender is
+handed the module's own documented `isAlive` seam and signals a separate legacy process from inside
+it. Every actor stays real and the module under test is untouched; only the moment is chosen. Now it
+fails in 128ms against the pre-F39 sweep with "a current driver reclaimed past a legacy claim it had
+displaced".
+
+**And long-lived children are killed in `after`.** The first failing run left a waiting process
+alive, which kept the runner's event loop up and turned one visible failure into a five-minute hang.
+A test that cannot fail *legibly* is barely better than one that cannot fail.
+
+**Evidence.** Tier 2 156 pass / 0 fail, the new cases green on three consecutive rounds and red
+under the reverted guard. No shipped file changed, so no version moved.
+
 ## Observations recorded rather than repaired
 
 - **Tier 2 refused once and passed on an immediate re-run** (18 Aug 2026, committing 0.196.0 through

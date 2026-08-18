@@ -19,7 +19,7 @@
 
 import assert from 'node:assert/strict';
 import { execFile, execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -29,6 +29,7 @@ import { main } from '../../scripts/driver.mjs';
 import {
   RUN_LOCK_FILE,
   acquireRunLock,
+  claimTakeover,
   readRunLock,
   releaseRunLock,
   takeoverLockPath,
@@ -39,9 +40,31 @@ const execFileAsync = promisify(execFile);
 /** @type {string[]} */
 const temporaryDirs = [];
 
+/**
+ * Long-lived spawned processes, killed on the way out whatever happened.
+ *
+ * **A failing assertion must not hang the tier.** Several cases here start a process that waits to
+ * be killed, and an assertion that fires before the kill leaves it running — which keeps the
+ * runner's event loop alive and turns one visible failure into a suite that never finishes. A test
+ * that cannot fail *legibly* is barely better than one that cannot fail.
+ *
+ * @type {import('node:child_process').ChildProcess[]}
+ */
+const lingering = [];
+
 after(() => {
+  for (const child of lingering) child.kill('SIGKILL');
   for (const dir of temporaryDirs) rmSync(dir, { recursive: true, force: true });
 });
+
+/**
+ * @template {import('node:child_process').ChildProcess} T
+ * @param {T} child @returns {T}
+ */
+function tracked(child) {
+  lingering.push(child);
+  return child;
+}
 
 /** @param {string} prefix @returns {string} */
 function makeTempDir(prefix) {
@@ -369,7 +392,7 @@ async function startReclaimer(meeseeksDir, staleToken) {
   const dir = makeTempDir('meeseeks-run-lock-reclaimer-');
   const file = path.join(dir, 'reclaimer.mjs');
   writeFileSync(file, reclaimerSource, 'utf8');
-  const child = spawn(process.execPath, [file, meeseeksDir, staleToken], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const child = tracked(spawn(process.execPath, [file, meeseeksDir, staleToken], { stdio: ['ignore', 'pipe', 'inherit'] }));
   await new Promise((resolve, reject) => {
     child.stdout.on('data', (chunk) => String(chunk).includes('claimed') && resolve(undefined));
     child.on('close', (code) => reject(new Error(`the reclaimer exited ${code} before claiming`)));
@@ -442,5 +465,270 @@ describe('a reclaimer killed mid-takeover does not brick the repository (REVIEW 
     await kill9(reclaimer);
     const afterDeath = await race({ script, meeseeksDir, count: 3 });
     assert.equal(afterDeath.filter((entry) => entry.ok).length, 1, JSON.stringify(afterDeath));
+  });
+});
+
+/** The 0.165.0 lock, committed verbatim, as an absolute URL a spawned process can import. */
+const legacyRunLockModule = new URL('../fixtures/run-lock/run-lock-0.165.0.mjs', import.meta.url).href;
+
+/**
+ * A contender running the **pre-0.182.0** module against the same directory.
+ *
+ * Identical protocol to `contenderSource` — same shared start instant, same hold across the
+ * decision window — so the only difference between the two cohorts is which version of the lock
+ * they are executing. That is the point: a plugin installs into a version-keyed cache directory, so
+ * an un-updated machine keeps running this code against a repository a current driver also wants.
+ */
+const legacyContenderSource = `
+import { acquireRunLock } from ${JSON.stringify(legacyRunLockModule)};
+const [dir, startAt, holdUntil] = process.argv.slice(2);
+while (Date.now() < Number(startAt)) { /* spin to the shared start */ }
+const result = acquireRunLock(dir);
+if (result.ok) { while (Date.now() < Number(holdUntil)) { /* hold the repository */ } }
+process.stdout.write(JSON.stringify({ ok: result.ok, pid: process.pid, token: result.ok ? result.lock.token : null }));
+`;
+
+/**
+ * A process that occupies the legacy takeover claim and then waits to be released.
+ *
+ * The claim a 0.165.0 driver holds mid-reclaim is an **anonymous directory** — it records nothing
+ * about who made it, which is F34 — so the on-disk state a live legacy reclaimer leaves is a
+ * directory at that path and nothing else. This creates exactly that, using the same `mkdirSync`
+ * step the fixture's own takeover begins with, and then stays alive so the window stays open for as
+ * long as the test needs. Nothing about the arrangement is more permissive than the real thing: a
+ * real legacy driver in that window is also a live process with an anonymous directory on disk.
+ */
+const legacyClaimHolderSource = `
+import { mkdirSync } from 'node:fs';
+import { takeoverLockPath } from ${JSON.stringify(legacyRunLockModule)};
+const [dir, staleToken] = process.argv.slice(2);
+mkdirSync(takeoverLockPath(dir, staleToken));
+process.stdout.write('claimed\\n');
+setInterval(() => {}, 1000);
+`;
+
+/**
+ * A 0.165.0 driver that waits for the window to open, takes its directory claim, and says so.
+ *
+ * Sequenced through files rather than pipes because both sides are already spawned processes and a
+ * file is the only channel that needs no plumbing on either end. `mkdirSync` is the first step of
+ * the fixture's own takeover, and the path comes from the fixture's `takeoverLockPath`, so what
+ * lands on disk is what a legacy driver puts there rather than the test's idea of it.
+ */
+const legacyWindowSource = `
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { takeoverLockPath } from ${JSON.stringify(legacyRunLockModule)};
+const [dir, staleToken, signals] = process.argv.slice(2);
+process.stdout.write('ready\\n');
+const deadline = Date.now() + 30000;
+while (!existsSync(path.join(signals, 'open')) && Date.now() < deadline) { /* wait for the window */ }
+if (Date.now() >= deadline) process.exit(3);
+// The removal is not the legacy driver's: a 0.165.0 takeover is one \`mkdirSync\`, which needs the
+// path free. It stands for the contender that swept the abandoned claim in between, which is the
+// only sequence that puts a legacy directory where a JSON claim was — and is exactly the sequence
+// F39 describes. What follows it is the legacy module's own step, at the legacy module's own path.
+rmSync(takeoverLockPath(dir, staleToken), { force: true });
+mkdirSync(takeoverLockPath(dir, staleToken));
+writeFileSync(path.join(signals, 'replaced'), '', 'utf8');
+setInterval(() => {}, 1000);
+`;
+
+/**
+ * A current driver that opens the window at exactly the point the sweep is about to happen.
+ *
+ * `isAlive` is the seam, and it is the module's own documented one — the options exist for tests.
+ * It is consulted with the abandoned claim's pid immediately before the sweep, so signalling from
+ * inside it lands the legacy replacement precisely between the read and the rename. Nothing about
+ * the module under test is altered; only the moment is chosen.
+ */
+const windowSweeperSource = `
+import { existsSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { acquireRunLock } from ${JSON.stringify(runLockModule)};
+const [dir, abandonedPid, signals] = process.argv.slice(2);
+let fired = false;
+const result = acquireRunLock(dir, {
+  token: 'the-current-version',
+  isAlive: (pid) => {
+    if (pid === Number(abandonedPid) && !fired) {
+      fired = true;
+      writeFileSync(path.join(signals, 'open'), '', 'utf8');
+      const deadline = Date.now() + 30000;
+      while (!existsSync(path.join(signals, 'replaced')) && Date.now() < deadline) { /* hold the window */ }
+      return false;
+    }
+    try { process.kill(pid, 0); return true; } catch { return false; }
+  },
+});
+process.stdout.write(JSON.stringify({ ok: result.ok, fired }));
+`;
+
+/** @param {string} source @param {string} prefix @returns {string} the path to the script */
+function writeScript(source, prefix) {
+  const dir = makeTempDir(prefix);
+  const file = path.join(dir, 'contender.mjs');
+  writeFileSync(file, source, 'utf8');
+  return file;
+}
+
+/**
+ * Race two cohorts of real processes, running two different versions, at one directory.
+ *
+ * `race` takes a single script; this takes one per cohort and interleaves them, so neither version
+ * gets a systematic head start. Everything else — the shared start instant, the hold across the
+ * decision window, the reason both exist — is `race`'s, and the duplication is deliberate rather
+ * than a parameter on `race`: making `race` take a list of scripts would complicate the function
+ * every other test in this file depends on for the sake of one caller.
+ *
+ * @param {{ scripts: string[], meeseeksDir: string, each: number }} options
+ * @returns {Promise<{ ok: boolean, pid: number, token: string | null, version: string }[]>}
+ */
+async function raceVersions(options) {
+  const startAt = Date.now() + 500;
+  const holdUntil = startAt + 1500;
+  /** @type {Promise<{ ok: boolean, pid: number, token: string | null, version: string }>[]} */
+  const running = [];
+  for (let index = 0; index < options.each; index += 1) {
+    for (const script of options.scripts) {
+      running.push(
+        new Promise((resolve, reject) => {
+          const child = spawn(process.execPath, [script, options.meeseeksDir, String(startAt), String(holdUntil)], {
+            stdio: 'pipe',
+          });
+          let out = '';
+          let err = '';
+          child.stdout.on('data', (chunk) => {
+            out += chunk;
+          });
+          child.stderr.on('data', (chunk) => {
+            err += chunk;
+          });
+          child.on('close', (code) => {
+            if (code !== 0) {
+              reject(new Error(`a contender exited ${code}: ${err}`));
+              return;
+            }
+            resolve({ ...JSON.parse(out), version: script });
+          });
+        }),
+      );
+    }
+  }
+  return Promise.all(running);
+}
+
+describe('a mixed-version cohort cannot reclaim one stale lock twice (REVIEW F39)', () => {
+  it('gives the repository to exactly one driver, whichever version it is running', async () => {
+    // **The acceptance evidence F39 asks for, and the reason it has to be tier 2.** The unit tests
+    // arrange the read/rename window with an `isAlive` side effect, which proves the arbitration
+    // logic and nothing about two *versions* of that logic meeting. Here both are real processes
+    // executing real, differently-versioned code at one directory: three current drivers whose
+    // claim is an identity-bearing file, three 0.165.0 drivers whose claim is an anonymous
+    // directory, all arriving at the same instant on the same stale lock.
+    //
+    // Against the unrepaired F39 path a current contender deletes the legacy directory on a failed
+    // post-rename read, and both cohorts go on to reclaim — which is F1, reached through the
+    // recovery built for F34.
+    const meeseeksDir = await repositoryWithStaleLock('dead-owner');
+    const results = await raceVersions({
+      scripts: [writeContender(), writeScript(legacyContenderSource, 'meeseeks-run-lock-legacy-')],
+      meeseeksDir,
+      each: 3,
+    });
+
+    const winners = results.filter((entry) => entry.ok);
+    assert.equal(winners.length, 1, `two drivers reclaimed one stale lock: ${JSON.stringify(results)}`);
+    // The lock on disk is the winner's, so "exactly one won" is not merely what the losers reported.
+    assert.equal(readRunLock(meeseeksDir)?.token, winners[0].token);
+    assert.equal(readRunLock(meeseeksDir)?.pid, winners[0].pid);
+  });
+
+  it('loses arbitration when a legacy driver replaces the claim inside its own rename window', async () => {
+    // **The window F39 is literally about, held open across two real processes.** A current
+    // contender reads an abandoned JSON claim, judges its owner dead, and renames it. Between those
+    // two steps a 0.165.0 driver can put its *anonymous takeover directory* at the same path — and
+    // `readTakeoverClaim` refuses a directory rather than parsing it, so the post-rename read fails.
+    // Treating that failure as "the claim I judged" deletes a live legacy reclaimer's arbitration
+    // and puts both drivers on one stale lock, which is F1 arriving through F34's own recovery.
+    //
+    // The window is microseconds wide, so it is *arranged* rather than waited for: the contender is
+    // handed an `isAlive` that, on the abandoned claim's pid, signals a separate legacy process and
+    // waits for it. Every actor is still real — the directory is created by the committed 0.165.0
+    // module in its own process, the sweep runs in another, and the module under test is untouched.
+    // `test/run-lock.test.mjs` arranges the same window in one process; what this adds is that the
+    // thing being deleted was written by the other version rather than by the test.
+    const meeseeksDir = await repositoryWithStaleLock('dead-owner');
+    const claim = takeoverLockPath(meeseeksDir, 'dead-owner');
+    const abandonedPid = await deadPid();
+    claimTakeover(meeseeksDir, 'dead-owner', { pid: abandonedPid, startedAt: 'a', token: 'the-crashed-reclaimer' });
+
+    const signals = makeTempDir('meeseeks-window-');
+    const legacy = tracked(
+      spawn(process.execPath, [writeScript(legacyWindowSource, 'meeseeks-legacy-window-'), meeseeksDir, 'dead-owner', signals], {
+        stdio: ['ignore', 'pipe', 'inherit'],
+      }),
+    );
+    await new Promise((resolve, reject) => {
+      legacy.stdout.on('data', (chunk) => String(chunk).includes('ready') && resolve(undefined));
+      legacy.on('close', (code) => reject(new Error(`the legacy driver exited ${code} before it was ready`)));
+    });
+
+    const sweeper = await new Promise((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [writeScript(windowSweeperSource, 'meeseeks-sweeper-'), meeseeksDir, String(abandonedPid), signals],
+        { stdio: ['ignore', 'pipe', 'inherit'] },
+      );
+      let out = '';
+      child.stdout.on('data', (chunk) => {
+        out += chunk;
+      });
+      child.on('close', (code) => (code === 0 ? resolve(JSON.parse(out)) : reject(new Error(`sweeper exited ${code}`))));
+    });
+
+    assert.equal(sweeper.fired, true, 'the window was never reached, so this proves nothing');
+    assert.equal(sweeper.ok, false, 'a current driver reclaimed past a legacy claim it had displaced');
+    assert.equal(existsSync(claim), true, 'the legacy reclaimer’s claim was deleted by a driver that could not read it');
+    assert.equal(lstatSync(claim).isDirectory(), true, 'the legacy claim was replaced rather than restored');
+    assert.equal(readRunLock(meeseeksDir)?.token, 'dead-owner', 'the stale lock was taken while a legacy reclaimer held it');
+    await kill9(legacy);
+  });
+
+  it('leaves a live legacy claim alone when it is there from the start', async () => {
+    // The same refusal by the shorter route: a directory found at the *initial* read. This is the
+    // ordinary way a current driver meets a legacy one, and it must refuse without going near the
+    // sweep at all.
+    const meeseeksDir = await repositoryWithStaleLock('dead-owner');
+    const claim = takeoverLockPath(meeseeksDir, 'dead-owner');
+    const holder = tracked(
+      spawn(process.execPath, [writeScript(legacyClaimHolderSource, 'meeseeks-legacy-claim-'), meeseeksDir, 'dead-owner'], {
+        stdio: ['ignore', 'pipe', 'inherit'],
+      }),
+    );
+    await new Promise((resolve, reject) => {
+      holder.stdout.on('data', (chunk) => String(chunk).includes('claimed') && resolve(undefined));
+      holder.on('close', (code) => reject(new Error(`the legacy claim holder exited ${code} before claiming`)));
+    });
+    assert.equal(existsSync(claim), true, 'the legacy claim was never taken, so nothing is under test');
+
+    const results = await race({ script: writeContender(), meeseeksDir, count: 3 });
+
+    assert.deepStrictEqual(
+      results.map((entry) => entry.ok),
+      [false, false, false],
+      `a current driver reclaimed alongside a live legacy one: ${JSON.stringify(results)}`,
+    );
+    assert.equal(existsSync(claim), true, 'the legacy reclaimer’s claim was deleted');
+    assert.equal(readRunLock(meeseeksDir)?.token, 'dead-owner', 'the stale lock was taken while a legacy reclaimer held it');
+    await kill9(holder);
+  });
+
+  it('still reclaims a stale lock when no legacy driver is anywhere near it', async () => {
+    // The benign neighbour. Refusing every stale lock would satisfy the assertion above and make
+    // the lock unusable, which is the failure mode `AGENTS.md` names about blocking everything.
+    const meeseeksDir = await repositoryWithStaleLock('dead-owner');
+    const results = await race({ script: writeContender(), meeseeksDir, count: 3 });
+    assert.equal(results.filter((entry) => entry.ok).length, 1, JSON.stringify(results));
   });
 });
