@@ -30,6 +30,7 @@ import {
 } from '../scripts/acceptance.mjs';
 import { ACCEPTANCE_FILE } from '../scripts/acceptance-file.mjs';
 import { readAssumptions } from '../scripts/assumptions.mjs';
+import { DENIAL_STATE_ENV } from '../hooks/guard.mjs';
 import {
   NESTING_AUTHORITY_ENV,
   NESTING_FILE,
@@ -53,6 +54,7 @@ import {
   DEPTH_ENV,
   MAX_BOX_DEPTH,
   airtimeRemaining,
+  ChildEnvironmentError,
   childEnvironment,
   permissionsFor,
   commandGates,
@@ -8122,5 +8124,172 @@ describe('the reviewer must account for a pass, and may say what it could not ch
       ],
     );
     assert.deepStrictEqual(report.unverifiable, []);
+  });
+});
+
+describe('the child environment is a keep-list, not a copy (REVIEW F5, item 56)', () => {
+  /** Obviously-fake values. The names are what a real machine carries; none of these authenticate. */
+  const AMBIENT = {
+    PATH: '/usr/bin',
+    HOME: '/home/x',
+    ACME_DEPLOY_TOKEN: 'synthetic-not-a-real-token',
+    DATABASE_URL: 'postgres://synthetic:notreal@localhost/none',
+    GITHUB_TOKEN: 'synthetic-not-a-real-pat',
+    SSH_AUTH_SOCK: '/run/user/1000/keyring/ssh',
+    CLAUDE_CODE_SUBAGENT_MODEL: 'synthetic-override',
+    CLAUDE_CODE_MAX_OUTPUT_TOKENS: '4321',
+    MAX_THINKING_TOKENS: '1234',
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+  };
+
+  it('drops an unrelated secret rather than handing it to an unattended builder', () => {
+    // Measured against a real child on 19 Aug 2026 before this changed: a Builder-launched Bash
+    // read every one of these. `childEnvironment` was `{ ...env, MEESEEKS_RUNNING: '1' }`.
+    const child = childEnvironment(AMBIENT);
+    for (const name of ['ACME_DEPLOY_TOKEN', 'DATABASE_URL', 'GITHUB_TOKEN', 'SSH_AUTH_SOCK']) {
+      assert.equal(Object.hasOwn(child, name), false, `${name} crossed into the child`);
+    }
+  });
+
+  it('drops ambient Claude control variables, which are control-plane inputs and not metadata', () => {
+    // These change retry, resume, model routing and budget behaviour underneath a sealed role
+    // contract. The Driver supplies what it means to supply, through argv.
+    const child = childEnvironment(AMBIENT);
+    for (const name of [
+      'CLAUDE_CODE_SUBAGENT_MODEL',
+      'CLAUDE_CODE_MAX_OUTPUT_TOKENS',
+      'MAX_THINKING_TOKENS',
+      'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC',
+    ]) {
+      assert.equal(Object.hasOwn(child, name), false, `${name} crossed into the child`);
+    }
+  });
+
+  it('keeps the benign neighbours a target build actually needs', () => {
+    const child = childEnvironment({ ...AMBIENT, TMPDIR: '/tmp', LANG: 'en_US.UTF-8', TERM: 'xterm' });
+    assert.equal(child.PATH, '/usr/bin');
+    assert.equal(child.HOME, '/home/x');
+    assert.equal(child.TMPDIR, '/tmp');
+    assert.equal(child.LANG, 'en_US.UTF-8');
+    assert.equal(child.TERM, 'xterm');
+  });
+
+  it('keeps Anthropic authentication, and that residual is deliberate rather than an oversight', () => {
+    // The parent claude process cannot authenticate without this, so removing it removes the run.
+    // That the Builder's own shell still sees it is a different boundary, needing the subprocess
+    // scrub, and it is item 84's to measure.
+    const child = childEnvironment({ PATH: '/usr/bin', ANTHROPIC_API_KEY: 'synthetic' });
+    assert.equal(child.ANTHROPIC_API_KEY, 'synthetic');
+  });
+
+  it('drops cloud credentials when the run does not use that cloud', () => {
+    // Found by measuring the enforced boundary rather than by reading it: every synthetic secret had
+    // stopped crossing and AWS_SECRET_ACCESS_KEY was still there. Correct if the run authenticates
+    // through Bedrock — and on any other machine those are somebody else's keys, sitting in an
+    // unattended Builder's shell for no reason. A machine holding AWS credentials for something
+    // unrelated is the ordinary case.
+    const child = childEnvironment({
+      PATH: '/usr/bin',
+      ANTHROPIC_API_KEY: 'synthetic',
+      AWS_ACCESS_KEY_ID: 'synthetic-unrelated',
+      AWS_SECRET_ACCESS_KEY: 'synthetic-unrelated',
+      GOOGLE_APPLICATION_CREDENTIALS: '/home/x/gcp.json',
+    });
+    assert.equal(Object.hasOwn(child, 'AWS_ACCESS_KEY_ID'), false);
+    assert.equal(Object.hasOwn(child, 'AWS_SECRET_ACCESS_KEY'), false);
+    assert.equal(Object.hasOwn(child, 'GOOGLE_APPLICATION_CREDENTIALS'), false);
+  });
+
+  it('keeps exactly the chosen provider credentials, and not the other provider', () => {
+    const child = childEnvironment({
+      PATH: '/usr/bin',
+      CLAUDE_CODE_USE_BEDROCK: '1',
+      AWS_ACCESS_KEY_ID: 'synthetic',
+      AWS_SECRET_ACCESS_KEY: 'synthetic',
+      AWS_REGION: 'us-east-1',
+      GOOGLE_APPLICATION_CREDENTIALS: '/home/x/gcp.json',
+    });
+    assert.equal(child.AWS_ACCESS_KEY_ID, 'synthetic');
+    assert.equal(child.AWS_REGION, 'us-east-1');
+    // Selecting Bedrock does not admit Vertex's credentials.
+    assert.equal(Object.hasOwn(child, 'GOOGLE_APPLICATION_CREDENTIALS'), false);
+  });
+
+  /** @type {[string, string][]} */
+  const disabled = [
+    ['0', 'the string zero'],
+    ['false', 'the word false'],
+    ['', 'an empty value'],
+  ];
+  for (const [value, label] of disabled) {
+    it(`reads ${label} as "this provider is not in use"`, () => {
+      // A selector that is present but off must not admit the credentials. Reading any non-absent
+      // value as truthy would make `CLAUDE_CODE_USE_BEDROCK=0` mean the opposite of what it says.
+      const child = childEnvironment({
+        PATH: '/usr/bin',
+        CLAUDE_CODE_USE_BEDROCK: value,
+        AWS_SECRET_ACCESS_KEY: 'synthetic',
+      });
+      assert.equal(Object.hasOwn(child, 'AWS_SECRET_ACCESS_KEY'), false);
+    });
+  }
+
+  it('carries every marker the guard and the nesting boundary depend on', () => {
+    // Dropping any of these would disarm a boundary while every test that checks the boundary's
+    // *logic* stayed green — the shape CLAUDE.md records the guard-registration defect as.
+    const child = childEnvironment({
+      PATH: '/usr/bin',
+      [BOX_ENV]: '1',
+      [DEPTH_ENV]: '0',
+      [DENIAL_STATE_ENV]: '/tmp/run/.meeseeks/denials',
+      [NESTING_AUTHORITY_ENV]: '/tmp/run/.meeseeks',
+      [NESTING_TICKET_ENV]: 'nonce-abc',
+    });
+    assert.equal(child[REENTRANCY_ENV], '1');
+    assert.equal(child[BOX_ENV], '1');
+    assert.equal(child[DEPTH_ENV], '1', 'the nested depth is still counted');
+    assert.equal(child[DENIAL_STATE_ENV], '/tmp/run/.meeseeks/denials');
+    assert.equal(child[NESTING_AUTHORITY_ENV], '/tmp/run/.meeseeks');
+    assert.equal(child[NESTING_TICKET_ENV], 'nonce-abc');
+  });
+
+  it('lets an operator name a variable a target tool needs', () => {
+    const child = childEnvironment(AMBIENT, ['DATABASE_URL']);
+    assert.equal(child.DATABASE_URL, 'postgres://synthetic:notreal@localhost/none');
+    // And only the one named. An allowlist is not a switch that turns the boundary off.
+    assert.equal(Object.hasOwn(child, 'ACME_DEPLOY_TOKEN'), false);
+  });
+
+  it('refuses an allowlist that names a marker the Driver owns', () => {
+    // A run whose guard or depth marker could be introduced by configuration has no boundary. The
+    // refusal names the variable name, which is the operator's own text, and never a value.
+    for (const owned of [REENTRANCY_ENV, DEPTH_ENV, BOX_ENV, DENIAL_STATE_ENV, NESTING_TICKET_ENV]) {
+      assert.throws(
+        () => childEnvironment(AMBIENT, [owned]),
+        (error) => error instanceof ChildEnvironmentError && error.message.includes(owned),
+      );
+    }
+  });
+
+  it('refuses an empty allowlist entry rather than silently ignoring it', () => {
+    assert.throws(() => childEnvironment(AMBIENT, ['   ']), ChildEnvironmentError);
+  });
+
+  it('leaves an absent variable absent instead of setting it to nothing', () => {
+    // A wall of empty variables makes "unset" indistinguishable from "set to empty" for any tool
+    // that checks presence, and every name in the keep-list would otherwise appear.
+    const child = childEnvironment({ PATH: '/usr/bin' });
+    assert.equal(Object.hasOwn(child, 'HOME'), false);
+    assert.equal(Object.hasOwn(child, 'ANTHROPIC_API_KEY'), false);
+    assert.deepStrictEqual(Object.keys(child).sort(), ['MEESEEKS_RUNNING', 'PATH']);
+  });
+
+  it('never returns a value the caller did not already hold', () => {
+    // Positive statement of the leak direction: everything in the result came from the input.
+    const child = childEnvironment(AMBIENT, ['DATABASE_URL']);
+    for (const [name, value] of Object.entries(child)) {
+      if (name === REENTRANCY_ENV) continue;
+      assert.equal(value, /** @type {Record<string, string>} */ (AMBIENT)[name], `${name} was invented`);
+    }
   });
 });

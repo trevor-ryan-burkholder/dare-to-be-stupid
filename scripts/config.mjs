@@ -44,7 +44,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
  *   reviewers: string[], ownership: Record<string, string[]>, requireUnanimous: boolean,
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, lessonModel: string,
- *   qualityPlugins: string[], extraGates: { name: string, command: string[] }[],
+ *   qualityPlugins: string[], extraGates: { name: string, command: string[] }[], childEnvAllow: string[],
  *   components: ComponentConfig[],
  *   effort: Record<string, string>, oracle: OracleConfig,
  *   panelCarry: PanelCarryConfig, sandbox: SandboxConfig,
@@ -197,6 +197,15 @@ export function defaultConfig() {
     // for why these are declared rather than detected, and why they live somewhere the builder
     // cannot reach.
     extraGates: [],
+    // Names of environment variables a target's own tooling needs, which the child environment
+    // keep-list would otherwise drop (REVIEW F5, PLAN item 56). **Names, never values** — the value
+    // is read from the operator's own environment at spawn time, so nothing secret is written into
+    // a config file, a receipt, or a log. Empty by default, because the measured minimum is enough
+    // for the CLI and for npm, git and node; a project that needs more says which.
+    //
+    // It cannot name a marker the Driver owns. `childEnvironment` refuses that outright: a run whose
+    // guard, depth or nesting marker could be introduced by configuration has no boundary to enforce.
+    childEnvAllow: [],
     // Empty by default, and an empty list changes nothing at all: no phase runs, no flag is
     // demanded, and a pre-components repository behaves exactly as it always did. Declaring one
     // is only half a decision — components are nested runs, so a run that declares any refuses
@@ -581,6 +590,7 @@ export function validateConfig(input) {
 
   if ('qualityPlugins' in source) merged.qualityPlugins = requireStringArray(source.qualityPlugins, 'qualityPlugins');
   if ('extraGates' in source) merged.extraGates = requireExtraGates(source.extraGates);
+  if ('childEnvAllow' in source) merged.childEnvAllow = requireStringArray(source.childEnvAllow, 'childEnvAllow');
   if ('components' in source) merged.components = requireComponents(source.components);
 
   if ('reviewers' in source) {

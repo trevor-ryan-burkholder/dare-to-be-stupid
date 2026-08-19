@@ -69,6 +69,7 @@ describe('defaultConfig', () => {
       lessonModel: 'claude-sonnet-5',
       qualityPlugins: ['impeccable', 'knip', 'semgrep', 'schemathesis', 'gitleaks'],
       extraGates: [],
+      childEnvAllow: [],
       // Empty means the component phase does not exist: no nested runs, no flag demanded, no
       // behaviour change from a pre-components build.
       components: [],

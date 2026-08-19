@@ -2114,55 +2114,56 @@ metadata ships with cycle rejection, targeted-invalidation tests, provenance que
 coverage, guard ownership, and a terminal check proving no stale required claim can ship. A general
 graph does not follow automatically from passing this item.
 
-### 56. Child environment trust boundary — OPEN (live-contract first)
+### 56. Child environment trust boundary — **DONE (0.232.0)**; REVIEW F5 open pending Codex
 
-**Problem solved:** `childEnvironment()` currently copies the operator's complete environment into
-each `claude -p` child. That preserves tool discovery, but it also gives an unattended Builder ambient
+**Problem solved:** `childEnvironment()` copied the operator's complete environment into each
+`claude -p` child. That preserved tool discovery, and it also gave an unattended Builder ambient
 credentials, unrelated secrets, and Claude control variables it was never deliberately supplied.
-Those variables can silently change retry/resume behavior, workflow availability, model routing,
-permission posture, or budget timing. Eve's trusted-runtime/sandbox split is a useful security
-invariant here; Eve or Vercel Sandbox is **not** the proposed dependency.
 
-**Research sources:** [Eve's security model](https://eve.dev/docs/concepts/security-model) and
-Claude Code's official [environment-variable](https://code.claude.com/docs/en/env-vars) and
-[sandbox credential](https://code.claude.com/docs/en/sandboxing#protect-credentials) controls,
-checked 17 August 2026. The local risk is established independently by `scripts/driver.mjs` and
-its tests.
+**Slice A — measured, 19 Aug 2026, against a real `claude -p`.** Synthetic values only.
 
-**Slice A — measure before designing:** run one paid tier-3 probe using synthetic secret values only
-and record exactly what a Builder-launched shell can observe. Establish the minimum environment the
-installed Claude CLI and target tools actually require: executable search path, home/temp, locale,
-Claude authentication, Meeseeks run/depth markers, role-derived Claude controls, and platform
-necessities. Treat ambient `CLAUDE_CODE_*` values as control-plane inputs, not harmless process
-metadata: seed synthetic values for retry watchdog, interrupted-turn resume, safe mode/workflow
-disablement, subagent model override, and print-background wait, then prove that only the Driver's
-explicit per-role values cross. Separately measure `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`: current
-documentation says the parent Claude process keeps
-Anthropic/cloud credentials while Bash, hook, and stdio-MCP subprocesses lose them, and on Linux the
-Bash path also enters a PID namespace that cannot see or signal host processes. This is an external
-binary contract; an argv or unit test cannot establish it, and F2/F11 process supervision must not be
-weakened as a side effect.
+- A Builder-launched Bash read **every** seeded name: a deploy token, a database URL, an AWS
+  secret, and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `CLAUDE_CODE_SUBAGENT_MODEL`,
+  `CLAUDE_CODE_MAX_OUTPUT_TOKENS`, `MAX_THINKING_TOKENS`. The last four are control-plane inputs:
+  they can change retry, resume, model routing and budget behaviour underneath a sealed role
+  contract.
+- **The minimum is far smaller than expected.** A real child authenticated and answered with `PATH`
+  alone — no `HOME`, no auth variable. `HOME` and the rest are carried for the *target's* tools, not
+  for the CLI.
 
-**Slice B — enforce the measured boundary:** construct a minimal operational child environment plus
-an explicit Driver-owned per-role control set plus an operator-configured allowlist of additional
-variable **names** for target tools. Do not allow that operator list to override Driver-owned Claude
-controls. Never persist, print, or place values in receipts. Refuse closed — or emit a preflight
-refusal naming only variable names —
-when the required boundary cannot be applied or a high-risk ambient credential would otherwise cross
-it. Preserve ordinary tool discovery and every existing guard/depth marker. The native subprocess
-scrub may be defense in depth only after a pinned canary proves its exact provider coverage and
-process-lifecycle side effects; it does not remove arbitrary variables from the parent Claude process.
-If a target tool genuinely requires a secret, item **84** may test Claude's named sandbox credential
-`deny` or `mask` controls rather than inventing a broker, but only within their measured
-Bash/proxy/platform scope.
+**Slice B — the boundary is a keep-list, and the polarity is the whole design.** A deny-list would
+carry the guard hook's original enumeration defect: each new secret a machine acquires is admitted
+until somebody remembers to add it. Now every name defaults to *not crossing*.
 
-**Done when:** unit tests prove synthetic secrets are absent, required benign neighbours survive,
-ambient Claude control variables cannot alter the sealed role contract, and no value appears in
-diagnostics or driver-owned artifacts; a paid tier-3 test proves the same
-boundary through a real Claude child and its Bash, hook, and stdio-MCP subprocess surfaces;
-authentication and normal target tool discovery still work; enabling native scrub neither hides a
-required descendant from F2/F11 settlement nor broadens its documented provider-only coverage; and
-the change introduces neither Eve nor another runtime dependency.
+Kept: a measured base set (`PATH`, `HOME`, shell/locale/temp/term), Windows necessities, Anthropic
+authentication, this Driver's own markers, and an operator allowlist of **names**. `childEnvAllow`
+is names only — the value is read from the operator's environment at spawn time, so nothing secret
+enters a config file, a receipt, or a log. It **cannot name a Driver-owned marker**, and
+`childEnvironment` refuses one that does: a run whose guard, depth or nesting marker could be
+introduced by configuration has no boundary to enforce.
+
+**The first measurement of the enforced boundary found the next defect.** Every synthetic secret had
+stopped crossing and `AWS_SECRET_ACCESS_KEY` was still present — correct if the run authenticates
+through Bedrock, and a pure leak otherwise. A machine holding AWS credentials for something
+unrelated is the ordinary case. Cloud credentials are now gated on their provider selector, and a
+selector present but set to `0`, `false` or empty reads as *not in use* rather than as truthy.
+
+**Acceptance evidence.** 16 unit cases; five mutations proved red (whole-environment copy 3 fail,
+a Driver-owned marker dropped 2 fail, the allowlist permitted to name one 1 fail, any-present-value
+selector 3 fail, provider gate removed 5 fail). Tier 3 twice: the same probe that opened the item
+re-run against the boundary reports **every** seeded name absent with `MEESEEKS_RUNNING`, `PATH` and
+`HOME` present, and `test/live/guard-registration.live.test.mjs` still passes 3/3 — the guard reaches
+a real child on the minimal environment, which is the invariant `CLAUDE.md` says is easiest to break
+silently. `test/live/child-environment.live.test.mjs` commits that probe, and asserts the child
+*answered about* every name so that "absent" cannot be satisfied by a reply that never mentioned it.
+
+**Residual, named rather than hidden.** Anthropic authentication still reaches the Builder's own
+Bash, because a child process and the Bash it spawns share one environment; separating them needs
+`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, whose provider coverage and process-lifecycle side effects are
+unmeasured here and belong to item **84**. The hook and stdio-MCP subprocess surfaces item 56 also
+names are likewise unmeasured. What is proved is stronger where it applies: the dropped variables
+never enter the child at all, which no downstream scrub can undo. No Eve, no Vercel Sandbox, no new
+runtime dependency.
 
 ### 57. Machine-readable morning-acceptance evals — OPEN (extends item 20)
 

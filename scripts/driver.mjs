@@ -1795,17 +1795,173 @@ export function isColdPhase(phase) {
 }
 
 /**
- * The environment a child runs with.
+ * The variables a child needs whatever it is building, on any platform.
  *
- * Carries the re-entrancy marker, which is the whole point: without it a builder that
- * shells out to the driver starts a nested run and `assertNotNested` never sees it. The
- * guard hook only catches the slash command, so this is the other half of the defence
- * rather than a duplicate of it.
+ * **Measured, not assumed** (PLAN.md item 56 slice A, 19 Aug 2026). A real `claude -p` child
+ * authenticated and answered with `PATH` alone; `HOME` and the rest are here because the *target's*
+ * tools need them — npm's cache, git's config, a compiler's temp directory — not because the CLI
+ * did. Erring toward keeping a benign name is the safe direction: a missing `TMPDIR` breaks a build
+ * loudly, while a leaked credential breaks nothing and is never noticed.
+ */
+const BASE_ENV_NAMES = [
+  'PATH',
+  'HOME',
+  'SHELL',
+  'USER',
+  'LOGNAME',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'TZ',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  'TERM',
+];
+
+/**
+ * Windows necessities. Absent from a POSIX environment, so listing them costs nothing there and
+ * omitting them would make a Windows child unable to find its own shell.
+ */
+const WINDOWS_ENV_NAMES = [
+  'SYSTEMROOT',
+  'WINDIR',
+  'COMSPEC',
+  'PATHEXT',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'USERPROFILE',
+  'HOMEDRIVE',
+  'HOMEPATH',
+  'PROGRAMFILES',
+  'PROGRAMFILES(X86)',
+  'PROGRAMDATA',
+  'SYSTEMDRIVE',
+  'NUMBER_OF_PROCESSORS',
+  'PROCESSOR_ARCHITECTURE',
+];
+
+/**
+ * How the installed CLI authenticates.
+ *
+ * **These are ambient credentials and they still cross, deliberately, with the residual recorded.**
+ * The parent `claude` process cannot authenticate without whichever of these its provider uses, so
+ * removing them removes the run. What F5 wants — that the *Builder's shell* not hold them — is a
+ * different boundary from this one: a child process and the Bash it spawns share an environment, and
+ * separating them needs `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, whose provider coverage is unmeasured
+ * here and belongs to item 84. Naming them keeps that residual visible instead of letting it hide
+ * inside a blanket copy of everything.
+ */
+const AUTH_ENV_NAMES = [
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_CUSTOM_HEADERS',
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  // The provider selectors themselves always cross: they decide which of the sets below is needed,
+  // and a run that cannot say which provider it is using cannot authenticate to any of them.
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+];
+
+/**
+ * Cloud-provider credentials, carried **only when that provider is the one in use**.
+ *
+ * The first measurement of the enforced boundary is why this exists. Every synthetic secret and
+ * every ambient control variable had stopped crossing, and `AWS_SECRET_ACCESS_KEY` was still
+ * present — correctly, if the run authenticates through Bedrock, and as a pure leak otherwise. A
+ * machine that has AWS credentials for something entirely unrelated is the ordinary case, not the
+ * exceptional one.
+ *
+ * So the selector decides. `CLAUDE_CODE_USE_BEDROCK` unset means the run is not talking to Bedrock,
+ * which means these are not authentication for it — they are somebody else's keys, sitting in an
+ * unattended Builder's shell for no reason at all.
+ */
+const PROVIDER_ENV_NAMES = {
+  CLAUDE_CODE_USE_BEDROCK: [
+    'AWS_REGION',
+    'AWS_DEFAULT_REGION',
+    'AWS_PROFILE',
+    'AWS_ACCESS_KEY_ID',
+    'AWS_SECRET_ACCESS_KEY',
+    'AWS_SESSION_TOKEN',
+    'AWS_BEARER_TOKEN_BEDROCK',
+    'AWS_CONTAINER_CREDENTIALS_FULL_URI',
+    'AWS_CONTAINER_AUTHORIZATION_TOKEN',
+  ],
+  CLAUDE_CODE_USE_VERTEX: [
+    'CLOUD_ML_REGION',
+    'GOOGLE_APPLICATION_CREDENTIALS',
+    'GOOGLE_CLOUD_PROJECT',
+    'ANTHROPIC_VERTEX_PROJECT_ID',
+  ],
+};
+
+/**
+ * Markers this Driver owns by name. They are set by the Driver into the environment it passes here,
+ * so they are kept by name rather than by origin — nothing in a process environment records who put
+ * a variable there.
+ *
+ * An operator allowlist may not name any of these, and {@link childEnvironment} refuses one that
+ * does. A run whose depth marker or guard marker could be renamed into existence by configuration
+ * has no boundary at all.
+ */
+const DRIVER_OWNED_ENV_NAMES = [
+  REENTRANCY_ENV,
+  DEPTH_ENV,
+  BOX_ENV,
+  DENIAL_STATE_ENV,
+  NESTING_AUTHORITY_ENV,
+  NESTING_TICKET_ENV,
+];
+
+/**
+ * Every ambient variable that is **not** carried, expressed positionally.
+ *
+ * This is a keep-list, and that is the whole design. `childEnvironment` used to be
+ * `{ ...env, MEESEEKS_RUNNING: '1' }`, which meant every variable defaulted to *crossing* and the
+ * only ones that did not were the ones nobody had. A deny-list would have the same defect the guard
+ * hook's enumeration had: each new secret a machine acquires is admitted until somebody remembers to
+ * add it. Measured against a real child on 19 Aug 2026, a Builder-launched Bash could read a
+ * synthetic deploy token, a synthetic database URL, a synthetic AWS secret, and four ambient
+ * `CLAUDE_CODE_*`/`MAX_THINKING_TOKENS` control-plane values — every one of which can change
+ * retry, resume, model routing, or budget behaviour underneath a sealed role contract.
+ */
+export const CHILD_ENV_KEPT = Object.freeze([
+  ...BASE_ENV_NAMES,
+  ...WINDOWS_ENV_NAMES,
+  ...AUTH_ENV_NAMES,
+  ...DRIVER_OWNED_ENV_NAMES,
+]);
+
+/** Thrown when an operator's environment allowlist would breach the boundary it configures. */
+export class ChildEnvironmentError extends Error {
+  /** @param {string} message */
+  constructor(message) {
+    super(message);
+    this.name = 'ChildEnvironmentError';
+  }
+}
+
+/**
+ * Build the environment a `claude -p` child runs in.
+ *
+ * **A keep-list, since 0.232.0** (REVIEW F5, PLAN item 56). See {@link CHILD_ENV_KEPT} for why the
+ * polarity is the whole design and for what a real child was measured reading before it changed.
+ *
+ * `allowNames` is the operator's escape hatch for a target tool that genuinely needs a variable —
+ * names only, never values, and never a name this Driver owns. Values are read from the environment
+ * passed in; nothing here reads `process.env` directly, so a test can drive it without a machine.
+ *
+ * Nothing is logged, persisted, or placed in a receipt. Where a refusal has to name something it
+ * names the **variable name**, which is the operator's own configuration text, never the value.
  *
  * @param {Record<string, string | undefined>} env
+ * @param {string[]} [allowNames] additional variable names the operator has permitted
  * @returns {Record<string, string | undefined>}
+ * @throws {ChildEnvironmentError} when the allowlist names a Driver-owned marker
  */
-export function childEnvironment(env) {
+export function childEnvironment(env, allowNames = []) {
   // **`CI=1` was added here once and reverted the same hour, and the record matters more than
   // the feature.** Ateliers attempt 1's builder hung its whole 30-minute ceiling on what looked
   // like an interactive scaffolder prompt, and forcing the industry-wide `CI=1` "nobody is
@@ -1817,8 +1973,39 @@ export function childEnvironment(env) {
   // node toolchain guidance instead, where the builder can apply it to ITS OWN shell commands
   // without the driver's child inheriting it. This is the argv-defect lesson again: the
   // contract was owned by a different binary, and only the live tier could see it.
+  const owned = new Set(DRIVER_OWNED_ENV_NAMES);
+  for (const name of allowNames) {
+    if (typeof name !== 'string' || name.trim() === '') {
+      throw new ChildEnvironmentError(
+        'an environment allowlist entry is empty. Names only, and a blank name cannot be one.',
+      );
+    }
+    if (owned.has(name.trim())) {
+      throw new ChildEnvironmentError(
+        `the environment allowlist names ${JSON.stringify(name.trim())}, which this Driver owns. A run whose ` +
+          'guard, depth or nesting marker could be introduced by configuration has no boundary to enforce.',
+      );
+    }
+  }
+
+  const keep = new Set([...CHILD_ENV_KEPT, ...allowNames.map((name) => name.trim())]);
+  // A provider's credentials join the keep-list only when its selector says the run uses it. An
+  // unset selector is the common case and it is not ambiguous: those keys are for something else.
+  for (const [selector, names] of Object.entries(PROVIDER_ENV_NAMES)) {
+    const chosen = env[selector];
+    if (chosen === undefined || chosen === '' || chosen === '0' || chosen.toLowerCase() === 'false') continue;
+    for (const name of names) keep.add(name);
+  }
   /** @type {Record<string, string | undefined>} */
-  const marked = { ...env, [REENTRANCY_ENV]: '1' };
+  const marked = {};
+  for (const name of keep) {
+    // Absent stays absent. Writing `undefined` for every name in the keep-list would hand the child
+    // a wall of empty variables and make "unset" indistinguishable from "set to nothing" for any
+    // tool that checks presence rather than value.
+    if (Object.hasOwn(env, name) && env[name] !== undefined) marked[name] = env[name];
+  }
+  marked[REENTRANCY_ENV] = '1';
+
   // The depth a *nested* driver would see, and it is counted here because a child's environment
   // is exactly what such a driver would inherit. Only when the box is armed: with the flag
   // absent the key never appears, so an ordinary run's children carry nothing new at all.
@@ -6605,7 +6792,7 @@ export async function shipTimeMutation(cwd, meeseeksDir, startCommit, timeoutMs)
  *
  * @param {{ prompt: string, model: string, systemPrompt?: string, phase: string, effort?: string, cwd: string,
  *   env: Record<string, string | undefined>, contextLimit?: number, timeoutMs?: number,
- *   maxBudgetUsd?: number, maxTurns?: number, sandbox?: boolean,
+ *   maxBudgetUsd?: number, maxTurns?: number, sandbox?: boolean, envAllow?: string[],
  *   supply?: { class: import('./role-supply.mjs').InputClass, text: string }[],
  *   specification?: string | null,
  *   run?: (command: string, args: string[],
@@ -6658,7 +6845,7 @@ export async function spawnClaude(options) {
   // The prompt goes on stdin rather than in argv; see `claudeArgs` for the bug that cost.
   const result = await run('claude', args, {
     cwd: options.cwd,
-    env: childEnvironment(options.env),
+    env: childEnvironment(options.env, options.envAllow ?? []),
     input: options.prompt,
     // Absent unless the caller supplies one, so a test double that omits it keeps the
     // unbounded wait every child had before 0.80.0. `main` always supplies it.
@@ -7025,6 +7212,9 @@ async function runInvocation(argv, io, crash) {
       // door, so a phase added later cannot forget the ceiling.
       timeoutMs: config.childTimeoutMs,
       sandbox: config.sandbox.enabled,
+      // Supplied at the same one door and for the same reason (REVIEW F5). A phase added later
+      // cannot forget the environment boundary, and cannot be given a wider one by accident.
+      envAllow: config.childEnvAllow,
         ...allowance,
       });
     } finally {
@@ -8035,7 +8225,7 @@ async function runInvocation(argv, io, crash) {
               env: authorizedNestingEnv({
                 meeseeksDir,
                 parentDepth: runDepth,
-                env: childEnvironment(env),
+                env: childEnvironment(env, config.childEnvAllow),
               }),
               onLine: (line) => write(verbatim(`component:${component.name}: ${line}`)),
             });
