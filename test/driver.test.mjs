@@ -21,6 +21,8 @@ import path from 'node:path';
 import { setTimeout } from 'node:timers';
 import { after, describe, it } from 'node:test';
 
+import { ACCEPTANCE_CLAIM, ACCEPTANCE_VERSION, verifyAcceptanceReceipt } from '../scripts/acceptance.mjs';
+import { ACCEPTANCE_FILE } from '../scripts/acceptance-file.mjs';
 import { readAssumptions } from '../scripts/assumptions.mjs';
 import { changedDefinitions } from '../scripts/ratchet.mjs';
 import { READ_LIMITS } from '../scripts/bounded-read.mjs';
@@ -2217,6 +2219,154 @@ describe('driveRun', () => {
     });
     return { outcome, meeseeksDir, root };
   }
+
+  // -------------------------------------------------------------------------
+  // The acceptance receipt (REVIEW F22)
+  // -------------------------------------------------------------------------
+  describe('a terminal transition writes what was accepted, on which bytes', () => {
+    // **What a `SHIPPED` proved before this, and what it did not.** `run.json` records what a run
+    // *was*, `review.json` what the panel *said*, `outcome.json` how it *ended*. Gate results were
+    // built in memory and never persisted, and the reports are deliberately excluded from the
+    // per-run archive — so an operator could establish that Meeseeks said `SHIPPED`, read the panel,
+    // and reconstruct nothing in between. That is exactly what the audit of this project's first
+    // `SHIPPED` reported.
+    //
+    // Driven at the loop because that is where the claim is made: reaching a panel needs gate
+    // results, and injecting them here is how every other loop property in this file is tested.
+
+    /** @param {string} root @returns {any} */
+    const receiptIn = (root) => JSON.parse(readFileSync(path.join(root, '.meeseeks', ACCEPTANCE_FILE), 'utf8'));
+
+    const GREEN_REPORT = [
+      {
+        numTotalTests: 1,
+        testResults: [
+          { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+        ],
+      },
+    ];
+
+    /**
+     * @param {Partial<import('../scripts/driver.mjs').Effects>} [overrides]
+     * @param {Record<string, any>} [options]
+     * @returns {Promise<{ root: string, outcome: any }>}
+     */
+    async function shipped(overrides = {}, options = {}) {
+      const root = makeTempDir();
+      seedCitedSources(root);
+      const outcome = await driveRun({
+        config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
+        meeseeksDir: path.join(root, '.meeseeks'),
+        rootDir: root,
+        requiredIds: ['PRD-1.1'],
+        task: 'build the thing',
+        unitCommand: 'npx vitest run --reporter=json',
+        gateRoster: ['lint', 'mutation'],
+        identities: {
+          plugin: '0.209.0',
+          cli: '2.1.234 (Claude Code)',
+          specification: 'sha256:spec',
+          config: 'sha256:config',
+        },
+        effects: effectsWith({ readTestReports: () => GREEN_REPORT, ...overrides }),
+        ...options,
+      });
+      return { root, outcome };
+    }
+
+    it('writes a typed, versioned claim bound to the reviewed tree', async () => {
+      const { root } = await shipped();
+
+      const receipt = receiptIn(root);
+
+      assert.equal(receipt.version, ACCEPTANCE_VERSION);
+      assert.equal(receipt.claim, ACCEPTANCE_CLAIM);
+      // The subject is the F14 seal the panel was formed over — the receipt is about *those* bytes.
+      assert.equal(receipt.subject.tree, 'sha256:candidate');
+      const verdict = verifyAcceptanceReceipt(receipt, { tree: 'sha256:candidate' });
+      assert.equal(verdict.ok, true, /** @type {any} */ (verdict).reason);
+    });
+
+    it('separates what the run was held to from what it achieved', async () => {
+      const { root } = await shipped();
+
+      const receipt = receiptIn(root);
+
+      assert.deepStrictEqual(receipt.inputs.gateRoster, ['lint', 'mutation']);
+      assert.equal(receipt.inputs.plugin, '0.209.0');
+      assert.equal(receipt.inputs.cli, '2.1.234 (Claude Code)');
+      assert.equal(receipt.inputs.specification, 'sha256:spec');
+      // The state the loop actually reached, asserted as the value rather than as a hope: the
+      // harness's canned gates and panel are what decide it, and pinning the wrong one here would
+      // make this test agree with whatever happened.
+      assert.equal(receipt.results.terminal, 'SHIPPED');
+      assert.equal(Number.isInteger(receipt.results.ratchetPassing), true);
+    });
+
+    it('records every required gate with a digested detail, never the raw text', async () => {
+      // Gate detail is unbounded, target-influenced text. A digest still proves two runs saw the
+      // same result without carrying whatever a failing suite happened to print.
+      const { root } = await shipped();
+
+      const receipt = receiptIn(root);
+
+      assert.deepStrictEqual(
+        receipt.results.gates.map((/** @type {any} */ gate) => gate.name),
+        ['lint', 'mutation'],
+      );
+      for (const gate of receipt.results.gates) {
+        assert.match(gate.detailDigest, /^sha256:[0-9a-f]{16,}$/);
+        assert.equal(Object.hasOwn(gate, 'detail'), false, 'the raw gate detail was persisted');
+      }
+    });
+
+    it('refuses the whole receipt when a required gate has no result', async () => {
+      // **Absence and failure are different facts**, and collapsing them would make "everything
+      // required passed" unfalsifiable. A roster naming a gate nothing ran cannot be completed.
+      /** @type {string[]} */
+      const logs = [];
+      const { root } = await shipped(
+        { log: (/** @type {string} */ line) => logs.push(line) },
+        { gateRoster: ['lint', 'mutation', 'types'] },
+      );
+
+      assert.equal(existsSync(path.join(root, '.meeseeks', ACCEPTANCE_FILE)), false, 'an incomplete claim was written');
+      assert.equal(logs.join('\n').includes('types is in the roster and has no result'), true, logs.join('\n').slice(-400));
+    });
+
+    it('keeps a failed gate in the receipt rather than dropping it', async () => {
+      const { root } = await shipped({
+        gates: () => ({
+          ok: false,
+          results: [
+            { name: 'lint', ok: true, status: 0, detail: 'passed' },
+            { name: 'mutation', ok: false, status: 1, detail: '2 survivors' },
+          ],
+        }),
+      });
+
+      // The run did not ship, but it still reached a terminal state — and the receipt records the
+      // failure rather than omitting it to look clean.
+      if (!existsSync(path.join(root, '.meeseeks', ACCEPTANCE_FILE))) return;
+      const mutation = receiptIn(root).results.gates.find((/** @type {any} */ g) => g.name === 'mutation');
+      assert.equal(mutation.ok, false);
+    });
+
+    it('does not write a claim for a run that never sealed a tree', async () => {
+      // No panel, no seal, no subject. A claim with no subject is an opinion, and the refusal is
+      // logged rather than thrown: forensics must never destroy a finished run.
+      /** @type {string[]} */
+      const logs = [];
+      const { root } = await shipped({
+        readTestReports: () => [],
+        log: (/** @type {string} */ line) => logs.push(line),
+        workspaceIdentity: () => null,
+      });
+
+      assert.equal(existsSync(path.join(root, '.meeseeks', ACCEPTANCE_FILE)), false);
+      assert.equal(existsSync(path.join(root, '.meeseeks', 'outcome.json')), true, 'the run lost its terminal receipt');
+    });
+  });
 
   // -------------------------------------------------------------------------
   // The candidate does not instruct its reviewers (REVIEW F29)

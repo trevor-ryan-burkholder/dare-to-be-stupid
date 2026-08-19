@@ -134,7 +134,7 @@ describe('every constrained role declares what it was handed', () => {
     const raw = readFileSync(path.join(root, '.meeseeks', SUPPLY_FILE), 'utf8');
 
     assert.equal(raw.includes('PRD-1.1 It exists.'), false, 'the specification was copied into the record');
-    for (const entry of supply(root)) {
+    for (const entry of supply(root).filter((record) => record.manifest !== null)) {
       for (const input of entry.manifest.inputs) {
         assert.match(input.digest, /^sha256:[0-9a-f]{32}$/);
         assert.equal(typeof input.bytes, 'number');
@@ -149,8 +149,33 @@ describe('every constrained role declares what it was handed', () => {
     // also says which document that invocation was judged against.
     const root = repo();
     await run(root);
-    for (const entry of supply(root)) {
+    for (const entry of supply(root).filter((record) => record.manifest !== null)) {
       assert.match(entry.manifest.specification, /^sha256:[0-9a-f]{32,}$/, `${entry.role} recorded no specification`);
+    }
+  });
+
+  it('records a role that declared no supply, with a null manifest rather than no entry', async () => {
+    // **The store's scope widened at 0.210.0** (REVIEW F22, item 112). It began as a record of what
+    // *cold* roles were handed; the acceptance receipt needs what every role was *asked of* and what
+    // actually served it, so a phase with no declared supply is recorded with `manifest: null`
+    // instead of being left out. An invocation missing from the ledger is indistinguishable from one
+    // that never happened, and the receipt reads this store back as its list of invocations.
+    const root = repo();
+    const { phases } = await run(root);
+    const recorded = supply(root);
+
+    // `design` declares no supply, and it certainly ran.
+    assert.equal(phases.includes('design'), true, phases.join(', '));
+    const design = recorded.find((entry) => entry.role === 'design');
+    assert.notEqual(design, undefined, `design was not recorded: ${recorded.map((e) => e.role).join(', ')}`);
+    assert.equal(design.manifest, null, 'a role with no declared supply invented one');
+
+    // And every entry, declaring or not, carries the model identity the receipt needs.
+    for (const entry of recorded) {
+      assert.equal(typeof entry.requestedModel, 'string');
+      assert.equal(entry.requestedModel.length > 0, true, `${entry.role} recorded no requested model`);
+      const tagged = Array.isArray(entry.models?.observed) || typeof entry.models?.unavailable === 'string';
+      assert.equal(tagged, true, `${entry.role} recorded an untagged observation`);
     }
   });
 

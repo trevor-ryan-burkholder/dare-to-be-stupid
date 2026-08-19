@@ -32,6 +32,7 @@ import path from 'node:path';
 import { ASSUMPTIONS_FILE } from './assumptions.mjs';
 import { CAPABILITY_MANIFEST } from './capabilities.mjs';
 import { LAUNCH_RECEIPT_FILE } from './launch.mjs';
+import { ACCEPTANCE_FILE } from './acceptance-file.mjs';
 import { ORACLE_FILE } from './oracle.mjs';
 import { SUPPLY_FILE } from './role-supply.mjs';
 import { SPECIFICATION_FILE } from './specification.mjs';
@@ -107,6 +108,10 @@ const PER_RUN_ARTIFACTS = [
   // the captured specification, and the previous run's manifest is archived rather than lost, so
   // the removal is deliberate, independently made, and leaves durable evidence.
   CAPABILITY_MANIFEST,
+  // The acceptance receipt (REVIEW F22). Per-run by construction — it is a claim about one
+  // candidate tree — so a second run overwriting it would replace the evidence for the first run's
+  // acceptance with evidence for a different one.
+  ACCEPTANCE_FILE,
   // The cold-role supply record (PLAN item 77). Per-run by construction — it accumulates one entry
   // per role invocation and nothing resets it — so a second run would otherwise append its
   // invocations beside the first's with no way to tell them apart, which is the fault

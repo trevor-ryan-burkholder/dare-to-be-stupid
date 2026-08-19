@@ -2756,7 +2756,7 @@ requires the ordinary version bump.
 version, missing transitive file, wrong commit, and source-checkout leakage fixtures fail; the
 operator's actual plugin registry is byte-identical before and after; and no model/API call occurs.
 
-### 76. Persist a complete exact-tree acceptance receipt — OPEN (REVIEW F22)
+### 76. Persist a complete exact-tree acceptance receipt — PARTIAL (0.210.0, item 112): the typed claim, its verifier and the terminal wiring landed; the clean-clone traversal and the stale/mixed-attempt refusals have not. REVIEW F22 open
 
 **Problem solved:** archived `SHIPPED` state and Panel records do not preserve which deterministic
 checks passed on which exact bytes.
@@ -4398,6 +4398,61 @@ and a version with no path is less than that.
 **What this unblocks.** F25's remaining clause, and F27/F28/F29's canaries, now have an installed
 snapshot to attach to. Only F25's needs a model, and only for the *skill surface* question — the
 rest of what those findings ask about the installed plugin is answerable here for free.
+
+### 112. The acceptance receipt — IMPLEMENTED (0.210.0); REVIEW F22 open pending Codex
+
+**What a `SHIPPED` proved before this.** `run.json` records what a run *was*, `review.json` what the
+panel *said*, `outcome.json` how it *ended*. Gate results were built in memory by `runGates` and
+never persisted, and the reports are deliberately excluded from the per-run archive. So an operator
+could establish that Meeseeks said `SHIPPED`, read the panel, and reconstruct **nothing in between** —
+which is what the audit of this project's first `SHIPPED` actually reported.
+
+**`scripts/acceptance.mjs` is a typed, versioned assertion, not a bag of digests.** One claim bound to
+one immutable subject: the F14 tree seal and the commit carrying it. The claim's *resolved inputs* —
+specification revision, sanitized config, plugin build, CLI identity, required gate roster — are
+separated from its *results*. That split is borrowed from in-toto's subject/predicate separation and
+SLSA's input/result distinction; it claims neither conformance, requires no signature, and adds no
+attestation framework.
+
+**Nothing defaults to complete.** A missing field, a malformed one, or a placeholder — `''`,
+`unknown`, `n/a` — makes the receipt incomplete and it is *not written*. A partial receipt would be
+read as provenance, which is worse than none. The verifier rebuilds through the same rule, so a field
+deleted or corrupted on disk fails exactly where authoring would have, and it refuses an unknown
+schema, an unknown claim type, and any subject that is not the one being asked about.
+
+**Model identity is tagged, and the tag is the point.** `parseClaudeEnvelope` now reads the vendor's
+`modelUsage` map — which nothing had ever read, so every record of "which model did this work" was
+*the selector this driver asked for*. A configured alias is not evidence that the requested model
+answered, and a substitution was therefore invisible. Where the vendor reported nothing the receipt
+says `unavailable` **with a reason**: it keeps the receipt complete, and `modelIdentityHolds` refuses
+to let it satisfy a model-identity claim, an attribution or a matched comparison.
+
+**Wired at the terminal transition, where the claim is actually made**, beside `outcome.json` and
+archived per run — a receipt is about one candidate tree, so a second run overwriting it would
+substitute the evidence for a different acceptance under the same name. Writing it can never destroy
+a finished run: an incomplete receipt is logged and skipped, never thrown.
+
+**The invocation ledger is item 77's store, extended rather than duplicated.** Every role invocation
+is now recorded — not only the declaring ones — with the model requested, the effort requested and the
+models observed. A phase with no declared supply gets a null manifest rather than no record, because
+an invocation missing from the ledger is indistinguishable from one that never happened.
+
+**Two of my own mistakes, both caught by the receipt refusing to be written.** The first draft used
+`gateNames` as the required roster — that is *prose for the builder's brief* (`"e2e: does not apply -
+…"`), so no result could ever match one and every run was refused. Correctly. The roster is now the
+applicable gate **names**. The second was a fixture, not the code: a tier-2 run with canned children
+never passes its gates, so it never convenes a panel, so there is no seal and no subject. That file
+now proves the honest property — the refusal is logged, the terminal receipt survives, the invocation
+ledger is still written — and the populated-receipt cases live at the loop, where a panel can be
+reached.
+
+**Evidence.** 17 unit cases on the claim and its verifier, 6 at the loop, 2 at tier 2. Four of the
+loop cases go red with the writer disabled.
+
+**Not done, and named rather than implied:** F22's clean-clone traversal (an auditor resolving every
+acceptance edge from the receipt alone), the refusals for stale/mixed-attempt/wrong-tree evidence
+beyond the subject check, F16's per-report attempt identity as a recorded edge, and the bounded
+report digests. `PARTIAL` for exactly that reason.
 
 ## Observations recorded rather than repaired
 

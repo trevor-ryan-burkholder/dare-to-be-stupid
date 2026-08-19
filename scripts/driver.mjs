@@ -95,9 +95,11 @@ import { OUTCOME_FILE, writeRunOutcome } from './outcome.mjs';
 import { roleSupplyManifest } from './role-supply.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
 import { captureSpecification, verifySpecification } from './specification.mjs';
+import { ACCEPTANCE_FILE } from './acceptance-file.mjs';
+import { buildAcceptanceReceipt, digest } from './acceptance.mjs';
 import { installQualityPlugins } from './plugins.mjs';
 import { blockingFindings, scanAgentSurface } from './security-scan.mjs';
-import { appendSupplyRecord } from './role-supply.mjs';
+import { SUPPLY_FILE, appendSupplyRecord } from './role-supply.mjs';
 import {
   applyWinner,
   createWorktrees,
@@ -140,7 +142,7 @@ import {
   writePins,
 } from './pins.mjs';
 import { quarantineCorruptFile } from './quarantine.mjs';
-import { archivePreviousRun, buildRunManifest, writeRunManifest } from './run-manifest.mjs';
+import { archivePreviousRun, buildRunManifest, configHash, writeRunManifest } from './run-manifest.mjs';
 import { banner, render, stamp, styleMode, verbatim } from './style.mjs';
 import { MUTATION_CONFIG, MUTATION_CONFIG_CONTENTS } from './toolchains/node.mjs';
 import { CONDITIONAL_GATE_OPERATIONS, gatesFor, resolveToolchain } from './toolchains/index.mjs';
@@ -1186,8 +1188,14 @@ export function childBudget(config, spentUsd) {
  * @typedef {{
  *   ok: boolean, text: string, costUsd: number, tokens: number, raw: string, exhausted?: boolean,
  *   denials?: string[],
- *   supply?: import('./role-supply.mjs').RoleSupplyManifest
+ *   supply?: import('./role-supply.mjs').RoleSupplyManifest,
+ *   observedModels?: ObservedModels
  * }} ClaudeResult
+ *
+ * `observedModels` is tagged rather than optional-with-a-default: an envelope that reported nothing
+ * says so, and never borrows the requested selector to fill the gap (REVIEW F22).
+ *
+ * @typedef {{ observed: string[] } | { unavailable: string }} ObservedModels
  *
  * `denials` carries any guard refusals the child's stderr reported. **Case J is why it exists:**
  * that run could not tell whether its builder declined to nest or was refused, because a hook's
@@ -1242,7 +1250,34 @@ export function parseClaudeEnvelope(stdout) {
     tokens,
     raw: stdout,
     exhausted: !ok && EXHAUSTION_PATTERN.test(stdout),
+    // **Which model actually served this, as the vendor reported it** (REVIEW F22). The envelope
+    // carries a `modelUsage` map keyed by real model identifiers, and nothing was reading it — so
+    // every record of "which model did this work" was the *selector this driver asked for*. A
+    // configured alias is not evidence that the requested model answered, and a substitution was
+    // therefore invisible: `claude-sonnet-5` in the config and something else on the wire would
+    // read identically afterwards.
+    //
+    // Tagged rather than defaulted. An envelope with no usable map is `unavailable` **with a
+    // reason**, never the requested selector filled in as though it had been observed — that is the
+    // one substitution F22 refuses, because it turns an absence of evidence into a claim.
+    observedModels: observedModels(record),
   };
+}
+
+/**
+ * The model identifiers the vendor reported, or an explicit statement that none were.
+ *
+ * @param {Record<string, unknown>} record a parsed `claude -p --output-format json` envelope
+ * @returns {{ observed: string[] } | { unavailable: string }}
+ */
+function observedModels(record) {
+  const usage = record.modelUsage;
+  if (usage === null || typeof usage !== 'object' || Array.isArray(usage)) {
+    return { unavailable: 'the envelope carried no modelUsage map' };
+  }
+  const names = Object.keys(/** @type {Record<string, unknown>} */ (usage)).filter((name) => name !== '');
+  if (names.length === 0) return { unavailable: 'the envelope carried an empty modelUsage map' };
+  return { observed: names.sort() };
 }
 
 /**
@@ -1768,6 +1803,116 @@ export function repeatedRegressionNote(counts, regressions) {
  * }} RunOutcome
  */
 
+export { ACCEPTANCE_FILE } from './acceptance-file.mjs';
+
+/**
+ * Write the acceptance receipt atomically, or refuse and say which field made it incomplete.
+ *
+ * Atomic for `outcome.json`'s reason: a kill mid-write must leave the previous complete record or
+ * nothing, never a half-parsed claim about what was accepted.
+ *
+ * @param {string} meeseeksDir
+ * @param {Parameters<typeof buildAcceptanceReceipt>[0]} input
+ * @returns {string} the path written
+ */
+export function writeAcceptanceReceipt(meeseeksDir, input) {
+  const receipt = buildAcceptanceReceipt(input);
+  mkdirSync(meeseeksDir, { recursive: true });
+  const file = path.join(meeseeksDir, ACCEPTANCE_FILE);
+  const temporary = `${file}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
+  renameSync(temporary, file);
+  return file;
+}
+
+/**
+ * Gate results, reduced to what a receipt may carry.
+ *
+ * The detail is **digested rather than quoted**: it is unbounded, target-influenced text, and F22 is
+ * explicit that the receipt must not persist arbitrary raw logs. A digest still proves two runs saw
+ * the same result without carrying whatever a failing suite happened to print.
+ *
+ * @param {GateResult[]} results
+ * @returns {{ name: string, ok: boolean, status: number, detailDigest: string }[]}
+ */
+export function acceptanceGates(results) {
+  return results.map((result) => ({
+    name: result.name,
+    ok: result.ok,
+    status: typeof result.status === 'number' ? result.status : 0,
+    detailDigest: digest(String(result.detail ?? '')),
+  }));
+}
+
+/**
+ * One gate's detail, digested, or null when that gate did not run.
+ *
+ * Null is the honest answer for a gate the roster never included — `oracle` is off by default and
+ * `deploy` exists only when one is configured — and it is a different fact from a gate that ran and
+ * failed, which appears in the roster with `ok: false`.
+ *
+ * @param {GateResult[]} results @param {string} name
+ * @returns {string | null}
+ */
+export function gateDetailFor(results, name) {
+  const found = results.find((result) => result.name === name);
+  return found === undefined ? null : digest(String(found.detail ?? ''));
+}
+
+/**
+ * A digest of the panel's own record, linking the receipt to the verdicts by identity.
+ *
+ * The record is archived per run; this is the edge naming *which* record. Null when no panel ever
+ * wrote one, which is every run that ended before review.
+ *
+ * @param {string} meeseeksDir
+ * @returns {string | null}
+ */
+export function panelRecordDigest(meeseeksDir) {
+  try {
+    return digest(readFileSync(path.join(meeseeksDir, REVIEW_RECORD), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every Claude role invocation this run recorded, as the receipt describes them.
+ *
+ * Read back from the run's own supply store (PLAN item 77) rather than accumulated in memory: that
+ * store is already written at the one door every child passes through, already archived per run,
+ * and already carries the sanitized manifest each role received. A second ledger beside it would be
+ * a second answer to "what did this run spawn".
+ *
+ * @param {string} meeseeksDir
+ * @returns {import('./acceptance.mjs').RoleInvocation[]}
+ */
+export function recordedInvocations(meeseeksDir) {
+  /** @type {any} */
+  let store;
+  try {
+    store = JSON.parse(readFileSync(path.join(meeseeksDir, SUPPLY_FILE), 'utf8'));
+  } catch {
+    return [];
+  }
+  /** @type {import('./acceptance.mjs').RoleInvocation[]} */
+  const invocations = [];
+  for (const entry of Array.isArray(store?.entries) ? store.entries : []) {
+    if (typeof entry?.role !== 'string' || entry.role === '') continue;
+    invocations.push({
+      role: entry.role,
+      requestedModel: typeof entry.requestedModel === 'string' ? entry.requestedModel : '',
+      requestedEffort: typeof entry.requestedEffort === 'string' ? entry.requestedEffort : null,
+      // Absent is **not** "the vendor reported nothing": a record written before this field existed
+      // says nobody looked, and the receipt refuses to read one as the other.
+      models: entry.models ?? { unavailable: 'this invocation predates observed-model recording' },
+      supplyDigest:
+        entry.manifest === undefined || entry.manifest === null ? null : digest(JSON.stringify(entry.manifest)),
+    });
+  }
+  return invocations;
+}
+
 /**
  * Drive a run to a terminal state.
  *
@@ -1789,14 +1934,21 @@ export function repeatedRegressionNote(counts, regressions) {
  *   task: string,
  *   unitCommand?: string | null,
  *   gateNames?: string[],
+ *   gateRoster?: string[],
  *   alreadySpent?: { tokens: number, costUsd: number },
  *   receipt?: { done: boolean },
+ *   identities?: { plugin: string, cli: string, specification: string, config: string },
  *   effects: Effects,
  * }} options
  *
  * `receipt` is the run's at-most-once terminal-receipt flag (REVIEW F10), shared with `main` so the
  * loop's specific answer wins over the outer handler's generic one. Absent in a caller that owns
  * exactly one exit, which is every test that drives `driveRun` directly.
+ *
+ * `identities` are the four facts an acceptance receipt needs and this function cannot observe
+ * (REVIEW F22): the plugin build, the CLI that spawned the children, the specification revision and
+ * the sanitized configuration. They are handed in rather than resolved here because `main` already
+ * establishes each one at the launch boundary, and a second answer would be a second truth.
  *
  * `alreadySpent` carries what Phase 0 and Phase 1 cost, because they run before this function
  * exists and their spend is otherwise invisible to it. Without it the ceiling restarts at zero
@@ -1969,6 +2121,19 @@ export async function driveRun(options) {
   let reviewedWorkspace = null;
 
   /**
+   * The last gate roster this loop actually ran, and the last commit it made (REVIEW F22).
+   *
+   * Loop-scoped for `finish`'s reason: the acceptance receipt is written at the terminal transition,
+   * and by then the iteration that produced these has ended. Recorded rather than re-derived,
+   * because re-running the gates to describe them would describe a different run.
+   *
+   * @type {GateResult[]}
+   */
+  let lastGateResults = [];
+  /** @type {string | null} */
+  let lastCommit = null;
+
+  /**
    * @param {TerminalState} state
    * @param {string} reason
    * @returns {RunOutcome}
@@ -2005,6 +2170,40 @@ export async function driveRun(options) {
     // direct overwrite reachable only from here, so a kill mid-write destroyed the only record and
     // every pre-loop abort left none at all.
     writeRunOutcome(meeseeksDir, { ...outcome, phase: 'loop' }, { now: effects.now, log: effects.log, written: options.receipt });
+    // **The acceptance edge, written beside the terminal state** (REVIEW F22). `outcome.json` says
+    // how a run ended; it cannot say which deterministic checks passed on which exact bytes, because
+    // gate results are transient and the reports are deliberately not archived. So an operator could
+    // establish that Meeseeks said SHIPPED and could read the panel, and could reconstruct nothing
+    // in between — which is what the audit of this project's first SHIPPED actually reported.
+    //
+    // Refusing to *write* it never changes the terminal state: this is forensics, and destroying a
+    // finished run because its receipt could not be filed would be the wrong way round. An
+    // incomplete receipt is reported and not written, because a partial one would be read as
+    // provenance.
+    try {
+      writeAcceptanceReceipt(meeseeksDir, {
+        subject: { tree: reviewedWorkspace ?? '', commit: lastCommit },
+        inputs: {
+          specification: options.identities?.specification ?? '',
+          config: options.identities?.config ?? '',
+          plugin: options.identities?.plugin ?? '',
+          cli: options.identities?.cli ?? '',
+          gateRoster: options.gateRoster ?? [],
+        },
+        results: {
+          terminal: state,
+          gates: acceptanceGates(lastGateResults),
+          panelDigest: panelRecordDigest(meeseeksDir),
+          ratchetPassing: outcome.passing.length,
+          oracle: gateDetailFor(lastGateResults, 'oracle'),
+          deploy: gateDetailFor(lastGateResults, 'deploy'),
+        },
+        invocations: recordedInvocations(meeseeksDir),
+        at: effects.now(),
+      });
+    } catch (error) {
+      effects.log(`no acceptance receipt: ${/** @type {Error} */ (error).message}`);
+    }
     return outcome;
   };
 
@@ -2373,6 +2572,7 @@ export async function driveRun(options) {
         ? commandGateOutcome
         : { ok: false, results: [...commandGateOutcome.results, stability] };
     const score = gateScore(gateOutcome.results);
+    lastGateResults = gateOutcome.results;
     lastGateTotal = gateOutcome.results.length;
     lastGateShare = lastGateTotal === 0 ? 0 : score / lastGateTotal;
     const failedGates = gateOutcome.results.filter((result) => !result.ok);
@@ -3003,6 +3203,7 @@ export async function driveRun(options) {
         ? `meeseeks: iteration ${iterationNumber}`
         : `meeseeks: iteration ${iterationNumber} (review outstanding)`,
     );
+    lastCommit = commit;
     // After the commit, prove the tree that landed is the tree that was reviewed. The commit
     // stages the whole working tree, so a working tree still matching the sealed identity is the
     // committed tree matching it — which is what a deploy and a tag are about to assert.
@@ -6123,7 +6324,13 @@ async function runInvocation(argv, io, crash) {
     //
     // Written *after* the child returns, so it records what a role was actually handed rather than
     // what one was about to be offered — a child `spawnClaude` refuses never received anything.
-    if (manifest !== null) {
+    //
+    // **Every invocation, not only the declaring ones** (REVIEW F22). The store began as a record of
+    // what cold roles were *handed*; the acceptance receipt needs what every role was *asked of* and
+    // what actually served it, so a phase with no declared supply is recorded with a null manifest
+    // rather than not recorded at all. An invocation missing from the ledger is indistinguishable
+    // from one that never happened.
+    {
       try {
         appendSupplyRecord(meeseeksDir, {
           role: options.phase,
@@ -6132,6 +6339,11 @@ async function runInvocation(argv, io, crash) {
           // run had not established.
           iteration: null,
           manifest,
+          requestedModel: options.model,
+          requestedEffort: options.effort ?? null,
+          // Tagged: what the vendor reported, or an explicit statement that it reported nothing.
+          // Never the requested selector standing in for an observation.
+          models: result.observedModels ?? { unavailable: 'the child returned no envelope to read' },
         });
       } catch (error) {
         write(verbatim(`could not record the supply manifest for ${options.phase}: ${/** @type {Error} */ (error).message}`));
@@ -7232,6 +7444,12 @@ async function runInvocation(argv, io, crash) {
     { name: 'red-evidence', text: 'red-evidence: every newly passing test must have been seen failing first' },
   ];
   const applicableNames = applicableGates(describedGates, briefCapabilities);
+  // **The roster, as *names*** (REVIEW F22). `gateNames` below is prose for the builder's brief —
+  // "build: npm run build", "e2e: does not apply - ..." — and the first draft of the acceptance
+  // receipt used it as the required-gate roster. It refused every run, correctly: a sentence is not
+  // a gate name, and no result could ever match one. The roster an acceptance claim is about is the
+  // set of gates this project is actually held to.
+  const gateRoster = applicableNames.gates.map((gate) => gate.name);
   const gateNames = [
     ...applicableNames.gates.map((gate) => gate.text),
     // Both kinds of absence are declared. A toolchain skip means "this stack has no such
@@ -7645,6 +7863,18 @@ async function runInvocation(argv, io, crash) {
     requiredIds,
     gateNames,
     alreadySpent: preLoop,
+    // **The four facts the loop cannot observe** (REVIEW F22). Each is already established here, at
+    // the launch boundary, so the acceptance receipt records what this run was actually held to
+    // rather than re-deriving it later against a tree that has since moved. The CLI is the one the
+    // *children* were spawned with — a plugin version with no CLI identity beside it cannot explain
+    // a result that depended on both.
+    gateRoster,
+    identities: {
+      plugin: pluginVersion(),
+      cli: (await toolVersions(shell, cwd)).claude ?? '',
+      specification: specification.revision.digest,
+      config: configHash(config),
+    },
     task: firstIterationTask(unitGateCommand(cwd, meeseeksDir)),
     // The same command, threaded so the `no-tests` objective names what the gate actually runs
     // rather than a Node-shaped guess. Three places state this contract; all three now derive it.

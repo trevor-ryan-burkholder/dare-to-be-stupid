@@ -184,7 +184,14 @@ const SUPPLY_VERSION = 1;
  * this file back, and no gate result, ratchet state or verdict may ever depend on it.
  *
  * @typedef {{ role: string, at: string, iteration: number | null,
- *   manifest: RoleSupplyManifest }} SupplyRecord
+ *   manifest: RoleSupplyManifest | null,
+ *   requestedModel?: string, requestedEffort?: string | null,
+ *   models?: { observed: string[] } | { unavailable: string } }} SupplyRecord
+ *
+ * `manifest` is null for a role that declared no supply — every invocation is recorded, because one
+ * missing from the ledger is indistinguishable from one that never happened (REVIEW F22). The model
+ * fields are the requested selector and, separately, what the vendor observed serving it: a
+ * configured alias is not evidence that the requested model answered.
  */
 
 /**
