@@ -2756,7 +2756,7 @@ requires the ordinary version bump.
 version, missing transitive file, wrong commit, and source-checkout leakage fixtures fail; the
 operator's actual plugin registry is byte-identical before and after; and no model/API call occurs.
 
-### 76. Persist a complete exact-tree acceptance receipt — PARTIAL (0.210.0, item 112): the typed claim, its verifier and the terminal wiring landed; the clean-clone traversal and the stale/mixed-attempt refusals have not. REVIEW F22 open
+### 76. Persist a complete exact-tree acceptance receipt — PARTIAL (0.210.0, item 112; the verifier made strict and given a production caller at 0.223.0, item 125): the clean-clone traversal and per-gate attribution have not landed. REVIEW F22 open
 
 **Problem solved:** archived `SHIPPED` state and Panel records do not preserve which deterministic
 checks passed on which exact bytes.
@@ -5002,6 +5002,70 @@ reporters, the ratchet, the reset. The first case proves both ids are banked wit
 e2e ids are named as unmeasured when the report stops appearing, no reset happens, `repeated
 regression` never appears, and the builder's work is still on disk. The second keeps the runner
 producing a report with the test *failing*, and the reset happens exactly as before.
+
+### 125. A receipt that has to survive its own verifier — IMPLEMENTED (0.223.0); REVIEW F22 open pending Codex
+
+**Codex's verification of item 112 is a list of ways a receipt verified clean while saying nothing.**
+Every one of them is here, and every one was free to close.
+
+- **The verifier rebuilt the receipt and threw the rebuilt object away.** It checked only that the
+  fields the builder *requires* survived, so a stored receipt could carry a field nobody wrote, a
+  value the builder would have normalised differently, or an ordering the canonical form does not
+  have, and still verify. The rebuilt form is now compared with the stored one and *returned* in
+  place of it, so "this is the receipt this build writes for these facts" is a property of the
+  return value rather than of a comment.
+- **Three fields were coerced rather than required.** `ratchetPassing` became `0`, `reports` became
+  `[]` and `ledgerLapses` became `[]` when deleted or corrupted — and the verifier's rebuild
+  reproduced the coercion, which is why a receipt whose ratchet count had been replaced by a string
+  verified clean. They are stated or the receipt is incomplete. A gate `status` was not checked at
+  all and now must be an integer.
+- **`SHIPPED` had no additional obligations.** A receipt could carry that word with no commit, no
+  panel digest, and a *failed required gate*, which made "everything required passed"
+  unfalsifiable. All three are refused now, and every other terminal state is left alone — a
+  `STALLED` run genuinely has a failed gate, no commit and no panel, and refusing to record that
+  would delete the evidence an operator most needs.
+- **`verifyAcceptanceReceipt` had no production caller**, despite `PLAN.md` claiming the terminal
+  transition verified the receipt and removed an invalid one. `writeAcceptanceReceipt` now reads the
+  file back through the verifier and, separately, compares it byte-for-byte with what it wrote —
+  removing the file and throwing on either. The run's answer never changes; this is forensics.
+- **A supply-record write failure was logged and nothing else**, so one `ENOSPC` omitted an
+  invocation and the receipt saw a shorter ledger with no discontinuity in it. The failure is held in
+  the Driver's memory — the file it belongs in is the one that could not be written — and handed to
+  the receipt beside the lapses the store recorded about itself.
+
+**A limit is asserted rather than claimed.** A standalone reader cannot detect a report-digest list
+*emptied* after the write: the verifier re-derives the canonical form from the file's own values, so
+the emptied list rebuilds to itself. The write-time byte comparison catches it at the only moment
+anything knows what the receipt was supposed to say, and a test asserts the standalone limit
+explicitly so nobody later reads the verifier as stronger than it is. Making it standalone-detectable
+needs per-gate report attribution, which is the next item.
+
+**Evidence.** Twelve tier-1 cases on the verifier: a string status, a string and a negative ratchet
+count, a removed panel digest, a removed report list, a `SHIPPED` receipt with no commit at both the
+door and the read-back, a `SHIPPED` receipt carrying a failed required gate, an added field, a
+reordered receipt, the canonical value being returned, the stated limit, and the neighbour that must
+keep passing — a `STALLED` receipt with a failed gate, no commit and no panel. Two at the loop for the
+production read-back, one of them through an injected reader because the branch is a race nothing can
+time. Eleven go red with the strictness reverted.
+
+**Not done, and named:** the per-gate command/attempt/tool-version identity and report attribution
+Codex's last paragraph asks for, and the clean-clone traversal that depends on it. Item 126.
+
+### 126. Per-gate identity and report attribution in the receipt — OPEN (extends item 76, REVIEW F22)
+
+**What the receipt still cannot support.** A gate record carries `name`, `ok`, `status` and
+`detailDigest`. It does not say which command produced it, on which attempt, with which tool version,
+or which report digest belongs to which gate and path — so the clean-clone reconstruction F22 asks
+for cannot be performed from one receipt, and a report-digest list emptied after the write is
+undetectable to a standalone reader because nothing else in the file references those digests.
+
+**Done when:** each gate result records the argv it ran (digested, not quoted — it is
+target-influenced text), the iteration it ran on, and the report paths and digests attributable to it;
+`results.reports` is derivable from the per-gate records and a mismatch is refused; the toolchain
+declares which operation writes which report rather than the mapping being a filename convention; and
+a clean-clone case starts from one `SHIPPED` receipt and resolves every required edge. Tool version
+per gate is a measurement question and is scoped separately: record the resolved toolchain identity
+rather than inventing a per-gate version nobody measured.
 
 ## Observations recorded rather than repaired
 

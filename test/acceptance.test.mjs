@@ -43,6 +43,7 @@ function complete(overrides = {}) {
       ],
       panelDigest: 'sha256:panel',
       ratchetPassing: 12,
+      reports: [digest('the unit report')],
       oracle: 'sha256:oracle',
       deploy: null,
     },
@@ -55,6 +56,7 @@ function complete(overrides = {}) {
         supplyDigest: 'sha256:supply',
       },
     ],
+    ledgerLapses: [],
     at: '2026-08-19T00:00:00.000Z',
     ...overrides,
   };
@@ -313,5 +315,156 @@ describe('modelIdentityHolds', () => {
 
     assert.equal(verdict.ok, false);
     assert.equal(verdict.unmatched[0].includes('no modelUsage map'), true, verdict.unmatched[0]);
+  });
+});
+
+describe('a receipt that cannot survive its own verifier (REVIEW F22, reopened)', () => {
+  // **Codex's list, case by case.** Each of these produced `ok: true` before: the verifier rebuilt
+  // the receipt and threw the rebuilt object away, and the builder coerced a deleted or corrupted
+  // value into a default that the rebuild then reproduced. A receipt that verifies clean after its
+  // gate statuses have been replaced by strings is not a proof of anything.
+
+  /** @param {Record<string, any>} [overrides] @returns {any} */
+  const written = (overrides = {}) => JSON.parse(JSON.stringify(buildAcceptanceReceipt(complete(overrides))));
+
+  it('refuses a gate status replaced by a string', () => {
+    const receipt = written();
+    receipt.results.gates[0].status = 'ok';
+    const verdict = verifyAcceptanceReceipt(receipt);
+    assert.equal(verdict.ok, false);
+    assert.equal(/** @type {any} */ (verdict).reason.includes('results.gates[0].status'), true, /** @type {any} */ (verdict).reason);
+  });
+
+  it('refuses a ratchet count replaced by a string, rather than reading it as zero', () => {
+    const receipt = written();
+    receipt.results.ratchetPassing = 'twelve';
+    assert.equal(verifyAcceptanceReceipt(receipt).ok, false);
+  });
+
+  it('refuses a negative ratchet count, which is not a count', () => {
+    const receipt = written();
+    receipt.results.ratchetPassing = -1;
+    assert.equal(verifyAcceptanceReceipt(receipt).ok, false);
+  });
+
+  it('refuses a removed panel digest on a SHIPPED receipt', () => {
+    const receipt = written();
+    delete receipt.results.panelDigest;
+    const verdict = verifyAcceptanceReceipt(receipt);
+    assert.equal(verdict.ok, false);
+    assert.equal(/** @type {any} */ (verdict).reason.includes('panel record that authorised it'), true);
+  });
+
+  it('refuses a removed report-digest list', () => {
+    // Emptied and removed are different: an empty list is honest for a suite that produced none, and
+    // is checked separately below. A *removed* field is a receipt that no longer states the fact.
+    const receipt = written();
+    delete receipt.results.reports;
+    assert.equal(verifyAcceptanceReceipt(receipt).ok, false);
+  });
+
+  it('cannot detect an emptied report-digest list on its own, and that limit is stated', () => {
+    // **What a standalone reader genuinely cannot do, said out loud rather than claimed.** The
+    // verifier re-derives the canonical form from the file's own values, so a list emptied after the
+    // write rebuilds to the same emptied form. Nothing in one file can distinguish "this run read no
+    // reports" from "somebody deleted the list" without an external anchor. The anchor that exists is
+    // `writeAcceptanceReceipt`'s byte-for-byte read-back, proved in `test/driver.test.mjs`; the
+    // anchor that would make it standalone is per-gate report attribution, which F22 also asks for
+    // and PLAN item 126 owns.
+    const receipt = written();
+    receipt.results.reports = [];
+    assert.equal(verifyAcceptanceReceipt(receipt).ok, true, 'this test is asserting the limit, not a capability');
+    // A *removed* field is a different fact and is refused, which is the case above.
+  });
+
+  it('refuses a SHIPPED receipt with no commit, at the door and on the way back in', () => {
+    assert.throws(
+      () => buildAcceptanceReceipt(complete({ subject: { tree: 'sha256:tree', commit: null } })),
+      (/** @type {unknown} */ error) => {
+        assert.equal(/** @type {Error} */ (error).message.includes('names the commit that shipped'), true);
+        return true;
+      },
+    );
+    const receipt = written();
+    receipt.subject.commit = null;
+    const verdict = verifyAcceptanceReceipt(receipt);
+    assert.equal(verdict.ok, false);
+    assert.equal(/** @type {any} */ (verdict).reason.includes('names the commit that shipped'), true);
+  });
+
+  it('refuses a SHIPPED receipt carrying a failed required gate', () => {
+    // **The one that makes "everything required passed" falsifiable.** A receipt could carry
+    // `lint: ok=false` and still verify, so the word `SHIPPED` beside it meant nothing.
+    assert.throws(
+      () =>
+        buildAcceptanceReceipt(
+          complete({
+            results: {
+              ...complete().results,
+              gates: [
+                { name: 'lint', ok: false, status: 1, detailDigest: digest('failed') },
+                { name: 'unit', ok: true, status: 0, detailDigest: digest('12 passed') },
+              ],
+            },
+          }),
+        ),
+      (/** @type {unknown} */ error) => {
+        assert.equal(error instanceof AcceptanceError, true);
+        assert.equal(/** @type {Error} */ (error).message.includes('cannot carry a failed required gate (lint)'), true);
+        return true;
+      },
+    );
+  });
+
+  it('lets a non-SHIPPED receipt carry a failed gate, no commit and no panel', () => {
+    // **The neighbour, and it is the point of the rule.** A `STALLED` run genuinely has a failed
+    // gate, no commit and no panel; refusing to record that would delete the evidence of exactly the
+    // runs an operator most needs to read.
+    const receipt = buildAcceptanceReceipt(
+      complete({
+        subject: { tree: 'sha256:tree', commit: null },
+        results: {
+          ...complete().results,
+          terminal: 'STALLED',
+          panelDigest: null,
+          gates: [
+            { name: 'lint', ok: false, status: 1, detailDigest: digest('failed') },
+            { name: 'unit', ok: true, status: 0, detailDigest: digest('12 passed') },
+          ],
+        },
+      }),
+    );
+    assert.equal(verifyAcceptanceReceipt(receipt).ok, true);
+  });
+
+  it('refuses a receipt carrying a field this build would not have written', () => {
+    // The canonical comparison. Rebuilding and discarding the result checked only that the required
+    // fields survived; an auditor needs this file to be exactly what this build writes for these
+    // facts, so anything added between writing and reading it is a refusal.
+    const receipt = written();
+    receipt.results.approvedBy = 'the builder';
+    const verdict = verifyAcceptanceReceipt(receipt);
+    assert.equal(verdict.ok, false);
+    assert.equal(/** @type {any} */ (verdict).reason.includes('not the canonical form'), true, /** @type {any} */ (verdict).reason);
+  });
+
+  it('refuses a reordered receipt, because canonical means one form', () => {
+    const receipt = written();
+    receipt.results.gates = [...receipt.results.gates].reverse();
+    assert.equal(verifyAcceptanceReceipt(receipt).ok, false);
+  });
+
+  it('returns the canonical receipt rather than the stored object', () => {
+    // So the return value *is* the thing that was checked. A caller reading fields off the stored
+    // object would be reading whatever survived on disk.
+    const receipt = written();
+    const verdict = verifyAcceptanceReceipt(receipt);
+    assert.equal(verdict.ok, true);
+    assert.notEqual(/** @type {any} */ (verdict).receipt, receipt, 'the stored object was handed straight back');
+    assert.deepStrictEqual(/** @type {any} */ (verdict).receipt, receipt);
+  });
+
+  it('still accepts the receipt it just wrote, which is the whole neighbour', () => {
+    assert.equal(verifyAcceptanceReceipt(written()).ok, true);
   });
 });

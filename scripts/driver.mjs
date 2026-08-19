@@ -106,7 +106,7 @@ import {
 } from './candidate.mjs';
 import { captureSpecification, verifySpecification } from './specification.mjs';
 import { ACCEPTANCE_FILE } from './acceptance-file.mjs';
-import { buildAcceptanceReceipt, digest } from './acceptance.mjs';
+import { buildAcceptanceReceipt, digest, verifyAcceptanceReceipt } from './acceptance.mjs';
 import {
   NESTING_AUTHORITY_ENV,
   NESTING_TICKET_ENV,
@@ -1859,6 +1859,7 @@ export function repeatedRegressionNote(counts, regressions) {
  *     | Promise<{ ok: boolean, detail: string, head?: string | null }>,
  *   readTestReports: () => unknown[],
  *   readReportSources?: () => ReportSources,
+ *   supplyLapses?: () => string[],
  *   commit: (message: string) => string | Promise<string>,
  *   diffStat: () => string | Promise<string>,
  *   deploy?: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
@@ -1887,15 +1888,59 @@ export { ACCEPTANCE_FILE } from './acceptance-file.mjs';
  *
  * @param {string} meeseeksDir
  * @param {Parameters<typeof buildAcceptanceReceipt>[0]} input
+ * @param {{ readBack?: (file: string) => string }} [io] `readBack` exists so a test can hand back
+ *   bytes that are not the ones written; the branch it exercises cannot be provoked by timing.
  * @returns {string} the path written
  */
-export function writeAcceptanceReceipt(meeseeksDir, input) {
+export function writeAcceptanceReceipt(meeseeksDir, input, io = {}) {
   const receipt = buildAcceptanceReceipt(input);
   mkdirSync(meeseeksDir, { recursive: true });
   const file = path.join(meeseeksDir, ACCEPTANCE_FILE);
   const temporary = `${file}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
+  const body = `${JSON.stringify(receipt, null, 2)}\n`;
+  writeFileSync(temporary, body, 'utf8');
   renameSync(temporary, file);
+  // **Read back the way an auditor will, before the run walks away from it** (REVIEW F22, reopened).
+  // `PLAN.md` claimed the terminal transition verified the receipt and removed an invalid one, and
+  // nothing did: `verifyAcceptanceReceipt` had no production caller at all. A receipt is a claim
+  // about provenance, so the only honest test of it is the one a reader performs — and a claim that
+  // does not survive its own verifier is worse than no claim, because a reader would believe it.
+  //
+  // A receipt that fails is **removed and the failure thrown**, which the caller reports beside the
+  // terminal state exactly as it reports a refusal to write one. The run's answer does not change:
+  // this is forensics, and destroying a finished run over its paperwork would be the wrong way
+  // round.
+  /** @type {unknown} */
+  let readBack;
+  /** @type {string} */
+  let stored;
+  try {
+    stored = (io.readBack ?? ((/** @type {string} */ target) => readFileSync(target, 'utf8')))(file);
+    readBack = JSON.parse(stored);
+  } catch (error) {
+    rmSync(file, { force: true });
+    throw new DriverError(
+      `the acceptance receipt could not be read back after writing (${/** @type {Error} */ (error).message}), so it ` +
+        'was removed rather than left as a claim nobody can verify',
+    );
+  }
+  const verified = verifyAcceptanceReceipt(readBack, { tree: String(input.subject?.tree ?? '') });
+  if (!verified.ok) {
+    rmSync(file, { force: true });
+    throw new DriverError(`the acceptance receipt did not survive its own verifier and was removed: ${verified.reason}`);
+  }
+  // **Byte-for-byte against what this call wrote**, which is the one check a later standalone reader
+  // cannot make. `verifyAcceptanceReceipt` re-derives the canonical form from the file's own values,
+  // so a field that was *emptied* between writing and reading — a report-digest list set to `[]` —
+  // rebuilds to the same emptied form and verifies clean. Comparing with the bytes in hand catches
+  // it here, at the only moment anything knows what the receipt was supposed to say.
+  if (stored !== body) {
+    rmSync(file, { force: true });
+    throw new DriverError(
+      'the acceptance receipt on disk is not the receipt that was written, so it was removed. Something changed the ' +
+        'file between the write and the read back.',
+    );
+  }
   return file;
 }
 
@@ -2360,7 +2405,12 @@ export async function driveRun(options) {
           // Read once. Twice would be two reads of a file another process could change between
           // them, which is the shape of defect this receipt exists to make visible.
           const ledger = recordedInvocations(meeseeksDir);
-          return { invocations: ledger.invocations, ledgerLapses: ledger.lapses };
+          // Both kinds of hole: the ones the store recorded about itself, and the ones no store
+          // could record because writing to it is what failed.
+          return {
+            invocations: ledger.invocations,
+            ledgerLapses: [...ledger.lapses, ...(effects.supplyLapses?.() ?? [])],
+          };
         })(),
         at: effects.now(),
       });
@@ -6713,7 +6763,16 @@ async function runInvocation(argv, io, crash) {
           models: result.observedModels ?? { unavailable: 'the child returned no envelope to read' },
         });
       } catch (error) {
-        write(verbatim(`could not record the supply manifest for ${options.phase}: ${/** @type {Error} */ (error).message}`));
+        // **A write that failed is a hole in the ledger, and the hole has to be recorded somewhere
+        // the ledger is not** (REVIEW F22, reopened). This was logged and nothing else, so a single
+        // `ENOSPC` or `EACCES` omitted an invocation entirely — and the receipt, which counts
+        // invocations to decide whether every model identity can be established, saw a *shorter*
+        // ledger with no discontinuity in it and reported itself complete. `appendSupplyRecord`
+        // writes its own lapse when the store is unreadable; it cannot write one when writing is
+        // what failed, so the fact is held here and handed to the receipt.
+        const detail = `the supply record for ${options.phase} could not be written: ${/** @type {Error} */ (error).message}`;
+        write(verbatim(detail));
+        supplyLapses.push(detail);
       }
     }
     return result;
@@ -7785,6 +7844,16 @@ async function runInvocation(argv, io, crash) {
    * @type {ReportSources}
    */
   let lastReportSources = { produced: [], missing: [], irregular: [] };
+  /**
+   * Invocations whose supply record could not be written (REVIEW F22, reopened).
+   *
+   * In memory because the file the record belongs in is the one that could not be written. Handed to
+   * the acceptance receipt, which counts invocations and would otherwise read a shorter ledger as a
+   * continuous one.
+   *
+   * @type {string[]}
+   */
+  const supplyLapses = [];
   const candidateWorktree = candidateDirFor(process.pid);
   /** Removed on every path out, and swept at the start, exactly as a race's worktrees are. */
   let candidateMaterialized = false;
@@ -8608,6 +8677,8 @@ async function runInvocation(argv, io, crash) {
       },
       /** What the last `readTestReports` collected, by report name. @returns {ReportSources} */
       readReportSources: () => lastReportSources,
+      /** Invocations whose supply record could not be written (REVIEW F22). @returns {string[]} */
+      supplyLapses: () => [...supplyLapses],
       commit: async (message) => {
         // Re-asserted here rather than once before the loop: a hard reset can land on a
         // commit that predates the stanza, which would quietly un-ignore the ratchet and

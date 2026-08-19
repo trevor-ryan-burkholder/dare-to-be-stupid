@@ -91,10 +91,10 @@ function isTagged(value) {
  *   inputs: { specification: string, config: string, plugin: string, cli: string, gateRoster: string[] },
  *   results: {
  *     terminal: string, gates: GateRecord[], panelDigest: string | null,
- *     ratchetPassing: number, reports?: string[], oracle: string | null, deploy: string | null,
+ *     ratchetPassing: number, reports: string[], oracle: string | null, deploy: string | null,
  *   },
  *   invocations: RoleInvocation[],
- *   ledgerLapses?: string[],
+ *   ledgerLapses: string[],
  *   at: string,
  * }} input
  * @returns {Record<string, unknown>}
@@ -127,6 +127,10 @@ export function buildAcceptanceReceipt(input) {
     for (const [index, gate] of gates.entries()) {
       if (!isIdentity(gate?.name)) missing.push(`results.gates[${index}].name`);
       if (typeof gate?.ok !== 'boolean') missing.push(`results.gates[${index}].ok`);
+      // **The exit status is a number or it is nothing** (REVIEW F22, reopened). It was written
+      // through unchecked, so a receipt whose status had been replaced by a string verified clean —
+      // and a reader cannot tell a gate that exited 1 from one whose result was edited.
+      if (!Number.isInteger(gate?.status)) missing.push(`results.gates[${index}].status`);
       if (!isIdentity(gate?.detailDigest)) missing.push(`results.gates[${index}].detailDigest`);
     }
     // **A gate absent from the roster is not a gate that failed**, and the receipt must keep the two
@@ -134,6 +138,32 @@ export function buildAcceptanceReceipt(input) {
     const ran = new Set(gates.map((gate) => gate?.name));
     for (const required of Array.isArray(roster) ? roster : []) {
       if (!ran.has(required)) missing.push(`results.gates: ${required} is in the roster and has no result`);
+    }
+  }
+
+  // **Every field the receipt states must be *stated*, not coerced** (REVIEW F22, reopened). Each of
+  // these was written through a `? :` that turned a deleted or corrupted value into a default, so a
+  // verifier that rebuilds the receipt rebuilt the *default* and reported the result complete.
+  if (!Number.isInteger(input.results?.ratchetPassing) || Number(input.results?.ratchetPassing) < 0) {
+    missing.push('results.ratchetPassing');
+  }
+  if (!Array.isArray(input.results?.reports)) missing.push('results.reports');
+  if (!Array.isArray(input.ledgerLapses)) missing.push('ledgerLapses');
+
+  // **What `SHIPPED` additionally has to be able to show.** A terminal state that claims the work
+  // shipped is a claim about a commit an independent panel passed, so a receipt carrying that word
+  // without either is not incomplete evidence for a weaker claim — it is a complete-looking receipt
+  // for a claim nothing supports. Every other terminal state is honest without them.
+  if (input.results?.terminal === 'SHIPPED') {
+    if (!isIdentity(input.subject?.commit)) missing.push('subject.commit: a SHIPPED receipt names the commit that shipped');
+    if (!isIdentity(input.results?.panelDigest)) {
+      missing.push('results.panelDigest: a SHIPPED receipt names the panel record that authorised it');
+    }
+    const failed = (Array.isArray(gates) ? gates : [])
+      .filter((gate) => Array.isArray(roster) && roster.includes(gate?.name) && gate?.ok !== true)
+      .map((gate) => gate?.name);
+    if (failed.length > 0) {
+      missing.push(`results.gates: a SHIPPED receipt cannot carry a failed required gate (${failed.join(', ')})`);
     }
   }
 
@@ -181,11 +211,11 @@ export function buildAcceptanceReceipt(input) {
         .map((gate) => ({ name: gate.name, ok: gate.ok, status: gate.status, detailDigest: gate.detailDigest }))
         .sort((a, b) => (a.name < b.name ? -1 : 1)),
       panelDigest: isIdentity(input.results.panelDigest) ? input.results.panelDigest : null,
-      ratchetPassing: Number.isInteger(input.results.ratchetPassing) ? input.results.ratchetPassing : 0,
+      ratchetPassing: input.results.ratchetPassing,
       // The report bytes the gate results were read from. An empty list is honest for a run whose
       // suite produced none, and is a different fact from a run that never looked — which cannot
       // reach here, because a run with no gate results has no roster to satisfy.
-      reports: Array.isArray(input.results.reports) ? [...input.results.reports].sort() : [],
+      reports: [...input.results.reports].sort(),
       oracle: isIdentity(input.results.oracle) ? input.results.oracle : null,
       deploy: isIdentity(input.results.deploy) ? input.results.deploy : null,
     },
@@ -194,7 +224,7 @@ export function buildAcceptanceReceipt(input) {
     // later verifier cannot confuse "nothing was recorded" with "nothing happened", and the receipt
     // is that later verifier. A lapse is a statement about the ledger, not about a model, so it gets
     // its own field and `modelIdentityHolds` refuses while any exists.
-    ledgerLapses: Array.isArray(input.ledgerLapses) ? [...input.ledgerLapses] : [],
+    ledgerLapses: [...input.ledgerLapses],
     invocations: input.invocations.map((invocation) => ({
       role: invocation.role,
       requestedModel: invocation.requestedModel,
@@ -223,8 +253,10 @@ export function verifyAcceptanceReceipt(value, expect = {}) {
   }
   // Rebuilt rather than spot-checked: the same completeness rule that refused to write it refuses to
   // accept it, so a field deleted or corrupted on disk fails here exactly as it would have there.
+  /** @type {Record<string, unknown>} */
+  let canonical;
   try {
-    buildAcceptanceReceipt({
+    canonical = buildAcceptanceReceipt({
       subject: receipt.subject ?? {},
       inputs: receipt.inputs ?? {},
       results: receipt.results ?? {},
@@ -235,6 +267,23 @@ export function verifyAcceptanceReceipt(value, expect = {}) {
   } catch (error) {
     return { ok: false, reason: /** @type {Error} */ (error).message };
   }
+  // **And the rebuilt receipt is compared with the stored one** (REVIEW F22, reopened). Rebuilding
+  // and then discarding the result checked only that the fields the builder *requires* survived: a
+  // stored receipt could carry an extra field nobody wrote, a value the builder would have
+  // normalised differently, or an ordering the canonical form does not have, and still verify. What
+  // an auditor needs is that this file is exactly the receipt this build would write for these
+  // facts, and nothing else.
+  const stored = JSON.stringify(receipt);
+  const rebuilt = JSON.stringify(canonical);
+  if (stored !== rebuilt) {
+    return {
+      ok: false,
+      reason:
+        'the receipt on disk is not the canonical form of the facts it states. Something between writing and reading ' +
+        'it added, removed or reordered a field, and a receipt that is not byte-for-byte what this build would write ' +
+        'for these facts cannot be read as provenance.',
+    };
+  }
   if (expect.tree !== undefined && receipt.subject?.tree !== expect.tree) {
     return {
       ok: false,
@@ -242,7 +291,9 @@ export function verifyAcceptanceReceipt(value, expect = {}) {
         'establishes nothing about these ones',
     };
   }
-  return { ok: true, receipt };
+  // The canonical value, not the stored one. They are equal here by construction; returning the
+  // rebuilt object is what makes that a property of the return value rather than of this comment.
+  return { ok: true, receipt: canonical };
 }
 
 /**

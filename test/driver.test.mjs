@@ -21,7 +21,13 @@ import path from 'node:path';
 import { setTimeout } from 'node:timers';
 import { after, describe, it } from 'node:test';
 
-import { ACCEPTANCE_CLAIM, ACCEPTANCE_VERSION, digest, verifyAcceptanceReceipt } from '../scripts/acceptance.mjs';
+import {
+  ACCEPTANCE_CLAIM,
+  ACCEPTANCE_VERSION,
+  buildAcceptanceReceipt,
+  digest,
+  verifyAcceptanceReceipt,
+} from '../scripts/acceptance.mjs';
 import { ACCEPTANCE_FILE } from '../scripts/acceptance-file.mjs';
 import { readAssumptions } from '../scripts/assumptions.mjs';
 import {
@@ -72,6 +78,7 @@ import {
   assertOwnershipCovers,
   authorizedNestingEnv,
   canonicalSpecificationBlock,
+  writeAcceptanceReceipt,
   carriedReport,
   TOOL_CACHE_PATHS,
   armingNote,
@@ -2472,6 +2479,68 @@ describe('driveRun', () => {
       });
       return { root, outcome };
     }
+
+    it('reads the receipt back through its own verifier before the run walks away', async () => {
+      // **`PLAN.md` claimed the terminal transition verified the receipt and removed an invalid one,
+      // and nothing did** (REVIEW F22, reopened): `verifyAcceptanceReceipt` had no production caller
+      // at all. A receipt is a claim about provenance, so the only honest test of it is the one a
+      // reader performs — and a claim that does not survive its own verifier is worse than no claim,
+      // because a reader would believe it.
+      const { root } = await shipped();
+      const receipt = receiptIn(root);
+      assert.equal(verifyAcceptanceReceipt(receipt, { tree: receipt.subject.tree }).ok, true);
+    });
+
+    it('removes a receipt that changed between the write and the read back', () => {
+      // **The one check a later standalone reader cannot make.** The verifier re-derives the
+      // canonical form from the file's own values, so a field *emptied* after the write rebuilds to
+      // the same emptied form and verifies clean — `test/acceptance.test.mjs` asserts that limit
+      // directly. Comparing with the bytes in hand catches it at the only moment anything knows what
+      // the receipt was supposed to say. The read is injected because the branch is a race nothing
+      // can time, and a test that cannot reach a branch is not covering it.
+      const root = makeTempDir();
+      const meeseeksDir = path.join(root, '.meeseeks');
+      const file = path.join(meeseeksDir, ACCEPTANCE_FILE);
+      const input = {
+        subject: { tree: 'sha256:tree', commit: 'abc123' },
+        inputs: { specification: 'sha256:s', config: 'sha256:c', plugin: '0.1.0', cli: '2.1.234', gateRoster: ['lint'] },
+        results: {
+          terminal: 'STALLED',
+          gates: [{ name: 'lint', ok: false, status: 1, detailDigest: digest('failed') }],
+          panelDigest: null,
+          ratchetPassing: 0,
+          reports: [digest('a report')],
+          oracle: null,
+          deploy: null,
+        },
+        invocations: [
+          { role: 'review', requestedModel: 'm', requestedEffort: null, models: { observed: ['m'] }, supplyDigest: null },
+        ],
+        ledgerLapses: [],
+        at: '2026-08-19T00:00:00.000Z',
+      };
+
+      assert.throws(
+        () =>
+          writeAcceptanceReceipt(meeseeksDir, input, {
+            // Still a *valid, complete* receipt — just not the one that was written. Anything the
+            // verifier would reject on its own would prove nothing about this check.
+            readBack: () => {
+              const canonical = /** @type {any} */ (buildAcceptanceReceipt(input));
+              return `${JSON.stringify({ ...canonical, results: { ...canonical.results, reports: [] } }, null, 2)}\n`;
+            },
+          }),
+        (/** @type {unknown} */ error) => {
+          assert.equal(/** @type {Error} */ (error).message.includes('is not the receipt that was written'), true);
+          return true;
+        },
+      );
+      assert.equal(existsSync(file), false, 'a receipt nobody can stand behind was left on disk');
+
+      // The neighbour: an ordinary write reads back its own bytes and stays.
+      assert.equal(writeAcceptanceReceipt(meeseeksDir, input), file);
+      assert.deepStrictEqual(JSON.parse(readFileSync(file, 'utf8')).results.reports, [digest('a report')]);
+    });
 
     it('writes a typed, versioned claim bound to the reviewed tree', async () => {
       const { root } = await shipped();
