@@ -649,3 +649,23 @@ export function formatPreflight(result) {
   }
   return lines.join('\n');
 }
+
+/**
+ * Where the operator's done-bar lives, if there is one.
+ *
+ * Same shape as {@link erdPath} and for the same reasons: a file beside the PRD beats a setting
+ * somebody has to remember, and a **configured path that is not there is not a fallback**. Falling
+ * back to the convention would make a typo indistinguishable from having no done-bar, and the run
+ * would proceed held to a lower bar than the operator believes it set.
+ *
+ * @param {string} cwd
+ * @param {string | undefined} configured the `dod` config key, if set
+ * @returns {string | null} an absolute path, or null
+ */
+export function dodPath(cwd, configured) {
+  if (typeof configured === 'string' && configured.trim() !== '') {
+    return path.isAbsolute(configured) ? configured : path.join(cwd, configured);
+  }
+  const conventional = path.join(cwd, 'DOD.md');
+  return existsSync(conventional) ? conventional : null;
+}

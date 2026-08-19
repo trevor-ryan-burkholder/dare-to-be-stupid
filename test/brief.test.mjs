@@ -588,3 +588,57 @@ describe('the brief carries the declared schema (item 47, slice D)', () => {
     assert.match(brief, /C\\nBARE INJECTED \(no columns declared/);
   });
 });
+
+describe('the brief carries the operator done-bar (item 48)', () => {
+  const DOD = /** @type {import('../scripts/dod.mjs').DodCriterion[]} */ ([
+    {
+      id: 'DOD-1',
+      tier: 'panel-judgeable',
+      statement: 'Errors say what to do next',
+      observation: 'a reviewer cites one that does not',
+    },
+    {
+      id: 'DOD-2',
+      tier: 'deterministic',
+      statement: 'Coverage stays above 80%',
+      observation: '`npm run coverage` exits 1 below it',
+    },
+  ]);
+
+  it('says nothing when there is no done-bar', () => {
+    assert.equal(compileBrief({ iteration: 1, chaos: 0, objective: OBJECTIVE }).includes('## The operator done-bar'), false);
+    assert.equal(
+      compileBrief({ iteration: 1, chaos: 0, objective: OBJECTIVE, dod: [] }).includes('## The operator done-bar'),
+      false,
+    );
+  });
+
+  it('lists each criterion with its tier and what would falsify it', () => {
+    // The observation is the actionable half. "Errors say what to do next" is a wish; "a reviewer
+    // cites one that does not" is a thing to build against.
+    const brief = compileBrief({ iteration: 1, chaos: 0, objective: OBJECTIVE, dod: DOD });
+    assert.match(brief, /- DOD-1 \(panel-judgeable\): Errors say what to do next/);
+    assert.match(brief, / {2}falsified by: a reviewer cites one that does not/);
+    assert.match(brief, /- DOD-2 \(deterministic\): Coverage stays above 80%/);
+  });
+
+  it('tells the builder it cannot settle these itself', () => {
+    // A builder that believed it could mark these done would self-certify, which is the one thing
+    // the whole design is arranged to prevent.
+    const brief = compileBrief({ iteration: 1, chaos: 0, objective: OBJECTIVE, dod: DOD });
+    assert.match(brief, /You cannot mark them done yourself/);
+    assert.match(brief, /can only make shipping harder/);
+  });
+
+  it('neutralizes every rendered field, because a done-bar is operator text in a builder prompt', () => {
+    const hostile = /** @type {any} */ ([
+      { id: 'DOD-1 ID', tier: 'deterministic', statement: 'A STMT', observation: 'B OBS' },
+    ]);
+    const brief = compileBrief({ iteration: 1, chaos: 0, objective: OBJECTIVE, dod: hostile });
+    assert.equal(brief.includes(' '), false);
+    assert.equal(brief.includes(' '), false);
+    assert.match(brief, /DOD-1\\nID/);
+    assert.match(brief, /A\\nSTMT/);
+    assert.match(brief, /B\\nOBS/);
+  });
+});

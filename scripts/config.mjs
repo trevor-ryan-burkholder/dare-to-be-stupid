@@ -45,7 +45,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, lessonModel: string,
  *   qualityPlugins: string[], extraGates: { name: string, command: string[] }[], childEnvAllow: string[],
- *   erd: string, schemaIntrospect: string[],
+ *   erd: string, schemaIntrospect: string[], dod: string,
  *   components: ComponentConfig[],
  *   effort: Record<string, string>, oracle: OracleConfig,
  *   panelCarry: PanelCarryConfig, sandbox: SandboxConfig,
@@ -222,6 +222,9 @@ export function defaultConfig() {
     // `.meeseeks/config.json` is positionally guarded, so this is the one place inside the
     // repository a running builder cannot reach.
     schemaIntrospect: [],
+    // Where the operator's additive done-bar lives, when it is not the conventional `DOD.md` beside
+    // the PRD (item 48). Empty means the convention; an absent file means there is no extra bar.
+    dod: '',
     // Empty by default, and an empty list changes nothing at all: no phase runs, no flag is
     // demanded, and a pre-components repository behaves exactly as it always did. Declaring one
     // is only half a decision — components are nested runs, so a run that declares any refuses
@@ -608,6 +611,7 @@ export function validateConfig(input) {
   if ('extraGates' in source) merged.extraGates = requireExtraGates(source.extraGates);
   if ('childEnvAllow' in source) merged.childEnvAllow = requireStringArray(source.childEnvAllow, 'childEnvAllow');
   if ('erd' in source) merged.erd = requireString(source.erd, 'erd');
+  if ('dod' in source) merged.dod = requireString(source.dod, 'dod');
   if ('schemaIntrospect' in source) {
     merged.schemaIntrospect = requireStringArray(source.schemaIntrospect, 'schemaIntrospect');
   }

@@ -4806,6 +4806,41 @@ describe('driveRun', () => {
     assert.equal(brief.includes('## The declared schema'), false);
   });
 
+  it('pins a cold-passed operator criterion exactly like any other requirement (item 48)', async () => {
+    // **Structural rather than special-cased, and worth an assertion for that reason.** The pinning
+    // branch keys on "not a security element" and never on the id's shape, so a DOD-N criterion the
+    // panel passed becomes monotonic with no code that knows what a DOD-N is. Asserting it stops a
+    // later narrowing of that branch — to `PRD-*`, say — from silently unpinning the operator's bar.
+    const { meeseeksDir } = await run(
+      {
+        readTestReports: () => [ONE_PASSING],
+        review: (_reviewer, ids) => ({
+          ok: true,
+          costUsd: 0,
+          tokens: 1,
+          raw: '',
+          text: reviewerJson(ids.map((id) => ({ id, status: 'pass', evidence: 'src/a.ts:1', detail: 'found' }))),
+        }),
+        readSource: () => 'line one\nline two\n',
+      },
+      {
+        maxIterations: 1,
+        // The operator must say who judges their criteria; nothing defaults `DOD-*` to a reviewer,
+        // because a security criterion silently inheriting the correctness auditor is judged by
+        // the wrong one. The refusal that enforces that has its own case above.
+        ownership: {
+          security: ['DoD-2-security'],
+          correctness: ['PRD-*', 'DoD-1-requirements', 'DoD-6-adversarial-input', 'DOD-*'],
+          design: ['DoD-3-ci', 'DoD-4-docs-observability', 'DoD-5-design'],
+        },
+      },
+      [],
+      ['PRD-1.1', 'DOD-1'],
+    );
+    const pinned = readPins(meeseeksDir).requirements.map((pin) => pin.id).sort();
+    assert.deepStrictEqual(pinned, ['DOD-1', 'PRD-1.1']);
+  });
+
   it('asks each reviewer only about the ids it owns', async () => {
     /** @type {[string, string[]][]} */
     const asked = [];

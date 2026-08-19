@@ -52,6 +52,7 @@ import path from 'node:path';
  *   capabilities?: string[],
  *   toolchain?: { name: string, guidance: string },
  *   erd?: import('./erd.mjs').Erd | null,
+ *   dod?: import('./dod.mjs').DodCriterion[],
  *   raceCandidate?: { index: number, of: number, hypothesis?: string } | null,
  *   deniedLastIteration?: string[]
  * }} BriefInput
@@ -353,6 +354,33 @@ export function compileBrief(input) {
       '',
       ...capabilities.map((capability) => `- ${neutralizeLine(capability)}`),
     );
+  }
+
+  // **The operator's done-bar, when there is one** (PLAN item 48). The builder builds toward the
+  // bar rather than guessing at it — but the *verdict* stays with the cold panel, in a separate
+  // process, exactly as for the built-in DoD lines. Saying so here is the point: a builder that
+  // believed it could settle these would self-certify, which is the one thing the whole design is
+  // arranged to prevent.
+  //
+  // Each criterion carries the observation that would falsify it, because that is the actionable
+  // half. "Errors say what to do next" is a wish; "a reviewer cites one that does not" is a thing to
+  // build against.
+  if (input.dod !== undefined && input.dod.length > 0) {
+    lines.push(
+      '',
+      '## The operator done-bar',
+      '',
+      'These are additional requirements the cold panel will judge, on top of the standard done bar.',
+      'They can only make shipping harder. You cannot mark them done yourself - a separate reviewer',
+      'decides, on evidence you leave behind.',
+      '',
+    );
+    for (const criterion of input.dod) {
+      lines.push(
+        `- ${neutralizeLine(criterion.id)} (${criterion.tier}): ${neutralizeLine(criterion.statement)}`,
+        `  falsified by: ${neutralizeLine(criterion.observation)}`,
+      );
+    }
   }
 
   // **The declared schema, when the operator supplied one** (PLAN item 47, slice D). The builder

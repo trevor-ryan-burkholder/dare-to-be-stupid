@@ -94,9 +94,10 @@ import { ArtifactTooLargeError, READ_LIMITS, readBounded } from './bounded-read.
 import { designSlopEvidence } from './design-slop.mjs';
 import { gitleaksEvidence } from './secrets-scan.mjs';
 import { OUTCOME_FILE, writeRunOutcome } from './outcome.mjs';
+import { dodIds, parseDod } from './dod.mjs';
 import { parseErd } from './erd.mjs';
 import { schemaEvidence } from './schema.mjs';
-import { checkErdConsistency, erdPath } from './preflight.mjs';
+import { checkErdConsistency, dodPath, erdPath } from './preflight.mjs';
 import { writeQuestion } from './question.mjs';
 import { roleSupplyManifest } from './role-supply.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
@@ -2270,6 +2271,7 @@ export function repeatedRegressionNote(counts, regressions) {
  *   capabilities?: () => string[],
  *   toolchainGuidance?: () => { name: string, guidance: string } | undefined,
  *   erd?: () => import('./erd.mjs').Erd | null,
+ *   dod?: () => import('./dod.mjs').DodCriterion[],
  *   changedFiles?: () => string[] | Promise<string[]>,
  *   readSource?: (file: string) => string | null,
  *   securityEscalation?: (pin: import('./pins.mjs').SecurityPin) => ClaudeResult | Promise<ClaudeResult>,
@@ -3148,6 +3150,7 @@ export async function driveRun(options) {
       // Preflight has already refused an ERD that cannot be parsed or that over-reaches the PRD, so
       // by the time a brief is compiled the only remaining outcomes are a valid diagram or none.
       erd: effects.erd?.() ?? null,
+      dod: effects.dod?.() ?? [],
     });
     writeBrief(meeseeksDir, iterationNumber, brief);
 
@@ -8008,7 +8011,36 @@ async function runInvocation(argv, io, crash) {
   // run of every CLI project is noise, and the check itself is non-blocking in that case.
   if (erdCheck.blocking) write(verbatim(`erd: ${erdCheck.detail}`));
 
-  const requiredIds = requiredIdsFor(prd);
+  // **The operator's additive done-bar** (PLAN item 48). Read here, beside the ERD, for the same
+  // reason: this is the first moment the specification exists to check it against.
+  //
+  // **Additive is structural rather than promised.** These ids are *appended* to the required set,
+  // and there is no path by which a `DOD.md` removes one — no suppression key, no waiver, no
+  // severity override, nothing that reads a criterion and relaxes anything. It can only make a ship
+  // harder, which follows from constitutional supremacy: a done-bar sits beneath the invariants
+  // (`CONSTITUTION.md`), so it may only add.
+  //
+  // **Ownership is deliberately not defaulted.** `assertOwnershipCovers` refuses a run whose panel
+  // owns none of these, and that refusal is correct rather than friction: a security criterion
+  // silently handed to the correctness auditor because it inherited a default is a criterion judged
+  // by the wrong reviewer, and nobody would ever know.
+  const dodFile = dodPath(cwd, config.dod);
+  /** @type {import('./dod.mjs').DodCriterion[]} */
+  const dodCriteria = [];
+  if (dodFile !== null) {
+    try {
+      dodCriteria.push(...parseDod(readFileSync(dodFile, 'utf8')));
+    } catch (error) {
+      // Fail closed. A done-bar that cannot be read is not a done-bar, and treating it as "no extra
+      // criteria" would ship a run the operator believes was held to a bar it never saw.
+      write(verbatim(`${path.relative(cwd, dodFile)} could not be read: ${/** @type {Error} */ (error).message}`));
+      write(stamp('ABORTED', { mode }));
+      return releasing(1, { reason: 'the done-bar could not be read', phase: 'specification' });
+    }
+    write(verbatim(`done-bar: ${path.relative(cwd, dodFile)}, ${dodCriteria.length} criteria`));
+  }
+
+  const requiredIds = [...requiredIdsFor(prd), ...dodIds(dodCriteria)];
   // ---- Phase 0b: the held-out oracle (A3) -------------------------------
   //
   // Authored here, from the PRD alone, **before the design phase and before any code exists**.
@@ -9249,6 +9281,17 @@ async function runInvocation(argv, io, crash) {
         }),
       race: runRace,
       capabilities: runCapabilities,
+      /**
+       * The operator done-bar this run is held to (PLAN item 48).
+       *
+       * Closed over the criteria parsed once in `main` rather than re-read here, unlike the ERD. The
+       * difference is deliberate: the ERD only informs the brief and a gate, so a mid-run correction
+       * is harmless, while these ids are already in the panel required set. Re-reading would let the
+       * brief describe a bar the panel is not judging.
+       *
+       * @returns {import('./dod.mjs').DodCriterion[]}
+       */
+      dod: () => dodCriteria,
       /**
        * The operator's ERD, parsed, or `null` when there is none (PLAN item 47, slice D).
        *

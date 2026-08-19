@@ -2169,6 +2169,7 @@ meeseeks/
 │   ├── specification.mjs         # .meeseeks/specification.json: the revision a run is held to (§4)
 │   ├── reports.mjs               # per-attempt test-report freshness (§4)
 │   ├── preflight.mjs             # the thirteen checks run before a run starts (§3.5)
+│   ├── dod.mjs                   # DOD.md: the operator additive done-bar, refused if nobody can decide it
 │   ├── erd.mjs                   # reads a Mermaid erDiagram into entities, keys and relationships
 │   ├── schema.mjs                # schema-conformance: the live schema against the declared one (§3.6.1)
 │   ├── question.mjs              # .meeseeks/question.json: the decision a non-SHIPPED run leaves (§8.3)
@@ -2837,6 +2838,7 @@ group, so an operator-kill can still leak it (`PLAN.md` item 2's residual).
 | `extraGates` | `[]` | `{ name, command }` checks this project considers gating that no toolchain knows about. Run every iteration, required, listed in the brief as `operator:<name>`. Declared rather than detected, and declared *here* — `.meeseeks/` is positionally protected (§6), so a builder cannot delete a gate that constrains it |
 | `childEnvAllow` | `[]` | names of environment variables a target's tooling needs that the child keep-list would otherwise drop (§6.1, REVIEW F5). **Names, never values** — the value is read from the operator's environment at spawn time, so nothing secret enters a config file, a receipt or a log. It may not name a Driver-owned marker, and `childEnvironment` refuses one that does |
 | `erd` | `''` | where a Mermaid `erDiagram` lives, when it is not the conventional `ERD.md` beside the PRD (§3.5, item 47). Empty means the convention; an absent file means there is no ERD, which gates nothing |
+| `dod` | `''` | where the operator additive done-bar lives, when it is not the conventional `DOD.md` beside the PRD (item 48). Its criteria are appended to the panel required set and can only make a ship harder; there is no path by which one relaxes anything |
 | `schemaIntrospect` | `[]` | argv that prints the live schema as JSON for `schema-conformance` (§3.6.1, item 47). Empty means the gate does not arm. Operator configuration on purpose: a builder supplying this would describe the schema it is judged on, and the gate would confirm its own input |
 | `components` | `[]` | `{ name, dir, spec }` sub-runs executed as whole nested drivers in worktrees before the loop (§2, Phase 1c). The config declares *what* the components are; only `--give-them-the-box` on the command line permits them to run — configured components without the flag refuse the run before any child is paid for. `name` is kebab-case (it becomes branch and worktree names), `dir` is repo-relative with no `..` and is realpath-checked against the worktree at run time, `spec` is a PRD path relative to the dir or a quoted idea |
 | `deploy.enabled` | **false** | preview-only when enabled; never prod |

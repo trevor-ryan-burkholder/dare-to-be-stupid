@@ -1814,7 +1814,7 @@ live schema, fails on an omission/contradiction, and fails closed on an un-intro
 with a test and a benign neighbour; the builder brief carries the ERD; one live data-backed run
 exercises it end to end.
 
-### 48. Accept a `DOD.md` alongside the PRD and ERD — the admission mechanism, and a reusable additive done-bar — OPEN (Phase-6 class, post-DoD) — **IN SCOPE (DoD = all features, 19 Aug 2026)**
+### 48. Accept a `DOD.md` alongside the PRD and ERD — the admission mechanism, and a reusable additive done-bar — **IMPLEMENTED (0.237.0); the authoring-role judgement remains**
 
 **Promoted 15 Aug (operator).** This began as "extra criteria an operator may add." It is more than that:
 **a job with a DoD is a meeseeks job, because the DoD is the check** (item 49's filter). `DOD.md` is
@@ -1830,6 +1830,55 @@ the ERD (item 47, what the data looks like): **`DOD.md`, what "done" means.** To
 *inside* the PRD as `DoD-N` requirement lines; factoring it into its own file makes an enterprise
 done-bar (builds-and-runs, auth integrity, a11y, perf budgets, coverage floors, security posture)
 authorable once and reused across targets, and loaded into a run with the PRD and diagram MD.
+
+**Landed (0.237.0).** `DOD.md` is accepted, enforced, communicated, and pinned. Every Done-when
+clause is met except the authoring-time *judgement* of a criterion's falsifiability, which is
+recorded below as belonging to an authoring role rather than to a parser.
+
+**Why the tier is declared and not detected — the design decision this item turns on.** Item 49's
+table refuses `unfalsifiable` at authoring, and **no parser can make that call**: "feels premium" and
+"the mark reads as one silhouette at 16px" are both prose, and what divides them is whether an
+observation exists that would prove them false. That is a judgment, and judgments here belong to a
+cold role, not a regular expression. So the criterion **declares its own tier** and `parseDod`
+enforces what a machine actually can — the tier exists, an observation is named, the id is unique,
+and the one tier nobody may ship is refused **by name and by line**. `unfalsifiable` stays in the
+vocabulary precisely so an author's honest admission is refused as *a criterion nobody can decide*
+rather than reported as a spelling mistake.
+
+**Additive is structural, not promised.** The ids are appended to the panel's required set and there
+is no path by which a `DOD.md` removes one — no suppression key, no waiver, no severity override,
+nothing that reads a criterion and relaxes anything. It follows from constitutional supremacy, which
+`CONSTITUTION.md` (item 51) now makes citable: a done-bar sits *beneath* the invariants, so it may
+only add. That is the derivation item 51's entry promised, arriving as code.
+
+**Ownership is deliberately not defaulted**, and the existing `assertOwnershipCovers` refusal does
+the work. A security criterion silently inheriting the correctness auditor because it fell through to
+a default is a criterion judged by the wrong reviewer, and nobody would ever know. The refusal names
+the id and the config key.
+
+**Pinning needed no code, and that is asserted rather than assumed.** The pin branch keys on "not a
+security element" and never on an id's shape, so a cold-passed `DOD-N` becomes monotonic with nothing
+that knows what a `DOD-N` is. A test asserts it, and a mutation narrowing that branch to `PRD-*`
+proves the assertion load-bearing — which is what stops a later tidy-up silently unpinning the
+operator's bar.
+
+**The brief carries the criteria with their observations**, and says plainly that the builder cannot
+settle them: a builder that believed it could mark these done would self-certify, which is the one
+thing the whole design is arranged to prevent. Every rendered field is neutralized, proved by
+mutation.
+
+**Acceptance evidence:** 16 parser cases, 4 brief cases, 1 pinning case, 5 integration cases driving
+`main` against real repositories. Proved red eight ways: an unfalsifiable criterion admitted, a
+malformed one skipped, a missing observation accepted, duplicate ids allowed, the done-bar never
+read, an unreadable one tolerated, the criteria never joining the required set, the brief wiring cut,
+and pinning narrowed to `PRD-*`.
+
+**Not built, and named rather than implied:** deciding that a criterion *claiming* to be
+panel-judgeable states no real observation. That is the authoring-role half of the Done-when — the
+"unfalsifiable / unobservable-here refused by name at authoring" clause — and it needs a cold author
+in the shape of `prd-author`, not a pattern. What this slice refuses, it refuses deterministically;
+what it cannot decide, it does not pretend to.
+
 
 **Design, with the tensions resolved:**
 - **Input:** an optional `DOD.md` beside `PRD.md` (convention) or a config key (`dod`), parsed with a
@@ -3276,7 +3325,23 @@ requires the ordinary version bump.
 version, missing transitive file, wrong commit, and source-checkout leakage fixtures fail; the
 operator's actual plugin registry is byte-identical before and after; and no model/API call occurs.
 
-### 76. Persist a complete exact-tree acceptance receipt — PARTIAL (0.210.0, item 112; the verifier made strict and given a production caller at 0.223.0, item 125): the clean-clone traversal and per-gate attribution have not landed. REVIEW F22 open
+### 76. Persist a complete exact-tree acceptance receipt — **IMPLEMENTED (0.210.0-0.224.0); REVIEW F22 owns closure**
+
+**Header corrected 19 Aug 2026 after checking the code rather than the note.** It read "the
+clean-clone traversal and per-gate attribution have not landed". Per-gate attribution **did** land, at
+0.224.0 (item 126): `GateRecord` carries `commandDigest`, `attempt` and `reports`, `acceptanceGates`
+builds them, and `writeAcceptanceReceipt` has a production caller. The per-role half is equally
+present under names the note did not use — `models` is the tagged observed identity, `requestedEffort`
+the requested one, `supplyDigest` item 77's receipt — all populated by the Driver, not merely typed.
+
+That is documentation drift rather than missing work, and it is the expensive kind: an entry saying
+a thing is unbuilt is an invitation to build it twice. Recorded here rather than quietly fixed,
+because the same note had already survived one re-baseline.
+
+**What actually remains is `REVIEW.md` F22's clean-clone traversal**, and it is not a build task. The
+edges an auditor would traverse are all recorded; whether they add up to "a clean-clone auditor can
+traverse one `SHIPPED` receipt to every required same-tree acceptance edge" is an acceptance
+judgement, and F22 is Codex-owned. Claude does not close it.
 
 **Problem solved:** archived `SHIPPED` state and Panel records do not preserve which deterministic
 checks passed on which exact bytes.

@@ -33,7 +33,7 @@ const ERD = 'erDiagram\n    CUSTOMER ||--o{ ORDER : places\n    CUSTOMER {\n    
 const git = (root, args) => execFileSync('git', args, { cwd: root, stdio: 'pipe', encoding: 'utf8' }).trim();
 
 /**
- * @param {{ erd?: string, erdAt?: string, config?: Record<string, unknown> }} [options]
+ * @param {{ erd?: string, erdAt?: string, dod?: string, dodAt?: string, config?: Record<string, unknown> }} [options]
  * @returns {string}
  */
 function repo(options = {}) {
@@ -47,6 +47,11 @@ function repo(options = {}) {
     const at = path.join(root, options.erdAt ?? 'ERD.md');
     mkdirSync(path.dirname(at), { recursive: true });
     writeFileSync(at, options.erd);
+  }
+  if (options.dod !== undefined) {
+    const at = path.join(root, options.dodAt ?? 'DOD.md');
+    mkdirSync(path.dirname(at), { recursive: true });
+    writeFileSync(at, options.dod);
   }
   writeFileSync(path.join(root, '.gitignore'), '.meeseeks/\nnode_modules/\n*.log\n');
   mkdirSync(path.join(root, '.meeseeks'), { recursive: true });
@@ -216,5 +221,62 @@ describe('schema-conformance arms on two facts and judges the live schema', () =
     const root = repo({ erd: ERD, config: { schemaIntrospect: ['node', '-e', 'process.exit(0)'] } });
     const { logs } = await run(root);
     assert.match(logs.join('\n'), /evidence that nothing was read/);
+  });
+});
+
+describe('the operator done-bar is additive and fails closed (item 48)', () => {
+  const DOD =
+    '**DOD-1** (panel-judgeable) — Errors say what to do next. Observation: a reviewer cites one that does not.\n';
+
+  it('refuses the run when no reviewer owns a declared criterion', async () => {
+    // Ownership is deliberately not defaulted. A security criterion silently handed to the
+    // correctness auditor because it inherited a default is judged by the wrong reviewer, and the
+    // operator would never know. The existing refusal names the id.
+    const root = repo({ dod: DOD });
+    const { code, logs } = await run(root);
+    assert.notEqual(code, 0);
+    assert.match(logs.join('\n'), /no reviewer owns DOD-1/);
+  });
+
+  it('admits a criterion an operator gave an owner, and counts it in the run', async () => {
+    // The benign neighbour: the refusal is a filter, not a wall.
+    const root = repo({
+      dod: DOD,
+      config: { ownership: { security: ['DoD-2-security'], correctness: ['PRD-*', 'DoD-1-requirements', 'DoD-6-adversarial-input', 'DOD-*'], design: ['DoD-3-ci', 'DoD-4-docs-observability', 'DoD-5-design'] } },
+    });
+    const { logs } = await run(root);
+    assert.match(logs.join('\n'), /done-bar: DOD\.md, 1 criteria/);
+    assert.equal(logs.join('\n').includes('no reviewer owns'), false);
+  });
+
+  it('refuses the run when the done-bar cannot be read', async () => {
+    // A done-bar that cannot be read is not a done-bar. Treating it as "no extra criteria" would
+    // ship a run the operator believes was held to a bar it never saw.
+    const root = repo({ dod: '**DOD-1** (unfalsifiable) — It feels premium. Observation: none.\n' });
+    const { code, logs } = await run(root);
+    assert.notEqual(code, 0);
+    assert.match(logs.join('\n'), /DOD-1 declares itself unfalsifiable/);
+    assert.equal(existsSync(path.join(root, '.meeseeks', 'briefs')), false, 'a builder ran on an unreadable done-bar');
+  });
+
+
+  it('hands the criteria to the builder, or the done-bar is a file nobody reads', async () => {
+    // The wiring, not the rendering. compileBrief has its own cases; this proves the criteria
+    // parsed in main reach the brief a builder is actually handed.
+    const root = repo({
+      dod: '**DOD-1** (panel-judgeable) — Errors say what to do next. Observation: a reviewer cites one that does not.\n',
+      config: { ownership: { security: ['DoD-2-security'], correctness: ['PRD-*', 'DoD-1-requirements', 'DoD-6-adversarial-input', 'DOD-*'], design: ['DoD-3-ci', 'DoD-4-docs-observability', 'DoD-5-design'] } },
+    });
+    await run(root);
+    const brief = firstBrief(root);
+    assert.match(brief, /## The operator done-bar/);
+    assert.match(brief, /- DOD-1 \(panel-judgeable\): Errors say what to do next/);
+    assert.match(brief, /You cannot mark them done yourself/);
+  });
+
+  it('runs normally when there is no done-bar, which is the ordinary case', async () => {
+    const root = repo({});
+    const { logs } = await run(root);
+    assert.equal(logs.join('\n').includes('done-bar:'), false);
   });
 });
