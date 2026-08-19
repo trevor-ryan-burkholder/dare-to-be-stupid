@@ -26,20 +26,13 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 
+import { operatorPath } from './operator-path.mjs';
+
 const separator = path.delimiter;
 
-/**
- * Entries npm injected, which the operator's shell would never have.
- *
- * @param {string} entry
- * @returns {boolean}
- */
-const injected = (entry) => entry.split(/[\\/]/).includes('node_modules');
-
-const cleaned = (process.env.PATH ?? '')
-  .split(separator)
-  .filter((entry) => entry !== '' && !injected(entry))
-  .join(separator);
+// One answer to "which `claude` would the driver use", shared with
+// `tools/plugin-install-check.mjs` — which resolved 2.1.136 under `npm run` before it had this.
+const cleaned = operatorPath(process.env.PATH, separator);
 
 const child = spawn(
   process.execPath,

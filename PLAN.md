@@ -4365,6 +4365,36 @@ broken snapshot.
 `CLAUDE.md` trap it exists for: a fix that appears not to work because the loader is still reading
 the previous build.
 
+**Extended to answer F27's and F28's installed-plugin clauses, offline.** The check now imports the
+**installed** `driver.mjs` and `claude-compat.mjs` and asks them directly, which is the one question
+`CLAUDE.md` says to ask before debugging anything else: a repair can be committed, pushed,
+reinstalled and reloaded while the loader keeps running the previous build, and every symptom is
+indistinguishable from a wrong fix.
+
+- **F27:** every phase policy in the *installed* copy produces its exact declared `--tools` set, the
+  oracle author gets `--tools ""`, the builder stays unrestricted, `--tools` precedes the variadic
+  `--allowedTools`, and `--strict-mcp-config` is present for every restricted role.
+- **The guard registration**, which `CLAUDE.md` names the invariant most likely to break: the
+  `--settings` blob in the argv a real child receives must carry the guard **by absolute path inside
+  this install**. Registering the hook in the manifest covers the operator's own sessions, and a
+  `claude -p` child does not load those — for eleven versions every builder ran unguarded while the
+  guard's unit tests stayed green.
+- **F28:** the installed policy is self-consistent (floor at or below ceiling, both bounds cited in
+  its own evidence), and the verdict for the CLI actually present is **reported rather than
+  enforced** — the operator is deliberately holding 2.1.235 outside the range, and failing on that
+  would turn their decision into a broken release check.
+
+**It caught a live shadowed binary on its first run, which is F28's own scenario.** Under `npm run`
+it resolved `~/dev/node_modules/.bin/claude` — **2.1.136**, the ancestor this repository records as
+having never heard of `--safe-mode` — and reported on an install *that* binary had performed. `npm
+run` prepends every ancestor `node_modules/.bin` to `PATH`. The live tier has been immune since
+13 August 2026 because `tools/run-live.mjs` strips those entries; the defect simply arrived in a new
+tool that did not know. `tools/operator-path.mjs` is now the single answer both use, unit-tested, with
+a structural case proving neither tool keeps a private copy — because the failure was never the
+logic, it was a second implementation nobody compared. The check also prints **which binary** it
+resolved, since F28 is explicit that a path plus a self-reported version is not sufficient identity,
+and a version with no path is less than that.
+
 **What this unblocks.** F25's remaining clause, and F27/F28/F29's canaries, now have an installed
 snapshot to attach to. Only F25's needs a model, and only for the *skill surface* question — the
 rest of what those findings ask about the installed plugin is answerable here for free.

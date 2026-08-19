@@ -37,6 +37,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
+import { operatorPath } from './operator-path.mjs';
 import { isShipped } from './release-check.mjs';
 
 const MARKETPLACE = 'meeseeks';
@@ -62,7 +63,7 @@ function run(command, args, options = {}) {
   try {
     return execFileSync(command, args, {
       cwd: options.cwd ?? process.cwd(),
-      env: /** @type {any} */ (options.env ?? process.env),
+      env: /** @type {any} */ (options.env ?? baseEnv),
       stdio: 'pipe',
       encoding: 'utf8',
       timeout: 300_000,
@@ -117,6 +118,16 @@ function filesUnder(root) {
   return found;
 }
 
+/**
+ * The environment every command here runs under, with npm's `node_modules/.bin` entries removed.
+ *
+ * **Measured the hard way: this check resolved 2.1.136 the first time it ran under `npm run`** — the
+ * ancestor binary this repository records as having never heard of `--safe-mode` — and then reported
+ * on an install that binary had performed. `tools/run-live.mjs` has repaired the same defect for the
+ * live tier since 13 August 2026; `operator-path.mjs` is now the one answer both use.
+ */
+const baseEnv = { ...process.env, PATH: operatorPath(process.env.PATH) };
+
 const keep = process.argv.includes('--keep');
 const repo = process.cwd();
 const settingsFile = path.join(os.homedir(), '.claude', 'settings.json');
@@ -127,7 +138,11 @@ const realBefore = digestOf(realRegistry);
 const head = run('git', ['rev-parse', 'HEAD']).trim();
 const declared = JSON.parse(readFileSync(path.join(repo, '.claude-plugin', 'plugin.json'), 'utf8')).version;
 const cli = run('claude', ['--version']).trim();
-say(`checking ${PLUGIN}@${MARKETPLACE} ${declared} at ${head.slice(0, 12)} against ${cli}`);
+// **Which binary, not just which version** (REVIEW F28: "path plus a self-reported version is not
+// sufficient identity" — and a version with no path is less than that). A shadowed `claude` is the
+// scenario the finding is about, and this check met one on its first run.
+const cliPath = run('sh', ['-c', 'command -v claude'], { allowFailure: true }).trim() || '(path unknown)';
+say(`checking ${PLUGIN}@${MARKETPLACE} ${declared} at ${head.slice(0, 12)} against ${cli} at ${cliPath}`);
 
 // A working tree that differs from HEAD is not a failure — but the install carries HEAD, so saying
 // which bytes were checked is the difference between evidence and a comforting number.
@@ -139,7 +154,7 @@ const configDir = path.join(scratch, 'config');
 const pluginRoot = path.join(configDir, 'plugins');
 const bare = path.join(scratch, 'candidate.git');
 /** @type {Record<string, string | undefined>} */
-const isolated = { ...process.env, CLAUDE_CONFIG_DIR: configDir };
+const isolated = { ...baseEnv, CLAUDE_CONFIG_DIR: configDir };
 
 try {
   mkdirSync(pluginRoot, { recursive: true });
@@ -260,6 +275,70 @@ try {
     refuse(`the installed guard allowed a write under .meeseeks/ from inside a run: ${JSON.stringify(verdict).slice(0, 300)}`);
   }
   say(`  guard ... the installed hook denied a write under .meeseeks/ from inside a run`);
+
+  // ---- the contracts the installed code carries (REVIEW F27, F28) ----------
+  //
+  // **This is the question `CLAUDE.md` says to ask before debugging anything else.** A repair can be
+  // committed, pushed, reinstalled and reloaded while the loader keeps running the previous build,
+  // and every symptom is indistinguishable from a wrong fix. Importing the *installed* modules and
+  // asking them directly is the only answer that cannot be fooled: these are the bytes a run uses.
+  const installedDriver = await import(`file://${path.join(record.installPath, 'scripts', 'driver.mjs')}`);
+  const installedCompat = await import(`file://${path.join(record.installPath, 'scripts', 'claude-compat.mjs')}`);
+
+  // F27: available tools are modelled apart from approved ones, in the installed copy.
+  for (const [phase, policy] of Object.entries(installedDriver.PHASE_PERMISSIONS)) {
+    const argv = installedDriver.claudeArgs({ model: 'm', phase });
+    const at = argv.indexOf('--tools');
+    if (policy.availableTools === null) {
+      if (at !== -1) refuse(`the installed ${phase} policy restricts a role that must stay unrestricted`);
+      continue;
+    }
+    if (at === -1) refuse(`the installed ${phase} policy passes no availability control`);
+    if (argv[at + 1] !== policy.availableTools.join(',')) {
+      refuse(`the installed ${phase} policy offers ${JSON.stringify(argv[at + 1])}, not its declared set`);
+    }
+    const approved = argv.indexOf('--allowedTools');
+    if (approved !== -1 && at > approved) refuse(`the installed ${phase} argv puts --tools after the variadic --allowedTools`);
+    if (!argv.includes('--strict-mcp-config')) refuse(`the installed ${phase} argv leaves the inherited MCP surface open`);
+  }
+  const authorArgv = installedDriver.claudeArgs({ model: 'm', phase: 'oracle-author' });
+  if (authorArgv[authorArgv.indexOf('--tools') + 1] !== '') {
+    refuse('the installed oracle author does not get the empty toolset that makes it held out');
+  }
+  say(`  role tools ... ${Object.keys(installedDriver.PHASE_PERMISSIONS).length} phase policies, oracle author at --tools ""`);
+
+  // The guard, carried in the argv a real child receives, expanded to *this install*. `CLAUDE.md`
+  // names this the invariant most likely to break: registering the hook in the manifest covers the
+  // operator's own sessions, and a `claude -p` child does not load those. For eleven versions every
+  // builder ran unguarded while the guard's unit tests stayed green.
+  const settingsAt = authorArgv.indexOf('--settings');
+  if (settingsAt === -1) refuse('the installed argv carries no --settings, so a child would run without the guard');
+  const childSettings = String(authorArgv[settingsAt + 1]);
+  if (!childSettings.includes(record.installPath)) {
+    refuse('the installed argv hands children a guard path outside the install, so the loaded copy is not the one guarding');
+  }
+  if (!childSettings.includes('guard.mjs')) refuse('the installed argv hands children no guard command');
+  say('  guard registration ... children receive the installed guard by absolute path');
+
+  // F28: the installed compatibility policy is self-consistent, and what it says about this host.
+  const floor = installedCompat.parseClaudeVersion(installedCompat.SUPPORTED_FLOOR);
+  const ceiling = installedCompat.parseClaudeVersion(installedCompat.VERIFIED_THROUGH);
+  if (floor === null || ceiling === null) refuse('the installed compatibility policy does not parse its own bounds');
+  if (installedCompat.compareVersions(floor, ceiling) > 0) {
+    refuse(`the installed policy floor ${installedCompat.SUPPORTED_FLOOR} is above its ceiling ${installedCompat.VERIFIED_THROUGH}`);
+  }
+  const cited = installedCompat.COMPATIBILITY_EVIDENCE.join('\n');
+  for (const bound of [installedCompat.SUPPORTED_FLOOR, installedCompat.VERIFIED_THROUGH]) {
+    if (!cited.includes(bound)) refuse(`the installed policy names ${bound} without citing evidence for it`);
+  }
+  // Reported, not enforced. Whether this host's CLI is inside the admitted range is a fact about
+  // the machine, and the operator may hold a ceiling deliberately — as they are holding 2.1.235.
+  // Failing here would turn their decision into a broken release check.
+  const hostVerdict = installedCompat.classifyClaudeVersion(cli);
+  say(
+    `  compatibility ... policy ${installedCompat.SUPPORTED_FLOOR}-${installedCompat.VERIFIED_THROUGH}; ` +
+      `this host's CLI is ${hostVerdict.ok ? 'inside it' : `OUTSIDE it — ${hostVerdict.reason}`}`,
+  );
 
   // ---- and the operator's own configuration --------------------------------
   if (digestOf(settingsFile) !== settingsBefore) refuse(`this check modified ${settingsFile}, which it must never do`);
