@@ -7406,21 +7406,44 @@ async function runInvocation(argv, io, crash) {
     /** @type {Set<string>} */
     const passing = new Set();
     /** @type {Set<string>} */
-    const nonPassing = new Set();
+    const failed = new Set();
+    /** @type {Set<string>} */
+    const skipped = new Set();
     for (const report of collected.contents) {
       try {
         for (const test of parseReport(report, { rootDir: dir }).tests) {
-          (test.status === 'passed' ? passing : nonPassing).add(test.id);
+          // **Three outcomes, not two** (REVIEW F17). This collapsed everything that was not
+          // `passed` into one set and handed it to `recordRedEvidence` as *observed failing* — so a
+          // **skipped** test was recorded as red evidence. That inverts the deterrent: a builder
+          // could write `it.skip`, let one gate run bank the id as "seen red", then un-skip it and
+          // collect ratchet credit for a test nothing ever watched fail. The same one entry also
+          // satisfies `suiteSensitivityEvidence`, whose `seenFailing.size > 0` branch is a **ship**
+          // gate — so a single skip could stand in for the proof that this suite can go red at all.
+          //
+          // `flaky` stays evidence, deliberately: a retried test really did fail on an attempt, and
+          // F30 already refuses to count it as *passing*. A skip is the one outcome that observed
+          // nothing.
+          if (test.status === 'passed') passing.add(test.id);
+          else if (test.status === 'skipped') skipped.add(test.id);
+          else failed.add(test.id);
         }
       } catch {
         // The ratchet reports this failure itself; the gate does not need to guess.
       }
     }
+    if (skipped.size > 0) {
+      write(
+        verbatim(
+          `${skipped.size} test(s) were skipped and earn no red evidence: a test nobody ran was not ` +
+            'observed failing',
+        ),
+      );
+    }
     // Passing ids are handed over too, because the first gating of a project has to record
     // what it found as a baseline: those tests have no "before" to have been red in.
     // `dir` is handed over so every observation is stamped with the bytes it was made under
     // (REVIEW F17). Without it the evidence records no digest, which later reads as unproven.
-    const red = freshness === null ? recordRedEvidence(treeStateDir, nonPassing, [...passing], dir) : null;
+    const red = freshness === null ? recordRedEvidence(treeStateDir, failed, [...passing], dir) : null;
     // **Which of these ids are still protected by the bytes that earned them** (REVIEW F17). A
     // changed defining file stops history vouching for its ids: they must be observed failing again
     // before they earn current credit. They stay in `passing` and are never a regression.

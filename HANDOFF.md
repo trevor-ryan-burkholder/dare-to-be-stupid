@@ -1,9 +1,11 @@
 # START HERE — current handoff, last swept 18 August 2026
 
-**State:** working-tree candidate `0.208.0` on `main`; the manifests and package-lock root metadata
-agree. HEAD is `f499059` (the 0.206.0 candidate). The candidate includes the documentation-system
-sweep and the code-review repairs recorded in PLAN items 100, 107, and 108. Deterministic validation
-of the complete 0.208.0 tree is recorded below.
+**State:** working-tree candidate `0.209.0` on `main`; the manifests and package-lock root metadata
+agree. HEAD is `52681df`, the committed and pushed 0.208.0 tree — the documentation-system sweep,
+the code-review repairs of PLAN items 100, 107 and 108, and the REVIEW re-baseline of item 109. The
+0.209.0 working-tree candidate on top of it is PLAN item 110: the installed-snapshot harness that
+F21 asked for, and the two evidence-quality repairs F15 and F17 turned out to still need.
+Deterministic validation of the complete tree is recorded below.
 
 ## Acceptance and next work
 
@@ -21,7 +23,10 @@ The newest candidate work is recorded at its canonical PLAN items:
 - item 107: Claude Code 2.1.235 was measured but not admitted after a 33-of-34 full-tier run; and
 - item 108: exact version-output parsing and fail-closed nesting-depth parsing; and
 - item 109: the re-baseline of every open `REVIEW.md` finding against this candidate, which closed
-  the last reproducible clauses of F2, F10, F17, F19, F26 and F41 and left the rest classified.
+  the last reproducible clauses of F2, F10, F17, F19, F26 and F41 and left the rest classified; and
+- item 110: F21's installed-snapshot harness, plus the two evidence leaks building it uncovered —
+  the oracle printing its own expected output into the builder's failure detail (F15), and a skipped
+  test being recorded as observed failing (F17).
 
 Do not reconstruct priority from release chronology. Read the current traversal at the top of
 `PLAN.md`, then the selected item and any linked `REVIEW.md` finding.

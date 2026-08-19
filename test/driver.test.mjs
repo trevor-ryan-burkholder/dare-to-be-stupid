@@ -5033,6 +5033,44 @@ describe('staticGates', () => {
     );
   });
 
+  it('records only genuinely failed tests as red evidence, never a skip (REVIEW F17)', () => {
+    // **A skipped test was being recorded as "observed failing".** `gateTree` collapsed everything
+    // that was not `passed` into one set and handed it to `recordRedEvidence`, so `it.skip` minted
+    // red evidence. That inverts the deterrent twice over: an id could be banked as seen-red while
+    // skipped, then un-skipped and credited by the ratchet without anything ever watching it fail —
+    // and the same single entry satisfies `suiteSensitivityEvidence`, whose `seenFailing.size > 0`
+    // branch is a **ship** gate. One `it.skip` could stand in for the proof that the suite can fail.
+    //
+    // Structural, for the reason the capability test below is: `gateTree` lives inside `main` and
+    // every unit path injects `gates`, so no behavioural test in this tier executes the real
+    // classification. The three-way split and the argument actually handed over are both asserted,
+    // because splitting the sets correctly and then passing the wrong one is exactly the shape of
+    // defect this file keeps finding.
+    const source = readFileSync(new URL('../scripts/driver.mjs', import.meta.url), 'utf8');
+
+    assert.equal(
+      source.includes("if (test.status === 'passed') passing.add(test.id);"),
+      true,
+      'the passing classification changed shape',
+    );
+    assert.equal(
+      source.includes("else if (test.status === 'skipped') skipped.add(test.id);"),
+      true,
+      'a skipped test is no longer separated from a failing one',
+    );
+    // The call that turns an observation into durable evidence must receive the failed set.
+    assert.match(
+      source,
+      /recordRedEvidence\(treeStateDir, failed, \[\.\.\.passing\], dir\)/,
+      'red evidence is recorded from something other than the genuinely failed set',
+    );
+    assert.equal(
+      /recordRedEvidence\(treeStateDir, nonPassing/.test(source),
+      false,
+      'the collapsed non-passing set is still being recorded as red evidence',
+    );
+  });
+
   it('passes capabilities at every call site in the driver, not just where a test can reach', () => {
     // The functions above are unit-testable; the wiring is not. `gateTree` lives inside `main`
     // and `driveRun` receives `gates` as an injected effect, so no unit test executes the real

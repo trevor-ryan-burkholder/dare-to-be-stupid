@@ -2471,7 +2471,7 @@ tracked/untracked/symlink semantics cover the candidate boundary exactly.
 untracked, deleted, or symlink bytes into the passing commit; races/components still receive fresh
 main-tree verification; and the exact reproduction in REVIEW F14 cannot ship.
 
-### 69. Decide and enforce the Oracle confidentiality claim — OPEN (REVIEW F15)
+### 69. Decide and enforce the Oracle confidentiality claim — IMPLEMENTED (0.209.0 candidate, item 110): the claim is narrowed, the answer-key leak that made the narrowed claim false is closed, and both are pinned. REVIEW F15 open pending Codex
 
 **Problem solved:** Builder can read the exact `oracle.json` cases despite “held-out” language.
 
@@ -2736,7 +2736,7 @@ to the definition digest receiving current credit.
 reporters; spaces, Unicode, whitespace, and platform separators remain stable for valid neighbors;
 and a clean-clone integration case proves every credited test definition is present in-repository.
 
-### 75. Validate the real installed plugin snapshot before release — OPEN (REVIEW F21)
+### 75. Validate the real installed plugin snapshot before release — PARTIAL (0.209.0 candidate, item 110): the snapshot harness and its offline proofs landed; the paid loader canary is built and unrun. REVIEW F21 open
 
 **Problem solved:** source-tree shape and version history can pass while the Claude loader's cached
 snapshot is absent, stale, incomplete, or differently interpreted.
@@ -4228,6 +4228,102 @@ detection does not escalate.
 residual gaps are test-coverage and a stale ledger row, not code), F5, F21, F22, F25, F27, F28, F29
 (reproducible or evidence-blocked, each needing either a paid live canary — withheld this session by
 operator instruction — or a slice of its own).
+
+### 110. The installed-snapshot harness, and two evidence leaks it uncovered — IMPLEMENTED (0.209.0 candidate)
+
+**F21's machinery, built because four other findings were queued behind it.** F25's withheld
+command, F27's role tools, F28's compatibility floor and F29's reviewer isolation each end in a
+canary against the *installed* plugin, and none could be written while nothing could produce an
+installed plugin to point at.
+
+**What a loader actually reads, measured rather than assumed.** `installed_plugins.json` records an
+`installPath` of `cache/<marketplace>/<plugin>/<version>/` and pins a `gitCommitSha` beside it — so
+every gate in this repository can be green about bytes no loader will ever open. The redirect that
+makes a disposable snapshot possible is **`claude --plugin-dir <path>`**, verified live on 2.1.235:
+a staged copy of this repository loaded and answered for about a tenth of a cent, with nothing
+installed and `~/.claude/plugins` untouched.
+
+`tools/plugin-snapshot.mjs` stages the shipped surface into a disposable directory and verifies the
+copy by re-hashing it. **The surface comes from `isShipped`**, the same predicate `release-check`
+uses, so adding a shipped directory extends the snapshot automatically rather than silently leaving
+it behind — the enumeration defect, refused positionally. Tier 2 proves the snapshot is the
+candidate byte for byte and detects a changed file, a missing file and a stale leftover; tier 3
+(`test/live/plugin-loader.live.test.mjs`) asks a real loader to accept it and carries **F25's second
+acceptance clause**: whether the loader withholds `/meeseeks` from the model's own skill surface.
+
+**This is the staging half, and it is deliberately not all of F21.** `--plugin-dir` is a
+*session-only inline load*: it reports `Source: meeseeks@inline` and produces no
+`installed_plugins.json`, no `installPath`, no version-keyed cache directory and no `gitCommitSha`.
+It cannot prove that `meeseeks@meeseeks` **resolves** to the candidate version and commit, which is
+the clause F21 turns on, so item 75 stays `PARTIAL` rather than being claimed closed.
+
+**The live canary is built and deliberately not run.** It spends money, and the operator withheld
+paid runs for this session. It skips cleanly unarmed. One `MEESEEKS_LIVE=1` run closes F25's
+remaining clause and gives F27, F28 and F29 somewhere to attach.
+
+**The argv trap is still live and bit again while writing it.** A prompt passed as an argument after
+`--tools` is swallowed as a tool name; the child died with *"Input must be provided either through
+stdin or as a prompt argument"*. The canary puts the prompt on stdin, as the driver does.
+
+**F15 — the held-out oracle was handing back its own answer key.** The either/or is settled by
+narrowing the claim, not by enforcement: a builder runs with `--dangerously-skip-permissions` and
+arbitrary Bash, so a hook that denied the `Read` tool on `.meeseeks/oracle.json` is defeated by
+`node -e`, a test file or `base64`, and a defeatable block documented as a guarantee is worse than
+none. What is enforced is **integrity** — §6's positional rule means the builder cannot write under
+`.meeseeks/` — and `DESIGN.md` §4.6 already states the narrowed guarantee precisely.
+
+But the narrowed sentence was **false**, and that is the repair. "Held out means *not supplied*", and
+`judgeOracleCase` printed the expected stdout verbatim into its failure detail — which becomes the
+builder's objective. The one artifact authored from the PRD before any code exists handed its answer
+straight back to the thing it judges, the moment that thing got it wrong: satisficing with the answer
+sheet face up. The detail now names the case, that stdout is what differs, the builder's own output
+and the *size* of what is missing, so it stays repairable without being an answer key. Exit-code
+mismatches are unchanged — an exit code is not an answer — and relation verdicts are unchanged,
+because they compare the program against itself. A test pins the narrowed claim in both `DESIGN.md`
+and the module, so a later edit cannot quietly upgrade "discipline" back into "barrier".
+
+**F17 — a skipped test was being recorded as observed failing.** `gateTree` collapsed everything that
+was not `passed` into one set and handed it to `recordRedEvidence`, so `it.skip` minted red evidence.
+That inverts the deterrent twice: an id could be banked as seen-red while skipped, then un-skipped
+and credited by the ratchet with nothing ever having watched it fail — and the same single entry
+satisfies `suiteSensitivityEvidence`, whose `seenFailing.size > 0` branch is a **ship** gate. One
+skip could stand in for the proof that the suite can fail at all. Three-way classification now:
+`flaky` stays evidence, because a retried test really did fail on an attempt, and a skip is the one
+outcome that observed nothing.
+
+**A proposal was killed on the way, and the record is the point.** The obvious closure for F17's last
+clause was to definition-scope `suiteSensitivityEvidence`. An adversarial trace refused it: it aims
+at the wrong quantifier, it is defeated by a single `it.skip`, and its failure mode is an
+unsatisfiable objective on an honest formatter run. The skip defect it surfaced instead is smaller,
+strictly correct, and closes the same hole from underneath.
+
+**The ground for the remaining half is measured, so the next slice does not have to guess.**
+
+- **`CLAUDE_CONFIG_DIR` is the complete redirect**, and the only sufficient one. `CLAUDE_CODE_PLUGIN_CACHE_DIR`
+  moves the plugin root alone — but `claude plugin marketplace add` writes `extraKnownMarketplaces`
+  into the *user settings file*, which that variable does not govern. Measured the hard way: a
+  dispatched agent's probe wrote a `meeseeks` entry into the operator's real `~/.claude/settings.json`
+  and reverted it. **Verified restored** — md5 `8f197d90c0e71dbb107501d8d30e7fd9`, `meeseeks` absent,
+  six marketplaces as before. Any future harness sets `CLAUDE_CONFIG_DIR` and nothing else.
+- **`gitCommitSha` appears only for a git-sourced marketplace.** A local path is classified
+  `source: "directory"` even when it is a git repository, and `file://` is rejected outright. Writing
+  `known_marketplaces.json` directly into the disposable root with a `git` source pointing at a local
+  **bare** repo clones offline, yields the sha, and bypasses the settings mutation entirely. Whole
+  install: about six seconds.
+- **Three false-green surfaces, and they are the reason this needs care.** With the cache directory
+  renamed away, `plugin list` still reported the plugin healthy — it was reading the *marketplace
+  clone*. With `hooks/guard.mjs` deleted from the cache, the loader still reported `Hooks (1)`: it
+  never checks that a hook command's file exists. And `claude plugin validate` validates the
+  **marketplace** manifest when one is present and never opens `plugin.json`. A canary built the
+  obvious way passes on a broken snapshot.
+- **`NODE_V8_COVERAGE` is a zero-spend resolution proof.** Importing the installed `driver.mjs` under
+  it recorded **40 script URLs, every one under the cache root and none from the source checkout** —
+  which is F21's "prove no source-checkout path is used", with no API call. The import graph is
+  entirely static, so the closure is real. The paid canary is for *skill surface*, not for this.
+
+**Evidence.** Six tier-2 cases on the snapshot, four tier-1 cases on the answer-key leak, four on the
+narrowed claim, one structural case on the three-way classification. Every one red-proven against
+its reverted body. Tier 3 built and unrun.
 
 ## Observations recorded rather than repaired
 

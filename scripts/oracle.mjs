@@ -327,9 +327,24 @@ export function judgeOracleCase(expected, actual) {
     return { ok: false, detail: `${expected.id}: expected exit ${expected.expectExit}, got ${actual.status}` };
   }
   if (expected.expectStdout !== null && actual.stdout.trimEnd() !== expected.expectStdout.trimEnd()) {
+    // **The detail must not print the answer** (REVIEW F15). This used to emit the expected stdout
+    // verbatim, and the detail becomes the builder's objective — so the one artifact authored before
+    // any code exists, from the PRD alone, handed its expected output straight back to the thing it
+    // judges the moment that thing got it wrong. "Held out means *not supplied*" was false on
+    // exactly the channel the phrase names, and a builder could satisfy the gate by copying the key
+    // out of its own failure message without ever reading the specification.
+    //
+    // What is reported instead is everything the builder legitimately needs to repair: which case,
+    // that stdout is what differs, its own output, and the size of the value it is missing. The
+    // correct value has to come from the PRD, which is the entire reason this gate exists.
+    const produced = actual.stdout.trimEnd();
     return {
       ok: false,
-      detail: `${expected.id}: stdout differs. expected ${JSON.stringify(expected.expectStdout.trimEnd().slice(0, 200))}, got ${JSON.stringify(actual.stdout.trimEnd().slice(0, 200))}`,
+      detail:
+        `${expected.id}: stdout differs from the held-out expectation. Produced ` +
+        `${JSON.stringify(produced.slice(0, 200))} (${produced.length}b) where ` +
+        `${expected.expectStdout.trimEnd().length}b were expected. The expected value is not shown: ` +
+        'derive it from the requirement this case cites.',
     };
   }
   return { ok: true, detail: `${expected.id}: as expected` };

@@ -553,3 +553,112 @@ describe('the store is written atomically and archived with its run', () => {
     assert.equal(stanza.includes('!.meeseeks/oracle-scratch'), false, stanza);
   });
 });
+
+describe('a failing case does not hand back the answer (REVIEW F15)', () => {
+  // **The leak that made "held out means not supplied" false.** `judgeOracleCase`'s detail becomes
+  // the builder's objective, and it used to print `expected "..."` verbatim — so the one artifact
+  // authored from the PRD before any code exists handed its expected output straight back to the
+  // thing it judges, the moment that thing got it wrong. A builder could satisfy the gate by copying
+  // the key out of its own failure message without ever reading the specification, which is
+  // satisficing with the answer sheet face up.
+
+  /** @type {any} */
+  const failing = { id: 'O-1', argv: ['x'], expectExit: null, expectStdout: 'the-secret-answer-42', relation: null, why: 'PRD-1.1' };
+
+  it('never prints the expected stdout', () => {
+    const verdict = judgeOracleCase(failing, { status: 0, stdout: 'wrong output' });
+
+    assert.equal(verdict.ok, false);
+    assert.equal(
+      verdict.detail.includes('the-secret-answer-42'),
+      false,
+      `the oracle handed back its own answer key: ${verdict.detail}`,
+    );
+  });
+
+  it('still says which case failed and what the builder produced, so it stays repairable', () => {
+    // The neighbour, and it is the one that matters: a gate that reports nothing usable is the
+    // unsatisfiable-gate defect this repository keeps rediscovering. The builder gets the case id,
+    // the fact that stdout is what differs, its own bytes, and the size of what it is missing.
+    const verdict = judgeOracleCase(failing, { status: 0, stdout: 'wrong output' });
+
+    assert.equal(verdict.detail.includes('O-1'), true, verdict.detail);
+    assert.equal(verdict.detail.includes('wrong output'), true, verdict.detail);
+    assert.equal(verdict.detail.includes('20b were expected'), true, verdict.detail);
+    assert.equal(verdict.detail.includes('derive it from the requirement'), true, verdict.detail);
+  });
+
+  it('reports an exit-code mismatch in full, because an exit code is not an answer key', () => {
+    // Deliberately unchanged. `expected exit 2, got 0` reveals nothing a reader of the PRD does not
+    // already have, and withholding it would cost repairability for no confidentiality at all.
+    const verdict = judgeOracleCase(
+      { .../** @type {any} */ (failing), expectExit: 2, expectStdout: null },
+      { status: 0, stdout: '' },
+    );
+
+    assert.equal(verdict.detail, 'O-1: expected exit 2, got 0');
+  });
+
+  it('leaves a relation verdict alone, because it compares the program against itself', () => {
+    // `same-stdout` prints the builder's own two outputs. There is no held-out value in a relation
+    // — that is what makes relations survivable when the specification does not fix a format.
+    const verdict = judgeOracleRelation('O-2', /** @type {any} */ ({ kind: 'same-stdout' }), { status: 0, stdout: 'a' }, { status: 0, stdout: 'b' });
+
+    assert.equal(verdict.ok, false);
+    assert.equal(verdict.detail.includes('"a"'), true, verdict.detail);
+    assert.equal(verdict.detail.includes('"b"'), true, verdict.detail);
+  });
+});
+
+describe('the oracle claims exactly what it can deliver (REVIEW F15)', () => {
+  // **F15 offers an either/or: enforce confidentiality, or narrow the claim.** Enforcement is not
+  // available. The builder runs with `--dangerously-skip-permissions` and arbitrary Bash, so a hook
+  // that denied the `Read` tool on `.meeseeks/oracle.json` would be defeated by `node -e`, by a
+  // test file, by `base64`, by `python3 -c` — and a defeatable block documented as a guarantee is
+  // strictly worse than no block, because somebody would then rely on it. What *is* enforced is
+  // **integrity**: §6's positional rule means the builder cannot write anywhere under `.meeseeks/`,
+  // so the cases cannot be tampered with even though they can be read.
+  //
+  // So the claim is narrowed, and these pin the narrowing. `scripts/oracle.mjs` and `DESIGN.md` §4.6
+  // both already say it; nothing stopped a later edit quietly upgrading "discipline" back into
+  // "barrier", which is how a false guarantee gets born. Now something does.
+
+  const design = readFileSync(new URL('../DESIGN.md', import.meta.url), 'utf8');
+  const module = readFileSync(new URL('../scripts/oracle.mjs', import.meta.url), 'utf8');
+
+  it('states in the module that a builder can read the store', () => {
+    assert.match(module, /a builder executing arbitrary code can read the file/i);
+    assert.match(module, /discipline\*?\*?, not a barrier/i);
+  });
+
+  it('states the same limit in the specification, not only in the code', () => {
+    // A reader reaches `DESIGN.md` first, and it is the normative document. A guarantee that is
+    // narrowed only in a source comment is still being claimed by the specification.
+    assert.match(design, /Held out means \*not supplied\*/);
+    assert.match(design, /a builder executing arbitrary code can read/i);
+    assert.match(design, /discipline, not a barrier/i);
+  });
+
+  it('never claims the builder is prevented from reading the cases', () => {
+    // The sentence shapes that would be false. Asserted as absences because the repair is a
+    // narrowing, and a narrowing is what a later edit undoes without noticing.
+    for (const overclaim of [
+      /oracle[^.\n]{0,60}\bcannot be read by\b/i,
+      /builder[^.\n]{0,60}\bcannot read\b[^.\n]{0,40}oracle/i,
+      /oracle[^.\n]{0,60}\bconfidential from\b/i,
+      /oracle[^.\n]{0,60}\bhidden from the builder\b/i,
+    ]) {
+      assert.equal(overclaim.test(design), false, `DESIGN.md claims oracle confidentiality: ${overclaim}`);
+      assert.equal(overclaim.test(module), false, `scripts/oracle.mjs claims oracle confidentiality: ${overclaim}`);
+    }
+  });
+
+  it('keeps the integrity half, which is the part that is actually enforced', () => {
+    // Not a doc-only finding: the guarantee that survives is positional and real. The store lives
+    // under `.meeseeks/`, and the guard refuses every write there from inside a run.
+    assert.match(design, /driver-owned/i);
+    assert.match(module, /The cases live under `\.meeseeks\/`/, 'the module no longer says where the store lives');
+    const guard = readFileSync(new URL('../hooks/guard.mjs', import.meta.url), 'utf8');
+    assert.match(guard, /\.meeseeks/, 'the guard no longer mentions the state directory it protects');
+  });
+});
