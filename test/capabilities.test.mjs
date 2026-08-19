@@ -707,4 +707,93 @@ describe('a capability this run established does not lapse with its marker (REVI
     );
     assert.deepStrictEqual(establishedCapabilities(meeseeksDir), ['web-ui', 'cli']);
   });
+
+  // ---------------------------------------------------------------------------
+  // Parseable is not readable, and absence is only honest once (REVIEW F13, reopened again)
+  // ---------------------------------------------------------------------------
+
+  for (const [label, body] of [
+    ['null', 'null'],
+    ['an array', '[]'],
+    ['a populated array', '["web-ui"]'],
+    ['a string', '"damaged"'],
+    ['a number', '42'],
+    ['a boolean', 'true'],
+  ]) {
+    it(`refuses a manifest that parsed as ${label}, which is damage and not a legacy record`, () => {
+      // **All six were `[]` before this.** The reader coerced any non-object to `{}`, which then took
+      // the legacy no-`capabilities`-field exception — so four spellings of a damaged file answered
+      // "nothing established", and a detected-only capability whose marker had also gone lost its
+      // gate with no record that the roster ever contained it.
+      const meeseeksDir = path.join(makeProject(), '.meeseeks');
+      mkdirSync(meeseeksDir, { recursive: true });
+      writeFileSync(path.join(meeseeksDir, CAPABILITY_MANIFEST), body, 'utf8');
+      assert.throws(() => establishedCapabilities(meeseeksDir), CapabilityError, body);
+    });
+  }
+
+  it('keeps the legacy exception for the shape it was written for', () => {
+    // The neighbour that keeps the refusal from being "refuse everything unfamiliar". A pre-0.190.0
+    // manifest is an *object* without the field, and upgrading into one must not fail a run.
+    const meeseeksDir = path.join(makeProject(), '.meeseeks');
+    mkdirSync(meeseeksDir, { recursive: true });
+    writeFileSync(path.join(meeseeksDir, CAPABILITY_MANIFEST), JSON.stringify({ declared: [], detected: {} }), 'utf8');
+    assert.deepStrictEqual(establishedCapabilities(meeseeksDir), []);
+  });
+
+  it('refuses a manifest that is gone after this run wrote one', () => {
+    // The other half: production writes the manifest on the first resolution and reads it every
+    // iteration after, so from the second call onward an absent file is *loss*. It answered `[]`,
+    // which is the same silent disarm by a different route — and the route is reachable, because the
+    // guard hook denies tool writes under `.meeseeks/` and not a process outside that boundary.
+    const meeseeksDir = path.join(makeProject(), '.meeseeks');
+    mkdirSync(meeseeksDir, { recursive: true });
+    assert.throws(
+      () => establishedCapabilities(meeseeksDir, { expected: true }),
+      (/** @type {unknown} */ error) => {
+        assert.equal(error instanceof CapabilityError, true);
+        assert.equal(/** @type {Error} */ (error).message.includes('is gone, and this run wrote it'), true);
+        return true;
+      },
+    );
+  });
+
+  it('still treats an absent manifest as the first iteration when nothing has been written', () => {
+    // The neighbour, and it is load-bearing: every run's first resolution finds no manifest, so a
+    // reader that refused on absence outright would fail every run at its first gate.
+    const meeseeksDir = path.join(makeProject(), '.meeseeks');
+    assert.deepStrictEqual(establishedCapabilities(meeseeksDir, { expected: false }), []);
+    assert.deepStrictEqual(establishedCapabilities(meeseeksDir), []);
+  });
+
+  it('reads a manifest that is present, whether or not the caller expected one', () => {
+    const meeseeksDir = path.join(makeProject(), '.meeseeks');
+    writeCapabilityManifest(
+      meeseeksDir,
+      resolveCapabilities({ root: makeProject(), declared: ['cli'], detected: { 'web-ui': 'dependency react' } }),
+    );
+    assert.deepStrictEqual(establishedCapabilities(meeseeksDir, { expected: true }), ['web-ui', 'cli']);
+  });
+});
+
+describe('the driver expects its own manifest back after it writes one (REVIEW F13, reopened again)', () => {
+  // **Positional, because the flag lives in a closure no test can hold.** `runCapabilities` rewrites
+  // the manifest every call, so the second call onward must pass `expected: true` — and a call site
+  // that kept the old one-argument form would satisfy every unit test above while restoring exactly
+  // the silent disarm they exist to prevent.
+  const source = readFileSync(new URL('../scripts/driver.mjs', import.meta.url), 'utf8');
+
+  it('passes its own write-state into the reader', () => {
+    assert.equal(
+      source.includes('establishedCapabilities(meeseeksDir, { expected: capabilityManifestWritten })'),
+      true,
+      'the driver reads the manifest without saying whether it wrote one',
+    );
+  });
+
+  it('sets that state only after the write, not before it', () => {
+    const write = source.indexOf('writeCapabilityManifest(meeseeksDir, resolved);');
+    const set = source.indexOf('capabilityManifestWritten = true;');
+    assert.equal(write >= 0 && set > write, true, 'the flag is set before the manifest exists');
+  });
 });

@@ -7313,6 +7313,11 @@ async function runInvocation(argv, io, crash) {
    */
   /** Capabilities already named as lapsed, so the announcement is made once rather than every gate run. */
   const announcedLapses = new Set();
+  // **Whether this run has written the manifest yet** (REVIEW F13, reopened). Held here, in the
+  // Driver's own memory, because it is the one place a target cannot reach: the guard denies writes
+  // under `.meeseeks/`, but a process outside the tool boundary can still delete the file, and an
+  // absent manifest on the first call is honest while an absent one afterwards is lost evidence.
+  let capabilityManifestWritten = false;
   const runCapabilities = () => {
     // **Monotonic, and loud when it has to be** (REVIEW F13). The set unions the architect's fixed
     // declaration, the current detection, and everything this run already established — so a
@@ -7320,9 +7325,10 @@ async function runInvocation(argv, io, crash) {
     const resolved = resolveCapabilities({
       root: cwd,
       declared: declaredCapabilities,
-      established: establishedCapabilities(meeseeksDir),
+      established: establishedCapabilities(meeseeksDir, { expected: capabilityManifestWritten }),
     });
     writeCapabilityManifest(meeseeksDir, resolved);
+    capabilityManifestWritten = true;
     for (const capability of resolved.lapsed) {
       if (announcedLapses.has(capability)) continue;
       announcedLapses.add(capability);

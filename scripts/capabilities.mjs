@@ -529,13 +529,35 @@ export function writeCapabilityManifest(meeseeksDir, resolved) {
  * is not evidence that it established nothing. The same distinction the run lock draws between a
  * missing lock and an unparseable one, and for the same reason.
  *
+ * **Parseable is not readable, and absence is only honest once** (REVIEW F13, reopened again).
+ * Refusing on a `JSON.parse` throw left two ways through. Valid JSON of the wrong top-level type —
+ * `null`, `[]`, `"damaged"`, `42` — was coerced to `{}`, took the legacy no-`capabilities`-field
+ * exception, and answered `[]`: four spellings of damage that read as an honest empty record. And
+ * *deleting* the file answered `[]` too, although production writes it on the first resolution and
+ * reads it every iteration after, so from the second call onward its absence is loss rather than a
+ * first call. `expected` is the caller's own knowledge of having written it — held in the Driver's
+ * memory for the life of the run, where nothing in the target can reach it.
+ *
+ * The legacy exception survives only for what it was written for: an **object** with no
+ * `capabilities` field, which is what builds before 0.190.0 wrote.
+ *
  * @param {string} meeseeksDir
+ * @param {{ expected?: boolean }} [options] `expected` is true once this run has written the
+ *   manifest, which makes a later absence loss rather than a first call
  * @returns {Capability[]}
- * @throws {CapabilityError} when the manifest exists and cannot be read
+ * @throws {CapabilityError} when the manifest cannot be read, or is missing after being written
  */
-export function establishedCapabilities(meeseeksDir) {
+export function establishedCapabilities(meeseeksDir, options = {}) {
   const file = path.join(meeseeksDir, CAPABILITY_MANIFEST);
-  if (!existsSync(file)) return [];
+  if (!existsSync(file)) {
+    if (options.expected !== true) return [];
+    throw new CapabilityError(
+      `${file} is gone, and this run wrote it. It records the capabilities already established, so its ` +
+        'disappearance is lost evidence rather than an empty record — and treating it as empty would disarm ' +
+        'exactly the gate a builder would want gone. Nothing inside a run may remove it; the guard hook denies ' +
+        'every write under .meeseeks/, so a process outside the tool boundary took it.',
+    );
+  }
   /** @type {unknown} */
   let parsed;
   try {
@@ -548,7 +570,14 @@ export function establishedCapabilities(meeseeksDir) {
       { cause: error },
     );
   }
-  const record = parsed === null || typeof parsed !== 'object' ? {} : /** @type {Record<string, unknown>} */ (parsed);
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new CapabilityError(
+      `${file} parsed as ${Array.isArray(parsed) ? 'an array' : JSON.stringify(parsed)}, which is not a capability ` +
+        'manifest. Valid JSON of the wrong shape is damage, not a legacy record: the pre-0.190.0 manifests this ' +
+        'reader still accepts are objects, and coercing anything else to an empty one disarms a gate silently.',
+    );
+  }
+  const record = /** @type {Record<string, unknown>} */ (parsed);
   // A manifest with no `capabilities` field at all predates 0.190.0 and honestly established
   // nothing under this rule; a field that is present and malformed is damage and is refused.
   if (!('capabilities' in record)) return [];

@@ -2375,7 +2375,7 @@ start a deliberately revised objective; it is never an ordinary Builder edit.
 starts new Oracle/review evidence; non-authoritative product documentation remains editable; and
 the digest is checked at the role and terminal boundaries in REVIEW F12.
 
-### 67. Prevent silent deterministic-gate roster shrink — IMPLEMENTED (0.190.0, reopened and repaired at 0.198.0); REVIEW F13 open pending Codex
+### 67. Prevent silent deterministic-gate roster shrink — IMPLEMENTED (0.190.0, reopened and repaired at 0.198.0; the reader's remaining holes closed at 0.217.0, item 119); REVIEW F13 open pending Codex
 
 **Problem solved:** the legacy `frontendOnly` predicate can remove a quality gate when current-tree
 markers disappear, bypassing the run's fixed declared capability set.
@@ -4773,6 +4773,33 @@ where the substitution is present for the whole of a child call and reverted bef
 run completes, the drift check says nothing, and the captured digest still matches. That case exists
 to pin what the before/after comparison *is* — a closure of persistent replacement — so nobody later
 mistakes it for a defence against a document that is correct whenever anyone looks.
+
+### 119. Parseable is not readable, and absence is only honest once — IMPLEMENTED (0.217.0); REVIEW F13 open pending Codex
+
+**F13's third pass, and both holes are in the same reader.** Item 67 made the capability set
+monotonic and item 109's repair made an unparseable manifest throw. `establishedCapabilities` still
+answered `[]` — "this run established nothing" — for two reachable shapes, and each answer disarms
+whatever deterministic gate the run had already agreed applied.
+
+**Valid JSON of the wrong type.** Anything that was not an object was coerced to `{}`, which then
+took the legacy no-`capabilities`-field exception. Codex measured `null`, `[]`, `"damaged"` and `42`;
+`["web-ui"]` and `true` are the same hole. All six are refused now, and the legacy exception is
+narrowed to what it was written for: an **object** with no `capabilities` key, which is what builds
+before 0.190.0 wrote. Upgrading into one still succeeds, which is the neighbour.
+
+**A manifest deleted after this run wrote one.** Production writes it on the first resolution and
+reads it every iteration after, so from the second call onward absence is *loss*. It read as a first
+call. `expected` carries the caller's own knowledge of having written it, held in the Driver's memory
+for the life of the run — the one place a target cannot reach, since the guard denies tool writes
+under `.meeseeks/` but not a process outside that boundary. First-call absence still yields `[]`,
+because a reader that refused on absence outright would fail every run at its first gate.
+
+**Evidence.** Six refusal cases parameterised over the wrong-type shapes, the narrowed legacy
+neighbour, the deleted-after-write refusal with its message asserted, and two neighbours proving an
+unexpected absence and a present manifest still read correctly. Eight go red with either half
+reverted. Two positional cases hold the wiring, because the flag lives in a closure no unit test can
+reach: the Driver must pass its own write-state into the reader, and must set that state *after* the
+write rather than before it.
 
 ## Observations recorded rather than repaired
 

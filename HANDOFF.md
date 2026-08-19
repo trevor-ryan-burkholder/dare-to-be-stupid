@@ -1,7 +1,7 @@
 # START HERE — current handoff, last swept 19 August 2026
 
-**State:** working-tree candidate `0.216.0` on `main`; the manifests and package-lock root metadata
-agree. HEAD is `97a831a`, the committed 0.215.0 tree — the documentation-system sweep,
+**State:** working-tree candidate `0.217.0` on `main`; the manifests and package-lock root metadata
+agree. HEAD is `fa76659`, the committed 0.216.0 tree — the documentation-system sweep,
 the code-review repairs of PLAN items 100, 107 and 108, and the REVIEW re-baseline of item 109. The
 0.209.0 working-tree candidate on top of it is PLAN item 110: the installed-snapshot harness that
 F21 asked for, and the two evidence-quality repairs F15 and F17 turned out to still need.
@@ -33,6 +33,8 @@ The newest candidate work is recorded at its canonical PLAN items:
 - item 112: the acceptance receipt — a typed, versioned claim bound to the reviewed tree, written at
   the terminal transition, recording the gate roster and results, the panel and ratchet edges, and
   each role invocation's requested *and* vendor-observed model; and
+- item 119: F13's remaining reader holes — valid JSON of the wrong top-level type, and a manifest
+  deleted after this run wrote one, both used to read as "nothing established" and disarm a gate;
 - item 118: F12's transient window — the Panel and the circuit-breaker are handed the canonical
   specification bytes instead of a path to a file the Builder can rewrite while they read it;
 - item 117: the Driver half of F42, and the load-bearing one — nesting permission is a one-time
