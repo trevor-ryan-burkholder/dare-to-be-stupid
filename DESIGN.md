@@ -267,7 +267,12 @@ aware of a script path; direct script entry is an unsupported operator/developme
 field. REVIEW F25 / PLAN item 80 remain open for the installed-loader canary, without claiming the
 broader wall.
 
-**An ERD, when supplied, is checked against the PRD before the run starts.** The ERD refines the
+**An ERD, when supplied, is checked against the PRD once the run has both of them.** Not in
+`runPreflight`, which `meeseeks init` runs before a PRD exists, and not in `revalidateLaunch`, which
+runs before the specification is captured and — in improve mode — before it has been authored at
+all. An ERD checked in either place would be checked against nothing. It is checked immediately
+after `captureSpecification`, which is still a refusal of the *run*: no builder has been spawned and
+nothing has been written to the target. The ERD refines the
 specification and never competes with it: the PRD stays source of truth for behaviour while the ERD
 constrains schema shape, so an entity that appears only in the diagram is the diagram inventing a
 requirement. That is refused at the door, because you do not build against an inconsistent
@@ -2163,8 +2168,9 @@ meeseeks/
 │   ├── evidence.mjs              # resolves reviewer citations against the reviewed tree (§4)
 │   ├── specification.mjs         # .meeseeks/specification.json: the revision a run is held to (§4)
 │   ├── reports.mjs               # per-attempt test-report freshness (§4)
-│   ├── preflight.mjs             # the fourteen checks run before a run starts (§3.5)
+│   ├── preflight.mjs             # the thirteen checks run before a run starts (§3.5)
 │   ├── erd.mjs                   # reads a Mermaid erDiagram into entities, keys and relationships
+│   ├── schema.mjs                # schema-conformance: the live schema against the declared one (§3.6.1)
 │   ├── question.mjs              # .meeseeks/question.json: the decision a non-SHIPPED run leaves (§8.3)
 │   ├── launch.mjs                # .meeseeks/launch.json: the driver's own launch observation
 │   │                             #   and each pre-loop phase's declared output contract (§3.5)
@@ -2831,6 +2837,7 @@ group, so an operator-kill can still leak it (`PLAN.md` item 2's residual).
 | `extraGates` | `[]` | `{ name, command }` checks this project considers gating that no toolchain knows about. Run every iteration, required, listed in the brief as `operator:<name>`. Declared rather than detected, and declared *here* — `.meeseeks/` is positionally protected (§6), so a builder cannot delete a gate that constrains it |
 | `childEnvAllow` | `[]` | names of environment variables a target's tooling needs that the child keep-list would otherwise drop (§6.1, REVIEW F5). **Names, never values** — the value is read from the operator's environment at spawn time, so nothing secret enters a config file, a receipt or a log. It may not name a Driver-owned marker, and `childEnvironment` refuses one that does |
 | `erd` | `''` | where a Mermaid `erDiagram` lives, when it is not the conventional `ERD.md` beside the PRD (§3.5, item 47). Empty means the convention; an absent file means there is no ERD, which gates nothing |
+| `schemaIntrospect` | `[]` | argv that prints the live schema as JSON for `schema-conformance` (§3.6.1, item 47). Empty means the gate does not arm. Operator configuration on purpose: a builder supplying this would describe the schema it is judged on, and the gate would confirm its own input |
 | `components` | `[]` | `{ name, dir, spec }` sub-runs executed as whole nested drivers in worktrees before the loop (§2, Phase 1c). The config declares *what* the components are; only `--give-them-the-box` on the command line permits them to run — configured components without the flag refuse the run before any child is paid for. `name` is kebab-case (it becomes branch and worktree names), `dir` is repo-relative with no `..` and is realpath-checked against the worktree at run time, `spec` is a PRD path relative to the dir or a quoted idea |
 | `deploy.enabled` | **false** | preview-only when enabled; never prod |
 | `deploy.command` | `[]` | argv array run **before** the ship decision when `enabled`; a string is refused (§10.1) |

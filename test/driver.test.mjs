@@ -30,6 +30,7 @@ import {
 } from '../scripts/acceptance.mjs';
 import { ACCEPTANCE_FILE } from '../scripts/acceptance-file.mjs';
 import { readAssumptions } from '../scripts/assumptions.mjs';
+import { parseErd } from '../scripts/erd.mjs';
 import { DENIAL_STATE_ENV } from '../hooks/guard.mjs';
 import {
   NESTING_AUTHORITY_ENV,
@@ -4769,6 +4770,40 @@ describe('driveRun', () => {
       'iter-002.md',
       'iter-003.md',
     ]);
+  });
+
+  it('hands the declared schema to the builder, or the ERD is a file nobody reads', async () => {
+    // **The wiring, not the rendering.** `compileBrief` has its own cases; this one exists because a
+    // mutation cutting `erd: effects.erd?.()` out of the call site left every one of them green.
+    // That is the shape this repository has repaired four times in a day: a correct component with
+    // no caller. Asserted through the archived brief, which is what a builder was really handed.
+    const erd = parseErd('erDiagram\n  CUSTOMER ||--o{ ORDER : places\n  CUSTOMER {\n    int id PK\n  }\n');
+    const { meeseeksDir } = await run(
+      {
+        readTestReports: () => [ONE_PASSING],
+        gates: () => ({ ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'no' }] }),
+        erd: () => erd,
+      },
+      { maxIterations: 1 },
+    );
+    const brief = readFileSync(path.join(meeseeksDir, 'briefs', 'iter-001.md'), 'utf8');
+    assert.match(brief, /## The declared schema/);
+    assert.match(brief, /- CUSTOMER: int id \[PK\]/);
+    assert.match(brief, /- CUSTOMER \(exactly-one\) identifies ORDER \(zero-or-more\): places/);
+  });
+
+  it('carries no schema block when the operator supplied no ERD', async () => {
+    // The benign neighbour. A heading with nothing under it tells a builder there is a declared
+    // schema it has failed to find.
+    const { meeseeksDir } = await run(
+      {
+        readTestReports: () => [ONE_PASSING],
+        gates: () => ({ ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'no' }] }),
+      },
+      { maxIterations: 1 },
+    );
+    const brief = readFileSync(path.join(meeseeksDir, 'briefs', 'iter-001.md'), 'utf8');
+    assert.equal(brief.includes('## The declared schema'), false);
   });
 
   it('asks each reviewer only about the ids it owns', async () => {

@@ -51,6 +51,7 @@ import path from 'node:path';
  *   gates?: string[],
  *   capabilities?: string[],
  *   toolchain?: { name: string, guidance: string },
+ *   erd?: import('./erd.mjs').Erd | null,
  *   raceCandidate?: { index: number, of: number, hypothesis?: string } | null,
  *   deniedLastIteration?: string[]
  * }} BriefInput
@@ -352,6 +353,44 @@ export function compileBrief(input) {
       '',
       ...capabilities.map((capability) => `- ${neutralizeLine(capability)}`),
     );
+  }
+
+  // **The declared schema, when the operator supplied one** (PLAN item 47, slice D). The builder
+  // builds *to* it rather than inferring it from prose, which is the whole reason an ERD is worth
+  // accepting: the data model is where prose is most ambiguous and a builder's invention most
+  // expensive. Rendered from the parsed diagram rather than pasted as raw text, so what the builder
+  // reads and what the gate will check are the same document — a brief carrying the source while the
+  // gate checks the parse would let the two disagree without either being wrong.
+  if (input.erd !== undefined && input.erd !== null) {
+    lines.push(
+      '',
+      '## The declared schema',
+      '',
+      'The operator supplied an ERD. Build to it. Extra columns are fine - a sensible `createdAt` will',
+      'not fail anything - but every entity, key and relationship below must exist when you are done.',
+      '',
+    );
+    for (const entity of input.erd.entities) {
+      const attributes = entity.attributes.map((attribute) => {
+        const keys = attribute.keys.length === 0 ? '' : ` [${attribute.keys.join(',')}]`;
+        return `${neutralizeLine(attribute.type)} ${neutralizeLine(attribute.name)}${keys}`;
+      });
+      lines.push(
+        attributes.length === 0
+          ? `- ${neutralizeLine(entity.name)} (no columns declared; the ERD names it only in a relationship)`
+          : `- ${neutralizeLine(entity.name)}: ${attributes.join(', ')}`,
+      );
+    }
+    if (input.erd.relationships.length > 0) {
+      lines.push('');
+      for (const relationship of input.erd.relationships) {
+        lines.push(
+          `- ${neutralizeLine(relationship.left)} (${relationship.leftCardinality}) ` +
+            `${relationship.identifying ? 'identifies' : 'relates to'} ` +
+            `${neutralizeLine(relationship.right)} (${relationship.rightCardinality}): ${neutralizeLine(relationship.label)}`,
+        );
+      }
+    }
   }
 
   if (input.toolchain !== undefined && input.toolchain !== null) {

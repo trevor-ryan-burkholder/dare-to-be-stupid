@@ -606,8 +606,6 @@ export function checkErdConsistency(cwd, specificationText, configured, io = {})
  *   probe?: Probe,
  *   meeseeksDir?: string,
  *   sandbox?: boolean,
- *   specification?: string | null,
- *   erd?: string,
  * }} options
  * @returns {Promise<{ ok: boolean, checks: CheckResult[], failures: CheckResult[] }>}
  */
@@ -629,7 +627,6 @@ export async function runPreflight(options) {
     await checkStateNotTracked(probe),
     checkSandboxAvailable(probe, options.sandbox ?? false),
     checkAgentSurface(cwd),
-    checkErdConsistency(cwd, options.specification ?? null, options.erd),
     checkDangerAcknowledged({ yes: options.yes ?? false, interactive: options.interactive ?? false }),
   ];
 

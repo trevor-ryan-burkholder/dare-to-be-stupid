@@ -94,6 +94,9 @@ import { ArtifactTooLargeError, READ_LIMITS, readBounded } from './bounded-read.
 import { designSlopEvidence } from './design-slop.mjs';
 import { gitleaksEvidence } from './secrets-scan.mjs';
 import { OUTCOME_FILE, writeRunOutcome } from './outcome.mjs';
+import { parseErd } from './erd.mjs';
+import { schemaEvidence } from './schema.mjs';
+import { checkErdConsistency, erdPath } from './preflight.mjs';
 import { writeQuestion } from './question.mjs';
 import { roleSupplyManifest } from './role-supply.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
@@ -1107,7 +1110,31 @@ export async function runGates(gates, options) {
  *
  * @type {Record<string, (outcome: { stdout: string, status: number, stderr: string }) => { ok: boolean, detail: string }>}
  */
-const INTERPRETERS = { 'design-slop': designSlopEvidence, gitleaks: gitleaksEvidence };
+const INTERPRETERS = {
+  'design-slop': designSlopEvidence,
+  gitleaks: gitleaksEvidence,
+  // Bound to the run's ERD, which is why this one is a factory rather than a constant: the other
+  // two judge output against fixed rules, and this judges it against the operator's diagram.
+  // Registered by `armSchemaInterpreter` once the ERD is known, so a run without one cannot reach
+  // an interpreter that would have nothing to compare against.
+  'schema-conformance': () => ({ ok: false, detail: 'the schema interpreter was never armed with an ERD' }),
+};
+
+/**
+ * Point the `schema-conformance` interpreter at this run's ERD.
+ *
+ * **Fails closed until armed.** The placeholder above returns a failure rather than a pass, so a
+ * gate that somehow ran before the diagram was known reports that fact instead of certifying a
+ * schema nothing was compared to.
+ *
+ * @param {import('./erd.mjs').Erd | null} erd
+ */
+export function armSchemaInterpreter(erd) {
+  INTERPRETERS['schema-conformance'] =
+    erd === null
+      ? () => ({ ok: false, detail: 'the schema interpreter was never armed with an ERD' })
+      : (outcome) => schemaEvidence(erd, { ok: outcome.status === 0, ...outcome });
+}
 
 /**
  * The sentence a builder needs when Stryker says "No tests were executed" — the `runnerHint`
@@ -2242,6 +2269,7 @@ export function repeatedRegressionNote(counts, regressions) {
  *   history?: (findings: string[]) => import('./brief.mjs').HistoryNote[] | Promise<import('./brief.mjs').HistoryNote[]>,
  *   capabilities?: () => string[],
  *   toolchainGuidance?: () => { name: string, guidance: string } | undefined,
+ *   erd?: () => import('./erd.mjs').Erd | null,
  *   changedFiles?: () => string[] | Promise<string[]>,
  *   readSource?: (file: string) => string | null,
  *   securityEscalation?: (pin: import('./pins.mjs').SecurityPin) => ClaudeResult | Promise<ClaudeResult>,
@@ -3113,6 +3141,13 @@ export async function driveRun(options) {
       // under it. The declared half is stable; the detected half is not.
       capabilities: effects.capabilities?.() ?? [],
       toolchain: effects.toolchainGuidance?.(),
+      // **The declared schema, when the operator supplied one** (PLAN item 47, slice D). Read
+      // through an effect like every other gathered fact, so the brief stays a pure function of the
+      // run's state and a test can drive it without a diagram on disk.
+      //
+      // Preflight has already refused an ERD that cannot be parsed or that over-reaches the PRD, so
+      // by the time a brief is compiled the only remaining outcomes are a valid diagram or none.
+      erd: effects.erd?.() ?? null,
     });
     writeBrief(meeseeksDir, iterationNumber, brief);
 
@@ -7957,8 +7992,23 @@ async function runInvocation(argv, io, crash) {
   write(verbatim(`specification: ${specification.revision.file} at ${specification.revision.digest}`));
 
   const prd = specification.contents;
-  const requiredIds = requiredIdsFor(prd);
 
+  // **The ERD is checked here because here is the first moment both inputs exist** (PLAN item 47).
+  // `revalidateLaunch` runs before the specification is captured, and in improve mode before it has
+  // been authored at all, so an ERD checked there would be checked against nothing. This is still a
+  // refusal of the run rather than a gate result: no builder has been spawned, nothing has been
+  // written to the target, and the operator is told at the door instead of four iterations in.
+  const erdCheck = checkErdConsistency(cwd, prd, config.erd);
+  if (!erdCheck.ok) {
+    write(verbatim(`${erdCheck.name}: ${erdCheck.detail}\n${erdCheck.fix}`));
+    write(stamp('ABORTED', { mode }));
+    return releasing(1, { reason: 'the ERD does not agree with the specification', phase: 'specification' });
+  }
+  // Reported when there is one, silent when there is not. A line saying "no ERD supplied" on every
+  // run of every CLI project is noise, and the check itself is non-blocking in that case.
+  if (erdCheck.blocking) write(verbatim(`erd: ${erdCheck.detail}`));
+
+  const requiredIds = requiredIdsFor(prd);
   // ---- Phase 0b: the held-out oracle (A3) -------------------------------
   //
   // Authored here, from the PRD alone, **before the design phase and before any code exists**.
@@ -8506,6 +8556,18 @@ async function runInvocation(argv, io, crash) {
    * cannot see why e2e is absent will helpfully add it back.
    */
   const briefCapabilities = runCapabilities();
+  // The operator diagram, for the described roster. Read here as well as at the executing roster
+  // because the two are built at different moments; computing it once and sharing it would tie the
+  // brief to whatever the tree looked like when the gates ran, which is a different question.
+  const erdForBrief = (() => {
+    const file = erdPath(cwd, config.erd);
+    if (file === null) return null;
+    try {
+      return parseErd(readFileSync(file, 'utf8'));
+    } catch {
+      return null;
+    }
+  })();
   const describedGates = [
     ...toolchainGates.gates.map((gate) => ({ name: gate.name, text: `${gate.name}: ${gate.command.join(' ')}` })),
     // Every overlay gate, armed or not, annotated rather than omitted — see `overlayGates` for
@@ -8532,6 +8594,20 @@ async function runInvocation(argv, io, crash) {
         'command must honor the PORT environment variable',
     },
     { name: 'red-evidence', text: 'red-evidence: every newly passing test must have been seen failing first' },
+    // **Described wherever it is run, or the two lists disagree about what a gate is.** A gate the
+    // builder is judged by and never told about arrives as a bare non-zero exit from an unfamiliar
+    // command — the "run and not described" divergence `overlayGates` records paying for. Armed by
+    // the same two facts as the executing roster, computed from the same two values.
+    ...(erdForBrief === null || config.schemaIntrospect.length === 0
+      ? []
+      : [
+          {
+            name: 'schema-conformance',
+            text:
+              'schema-conformance: every entity, key and column in the declared schema must exist in the live ' +
+              'schema once migrations have run. Extra tables and columns are fine; omissions are not',
+          },
+        ]),
   ];
   const applicableNames = applicableGates(describedGates, briefCapabilities);
   // **The roster, as *names*** (REVIEW F22). `gateNames` below is prose for the builder's brief —
@@ -8591,6 +8667,22 @@ async function runInvocation(argv, io, crash) {
     // not be able to change which gates it is judged by (DESIGN.md §13.6), and the same
     // argument that keeps the ratchet out of a worktree applies here.
     const capabilities = runCapabilities();
+    // The operator diagram this iteration is judged against, read once for the roster and the
+    // interpreter together so the gate cannot be armed against a different document from the one
+    // whose absence would have disarmed it.
+    const erdForGate = (() => {
+      const file = erdPath(dir, config.erd);
+      if (file === null) return null;
+      try {
+        return parseErd(readFileSync(file, 'utf8'));
+      } catch {
+        // Refused before the run started; reaching here with a broken diagram means it was edited
+        // mid-run. The gate then does not arm, and `schema-conformance` is absent rather than
+        // silently passing — an absent gate is visible in the roster the brief carries.
+        return null;
+      }
+    })();
+    armSchemaInterpreter(erdForGate);
     const applicable = applicableGates(
       [
         ...commandGates(dir, treeStateDir),
@@ -8615,6 +8707,27 @@ async function runInvocation(argv, io, crash) {
             required: true,
             ...(gate.interpret === undefined ? {} : { interpret: gate.interpret }),
           })),
+        // **`schema-conformance`, armed by two facts rather than one** (item 47 slice C, §3.6.1).
+        // An ERD must be supplied *and* the operator must have declared how to read the live
+        // schema; either alone arms nothing. That is not a softening — an ERD supplied with no
+        // introspection is refused before the run starts, so reaching here without one means there
+        // was no ERD, and there is nothing to conform to.
+        //
+        // Not capability-gated on `persistent-storage`. Detection answers about the tree as it is
+        // *now*, and on iteration 1 of a greenfield run there is no database yet, so a capability
+        // filter would disarm the gate for exactly the run that most needs it and re-arm it only
+        // once the builder happened to create one. The ERD is the operator's declaration that this
+        // target persists data, and a declaration does not evaporate.
+        ...(erdForGate === null || config.schemaIntrospect.length === 0
+          ? []
+          : [
+              {
+                name: 'schema-conformance',
+                command: config.schemaIntrospect,
+                required: true,
+                interpret: /** @type {const} */ ('schema-conformance'),
+              },
+            ]),
       ],
       capabilities,
     );
@@ -9136,6 +9249,28 @@ async function runInvocation(argv, io, crash) {
         }),
       race: runRace,
       capabilities: runCapabilities,
+      /**
+       * The operator's ERD, parsed, or `null` when there is none (PLAN item 47, slice D).
+       *
+       * Read once per iteration rather than cached for the run, for the same reason capabilities
+       * are re-detected: the tree changes underneath, and an operator who corrects a diagram
+       * mid-run should not be answered with the one preflight happened to see.
+       *
+       * Returns `null` on a parse failure rather than throwing, and that is not a swallow —
+       * preflight has already refused an unreadable ERD before any child ran, so reaching this with
+       * a broken diagram means the operator edited it *during* the run. Failing the iteration for
+       * that would destroy work over a file the gate will refuse anyway; the brief simply carries
+       * no schema, and `schema-conformance` is the thing that says so.
+       */
+      erd: () => {
+        const file = erdPath(cwd, config.erd);
+        if (file === null) return null;
+        try {
+          return parseErd(readFileSync(file, 'utf8'));
+        } catch {
+          return null;
+        }
+      },
       // Selected by *detected* toolchain rather than by anything declared, so the guidance
       // matches the commands the gates will actually run.
       toolchainGuidance: () => {

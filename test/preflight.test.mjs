@@ -121,7 +121,6 @@ describe('a healthy machine passes', () => {
         'state-not-tracked',
         'sandbox',
         'agent-surface',
-        'erd',
         'danger-acknowledged',
       ],
     );

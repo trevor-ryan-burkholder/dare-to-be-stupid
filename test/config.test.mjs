@@ -71,6 +71,7 @@ describe('defaultConfig', () => {
       extraGates: [],
       childEnvAllow: [],
       erd: '',
+      schemaIntrospect: [],
       // Empty means the component phase does not exist: no nested runs, no flag demanded, no
       // behaviour change from a pre-components build.
       components: [],

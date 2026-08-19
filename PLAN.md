@@ -1608,7 +1608,7 @@ exact run without duplicating a child, gate, commit, deploy, spend charge, or te
 must reject every compatibility mismatch before side effects, and must never treat a child return
 or supervisor label as durable success evidence.
 
-### 47. Accept an ERD alongside the PRD, and gate the schema against it — **IN SCOPE; slices A+B landed 0.234.0, C/D remain**
+### 47. Accept an ERD alongside the PRD, and gate the schema against it — **IMPLEMENTED (0.234.0-0.236.0); one live discharge owed**
 
 **Origin:** operator, 15 Aug 2026, after an ERD of the Ateliers capstone made its schema's two
 integrity rules checkable at a glance. The data model is where prose is most ambiguous and builder
@@ -1690,6 +1690,99 @@ table carrying the check and the key — both bound to code by existing tests, w
 was made to update the specification first. Proved red four ways: an over-reaching ERD admitted
 (1 fail), a missing configured path falling back to the convention (1 fail), an ERD with no
 specification skipped rather than refused (1 fail), plural folding removed (1 fail).
+
+
+**Slice D landed (0.235.0) — the builder is told the schema, and the check moved to where it works.**
+
+The brief now carries a `## The declared schema` block: every entity with its columns and keys, every
+relationship with a cardinality on each side and whether it identifies. Rendered from the *parsed*
+diagram rather than pasted as raw text, so what the builder reads and what the gate will check are
+the same document — a brief carrying the source while the gate checks the parse would let the two
+disagree without either being wrong. It states that the match is a **floor**: extra columns are fine,
+because a builder told only "build to it" reasonably fears that a sensible `createdAt` will fail, and
+gold-plating in reverse is still the wrong incentive.
+
+**The consistency check moved out of `runPreflight` into the Driver, and the reason is a real
+ordering fact rather than a preference.** `runPreflight` is what `meeseeks init` runs — before a PRD
+exists — and `revalidateLaunch` runs before `captureSpecification`, which in improve mode is before
+the PRD has been *authored*. An ERD checked in either place is checked against nothing. It now runs
+immediately after the specification is captured, which is the first moment both inputs exist and is
+still a refusal of the run: no builder has been spawned and nothing has been written to the target.
+`DESIGN.md` §3.5 records the ordering.
+
+**Three test weaknesses this slice found in itself**, each caught by a mutation rather than by
+reading:
+
+- The injection case was **vacuous**. It wrote `\n` inside a single-quoted JS string, so the label
+  held the two characters backslash-n and the assertion found no real newline. Rewritten to drive
+  U+2028/U+2029 — separators a renderer honours and a line-splitting parser does not — through every
+  field the block renders.
+- Even then it covered only *some* neutralizers. Stripping `neutralizeLine` from the relationship's
+  left endpoint left it green, and stripping it from the column-less entity branch did too, because
+  the hostile entity had columns and took the other branch. Every rendered field now carries an
+  injection, and each neutralizer was proved load-bearing separately.
+- The refusal cases asserted the message and the exit code, and a mutation removing the refusal left
+  them green — because the *non-blocking* report line prints the same sentence and the run then
+  failed for its own reasons. "Refused" and "carried on and failed later" were indistinguishable.
+  They now assert that **no brief was ever compiled**, which is what a refusal actually means.
+
+**Acceptance evidence:** 6 brief cases, 2 driver-wiring cases, and
+`test/integration/erd.integration.test.mjs` driving `main` against a real repository — the effect
+that finds the file by convention or config, reads it, parses it and hands it on is only exercised
+there, and a mutation making it return `null` left every unit case green. Refusals in that suite take
+~40ms rather than ~4s, because they refuse before spawning anything.
+
+
+**Slice C landed (0.236.0) — `schema-conformance`. Item 47 is complete but for one live discharge.**
+
+The gate asks a **superset** question: extra tables and extra columns pass, an omission fails, and it
+fails **naming what is missing**, because "the schema does not conform" sends a builder to read the
+whole diagram again.
+
+**Who describes the live schema was the decision, not the comparison** (`DESIGN.md` §3.6.1). Not the
+toolchain — `node` says nothing about Prisma-on-Postgres versus Drizzle-on-SQLite, and a toolchain
+that guessed would invent a command nobody chose. **Not the builder**, which is the security half: a
+builder supplying the command that describes the schema it is judged on can describe a conforming
+one, and the gate would confirm its own input. That is worse than a stubbed test suite, which at
+least has to run, because a fabricated introspection is one `echo`. `schemaIntrospect` is operator
+configuration in `.meeseeks/config.json`, positionally guarded — the one place inside the repository
+a running builder cannot reach.
+
+**Armed by two facts, and not capability-gated.** An ERD *and* a declared introspection; either alone
+arms nothing. Deliberately **not** filtered on `persistent-storage`: detection answers about the tree
+as it is *now*, and on iteration 1 of a greenfield run there is no database yet, so a capability
+filter would disarm the gate for exactly the run that most needs it and re-arm it only once the
+builder happened to create one. The ERD is the operator's declaration that this target persists data,
+and a declaration does not evaporate.
+
+**Relationships are not checked, and that is a stated limit rather than an omission.** A foreign key
+is one way to express `CUSTOMER ||--o{ ORDER`; an application enforcing the same constraint in code
+has satisfied the requirement without a constraint the introspection would see. Failing that would
+fail correct work, which is the one thing a gate must not do — a gate that fails what is right
+teaches a builder to ignore it.
+
+**The name fold is narrower here than in slice B, and the polarity is why.** Slice B refuses a run
+before anything is built, so it over-matches on purpose. This is the gate: over-matching passes a
+schema that does not conform, so the fold stops at case, separators and a trailing plural, and
+`ORDER` is not satisfied by `work_orders`.
+
+**A defect the integration tests found in this slice.** The gate ran and the brief never named it —
+the "run and not described" divergence `overlayGates` exists to prevent, arriving through a roster
+added in one place and not the other. A gate a builder is judged by and never told about reaches it
+as a bare non-zero exit from an unfamiliar command. Both rosters now derive their arming from the
+same two values.
+
+**Acceptance evidence:** 20 unit cases (superset pairs throughout: the surplus that must pass beside
+the omission that must fail) and 6 integration cases driving `main` against real repositories. Proved
+red six ways: extra columns failing (3), an empty report passing (1), substring table matching (1),
+the gate never arming (3), the gate armed but undescribed (2), the interpreter never armed (3). One
+integration case was rewritten from asserting an absence to asserting a **contrast** — the same ERD
+against a surplus schema and an absent one — because a passing gate logs no detail, so "no complaint"
+alone was also satisfied by a gate that never ran.
+
+**Remaining for item 47:** the last Done-when clause, one live data-backed run exercising the gate end
+to end against a real database. Everything above is deterministic and proved without one; that clause
+is evidence about a real stack, and it is the only part still owed.
 
 
 **Design, with the tensions resolved (a half-specified version rots):**

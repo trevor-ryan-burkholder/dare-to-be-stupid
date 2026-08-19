@@ -45,7 +45,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, lessonModel: string,
  *   qualityPlugins: string[], extraGates: { name: string, command: string[] }[], childEnvAllow: string[],
- *   erd: string,
+ *   erd: string, schemaIntrospect: string[],
  *   components: ComponentConfig[],
  *   effort: Record<string, string>, oracle: OracleConfig,
  *   panelCarry: PanelCarryConfig, sandbox: SandboxConfig,
@@ -211,6 +211,17 @@ export function defaultConfig() {
     // Empty means the convention, and the convention means "there is no ERD" when the file is
     // absent — an ERD is optional, and its absence gates nothing.
     erd: '',
+    // How to read the live schema, for the `schema-conformance` gate (§3.6.1, item 47). Empty
+    // means the gate does not arm.
+    //
+    // **Operator configuration, and that is the security decision.** It cannot come from the
+    // toolchain, which knows nothing about the target's database, and it must not come from the
+    // builder: a builder supplying the command that describes the schema it is judged on can
+    // describe a conforming one, and the gate would confirm its own input. That is worse than a
+    // stubbed test suite, which at least has to run — a fabricated introspection is one `echo`.
+    // `.meeseeks/config.json` is positionally guarded, so this is the one place inside the
+    // repository a running builder cannot reach.
+    schemaIntrospect: [],
     // Empty by default, and an empty list changes nothing at all: no phase runs, no flag is
     // demanded, and a pre-components repository behaves exactly as it always did. Declaring one
     // is only half a decision — components are nested runs, so a run that declares any refuses
@@ -597,6 +608,9 @@ export function validateConfig(input) {
   if ('extraGates' in source) merged.extraGates = requireExtraGates(source.extraGates);
   if ('childEnvAllow' in source) merged.childEnvAllow = requireStringArray(source.childEnvAllow, 'childEnvAllow');
   if ('erd' in source) merged.erd = requireString(source.erd, 'erd');
+  if ('schemaIntrospect' in source) {
+    merged.schemaIntrospect = requireStringArray(source.schemaIntrospect, 'schemaIntrospect');
+  }
   if ('components' in source) merged.components = requireComponents(source.components);
 
   if ('reviewers' in source) {
