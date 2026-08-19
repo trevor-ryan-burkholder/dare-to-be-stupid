@@ -1824,6 +1824,15 @@ export function repeatedRegressionNote(counts, regressions) {
 
 /** @typedef {{ applied: boolean, detail: string, tokens: number, costUsd: number }} RaceOutcome */
 /** @typedef {{ produced: string[], missing: string[], irregular: string[] }} ReportSources */
+/**
+ * What a gate result *was*, beside what it said (REVIEW F22, PLAN item 126).
+ *
+ * `command` is the argv the gate ran, empty for a static gate that runs no process. `reports` are
+ * the report file names this gate is declared to write, from the toolchain's `reportOwners` — never
+ * inferred from a filename, because the receipt binds a report digest to a gate result through it.
+ *
+ * @typedef {{ name: string, command: string[], reports: string[] }} GateIdentity
+ */
 
 /**
  * Every effect that shells out or spawns a child may now return a promise, because the real
@@ -1843,7 +1852,8 @@ export function repeatedRegressionNote(counts, regressions) {
  *   changedFiles?: () => string[] | Promise<string[]>,
  *   readSource?: (file: string) => string | null,
  *   securityEscalation?: (pin: import('./pins.mjs').SecurityPin) => ClaudeResult | Promise<ClaudeResult>,
- *   gates: () => { ok: boolean, results: GateResult[] } | Promise<{ ok: boolean, results: GateResult[] }>,
+ *   gates: () => { ok: boolean, results: GateResult[], identities?: GateIdentity[] }
+ *     | Promise<{ ok: boolean, results: GateResult[], identities?: GateIdentity[] }>,
  *   shipTimeMutation?: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
  *   checkSpecification: () => { ok: boolean, digest: string, detail: string },
  *   workspaceIdentity: () => string | null | Promise<string | null>,
@@ -1951,16 +1961,42 @@ export function writeAcceptanceReceipt(meeseeksDir, input, io = {}) {
  * explicit that the receipt must not persist arbitrary raw logs. A digest still proves two runs saw
  * the same result without carrying whatever a failing suite happened to print.
  *
+ * **And what the result *was*, not only what it said** (REVIEW F22, PLAN item 126). A record of
+ * `name`, `ok`, `status` and a detail digest cannot support a clean-clone reconstruction: it does not
+ * identify the command that produced it, the attempt it ran on, or which report bytes belong to it.
+ * The argv is digested for the same reason the detail is, and a static gate's empty argv is recorded
+ * as the fact it is — `commandDigest: null` means *this gate runs no process*, which is different
+ * from nobody having recorded one.
+ *
  * @param {GateResult[]} results
- * @returns {{ name: string, ok: boolean, status: number, detailDigest: string }[]}
+ * @param {{ identities: GateIdentity[], reportDigestByName: Record<string, string>, attempt: number }} context
+ * @returns {Partial<import('./acceptance.mjs').GateRecord>[]}
  */
-export function acceptanceGates(results) {
-  return results.map((result) => ({
-    name: result.name,
-    ok: result.ok,
-    status: typeof result.status === 'number' ? result.status : 0,
-    detailDigest: digest(String(result.detail ?? '')),
-  }));
+export function acceptanceGates(results, context) {
+  const byName = new Map(context.identities.map((identity) => [identity.name, identity]));
+  return results.map((result) => {
+    const identity = byName.get(result.name);
+    const owned = (identity?.reports ?? [])
+      .map((report) => context.reportDigestByName[report])
+      .filter((value) => typeof value === 'string');
+    return {
+      name: result.name,
+      ok: result.ok,
+      status: typeof result.status === 'number' ? result.status : 0,
+      detailDigest: digest(String(result.detail ?? '')),
+      // The argv, digested. `null` says this gate runs no process; an identity nobody recorded is a
+      // different fact and is refused by the receipt rather than defaulted to either.
+      // An identity nobody recorded is left off the record entirely, so the receipt refuses it by
+      // name rather than this function inventing one. In production `gateTree` supplies one for
+      // every result it returns.
+      ...(identity === undefined
+        ? {}
+        : { commandDigest: identity.command.length === 0 ? null : digest(identity.command.join(' ')) }),
+      attempt: context.attempt,
+      // Only the reports this gate is *declared* to write and which this attempt actually read.
+      reports: [...owned].sort(),
+    };
+  });
 }
 
 /**
@@ -2289,7 +2325,8 @@ export async function driveRun(options) {
    * bytes* — returning a wrong answer confidently. One record, assigned once, at the only moment the
    * two are known to describe each other.
    *
-   * @type {{ tree: string, commit: string | null, gates: GateResult[], reports: string[] } | null}
+   * @type {{ tree: string, commit: string | null, gates: GateResult[], reports: string[],
+   *   identities: GateIdentity[], reportDigestByName: Record<string, string>, attempt: number } | null}
    */
   let sealedAttempt = null;
 
@@ -2314,6 +2351,18 @@ export async function driveRun(options) {
    * @type {Record<string, string>}
    */
   let reportOwners = {};
+  /**
+   * What each gate result *was* — its argv and the reports it owns (REVIEW F22).
+   *
+   * Undefined until the first gate run, like `iterationGateResults` beside it: a run that never
+   * gated has no identities, and an empty list would say it had none rather than that none were
+   * taken.
+   *
+   * @type {GateIdentity[] | undefined}
+   */
+  let iterationGateIdentities;
+  /** The digest of each report this attempt read, by report name (REVIEW F22). @type {Record<string, string> | undefined} */
+  let iterationReportDigestByName;
 
   /**
    * The deploy this run performed, if it performed one (REVIEW F22).
@@ -2389,7 +2438,11 @@ export async function driveRun(options) {
         },
         results: {
           terminal: state,
-          gates: acceptanceGates(sealedAttempt?.gates ?? []),
+          gates: acceptanceGates(sealedAttempt?.gates ?? [], {
+            identities: sealedAttempt?.identities ?? [],
+            reportDigestByName: sealedAttempt?.reportDigestByName ?? {},
+            attempt: sealedAttempt?.attempt ?? 0,
+          }),
           panelDigest: panelRecordDigest(meeseeksDir),
           ratchetPassing: outcome.passing.length,
           // The evidence the gate results were derived from, bound by bytes rather than by a token
@@ -2767,6 +2820,8 @@ export async function driveRun(options) {
         const producedNames = effects.readReportSources?.().produced ?? [];
         /** @type {Record<string, string>} */
         const owners = {};
+        /** @type {Record<string, string>} */
+        const byName = {};
         for (const [index, report] of read.entries()) {
           // Digested where the loop actually reads them, rather than re-read later: a receipt that
           // hashed the files again at the terminal transition would describe whatever was on disk by
@@ -2776,9 +2831,15 @@ export async function driveRun(options) {
           collected += parsed.tests.length;
           records.push(...parsed.tests);
           const name = producedNames[index];
-          if (name !== undefined) for (const test of parsed.tests) owners[test.id] = name;
+          if (name !== undefined) {
+            for (const test of parsed.tests) owners[test.id] = name;
+            // The same digest, keyed by the report it came from, so a gate result can carry the
+            // bytes it produced rather than the receipt carrying a flat list nothing references.
+            byName[name] = readThisAttempt[index];
+          }
         }
         reportOwners = owners;
+        iterationReportDigestByName = byName;
         iterationReportDigests = readThisAttempt;
         /** @type {Set<string>} */
         const reported = new Set();
@@ -2822,6 +2883,12 @@ export async function driveRun(options) {
         : { ok: false, results: [...commandGateOutcome.results, stability] };
     const score = gateScore(gateOutcome.results);
     iterationGateResults = gateOutcome.results;
+    // The stability gate is assembled here rather than by `gateTree`, so its identity is too: it
+    // runs no process and owns no report, and saying that is not the same as leaving it out.
+    iterationGateIdentities = [
+      ...(commandGateOutcome.identities ?? []),
+      ...(stability === null ? [] : [{ name: stability.name, command: [], reports: [] }]),
+    ];
     lastGateTotal = gateOutcome.results.length;
     lastGateShare = lastGateTotal === 0 ? 0 : score / lastGateTotal;
     const failedGates = gateOutcome.results.filter((result) => !result.ok);
@@ -3266,7 +3333,17 @@ export async function driveRun(options) {
     // the panel had to be defended against. It is now the tree object the candidate was made from,
     // and a run that could not make one never reached this line: `snapshotCandidate` above ends the
     // run rather than falling back to the live tree. Keeping a dead guard here would read as a check.
-    sealedAttempt = { tree: reviewedWorkspace, commit: null, gates: iterationGateResults ?? [], reports: iterationReportDigests ?? [] };
+    sealedAttempt = {
+      tree: reviewedWorkspace,
+      commit: null,
+      gates: iterationGateResults ?? [],
+      reports: iterationReportDigests ?? [],
+      // Sealed with the results, for the reason the results are sealed with the tree (REVIEW F22):
+      // an identity taken later would describe a different iteration's gates.
+      identities: iterationGateIdentities ?? [],
+      reportDigestByName: iterationReportDigestByName ?? {},
+      attempt: iterationNumber,
+    };
 
     // **The agent surface, rescanned against the exact bytes about to be reviewed** (REVIEW F29).
     //
@@ -7993,7 +8070,8 @@ async function runInvocation(argv, io, crash) {
    *   The main candidate passes the Driver's directory instead, because since REVIEW F14 that tree
    *   is a snapshot worktree — so leaving this to default would write the run's ratchet evidence
    *   into a directory that is deleted when the run ends, and `driveRun` reads it from the Driver's.
-   * @returns {Promise<{ ok: boolean, results: GateResult[], passing: Set<string> }>}
+   * @returns {Promise<{ ok: boolean, results: GateResult[], passing: Set<string>,
+   *   identities: GateIdentity[] }>}
    */
   const gateTree = async (dir, runStateDir = path.join(dir, '.meeseeks')) => {
     const treeStateDir = path.join(dir, '.meeseeks');
@@ -8236,7 +8314,30 @@ async function runInvocation(argv, io, crash) {
     // run instead, because the evidence it demanded could not be produced.
     const unproven = evidence === null ? /** @type {Set<string>} */ (new Set()) : unprovenIds(evidence);
     const credited = new Set([...passing].filter((id) => !unproven.has(id)));
-    return { ok: results.every((result) => result.ok), results, passing: credited };
+    // **What each result actually was** (REVIEW F22, PLAN item 126). A receipt carrying `name`, `ok`,
+    // `status` and a digest of the detail cannot support the clean-clone reconstruction F22 asks for:
+    // it does not say which command produced the result, on which attempt, or which report bytes
+    // belong to it. The argv is digested rather than quoted for the reason the detail is — it is
+    // target-influenced text — and a static gate has no argv, which is recorded as the fact it is
+    // rather than as an empty string standing in for one.
+    const owners = resolveToolchain(dir).toolchain.reportOwners ?? {};
+    /** @type {Map<string, string[]>} */
+    const ownedReports = new Map();
+    for (const [report, operation] of Object.entries(owners)) {
+      ownedReports.set(operation, [...(ownedReports.get(operation) ?? []), report]);
+    }
+    /** @type {Map<string, string[]>} */
+    const argvByName = new Map();
+    for (const gate of [...applicable.gates, ...plan.toRun]) argvByName.set(gate.name, gate.command);
+    /** @type {GateIdentity[]} */
+    const identities = results.map((result) => ({
+      name: result.name,
+      command: argvByName.get(result.name) ?? [],
+      // Only reports this gate is *declared* to write. A gate that owns none owns none; the receipt
+      // must not attribute a digest to something that never wrote it.
+      reports: ownedReports.get(result.name) ?? [],
+    }));
+    return { ok: results.every((result) => result.ok), results, passing: credited, identities };
   };
 
   /**
@@ -8555,7 +8656,7 @@ async function runInvocation(argv, io, crash) {
       changedFiles,
       gates: async () => {
         const gated = await gateTree(candidate.dir, meeseeksDir);
-        return { ok: gated.ok, results: gated.results };
+        return { ok: gated.ok, results: gated.results, identities: gated.identities };
       },
       /**
        * Materialize this iteration's candidate and make it the subject (REVIEW F14).

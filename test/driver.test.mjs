@@ -2328,9 +2328,20 @@ describe('driveRun', () => {
         results: [
           { name: 'lint', ok: true, status: 0, detail: 'passed' },
           { name: 'mutation', ok: true, status: 0, detail: 'no survivors' },
+          { name: 'unit', ok: true, status: 0, detail: 'passed' },
+        ],
+        // **What each result was, not only what it said** (REVIEW F22, PLAN item 126). The receipt
+        // refuses a gate whose command identity nobody recorded, so a harness that reaches a
+        // terminal transition has to say — and `unit` owns the report the harness reads, which is
+        // what makes the flat digest list and the per-gate ones agree.
+        identities: [
+          { name: 'lint', command: ['npm', 'run', 'lint'], reports: [] },
+          { name: 'mutation', command: ['npx', 'stryker', 'run'], reports: [] },
+          { name: 'unit', command: ['npx', 'vitest', 'run'], reports: ['test-report.json'] },
         ],
       }),
       readTestReports: () => [{ numTotalTests: 1, testResults: [] }],
+      readReportSources: () => ({ produced: ['test-report.json'], missing: [], irregular: [] }),
       // The specification is unchanged unless a test says otherwise (REVIEW F12). `driveRun`
       // refuses to run without this rather than assuming it, so the harness states it.
       checkSpecification: () => ({ ok: true, digest: 'sha256:harness', detail: 'PRD.md unchanged' }),
@@ -2506,7 +2517,17 @@ describe('driveRun', () => {
         inputs: { specification: 'sha256:s', config: 'sha256:c', plugin: '0.1.0', cli: '2.1.234', gateRoster: ['lint'] },
         results: {
           terminal: 'STALLED',
-          gates: [{ name: 'lint', ok: false, status: 1, detailDigest: digest('failed') }],
+          gates: [
+            {
+              name: 'lint',
+              ok: false,
+              status: 1,
+              detailDigest: digest('failed'),
+              commandDigest: digest('npm run lint'),
+              attempt: 1,
+              reports: [digest('a report')],
+            },
+          ],
           panelDigest: null,
           ratchetPassing: 0,
           reports: [digest('a report')],
@@ -2525,9 +2546,12 @@ describe('driveRun', () => {
           writeAcceptanceReceipt(meeseeksDir, input, {
             // Still a *valid, complete* receipt — just not the one that was written. Anything the
             // verifier would reject on its own would prove nothing about this check.
+            // A receipt the verifier accepts on its own terms — every field present, canonical,
+            // internally consistent — and simply not the one that was written. Anything the verifier
+            // would reject would prove nothing about *this* check.
             readBack: () => {
-              const canonical = /** @type {any} */ (buildAcceptanceReceipt(input));
-              return `${JSON.stringify({ ...canonical, results: { ...canonical.results, reports: [] } }, null, 2)}\n`;
+              const canonical = /** @type {any} */ (buildAcceptanceReceipt({ ...input, at: '2020-01-01T00:00:00.000Z' }));
+              return `${JSON.stringify(canonical, null, 2)}\n`;
             },
           }),
         (/** @type {unknown} */ error) => {
@@ -2580,12 +2604,24 @@ describe('driveRun', () => {
 
       assert.deepStrictEqual(
         receipt.results.gates.map((/** @type {any} */ gate) => gate.name),
-        ['lint', 'mutation'],
+        ['lint', 'mutation', 'unit'],
       );
       for (const gate of receipt.results.gates) {
         assert.match(gate.detailDigest, /^sha256:[0-9a-f]{16,}$/);
         assert.equal(Object.hasOwn(gate, 'detail'), false, 'the raw gate detail was persisted');
+        // And what produced it (REVIEW F22, PLAN item 126): the argv, digested for the same reason
+        // the detail is, and the attempt it ran on.
+        assert.equal(typeof gate.commandDigest === 'string' || gate.commandDigest === null, true, gate.name);
+        assert.equal(Number.isInteger(gate.attempt), true, gate.name);
       }
+      // The flat digest list is the union of the per-gate ones, so no digest floats free of the
+      // gate that produced it.
+      assert.deepStrictEqual(
+        [...new Set(receipt.results.gates.flatMap((/** @type {any} */ gate) => gate.reports))].sort(),
+        [...receipt.results.reports].sort(),
+      );
+      const unit = receipt.results.gates.find((/** @type {any} */ gate) => gate.name === 'unit');
+      assert.equal(unit.reports.length, 1, 'the gate that wrote the report does not own its digest');
     });
 
     it('binds the gate results to the report bytes they were read from', async () => {
@@ -6791,8 +6827,19 @@ describe('.meeseeks/outcome.json', () => {
       build: () => ok,
       review: () => ({ ...ok, text: JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'a.ts:1', detail: 'd' }] }) }),
       realityCheck: () => ({ ...ok, text: 'buildable' }),
-      gates: () => ({ ok: true, results: [{ name: 'mutation', ok: true, status: 0, detail: 'no survivors' }] }),
+      gates: () => ({
+        ok: true,
+        results: [
+          { name: 'mutation', ok: true, status: 0, detail: 'no survivors' },
+          { name: 'unit', ok: true, status: 0, detail: 'passed' },
+        ],
+        identities: [
+          { name: 'mutation', command: ['npx', 'stryker', 'run'], reports: [] },
+          { name: 'unit', command: ['npx', 'vitest', 'run'], reports: ['test-report.json'] },
+        ],
+      }),
       readTestReports: () => [{ numTotalTests: 1, testResults: [] }],
+      readReportSources: () => ({ produced: ['test-report.json'], missing: [], irregular: [] }),
       checkSpecification: () => ({ ok: true, digest: 'sha256:harness', detail: 'PRD.md unchanged' }),
       // The commit holds the reviewed tree unless a test says otherwise (REVIEW F31).
       verifyPublication: () => ({ ok: true, detail: 'published with a clean tree' }),

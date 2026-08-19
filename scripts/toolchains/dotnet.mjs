@@ -241,6 +241,9 @@ export const dotnetToolchain = {
   // absent is not evidence about anything.
   reports: [TRX_REPORT],
 
+  // One owner, because `e2e` is declined and a declined operation names no report (REVIEW F22).
+  reportOwners: { [TRX_REPORT]: 'unit' },
+
   // Which operations a workflow must be seen to run. `types` and `e2e` are absent because
   // they are not-applicable here, and an operation with no command string has no pattern for
   // a workflow to match.

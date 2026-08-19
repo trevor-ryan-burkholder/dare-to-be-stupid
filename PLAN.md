@@ -5051,7 +5051,7 @@ time. Eleven go red with the strictness reverted.
 **Not done, and named:** the per-gate command/attempt/tool-version identity and report attribution
 Codex's last paragraph asks for, and the clean-clone traversal that depends on it. Item 126.
 
-### 126. Per-gate identity and report attribution in the receipt — OPEN (extends item 76, REVIEW F22)
+### 126. Per-gate identity and report attribution in the receipt — IMPLEMENTED (0.224.0); REVIEW F22 open pending Codex
 
 **What the receipt still cannot support.** A gate record carries `name`, `ok`, `status` and
 `detailDigest`. It does not say which command produced it, on which attempt, with which tool version,
@@ -5059,13 +5059,30 @@ or which report digest belongs to which gate and path — so the clean-clone rec
 for cannot be performed from one receipt, and a report-digest list emptied after the write is
 undetectable to a standalone reader because nothing else in the file references those digests.
 
-**Done when:** each gate result records the argv it ran (digested, not quoted — it is
-target-influenced text), the iteration it ran on, and the report paths and digests attributable to it;
-`results.reports` is derivable from the per-gate records and a mismatch is refused; the toolchain
-declares which operation writes which report rather than the mapping being a filename convention; and
-a clean-clone case starts from one `SHIPPED` receipt and resolves every required edge. Tool version
-per gate is a measurement question and is scoped separately: record the resolved toolchain identity
-rather than inventing a per-gate version nobody measured.
+**Landed at 0.224.0.** The toolchain declares `reportOwners` — which operation writes each report it
+names — because the driver binds a report digest to a gate result through it and a filename
+convention that happens to hold for node is not a contract. `gateTree` returns a `GateIdentity` per
+result: the argv it ran and the reports it is declared to write. The receipt's gate record gains
+`commandDigest` (digested for the reason the detail is — it is target-influenced text; `null` says
+*this gate runs no process*, and an absent field means nobody recorded one and is refused), `attempt`,
+and `reports`. `results.reports` must equal the union of the per-gate lists, so no digest floats free
+of the gate that produced it — which turns 0.223.0's stated limit into a capability: **an emptied
+report list is now detectable by a standalone reader**, because the gate results still own those
+digests. The schema is version 2 and the claim `meeseeks.acceptance/v2`; a v1 receipt is refused by
+the version check that already existed.
+
+**Evidence.** Two toolchain cases per toolchain — every declared report has an owner, and every owner
+is an operation that toolchain actually has — plus the exact node and dotnet mappings. Four receipt
+cases: an emptied flat list, a digest removed from the gate that owned it, a removed command identity
+beside a legal `null` one, and a removed attempt. At the loop, the shipped receipt's gate records
+carry a command digest and an attempt, the flat list equals the union, and the gate that wrote the
+report owns its digest.
+
+**Still not done, and it is the last clause of F22:** the clean-clone traversal — an auditor starting
+from one `SHIPPED` receipt and resolving every required edge to a matching exact-tree artifact. The
+edges now exist in the record; walking them is a separate harness. Per-gate *tool version* remains
+deliberately unrecorded rather than invented: it is a measurement question, and the resolved
+toolchain identity is what the receipt states instead.
 
 ## Observations recorded rather than repaired
 

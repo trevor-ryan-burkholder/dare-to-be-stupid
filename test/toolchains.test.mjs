@@ -632,6 +632,33 @@ describe('every toolchain declares the reports it writes', () => {
     assert.deepEqual(nodeToolchain.reports, ['test-report.json', 'e2e-report.json']);
     assert.deepEqual(dotnetToolchain.reports, ['unit.trx']);
   });
+
+  for (const toolchain of TOOLCHAINS) {
+    it(`${toolchain.name} says which operation writes each report`, () => {
+      // **The edge a receipt needs** (REVIEW F22, PLAN item 126). Knowing only the flat list, a
+      // receipt could record which report bytes were read and not which gate produced them. Every
+      // declared name has an owner, and every owner is an operation this toolchain actually has —
+      // an owner naming an operation that does not exist would bind a digest to nothing.
+      assert.equal(typeof toolchain.reportOwners, 'object');
+      assert.deepStrictEqual(
+        Object.keys(toolchain.reportOwners).sort(),
+        [...toolchain.reports].sort(),
+        `${toolchain.name} owns a different set of reports from the ones it declares`,
+      );
+      for (const [report, operation] of Object.entries(toolchain.reportOwners)) {
+        assert.equal(
+          typeof (/** @type {any} */ (toolchain.operations)[operation]),
+          'function',
+          `${toolchain.name} says ${report} is written by ${operation}, which is not an operation it has`,
+        );
+      }
+    });
+  }
+
+  it('binds node’s two reports to the two operations that write them', () => {
+    assert.deepStrictEqual(nodeToolchain.reportOwners, { 'test-report.json': 'unit', 'e2e-report.json': 'e2e' });
+    assert.deepStrictEqual(dotnetToolchain.reportOwners, { 'unit.trx': 'unit' });
+  });
 });
 
 describe('the node CI detectors, and why two of them stay narrow', () => {

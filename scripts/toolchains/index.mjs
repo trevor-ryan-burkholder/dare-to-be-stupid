@@ -53,6 +53,7 @@ import { ToolchainError } from './shared.mjs';
  *   operations: Record<OperationName, (context: OperationContext) => Operation>,
  *   startCommand: (root: string) => string | null,
  *   reports: string[],
+ *   reportOwners: Record<string, OperationName>,
  *   ci: { operation: OperationName, pattern: RegExp }[]
  * }} Toolchain
  *
@@ -61,6 +62,13 @@ import { ToolchainError } from './shared.mjs';
  * anything else produced a report nobody read — and a report nobody reads is indistinguishable
  * from a run in which no test passed, which is exactly how both live runs on 10 August 2026
  * ended at `passing: 0`.
+ *
+ * `reportOwners` says **which operation writes each of them** (REVIEW F22, PLAN item 126). The
+ * driver used to know only the flat list, so a receipt could record which report bytes it read and
+ * not which gate produced them — and the clean-clone reconstruction F22 asks for needs that edge.
+ * Declared rather than inferred from the filename, for the reason the list above exists at all: a
+ * convention that happens to hold for node is not a contract, and the next toolchain would break it
+ * silently. Every name in `reports` must appear here.
  */
 
 /**

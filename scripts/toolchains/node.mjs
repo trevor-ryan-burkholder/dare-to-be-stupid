@@ -210,6 +210,12 @@ export const nodeToolchain = {
   // these; nothing here is inferred from a filename convention.
   reports: [UNIT_REPORT, E2E_REPORT],
 
+  // Which operation writes each of them (REVIEW F22, PLAN item 126). `unit` passes `--outputFile`;
+  // `e2e` writes playwright's own reporter output. Stated rather than matched on the name, because
+  // the driver binds a report digest to a gate result through this and a convention is not a
+  // contract.
+  reportOwners: { [UNIT_REPORT]: 'unit', [E2E_REPORT]: 'e2e' },
+
   // Which operations a CI workflow must be seen to run, and how to recognise each one.
   //
   // Matching is regex over the workflow's text rather than a parsed document, because parsing

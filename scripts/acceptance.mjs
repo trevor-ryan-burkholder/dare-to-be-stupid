@@ -32,10 +32,10 @@
 import { createHash } from 'node:crypto';
 
 /** The receipt's own schema version. A verifier refuses anything it does not know. */
-export const ACCEPTANCE_VERSION = 1;
+export const ACCEPTANCE_VERSION = 2;
 
 /** The one claim this receipt is allowed to make. A verifier refuses any other. */
-export const ACCEPTANCE_CLAIM = 'meeseeks.acceptance/v1';
+export const ACCEPTANCE_CLAIM = 'meeseeks.acceptance/v2';
 
 /**
  * @typedef {{ observed: string[] } | { unavailable: string }} Tagged
@@ -43,7 +43,12 @@ export const ACCEPTANCE_CLAIM = 'meeseeks.acceptance/v1';
  *   role: string, requestedModel: string, requestedEffort: string | null,
  *   models: Tagged, supplyDigest: string | null
  * }} RoleInvocation
- * @typedef {{ name: string, ok: boolean, status: number, detailDigest: string }} GateRecord
+ * @typedef {{ name: string, ok: boolean, status: number, detailDigest: string,
+ *   commandDigest: string | null, attempt: number, reports: string[] }} GateRecord
+ *
+ * `commandDigest` is the digest of the argv the gate ran, and `null` says **this gate runs no
+ * process** — a static gate, or a failure carried from a previous attempt. An absent field is a
+ * different fact and is refused: it means nobody recorded what produced the result (REVIEW F22).
  */
 
 /** Thrown when a receipt cannot be built or does not verify. */
@@ -90,7 +95,7 @@ function isTagged(value) {
  *   subject: { tree: string, commit: string | null },
  *   inputs: { specification: string, config: string, plugin: string, cli: string, gateRoster: string[] },
  *   results: {
- *     terminal: string, gates: GateRecord[], panelDigest: string | null,
+ *     terminal: string, gates: any[], panelDigest: string | null,
  *     ratchetPassing: number, reports: string[], oracle: string | null, deploy: string | null,
  *   },
  *   invocations: RoleInvocation[],
@@ -132,6 +137,15 @@ export function buildAcceptanceReceipt(input) {
       // and a reader cannot tell a gate that exited 1 from one whose result was edited.
       if (!Number.isInteger(gate?.status)) missing.push(`results.gates[${index}].status`);
       if (!isIdentity(gate?.detailDigest)) missing.push(`results.gates[${index}].detailDigest`);
+      // **What produced the result, and on which attempt** (REVIEW F22, PLAN item 126). Without
+      // these a receipt says a gate called `unit` passed and nothing about what `unit` ran, so no
+      // clean clone can re-derive it. `null` is a legal *value* — a static gate runs no process —
+      // and an absent field is not, because it means nobody recorded one.
+      if (!(gate?.commandDigest === null || isIdentity(gate?.commandDigest))) {
+        missing.push(`results.gates[${index}].commandDigest`);
+      }
+      if (!Number.isInteger(gate?.attempt)) missing.push(`results.gates[${index}].attempt`);
+      if (!Array.isArray(gate?.reports)) missing.push(`results.gates[${index}].reports`);
     }
     // **A gate absent from the roster is not a gate that failed**, and the receipt must keep the two
     // apart or "everything required passed" becomes unfalsifiable.
@@ -148,6 +162,21 @@ export function buildAcceptanceReceipt(input) {
     missing.push('results.ratchetPassing');
   }
   if (!Array.isArray(input.results?.reports)) missing.push('results.reports');
+  else if (Array.isArray(gates) && gates.every((gate) => Array.isArray(gate?.reports))) {
+    // **The report digests have to belong to a gate** (REVIEW F22, PLAN item 126). A flat list
+    // nothing else in the file references cannot be checked at all — emptying it after the write
+    // rebuilt to the same emptied list and verified clean. Every digest the run read is owned by the
+    // gate the toolchain declares writes that report, so the flat list is the union of the per-gate
+    // ones and a disagreement means one of them was edited.
+    const owned = [...new Set(gates.flatMap((gate) => gate.reports))].sort();
+    const stated = [...new Set(input.results.reports)].sort();
+    if (JSON.stringify(owned) !== JSON.stringify(stated)) {
+      missing.push(
+        `results.reports: the digests listed (${stated.join(', ') || 'none'}) are not the ones the gate results own ` +
+          `(${owned.join(', ') || 'none'})`,
+      );
+    }
+  }
   if (!Array.isArray(input.ledgerLapses)) missing.push('ledgerLapses');
 
   // **What `SHIPPED` additionally has to be able to show.** A terminal state that claims the work
@@ -208,7 +237,15 @@ export function buildAcceptanceReceipt(input) {
     results: {
       terminal: input.results.terminal,
       gates: input.results.gates
-        .map((gate) => ({ name: gate.name, ok: gate.ok, status: gate.status, detailDigest: gate.detailDigest }))
+        .map((gate) => ({
+          name: gate.name,
+          ok: gate.ok,
+          status: gate.status,
+          detailDigest: gate.detailDigest,
+          commandDigest: gate.commandDigest,
+          attempt: gate.attempt,
+          reports: [...gate.reports].sort(),
+        }))
         .sort((a, b) => (a.name < b.name ? -1 : 1)),
       panelDigest: isIdentity(input.results.panelDigest) ? input.results.panelDigest : null,
       ratchetPassing: input.results.ratchetPassing,
