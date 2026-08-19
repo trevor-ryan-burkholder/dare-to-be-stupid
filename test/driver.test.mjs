@@ -464,6 +464,82 @@ describe('runGates', () => {
     return { ok, status: ok ? 0 : 1, stdout: '', stderr: ok ? '' : 'boom' };
   };
 
+  describe('a gate that names an interpreter is judged by it, not by its exit code', () => {
+    const FIXTURE = readFileSync(new URL('./fixtures/impeccable/slop-findings.json', import.meta.url), 'utf8');
+    /** @type {import('../scripts/driver.mjs').Gate} */
+    const SLOP_GATE = {
+      name: 'quality:impeccable',
+      command: ['npx', 'impeccable', 'detect', '--json', 'src/'],
+      required: true,
+      interpret: 'design-slop',
+    };
+    /** @param {{ status: number, stdout: string, stderr?: string }} outcome */
+    const emitting = (outcome) => () => ({
+      ok: outcome.status === 0,
+      status: outcome.status,
+      stdout: outcome.stdout,
+      stderr: outcome.stderr ?? '',
+    });
+
+    it('renders primary findings as evidence instead of a raw JSON blob', async () => {
+      const { ok, results } = await runGates([SLOP_GATE], {
+        cwd: '/repo',
+        run: emitting({ status: 2, stdout: FIXTURE }),
+      });
+      assert.equal(ok, false);
+      assert.match(results[0].detail, /- overused-font at slop\.html:3:/);
+      // The blob itself never reaches the builder's repair context.
+      assert.equal(results[0].detail.includes('"antipattern"'), false);
+    });
+
+    it('surfaces advisory findings on a passing gate, which the exit code could never do', async () => {
+      // `runGates` sets `detail: 'passed'` on success and discards stdout, so before the
+      // interpreter existed an advisory-only run reached nobody at all.
+      const advisoryOnly = JSON.stringify(
+        JSON.parse(FIXTURE).filter((/** @type {{advisory?: boolean}} */ f) => f.advisory === true),
+      );
+      const { ok, results } = await runGates([SLOP_GATE], {
+        cwd: '/repo',
+        run: emitting({ status: 0, stdout: advisoryOnly }),
+      });
+      assert.equal(ok, true);
+      assert.match(results[0].detail, /advisory findings, recorded but not gate-failing \(1\):/);
+      assert.equal(results[0].detail, results[0].detail.replace('passed', ''));
+    });
+
+    it('fails a gate whose command exited zero having printed nothing', async () => {
+      // The reason the interpreter owns the verdict in both directions. A detector that exits 0
+      // with an empty stream has not established a clean design pass; under exit-code judging it
+      // was indistinguishable from one.
+      const { ok, results } = await runGates([SLOP_GATE], {
+        cwd: '/repo',
+        run: emitting({ status: 0, stdout: '', stderr: 'impeccable: unknown option --json' }),
+      });
+      assert.equal(ok, false);
+      assert.match(results[0].detail, /produced no output at all/);
+      assert.match(results[0].detail, /unknown option --json/);
+    });
+
+    it('never interprets a killed gate, because a fragment is not a document', async () => {
+      const { ok, results } = await runGates([SLOP_GATE], {
+        cwd: '/repo',
+        timeoutMs: 10,
+        run: () => ({ ok: false, status: 1, stdout: FIXTURE.slice(0, 120), stderr: '', timedOut: true }),
+      });
+      assert.equal(ok, false);
+      assert.match(results[0].detail, /did not finish within 10ms and was killed/);
+      assert.equal(results[0].detail.includes('design-slop findings'), false);
+    });
+
+    it('leaves a gate with no interpreter judged exactly as before', async () => {
+      const { results } = await runGates([{ name: 'lint', command: ['npm', 'run', 'lint'], required: true }], {
+        cwd: '/repo',
+        run: emitting({ status: 0, stdout: 'ignored output' }),
+      });
+      assert.deepStrictEqual(results, [{ name: 'lint', ok: true, status: 0, detail: 'passed' }]);
+    });
+  });
+
   describe('the mutation gate explains a zero-coverage dry run (Tallyho attempts 3-4)', () => {
     const STRYKER_CRASH = 'ConfigError: No tests were executed. Stryker will exit prematurely. Please check your configuration.';
 

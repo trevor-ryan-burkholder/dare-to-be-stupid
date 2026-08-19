@@ -1042,7 +1042,7 @@ R28 remains useful non-normative research if a future implementation introduces 
 At that point the package must name its exact base/tree and mark every truncation in-band. No runtime
 change is justified today.
 
-### 42. Design-slop gate drives impeccable's real `--json` interface (R29) — **IN PROGRESS (Slice A done, 0.152.0)**
+### 42. Design-slop gate drives impeccable's real `--json` interface (R29) — **IN PROGRESS (Slice A 0.152.0, Slice B1 0.228.0; B2 remains)**
 Read impeccable's machine-parseable finding stream (advisory/primary partition, `file://` targets,
 `--viewport`) instead of exit codes only; findings become reviewer evidence. Committed `--json`
 fixtures. Surface: the design-slop gate in `scripts/gate-policy.mjs`/`scripts/toolchains`.
@@ -1051,7 +1051,48 @@ fixtures. Surface: the design-slop gate in `scripts/gate-policy.mjs`/`scripts/to
 **Slice A landed (0.152.0):** `scripts/design-slop.mjs` `parseImpeccableFindings` — the pure parser,
 partition on `advisory === true` (not severity; the fixture proved the trap), fail-closed, fixture-tested
 against real impeccable 4.0.4 output (`test/fixtures/impeccable/`). No runtime change yet.
-**Slice B (pending):** rewire the design-slop gate from `npx impeccable detect src/` (exit-code only,
+**Slice B1 landed (0.228.0) — the gate reads the stream.** The hold ("land alongside the web-ui
+smoke") is discharged: 31a shipped 15 Aug. `scripts/design-slop.mjs` had been imported by its own
+test and by nothing on any call path for eleven versions — the parser existed and no gate used it.
+
+- The gate is `npx impeccable detect --json src/` and declares `interpret: 'design-slop'`.
+- `runGates` honours a declared interpreter and lets it own the verdict **in both directions**. It
+  may fail a gate the command passed, which is the point: `exit 0` from a detector that printed
+  nothing is not evidence of a clean design pass, and under exit-code judging the two were
+  indistinguishable. A **killed** gate is never interpreted — a fragment of a run that did not
+  finish must not be handed to a parser that might succeed on half a document.
+- Interpreters are a map of named functions keyed by a string on the gate, because gates are plain
+  data: they are digested into the acceptance receipt, compared by the gate cache, and rendered into
+  the builder's brief. A function field would break all three silently. One entry, not an
+  abstraction built ahead of its second caller.
+- `designSlopEvidence` renders primary findings as evidence (rule, file, line, description) and
+  advisory findings **alongside them with no gate authority** — `em-dash-overuse` reports severity
+  `warning` while being advisory, and a gate that failed on it would fail a run over punctuation.
+  Advisory findings now reach a passing run at all, which the exit code could never do: `runGates`
+  sets `detail: 'passed'` and discards stdout the moment a gate succeeds.
+- Fail-closed on: unparseable output, an empty stream, output past `SLOP_OUTPUT_LIMIT` (refused, not
+  truncated), and **a status that contradicts the stream** — impeccable exits 2 exactly when primary
+  findings exist, so a disagreement means the status and the stdout came from different runs and
+  neither is used. Truncation of a long list is stated rather than silent.
+
+**Acceptance evidence for B1:** eight unit cases against the real committed impeccable 4.0.4 capture,
+five `runGates` cases, and `test/integration/design-slop.integration.test.mjs` driving the real
+`shell` against a counterfeit detector — the one link the unit tier cannot see, since every other
+gate discards stdout on success and nothing else has ever depended on that value arriving. Proved red
+by three mutations: interpreter never dispatched (3 fail), killed gates interpreted (1 fail),
+advisory findings granted authority (1 fail).
+
+**Slice B2 (pending):** the `--viewport` mobile pass and the `file://` artifact target. Split off
+deliberately rather than bundled: both need a real browser and a built artifact, so their acceptance
+is a live web run, and a slice that needs a second commit to be correct was too big. B1 changes no
+behaviour that depends on either.
+
+**Residual on B1:** the installed invocation. That `impeccable detect --json` emits this array and
+exits 2 is another binary's contract; impeccable is not a dependency of this repository, so per
+§11.1 it is owed one installed check rather than more assertions here. Cheapest discharge is the
+next live web-ui run, alongside item 128's Playwright residual.
+
+**Slice B original scope:** rewire the design-slop gate from `npx impeccable detect src/` (exit-code only,
 `scripts/plugins.mjs:68`) to `detect --json <target>` + `parseImpeccableFindings`, surface primary findings as
 reviewer evidence, add the `--viewport` mobile pass and `file://` artifact target. Held to land alongside the
 web-ui smoke (31a) so the gate rewire is validated on a real web run, not blind. Contract facts for Slice B:

@@ -91,6 +91,7 @@ import {
   writeLaunchReceipt,
 } from './launch.mjs';
 import { ArtifactTooLargeError, READ_LIMITS, readBounded } from './bounded-read.mjs';
+import { designSlopEvidence } from './design-slop.mjs';
 import { OUTCOME_FILE, writeRunOutcome } from './outcome.mjs';
 import { roleSupplyManifest } from './role-supply.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
@@ -167,7 +168,7 @@ import { CONDITIONAL_GATE_OPERATIONS, gatesFor, resolveToolchain } from './toolc
 
 /** @typedef {import('./config.mjs').MeeseeksConfig} MeeseeksConfig */
 /** @typedef {'SHIPPED' | 'STALLED' | 'BUDGET' | 'ABORTED'} TerminalState */
-/** @typedef {{ name: string, command: string[], required: boolean, env?: Record<string, string> }} Gate */
+/** @typedef {{ name: string, command: string[], required: boolean, env?: Record<string, string>, interpret?: 'design-slop' }} Gate */
 /** @typedef {{ name: string, ok: boolean, status: number, detail: string }} GateResult */
 /**
  * @typedef {{ id: string, status: 'pass' | 'fail', evidence: string | null, detail: string }} RequirementVerdict
@@ -946,6 +947,23 @@ export async function runGates(gates, options) {
       outcome.timedOut === true
         ? `gate ${gate.name} did not finish within ${options.timeoutMs}ms and was killed. Nothing it printed is a result.${swept}`
         : failureDetail(outcome);
+    // **A gate that names an interpreter is judged by it, not by its exit code** (PLAN item 42).
+    // Two things exit-code judging cannot do, and both were live defects: it cannot turn a machine
+    // finding stream into evidence a builder can act on, and it cannot see anything at all on a
+    // pass, because the branch below discards stdout the moment `ok` is true. impeccable's advisory
+    // findings live exactly there.
+    //
+    // A timeout is never interpreted. Killed output is a fragment of a run that did not finish, and
+    // handing a fragment to a parser invites it to succeed on half a document.
+    const interpreter = gate.interpret === undefined ? undefined : INTERPRETERS[gate.interpret];
+    if (interpreter !== undefined && outcome.timedOut !== true) {
+      // The interpreter owns the verdict, both directions. It may fail a gate the command passed —
+      // an empty stream, a status contradicting the findings — and that is the point: `exit 0` from
+      // a detector that printed nothing is not evidence of a clean pass.
+      const judged = interpreter({ stdout: outcome.stdout, status: outcome.status, stderr: outcome.stderr });
+      results.push({ name: gate.name, ok: judged.ok, status: outcome.status, detail: judged.detail });
+      continue;
+    }
     results.push({
       name: gate.name,
       ok: outcome.ok,
@@ -955,6 +973,21 @@ export async function runGates(gates, options) {
   }
   return { ok: results.every((result) => result.ok), results };
 }
+
+/**
+ * Gate output interpreters, by the name a gate declares.
+ *
+ * A map of named functions rather than a function on the gate itself, because gates are plain data:
+ * they are digested into the acceptance receipt, compared by the gate cache, and rendered into the
+ * builder's brief. A function field would break all three, and none of them would say so.
+ *
+ * Deliberately not a general mechanism. There is one interpreter because there is one tool whose
+ * useful output is a machine stream rather than an exit code; a second one is a second entry here,
+ * not an abstraction built in advance of it.
+ *
+ * @type {Record<string, (outcome: { stdout: string, status: number, stderr: string }) => { ok: boolean, detail: string }>}
+ */
+const INTERPRETERS = { 'design-slop': designSlopEvidence };
 
 /**
  * The sentence a builder needs when Stryker says "No tests were executed" — the `runnerHint`
@@ -6373,9 +6406,9 @@ export function armingNote(gate) {
  * Operator gates carry no arming condition. An operator who declared a gate is the arming
  * condition, and there is nothing to detect.
  *
- * @param {{ plugin: string, command: string[], capability?: string }[]} qualityGates
+ * @param {{ plugin: string, command: string[], capability?: string, interpret?: 'design-slop' }[]} qualityGates
  * @param {{ name: string, command: string[] }[]} extraGates
- * @returns {{ name: string, command: string[], text: string, capability?: string }[]}
+ * @returns {{ name: string, command: string[], text: string, capability?: string, interpret?: 'design-slop' }[]}
  */
 export function overlayGates(qualityGates, extraGates) {
   return [
@@ -6384,6 +6417,7 @@ export function overlayGates(qualityGates, extraGates) {
       command: gate.command,
       text: `quality:${gate.plugin}: ${gate.command.join(' ')}${armingNote(gate)}`,
       ...(gate.capability === undefined ? {} : { capability: gate.capability }),
+      ...(gate.interpret === undefined ? {} : { interpret: gate.interpret }),
     })),
     ...extraGates.map((gate) => ({
       name: `operator:${gate.name}`,
@@ -8196,7 +8230,12 @@ async function runInvocation(argv, io, crash) {
           // had ever applied. `impeccable` is armed by `web-ui` like every other conditional gate,
           // and that set is monotonic for the run.
           .filter((gate) => gate.capability === undefined || capabilities.includes(/** @type {any} */ (gate.capability)))
-          .map((gate) => ({ name: gate.name, command: gate.command, required: true })),
+          .map((gate) => ({
+            name: gate.name,
+            command: gate.command,
+            required: true,
+            ...(gate.interpret === undefined ? {} : { interpret: gate.interpret }),
+          })),
       ],
       capabilities,
     );

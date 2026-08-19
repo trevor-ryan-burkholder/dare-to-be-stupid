@@ -99,7 +99,12 @@ describe('installQualityPlugins', () => {
     const { runner } = fakeRunner({ [DETECT]: { ok: true } });
     const result = await installQualityPlugins({ cwd, plugins: ['impeccable'], runner });
     assert.deepStrictEqual(result.gates, [
-      { plugin: 'impeccable', command: ['npx', 'impeccable', 'detect', 'src/'], capability: 'web-ui' },
+      {
+        plugin: 'impeccable',
+        command: ['npx', 'impeccable', 'detect', '--json', 'src/'],
+        capability: 'web-ui',
+        interpret: 'design-slop',
+      },
     ]);
   });
 
@@ -117,7 +122,12 @@ describe('installQualityPlugins', () => {
     const { runner } = fakeRunner({ [DETECT]: { ok: true } });
     const result = await installQualityPlugins({ cwd, plugins: ['impeccable'], runner });
     assert.deepStrictEqual(result.gates, [
-      { plugin: 'impeccable', command: ['npx', 'impeccable', 'detect', 'src/'], capability: 'web-ui' },
+      {
+        plugin: 'impeccable',
+        command: ['npx', 'impeccable', 'detect', '--json', 'src/'],
+        capability: 'web-ui',
+        interpret: 'design-slop',
+      },
     ]);
     assert.deepStrictEqual(result.warnings, []);
   });

@@ -44,7 +44,8 @@ import { execFileSync } from 'node:child_process';
 /**
  * @typedef {{
  *   name: string, required: boolean, capability?: string,
- *   detect: string[], install: string[], gate: string[] | null, note: string
+ *   detect: string[], install: string[], gate: string[] | null, note: string,
+ *   interpret?: 'design-slop'
  * }} PluginSpec
  */
 
@@ -73,7 +74,13 @@ export const KNOWN_PLUGINS = {
     capability: 'web-ui',
     detect: ['npx', '--no-install', 'impeccable', '--version'],
     install: ['npx', '-y', 'impeccable', 'install'],
-    gate: ['npx', 'impeccable', 'detect', 'src/'],
+    // **`--json`, and an interpreter** (PLAN item 42 slice B). This read impeccable's exit code
+    // and nothing else for eleven versions after the parser that could read its findings landed:
+    // `scripts/design-slop.mjs` was imported by its own test and by nothing on any call path. A
+    // failing design pass therefore reached the builder as a bare non-zero exit, and an advisory
+    // finding on a passing run reached nobody at all, because `runGates` discards stdout on success.
+    gate: ['npx', 'impeccable', 'detect', '--json', 'src/'],
+    interpret: 'design-slop',
     note: 'frontend design-slop detector; deterministic rules, JSON output, exit codes (DESIGN.md §5.1)',
   },
   knip: {
@@ -194,7 +201,7 @@ export const INSTALL_TIMEOUT_MS = 10 * 60_000;
  * @param {{ cwd: string, plugins: string[], runner?: Runner }} options
  * @returns {Promise<{
  *   installed: string[], skipped: string[], warnings: string[],
- *   gates: { plugin: string, command: string[], capability?: string }[]
+ *   gates: { plugin: string, command: string[], capability?: string, interpret?: 'design-slop' }[]
  * }>}
  * @throws {PluginInstallError} when a required plugin cannot be provisioned
  */
@@ -208,7 +215,7 @@ export async function installQualityPlugins(options) {
   const skipped = [];
   /** @type {string[]} */
   const warnings = [];
-  /** @type {{ plugin: string, command: string[], capability?: string }[]} */
+  /** @type {{ plugin: string, command: string[], capability?: string, interpret?: 'design-slop' }[]} */
   const gates = [];
 
   for (const name of plugins) {
@@ -271,6 +278,7 @@ export async function installQualityPlugins(options) {
       plugin: spec.name,
       command: spec.gate,
       ...(spec.capability === undefined ? {} : { capability: spec.capability }),
+      ...(spec.interpret === undefined ? {} : { interpret: spec.interpret }),
     });
   }
 

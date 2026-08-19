@@ -11,7 +11,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
-import { parseImpeccableFindings, SlopError } from '../scripts/design-slop.mjs';
+import {
+  designSlopEvidence,
+  parseImpeccableFindings,
+  SLOP_OUTPUT_LIMIT,
+  SLOP_RENDER_LIMIT,
+  SlopError,
+} from '../scripts/design-slop.mjs';
 
 const FIXTURE = readFileSync(new URL('./fixtures/impeccable/slop-findings.json', import.meta.url), 'utf8');
 
@@ -81,5 +87,82 @@ describe('parseImpeccableFindings fails closed', () => {
     assert.equal(primary.length, 1);
     assert.equal(advisory.length, 0);
     assert.equal(primary[0].advisory, false);
+  });
+});
+
+describe('designSlopEvidence turns one detect run into a gate result', () => {
+  // Derived from the real capture by filtering it, never by inventing findings: the shapes stay
+  // impeccable 4.0.4's own. `advisoryOnly` is what a clean-but-chatty page really produces.
+  const ALL = JSON.parse(FIXTURE);
+  const advisoryOnly = JSON.stringify(ALL.filter((/** @type {{advisory?: boolean}} */ f) => f.advisory === true));
+  const primaryOnly = JSON.stringify(ALL.filter((/** @type {{advisory?: boolean}} */ f) => f.advisory !== true));
+
+  it('fails on primary findings and names each one with its rule and location', () => {
+    const { ok, detail } = designSlopEvidence({ stdout: FIXTURE, status: 2 });
+    assert.equal(ok, false);
+    assert.match(detail, /design-slop findings that fail this gate \(2\):/);
+    assert.match(detail, /- overused-font at slop\.html:3:/);
+    assert.match(detail, /- bounce-easing at slop\.html:7:/);
+  });
+
+  it('records advisory findings in the same detail without giving them gate authority', () => {
+    // The whole point of the partition. `em-dash-overuse` reports severity "warning" and is
+    // advisory; a gate that failed on it would fail a run over punctuation.
+    const { ok, detail } = designSlopEvidence({ stdout: advisoryOnly, status: 0 });
+    assert.equal(ok, true);
+    assert.match(detail, /^no gate-failing design findings\n/);
+    assert.match(detail, /advisory findings, recorded but not gate-failing \(1\):/);
+    assert.match(detail, /- em-dash-overuse at slop\.html:/);
+  });
+
+  it('says so plainly when impeccable found nothing at all', () => {
+    assert.deepEqual(designSlopEvidence({ stdout: '[]', status: 0 }), {
+      ok: true,
+      detail: 'impeccable found nothing, primary or advisory',
+    });
+  });
+
+  it('refuses a status that contradicts the stream, in both directions', () => {
+    // impeccable exits 2 exactly when primary findings exist. A disagreement means the status and
+    // the stdout came from different runs — a wrapper swallowing output, a redirect, a moved
+    // contract — and resolving it either way converts an unknown into a verdict.
+    const clean = designSlopEvidence({ stdout: primaryOnly, status: 0 });
+    assert.equal(clean.ok, false);
+    assert.match(clean.detail, /exited 0 while reporting 2 primary and 0 advisory findings/);
+
+    const noisy = designSlopEvidence({ stdout: advisoryOnly, status: 2 });
+    assert.equal(noisy.ok, false);
+    assert.match(noisy.detail, /exited 2 while reporting 0 primary and 1 advisory findings/);
+  });
+
+  it('refuses an empty stream rather than reading it as a clean pass', () => {
+    const { ok, detail } = designSlopEvidence({ stdout: '   \n', status: 0, stderr: 'impeccable: bad flag' });
+    assert.equal(ok, false);
+    assert.match(detail, /produced no output at all/);
+    // The stderr travels, because "no output" and "no output, and here is why" are debugged
+    // very differently.
+    assert.match(detail, /impeccable: bad flag$/);
+  });
+
+  it('refuses output past the interpretation limit rather than truncating it', () => {
+    const { ok, detail } = designSlopEvidence({ stdout: 'x'.repeat(SLOP_OUTPUT_LIMIT + 1), status: 0 });
+    assert.equal(ok, false);
+    assert.match(detail, /over the 1048576-byte limit/);
+    assert.match(detail, /Refused rather than truncated/);
+  });
+
+  it('carries a parse failure through as a failure, never as "no findings"', () => {
+    const { ok, detail } = designSlopEvidence({ stdout: '{"not":"an array"}', status: 0 });
+    assert.equal(ok, false);
+    assert.match(detail, /could not be trusted: impeccable --json output was not an array/);
+  });
+
+  it('states that it stopped listing rather than letting a long list read as complete', () => {
+    const one = JSON.parse(primaryOnly)[0];
+    const many = JSON.stringify(Array.from({ length: SLOP_RENDER_LIMIT + 3 }, () => one));
+    const { ok, detail } = designSlopEvidence({ stdout: many, status: 2 });
+    assert.equal(ok, false);
+    assert.equal(detail.split('\n').filter((line) => line.startsWith('  - ')).length, SLOP_RENDER_LIMIT + 1);
+    assert.match(detail, /- \.\.\. and 3 more, not shown$/);
   });
 });
