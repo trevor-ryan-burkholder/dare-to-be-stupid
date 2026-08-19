@@ -195,6 +195,53 @@ describe('buildAcceptanceReceipt', () => {
   });
 });
 
+describe('the receipt refuses a ledger it could not read (REVIEW F22, audit)', () => {
+  // **An empty invocation list used to build, verify, and satisfy `modelIdentityHolds` vacuously.**
+  // A run that reaches a terminal state spawned children by construction, so an empty list means the
+  // supply store could not be read — and `recordedInvocations` returns `[]` for exactly that. The
+  // result was a *complete* `SHIPPED` receipt on which the strongest check the module offers
+  // reported that model identity held, about invocations nobody recorded.
+
+  it('refuses a receipt with no invocations at all', () => {
+    assert.throws(() => buildAcceptanceReceipt(complete({ invocations: [] })), /none were recorded/);
+  });
+
+  it('does not let an empty ledger satisfy a model-identity claim', () => {
+    const verdict = modelIdentityHolds({ invocations: [] });
+    assert.equal(verdict.ok, false);
+    assert.equal(verdict.unmatched[0].includes('no invocation was recorded'), true, verdict.unmatched[0]);
+  });
+
+  it('records a ledger lapse as a gap, not as an invocation wearing a placeholder', () => {
+    // **The receipt is the "later verifier" `role-supply.mjs` writes its lapse for.** The first draft
+    // pushed it into `invocations` with `requestedModel: 'none'` — and the completeness rule refused
+    // it, correctly: `none` is exactly the placeholder shape `isIdentity` exists to reject. A lapse
+    // is a statement about the ledger, not about a model, so it gets its own field.
+    const receipt = /** @type {any} */ (
+      buildAcceptanceReceipt(complete({ ledgerLapses: ['the previous supply store could not be read'] }))
+    );
+
+    assert.deepStrictEqual(receipt.ledgerLapses, ['the previous supply store could not be read']);
+    assert.equal(receipt.invocations.length, 1, 'the lapse was counted as an invocation');
+  });
+
+  it('refuses a model-identity claim while the ledger has a hole in it', () => {
+    // Whatever the surviving entries say, a ledger that lost a segment cannot support a claim about
+    // *every* invocation the run made.
+    const receipt = buildAcceptanceReceipt(complete({ ledgerLapses: ['the previous supply store could not be read'] }));
+
+    const verdict = modelIdentityHolds(receipt);
+
+    assert.equal(verdict.ok, false, 'a run with a lost ledger segment claimed a clean model identity');
+    assert.equal(verdict.unmatched[0].includes('not continuous'), true, verdict.unmatched[0]);
+  });
+
+  it('still holds when the ledger is continuous, which is every ordinary run', () => {
+    // The neighbour: a lapse field that refused everything would make the check useless.
+    assert.equal(modelIdentityHolds(buildAcceptanceReceipt(complete())).ok, true);
+  });
+});
+
 describe('verifyAcceptanceReceipt', () => {
   it('accepts a complete receipt for the subject it was asked about', () => {
     const receipt = buildAcceptanceReceipt(complete());

@@ -1885,7 +1885,7 @@ export function panelRecordDigest(meeseeksDir) {
  * a second answer to "what did this run spawn".
  *
  * @param {string} meeseeksDir
- * @returns {import('./acceptance.mjs').RoleInvocation[]}
+ * @returns {{ invocations: import('./acceptance.mjs').RoleInvocation[], lapses: string[] }}
  */
 export function recordedInvocations(meeseeksDir) {
   /** @type {any} */
@@ -1893,11 +1893,24 @@ export function recordedInvocations(meeseeksDir) {
   try {
     store = JSON.parse(readFileSync(path.join(meeseeksDir, SUPPLY_FILE), 'utf8'));
   } catch {
-    return [];
+    return { invocations: [], lapses: [] };
   }
   /** @type {import('./acceptance.mjs').RoleInvocation[]} */
   const invocations = [];
+  /** @type {string[]} */
+  const lapses = [];
   for (const entry of Array.isArray(store?.entries) ? store.entries : []) {
+    // **A lapse is a record, not a gap to skip past** (REVIEW F22). `appendSupplyRecord` writes one
+    // when it finds a store it cannot read, precisely so a later verifier cannot confuse "nothing
+    // was recorded" with "nothing happened" — and this loop was dropping it, so a store corrupted
+    // halfway through a run produced a *complete* receipt listing only the invocations after the
+    // corruption, with nothing anywhere saying earlier ones were lost. The receipt is that later
+    // verifier, so it carries the discontinuity as an invocation whose model identity is
+    // unavailable, which is the only honest shape for it.
+    if (typeof entry?.lapse === 'string' && entry.lapse !== '') {
+      lapses.push(entry.lapse);
+      continue;
+    }
     if (typeof entry?.role !== 'string' || entry.role === '') continue;
     invocations.push({
       role: entry.role,
@@ -1910,7 +1923,7 @@ export function recordedInvocations(meeseeksDir) {
         entry.manifest === undefined || entry.manifest === null ? null : digest(JSON.stringify(entry.manifest)),
     });
   }
-  return invocations;
+  return { invocations, lapses };
 }
 
 /**
@@ -2121,17 +2134,51 @@ export async function driveRun(options) {
   let reviewedWorkspace = null;
 
   /**
-   * The last gate roster this loop actually ran, and the last commit it made (REVIEW F22).
+   * The one attempt the acceptance receipt may describe: a sealed tree and the checks run *on it*.
    *
-   * Loop-scoped for `finish`'s reason: the acceptance receipt is written at the terminal transition,
-   * and by then the iteration that produced these has ended. Recorded rather than re-derived,
-   * because re-running the gates to describe them would describe a different run.
+   * **Three separate variables were three separate facts, and the receipt married the wrong ones.**
+   * `reviewedWorkspace` is assigned after the gates and before the panel; the gate results were
+   * assigned before them; and five `continue` statements sit in between. So an iteration that gated
+   * and then bailed before the panel overwrote the gate results while the seal still pointed at an
+   * *earlier* tree, and `finish` published the pair as though they belonged together. Reproduced by
+   * an adversarial audit before this shipped: iteration 1 passes both gates on tree A and seals it,
+   * iteration 2 fails both on a later tree and never reaches a panel, and the receipt reads tree A
+   * with two failing gates — and verifies clean. The damaging polarity is the same bug reversed: the
+   * security-regression `continue` is taken only when every gate *passed*, so an all-green list can
+   * be bound to a tree those gates never ran against.
    *
-   * @type {GateResult[]}
+   * That is the receipt's entire stated purpose — *which deterministic checks passed on which exact
+   * bytes* — returning a wrong answer confidently. One record, assigned once, at the only moment the
+   * two are known to describe each other.
+   *
+   * @type {{ tree: string, commit: string | null, gates: GateResult[], reports: string[] } | null}
    */
-  let lastGateResults = [];
-  /** @type {string | null} */
-  let lastCommit = null;
+  let sealedAttempt = null;
+
+  /**
+   * This iteration's gate results and report digests, until a seal makes them an attempt.
+   *
+   * Declared without an initial value on purpose: the only reader is the seal below, and an empty
+   * array there would be a claim that the gates ran and found nothing rather than that they have
+   * not run yet.
+   *
+   * @type {GateResult[] | undefined}
+   */
+  let iterationGateResults;
+  /** @type {string[] | undefined} */
+  let iterationReportDigests;
+
+  /**
+   * The deploy this run performed, if it performed one (REVIEW F22).
+   *
+   * The first draft looked for a gate named `deploy` and there has never been one, so the field was
+   * structurally always `null`: a run that deployed successfully produced a receipt indistinguishable
+   * from a run with no deploy configured. The deploy is an *effect* called on the ship path, so this
+   * records what it returned — including a failure, which is exactly the case an auditor asks about.
+   *
+   * @type {{ ok: boolean, detail: string } | null}
+   */
+  let lastDeploy = null;
 
   /**
    * @param {TerminalState} state
@@ -2182,7 +2229,10 @@ export async function driveRun(options) {
     // provenance.
     try {
       writeAcceptanceReceipt(meeseeksDir, {
-        subject: { tree: reviewedWorkspace ?? '', commit: lastCommit },
+        // Both halves from the one record, so a receipt can only ever describe checks that ran on
+        // the tree it names. A run with no sealed attempt has no subject, and the completeness rule
+        // below refuses it rather than inventing one.
+        subject: { tree: sealedAttempt?.tree ?? '', commit: sealedAttempt?.commit ?? null },
         inputs: {
           specification: options.identities?.specification ?? '',
           config: options.identities?.config ?? '',
@@ -2192,13 +2242,24 @@ export async function driveRun(options) {
         },
         results: {
           terminal: state,
-          gates: acceptanceGates(lastGateResults),
+          gates: acceptanceGates(sealedAttempt?.gates ?? []),
           panelDigest: panelRecordDigest(meeseeksDir),
           ratchetPassing: outcome.passing.length,
-          oracle: gateDetailFor(lastGateResults, 'oracle'),
-          deploy: gateDetailFor(lastGateResults, 'deploy'),
+          // The evidence the gate results were derived from, bound by bytes rather than by a token
+          // nobody issues (REVIEW F16, F22).
+          reports: sealedAttempt?.reports ?? [],
+          oracle: gateDetailFor(sealedAttempt?.gates ?? [], 'oracle'),
+          // From the effect that ran it, not from a gate roster that has never contained one:
+          // `gateDetailFor(..., 'deploy')` was structurally always null, so a successful deploy and
+          // no deploy at all read identically. A field that cannot be populated is worse than absent.
+          deploy: lastDeploy === null ? null : `${lastDeploy.ok ? 'ok' : 'failed'} ${digest(lastDeploy.detail)}`,
         },
-        invocations: recordedInvocations(meeseeksDir),
+        ...(() => {
+          // Read once. Twice would be two reads of a file another process could change between
+          // them, which is the shape of defect this receipt exists to make visible.
+          const ledger = recordedInvocations(meeseeksDir);
+          return { invocations: ledger.invocations, ledgerLapses: ledger.lapses };
+        })(),
         at: effects.now(),
       });
     } catch (error) {
@@ -2526,11 +2587,18 @@ export async function driveRun(options) {
         // e2e suite has two, and the ratchet must hold both or it protects half the work.
         /** @type {import('./reporters/index.mjs').TestRecord[]} */
         const records = [];
+        /** @type {string[]} */
+        const readThisAttempt = [];
         for (const report of effects.readTestReports()) {
+          // Digested where the loop actually reads them, rather than re-read later: a receipt that
+          // hashed the files again at the terminal transition would describe whatever was on disk by
+          // then, which is the substitution F16 exists to prevent.
+          readThisAttempt.push(digest(typeof report === 'string' ? report : JSON.stringify(report)));
           const parsed = parseReport(report, { rootDir });
           collected += parsed.tests.length;
           records.push(...parsed.tests);
         }
+        iterationReportDigests = readThisAttempt;
         /** @type {Set<string>} */
         const reported = new Set();
         for (const [id, status] of collapseByWorstStatus(records)) {
@@ -2572,7 +2640,7 @@ export async function driveRun(options) {
         ? commandGateOutcome
         : { ok: false, results: [...commandGateOutcome.results, stability] };
     const score = gateScore(gateOutcome.results);
-    lastGateResults = gateOutcome.results;
+    iterationGateResults = gateOutcome.results;
     lastGateTotal = gateOutcome.results.length;
     lastGateShare = lastGateTotal === 0 ? 0 : score / lastGateTotal;
     const failedGates = gateOutcome.results.filter((result) => !result.ok);
@@ -2980,6 +3048,14 @@ export async function driveRun(options) {
     // reviewer, so everything downstream — every verdict, the commit, the tag — is sealed to one
     // measurable tree rather than to whatever happens to be on disk when it is asked.
     reviewedWorkspace = await effects.workspaceIdentity();
+    // **The seal and the checks become one fact here, or not at all** (REVIEW F22). This is the only
+    // line where the tree that was gated and the gates that were run on it are both known and both
+    // current; recording them separately is what let the receipt pair a seal with another
+    // iteration's results. `commit` is filled in below, once this attempt has one.
+    sealedAttempt =
+      reviewedWorkspace === null
+        ? null
+        : { tree: reviewedWorkspace, commit: null, gates: iterationGateResults ?? [], reports: iterationReportDigests ?? [] };
     if (reviewedWorkspace === null) {
       // Uncertainty is not a pass. A tree that cannot be hashed is a tree whose verdict cannot be
       // sealed, and shipping one would be exactly the false completion this seals against.
@@ -3203,7 +3279,7 @@ export async function driveRun(options) {
         ? `meeseeks: iteration ${iterationNumber}`
         : `meeseeks: iteration ${iterationNumber} (review outstanding)`,
     );
-    lastCommit = commit;
+    if (sealedAttempt !== null) sealedAttempt.commit = commit;
     // After the commit, prove the tree that landed is the tree that was reviewed. The commit
     // stages the whole working tree, so a working tree still matching the sealed identity is the
     // committed tree matching it — which is what a deploy and a tag are about to assert.
@@ -3311,6 +3387,7 @@ export async function driveRun(options) {
       // prize having deployed nothing. A deploy that cannot withhold the tag is not evidence
       // about the tag (DESIGN.md §10.1).
       const deployed = (await effects.deploy?.()) ?? { ok: true, detail: 'no deploy configured' };
+      lastDeploy = effects.deploy === undefined ? null : deployed;
       if (!deployed.ok) {
         // Withheld, not failed — the same shape as the unproven-suite check above. A blinking
         // network or a box that is down is not a reason to `git reset --hard` a tree that

@@ -4399,7 +4399,7 @@ and a version with no path is less than that.
 snapshot to attach to. Only F25's needs a model, and only for the *skill surface* question — the
 rest of what those findings ask about the installed plugin is answerable here for free.
 
-### 112. The acceptance receipt — IMPLEMENTED (0.210.0); REVIEW F22 open pending Codex
+### 112. The acceptance receipt — IMPLEMENTED (0.210.0, audited and repaired at 0.211.0); REVIEW F22 open pending Codex
 
 **What a `SHIPPED` proved before this.** `run.json` records what a run *was*, `review.json` what the
 panel *said*, `outcome.json` how it *ended*. Gate results were built in memory by `runGates` and
@@ -4449,10 +4449,73 @@ reached.
 **Evidence.** 17 unit cases on the claim and its verifier, 6 at the loop, 2 at tier 2. Four of the
 loop cases go red with the writer disabled.
 
-**Not done, and named rather than implied:** F22's clean-clone traversal (an auditor resolving every
-acceptance edge from the receipt alone), the refusals for stale/mixed-attempt/wrong-tree evidence
-beyond the subject check, F16's per-report attempt identity as a recorded edge, and the bounded
-report digests. `PARTIAL` for exactly that reason.
+**F16's binding, reused rather than reinvented.** The receipt records a digest of every report the
+loop actually read for the attempt whose gate results it carries. There is no attempt *identifier* to
+record and inventing one would be the parallel notion F22 says not to create: F16's repair is
+deliberately not a nonce or an mtime — the expected paths are removed before the attempt and a
+regular file is required afterwards, so "this attempt produced it" is established by the protocol.
+What a receipt can bind is the bytes, digested **where the loop reads them** rather than re-hashed at
+the terminal transition against whatever is on disk by then, which is the substitution F16 exists to
+prevent.
+
+**An adversarial audit ran against the receipt before this landed, and found five things.** Four are
+repaired here; the rest are named below. Recording that the audit happened is the point — the module
+was unit-tested and green when every one of these was true.
+
+- **The receipt could bind one iteration's gate results to another iteration's sealed tree, and
+  verify clean.** The seal and the gate results were separate loop-scoped variables assigned at
+  different points with five `continue` statements between them, so an iteration that gated and then
+  bailed before the panel overwrote the results while the seal still pointed at an earlier tree.
+  Reproduced: tree A sealed with tree B's two *failing* gates. The damaging polarity is the same bug
+  reversed — the security-regression `continue` is taken only when every gate passed, so an all-green
+  list could be bound to a tree those gates never ran against. **That is the receipt's entire stated
+  purpose returning a wrong answer confidently.** Now one `sealedAttempt` record, assigned at the only
+  line where the tree and its checks are both current.
+- **`results.deploy` was structurally always `null`** — it looked for a gate named `deploy` and there
+  has never been one, so a successful deploy and no deploy read identically. It comes from the effect
+  that runs it now, failures included.
+- **An empty invocation ledger built, verified, and satisfied `modelIdentityHolds` vacuously.** A
+  corrupt or unwritable supply store makes `recordedInvocations` return `[]`, and the result was a
+  *complete* `SHIPPED` receipt reporting that model identity held about invocations nobody recorded.
+  A run that reached a terminal state spawned children by construction, so an empty list is now
+  incomplete, and the check refuses one outright.
+- **A recorded lapse was silently dropped.** `role-supply.mjs` writes one exactly so a later verifier
+  cannot confuse "nothing was recorded" with "nothing happened" — and the receipt, which *is* that
+  verifier, skipped it. Lapses now have their own field and refuse a model-identity claim while any
+  exists. The first repair pushed them into `invocations` with `requestedModel: 'none'` and the
+  completeness rule rejected it, correctly: `none` is the placeholder shape `isIdentity` exists to
+  refuse.
+- **One of my own tests was provably vacuous.** "keeps a failed gate in the receipt" ended with
+  `if (!existsSync(receipt)) return;` and the file is never written on that path, so nothing after it
+  ran. Replaced with the property that is actually true — a run whose gates fail seals nothing, so it
+  writes no receipt — plus a case that reproduces the seal/gate pairing defect above.
+
+**And the verifier had no production caller**, which is this repository's signature defect in its
+purest form. `finish` now verifies what it just wrote, with the reader an auditor would use, and
+removes a receipt that does not verify rather than leaving one nobody can accept.
+
+**Not done, and named rather than implied:** F22's clean-clone traversal — an auditor resolving every
+acceptance edge from the receipt alone, refusing a dangling one. Three edges the audit showed still
+dangle: `ratchetPassing` is a bare integer whose authority `state.json` is deliberately *not* archived
+per run, so an archived receipt's ratchet edge cannot be checked at all; `panelRecordDigest` digests
+the whole append-only `review.json` without naming which entry authorized the terminal state; and
+`recordedInvocations` rebuilds the ledger positionally with no back-reference, so deleting one entry
+from `supply.json` renumbers the rest and nothing notices. Also open: every invocation records
+`iteration: null` hardcoded, so no invocation can be attributed to the iteration that produced the
+reviewed tree, and the receipt mixes 64-hex and 32-hex digests with nothing distinguishing them.
+`PARTIAL` for exactly those reasons.
+
+### 113. What an adversarial audit found in the acceptance receipt — IMPLEMENTED (0.211.0)
+
+Recorded as its own item because the lesson is not any one of the five defects. **The module was
+unit-tested and green while every one of them was true**, and four of the five live at the *seam*
+where the driver fills the typed fields in — not in the type, which held up. Item 112 carries the
+findings and the repairs; this entry exists so the shape is findable: a receipt is only as honest as
+the values handed to it, and the tests that covered the shape covered none of the handing.
+
+The one worth remembering: **`subject.tree` and `results.gates` were two variables, so the receipt
+married the wrong ones.** Nothing about either variable was wrong on its own. They were correct,
+current, well-named, and describing different iterations.
 
 ## Observations recorded rather than repaired
 

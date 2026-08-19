@@ -91,9 +91,10 @@ function isTagged(value) {
  *   inputs: { specification: string, config: string, plugin: string, cli: string, gateRoster: string[] },
  *   results: {
  *     terminal: string, gates: GateRecord[], panelDigest: string | null,
- *     ratchetPassing: number, oracle: string | null, deploy: string | null,
+ *     ratchetPassing: number, reports?: string[], oracle: string | null, deploy: string | null,
  *   },
  *   invocations: RoleInvocation[],
+ *   ledgerLapses?: string[],
  *   at: string,
  * }} input
  * @returns {Record<string, unknown>}
@@ -138,7 +139,14 @@ export function buildAcceptanceReceipt(input) {
 
   const invocations = input.invocations;
   if (!Array.isArray(invocations)) missing.push('invocations');
-  else {
+  else if (invocations.length === 0) {
+    // **An empty ledger is not a run that spawned nothing.** A run that reached a terminal state
+    // spawned children by construction, so an empty list means the store could not be read — and
+    // `recordedInvocations` returns `[]` for exactly that. Accepting it produced a *complete*
+    // `SHIPPED` receipt on which `modelIdentityHolds` then reported that model identity held,
+    // vacuously, which is the one claim F22 says an absence of vendor evidence must never satisfy.
+    missing.push('invocations: none were recorded, and a run that reached a terminal state spawned children');
+  } else {
     for (const [index, invocation] of invocations.entries()) {
       if (!isIdentity(invocation?.role)) missing.push(`invocations[${index}].role`);
       if (!isIdentity(invocation?.requestedModel)) missing.push(`invocations[${index}].requestedModel`);
@@ -174,9 +182,19 @@ export function buildAcceptanceReceipt(input) {
         .sort((a, b) => (a.name < b.name ? -1 : 1)),
       panelDigest: isIdentity(input.results.panelDigest) ? input.results.panelDigest : null,
       ratchetPassing: Number.isInteger(input.results.ratchetPassing) ? input.results.ratchetPassing : 0,
+      // The report bytes the gate results were read from. An empty list is honest for a run whose
+      // suite produced none, and is a different fact from a run that never looked — which cannot
+      // reach here, because a run with no gate results has no roster to satisfy.
+      reports: Array.isArray(input.results.reports) ? [...input.results.reports].sort() : [],
       oracle: isIdentity(input.results.oracle) ? input.results.oracle : null,
       deploy: isIdentity(input.results.deploy) ? input.results.deploy : null,
     },
+    // **Gaps in the ledger, named as gaps** — not smuggled into `invocations` wearing a placeholder
+    // model. `role-supply.mjs` writes a lapse when it finds a store it cannot read, precisely so a
+    // later verifier cannot confuse "nothing was recorded" with "nothing happened", and the receipt
+    // is that later verifier. A lapse is a statement about the ledger, not about a model, so it gets
+    // its own field and `modelIdentityHolds` refuses while any exists.
+    ledgerLapses: Array.isArray(input.ledgerLapses) ? [...input.ledgerLapses] : [],
     invocations: input.invocations.map((invocation) => ({
       role: invocation.role,
       requestedModel: invocation.requestedModel,
@@ -211,6 +229,7 @@ export function verifyAcceptanceReceipt(value, expect = {}) {
       inputs: receipt.inputs ?? {},
       results: receipt.results ?? {},
       invocations: receipt.invocations ?? [],
+      ledgerLapses: receipt.ledgerLapses ?? [],
       at: receipt.at,
     });
   } catch (error) {
@@ -239,7 +258,16 @@ export function verifyAcceptanceReceipt(value, expect = {}) {
 export function modelIdentityHolds(receipt) {
   /** @type {string[]} */
   const unmatched = [];
-  for (const invocation of receipt.invocations ?? []) {
+  const invocations = receipt.invocations ?? [];
+  // Nothing to check is not a check that passed. An empty ledger cannot support a model-identity
+  // claim about invocations nobody recorded.
+  if (invocations.length === 0) {
+    return { ok: false, unmatched: ['no invocation was recorded, so no model identity can be established'] };
+  }
+  // A ledger with a hole in it cannot support a claim about *every* invocation, whatever the entries
+  // that survived say.
+  for (const lapse of receipt.ledgerLapses ?? []) unmatched.push(`the invocation ledger is not continuous: ${lapse}`);
+  for (const invocation of invocations) {
     const models = invocation.models ?? {};
     if (!Array.isArray(models.observed)) {
       unmatched.push(`${invocation.role}: ${models.unavailable ?? 'no observation recorded'}`);

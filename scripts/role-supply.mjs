@@ -24,7 +24,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 /**
@@ -220,6 +220,10 @@ const SUPPLY_VERSION = 1;
  */
 export function appendSupplyRecord(meeseeksDir, record, options = {}) {
   const now = options.now ?? (() => new Date().toISOString());
+  // Created here as every other writer under `.meeseeks/` does. In production the directory always
+  // exists by the time a child is spawned, so this never fired — and a writer that throws on a
+  // missing directory is a writer that loses the record for a reason unrelated to the record.
+  mkdirSync(meeseeksDir, { recursive: true });
   const file = path.join(meeseeksDir, SUPPLY_FILE);
   /** @type {{ version: number, entries: (SupplyRecord | SupplyLapse)[] }} */
   let store = { version: SUPPLY_VERSION, entries: [] };

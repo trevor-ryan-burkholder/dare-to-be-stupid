@@ -21,9 +21,10 @@ import path from 'node:path';
 import { setTimeout } from 'node:timers';
 import { after, describe, it } from 'node:test';
 
-import { ACCEPTANCE_CLAIM, ACCEPTANCE_VERSION, verifyAcceptanceReceipt } from '../scripts/acceptance.mjs';
+import { ACCEPTANCE_CLAIM, ACCEPTANCE_VERSION, digest, verifyAcceptanceReceipt } from '../scripts/acceptance.mjs';
 import { ACCEPTANCE_FILE } from '../scripts/acceptance-file.mjs';
 import { readAssumptions } from '../scripts/assumptions.mjs';
+import { appendSupplyRecord } from '../scripts/role-supply.mjs';
 import { changedDefinitions } from '../scripts/ratchet.mjs';
 import { READ_LIMITS } from '../scripts/bounded-read.mjs';
 import { MUTATION_CONFIG_CONTENTS } from '../scripts/toolchains/node.mjs';
@@ -2254,6 +2255,19 @@ describe('driveRun', () => {
     async function shipped(overrides = {}, options = {}) {
       const root = makeTempDir();
       seedCitedSources(root);
+      // **A real run records every child through `runChild`; this harness injects the effects below
+      // that layer**, so it must seed the ledger the way a run would. Without it the receipt is
+      // refused as incomplete — correctly, because an empty ledger means the store could not be read
+      // rather than that the run spawned nothing.
+      appendSupplyRecord(path.join(root, '.meeseeks'), {
+        role: 'review',
+        at: '2026-08-19T00:00:00.000Z',
+        iteration: null,
+        manifest: null,
+        requestedModel: 'claude-sonnet-5',
+        requestedEffort: 'high',
+        models: { observed: ['claude-sonnet-5'] },
+      });
       const outcome = await driveRun({
         config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
         meeseeksDir: path.join(root, '.meeseeks'),
@@ -2320,6 +2334,25 @@ describe('driveRun', () => {
       }
     });
 
+    it('binds the gate results to the report bytes they were read from', async () => {
+      // **F16's attempt binding, reused rather than reinvented.** There is no attempt *identifier*
+      // to record: F16's repair is deliberately not a nonce or an mtime — the expected report paths
+      // are removed before the attempt and a regular file is required after, so "this attempt
+      // produced it" is established by the protocol. What a receipt can bind is the bytes, digested
+      // where the loop reads them rather than re-hashed later against whatever is on disk by then.
+      const { root } = await shipped();
+
+      const receipt = receiptIn(root);
+
+      assert.equal(Array.isArray(receipt.results.reports), true, 'the receipt records no report evidence');
+      assert.equal(receipt.results.reports.length, GREEN_REPORT.length);
+      for (const recorded of receipt.results.reports) {
+        assert.match(recorded, /^sha256:[0-9a-f]{16,}$/);
+      }
+      // And it is the digest of what was actually read, not of some other rendering of it.
+      assert.deepStrictEqual(receipt.results.reports, [digest(JSON.stringify(GREEN_REPORT[0]))]);
+    });
+
     it('refuses the whole receipt when a required gate has no result', async () => {
       // **Absence and failure are different facts**, and collapsing them would make "everything
       // required passed" unfalsifiable. A roster naming a gate nothing ran cannot be completed.
@@ -2334,7 +2367,14 @@ describe('driveRun', () => {
       assert.equal(logs.join('\n').includes('types is in the roster and has no result'), true, logs.join('\n').slice(-400));
     });
 
-    it('keeps a failed gate in the receipt rather than dropping it', async () => {
+    it('writes no receipt for an iteration whose gates failed before a seal', async () => {
+      // **This case was vacuous when it was written, and the audit caught it.** It ended with
+      // `if (!existsSync(receipt)) return;` — and the file is never written on this path, so the
+      // assertion after it never ran. A test that returns before asserting reports coverage it does
+      // not have, which is the exact failure this file keeps finding in production code.
+      //
+      // The honest property is the opposite of what it claimed: a run whose gates fail never reaches
+      // a panel, so nothing is sealed, so there is no subject and no receipt.
       const { root } = await shipped({
         gates: () => ({
           ok: false,
@@ -2345,11 +2385,47 @@ describe('driveRun', () => {
         }),
       });
 
-      // The run did not ship, but it still reached a terminal state — and the receipt records the
-      // failure rather than omitting it to look clean.
+      assert.equal(
+        existsSync(path.join(root, '.meeseeks', ACCEPTANCE_FILE)),
+        false,
+        'a receipt was written for a tree no panel ever sealed',
+      );
+      assert.equal(existsSync(path.join(root, '.meeseeks', 'outcome.json')), true, 'the run lost its terminal receipt');
+    });
+
+    it('never pairs a sealed tree with another iteration\u2019s gate results', async () => {
+      // **The defect an adversarial audit reproduced before this shipped.** The seal and the gate
+      // results were two loop-scoped variables assigned at different points with five `continue`
+      // statements between them, so an iteration that gated and then bailed before the panel
+      // overwrote the results while the seal still pointed at an earlier tree. The receipt published
+      // the pair as though they described each other — and verified clean.
+      //
+      // Two iterations, two different trees, and the second fails its gates and never seals. The
+      // receipt must describe the sealed one or nothing; it must never describe tree A with tree B's
+      // results.
+      let call = 0;
+      const trees = ['sha256:TREE-A', 'sha256:TREE-B'];
+      const { root } = await shipped(
+        {
+          workspaceIdentity: () => trees[Math.min(call, trees.length - 1)],
+          gates: () => {
+            call += 1;
+            return call === 1
+              ? { ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }, { name: 'mutation', ok: true, status: 0, detail: 'no survivors' }] }
+              : { ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'failed' }, { name: 'mutation', ok: false, status: 1, detail: 'survivors' }] };
+          },
+          review: () => ({ ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0.01, tokens: 100, raw: '' }),
+        },
+        {},
+      );
+
       if (!existsSync(path.join(root, '.meeseeks', ACCEPTANCE_FILE))) return;
-      const mutation = receiptIn(root).results.gates.find((/** @type {any} */ g) => g.name === 'mutation');
-      assert.equal(mutation.ok, false);
+      const receipt = receiptIn(root);
+      // Whatever tree it names, the gates it reports must be the ones that ran on that tree — and on
+      // the sealed tree every gate passed.
+      for (const gate of receipt.results.gates) {
+        assert.equal(gate.ok, true, `the receipt bound a failing ${gate.name} to the sealed tree ${receipt.subject.tree}`);
+      }
     });
 
     it('does not write a claim for a run that never sealed a tree', async () => {
