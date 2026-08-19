@@ -2339,7 +2339,7 @@ POSIX process-group path.
 three disappear within the bound while an unrelated process survives; POSIX cleanup and successful
 health probes remain green. A POSIX-only result cannot close REVIEW F11.
 
-### 66. Bind the run to an immutable specification revision — IMPLEMENTED (0.170.0); REVIEW F12 CLOSED at 0.194.0
+### 66. Bind the run to an immutable specification revision — IMPLEMENTED (0.170.0); REVIEW F12 CLOSED at 0.194.0 and reopened against `3debe73`; the delivery half is item 118
 
 **Landed at 0.170.0** in `scripts/specification.mjs`. The Driver captures the canonical revision
 after the PRD commit and before the Oracle, design, Builder or Panel reads it, recording file,
@@ -4700,7 +4700,7 @@ positional rule — a marked process may not write under `.meeseeks/` at any dep
 that do not exist yet — replay by consumption, and reset because depth is a field of the record.
 `MEESEEKS_GIVE_THEM_THE_BOX` and `MEESEEKS_RUN_DEPTH` now decide nothing in a child; the flag remains
 the operator's intent at the parent, where `runInvocation` still reads it off argv, still refuses
-configured components without it, and still arms the boxed deadline. `DESIGN.md` §6.2 records this.
+configured components without it, and still arms the boxed deadline. `DESIGN.md` §6.3 records this.
 
 **The cap moved to both ends, fail-closed at both.** `authorizedNestingEnv` refuses to mint past
 `MAX_BOX_DEPTH`, so a run at the bottom never spends a spawn to be told so and the store never holds
@@ -4729,6 +4729,50 @@ refused immediately after.
 **Residual.** A renamed copy of the whole plugin is still unrecognisable to the guard by name. That
 is defense-in-depth's limit and not this half's: such a copy still cannot mint a ticket, so it is
 refused by the Driver.
+
+### 118. The specification is delivered, not pointed at — IMPLEMENTED (0.216.0); REVIEW F12 open pending Codex
+
+**F12 reopened on the half a digest comparison cannot reach.** Item 66 captures the canonical bytes
+and re-checks the working copy against them, which closes *persistent* replacement. The reviewer
+prompt still said `Read PRD.md`. A Builder with unrestricted repository writes can therefore replace
+canonical A with an easier B exactly while the Panel reads it and restore A before the next sampling:
+the Panel certifies B, the outcome and the commit name A, and nothing anywhere disagrees. Every
+existing case left the mutation *present*, which is why all of them passed against a live defect.
+
+**The repair is delivery, not a tighter sample.** `canonicalSpecificationBlock`, `reviewerBrief` and
+`realityCheckPrompt` are exported from `driver.mjs` and pure; the Panel and the circuit-breaker
+receive the captured bytes inside their prompt, fenced and stamped with the revision digest, and are
+told not to read the file — with the reason, because a reviewer holding tools reasons its way around
+an instruction that has none. `DESIGN.md` §6.2 records this. `templates/reviewer-system.md` agrees: the specification is listed as
+arriving in the brief, and a specification file in the repository that disagrees with it is named as
+a finding rather than an amendment. There is no window left to sample, because the authority never
+lives on disk. Oversize delivery is already fail-closed: `checkContextBudget` refuses a prompt over
+the ceiling before the child is spawned, so a pathological specification costs nothing.
+
+**Why they are exported functions.** The briefs were assembled inline inside `runInvocation`'s effect
+closures, reachable only by driving a whole run to a Panel — which needs passing gates and injected
+results, so `test/integration/acceptance.integration.test.mjs` says in its own header that such cases
+belong at the loop. A prompt handed to a cold role is product code and has to be directly testable.
+
+**Evidence.** Nineteen tier-1 cases: the block carries the bytes verbatim, names the file and digest,
+fences the document, and does not collapse an empty specification into nothing; the brief carries the
+document, refuses to send the panel to the working copy, gives the reason, names the revision, lists
+exactly the owned ids, appends the assumptions log only when there is one, and is identical across
+calls because it never touches a disk; the reality-check prompt does the same and still emits the one
+word the breaker parses. Six of them go red when the old `Read PRD.md` sentence is restored.
+
+**And three positional cases, because no return value can show the wiring.** The builders are pure
+and correct whether or not the loop hands them the *captured* revision, so the review and
+reality-check effects are scanned for `contents: specification.contents` and against any file read.
+The first draft sliced `review:` through `extractLesson:` — spanning both effects — and a review
+effect regressed to `readFileSync` still matched its neighbour's line and stayed green through the
+exact defect the assertion exists for. Measured, narrowed to one effect each, and re-proved red.
+
+**Tier 2 keeps the reproduction.** `test/integration/specification.integration.test.mjs` adds a run
+where the substitution is present for the whole of a child call and reverted before it returns: the
+run completes, the drift check says nothing, and the captured digest still matches. That case exists
+to pin what the before/after comparison *is* — a closure of persistent replacement — so nobody later
+mistakes it for a defence against a document that is correct whenever anyone looks.
 
 ## Observations recorded rather than repaired
 

@@ -1863,7 +1863,32 @@ excludes the read-only tools. That second test is the one that matters most here
 to the matcher would silently convert a write barrier into a blackout, and a blackout would look
 like a seal without being one.
 
-### 6.2 Nesting authority is a ticket, not a variable
+### 6.2 A cold role is handed the specification, not a path to it
+
+`not supplied` is a discipline about what the Driver hands over, and delivery is the other half of it.
+The Panel's brief used to say "Read PRD.md". The Builder has unrestricted repository writes, so the
+before/after digest check of §4 closes *persistent* replacement and leaves a transient window wide
+open: replace canonical A with an easier B while the Panel reads it, restore A before the next
+sampling, and the Panel certifies B while the outcome and the commit name A (`REVIEW.md` F12,
+reopened).
+
+So the Panel and the reality-check circuit-breaker receive the **captured bytes** inside their prompt
+— fenced, stamped with the revision digest, and accompanied by the instruction not to read the
+specification file, with its reason: the thing they are auditing can write that file. A specification
+file in the repository that disagrees with the delivered text is a finding, not an amendment, and
+`templates/reviewer-system.md` says so. There is no window to sample because the authority never
+lives on disk.
+
+`canonicalSpecificationBlock`, `reviewerBrief` and `realityCheckPrompt` are exported and pure for the
+reason `builderSystemPrompt` is: a prompt handed to a cold role is product code, and one assembled
+inline inside an effect closure can only be tested by driving a whole run to a Panel. Oversize
+delivery is already fail-closed — `checkContextBudget` (§3.9) refuses a prompt over the ceiling
+before the child is spawned, so a pathological specification costs nothing rather than being
+truncated into a different one.
+
+The held-out Oracle author has always been handed the bytes this way; the Panel now matches it.
+
+### 6.3 Nesting authority is a ticket, not a variable
 
 `--give-them-the-box` is the operator's permission to nest, to a depth of two. Until 0.215.0 both
 enforcement points read that permission out of the environment: `assertNotNested` treated a nonempty
@@ -1923,7 +1948,7 @@ meeseeks/
 │   ├── driver.mjs                # the loop. node, no deps.
 │   ├── components.mjs            # boxed component worktrees and nested-driver contract
 │   ├── run-lock.mjs              # .meeseeks/lock.json, one owner per repository
-│   ├── nesting.mjs               # .meeseeks/nesting.json, one-time nesting tickets (§6.2)
+│   ├── nesting.mjs               # .meeseeks/nesting.json, one-time nesting tickets (§6.3)
 │   ├── ratchet.mjs               # ratchet + extractTestIds (unit-tested first)
 │   ├── reporters/                # one module per test-report format (§11)
 │   │   ├── index.mjs             # the registry: detect, dispatch, collapse

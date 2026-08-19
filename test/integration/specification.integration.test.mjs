@@ -54,13 +54,22 @@ function repo() {
 }
 
 /**
- * @param {{ phases: string[], onBuild?: (cwd: string) => void }} record
+ * @typedef {{ phases: string[], onBuild?: (cwd: string) => void,
+ *   prompts?: Record<string, string[]>, onPhase?: (phase: string, cwd: string) => void }} Record_
+ */
+
+/**
+ * @param {Record_} record
  * @returns {any}
  */
 function cannedSpawn(record) {
-  return (/** @type {{ phase: string, cwd: string }} */ options) => {
+  return (/** @type {{ phase: string, cwd: string, prompt: string, systemPrompt?: string }} */ options) => {
     record.phases.push(options.phase);
+    if (record.prompts !== undefined) {
+      (record.prompts[options.phase] ??= []).push(`${options.systemPrompt ?? ''}\n${options.prompt}`);
+    }
     if (options.phase === 'builder' && record.onBuild !== undefined) record.onBuild(options.cwd);
+    if (record.onPhase !== undefined) record.onPhase(options.phase, options.cwd);
     const text =
       options.phase === 'design'
         ? 'Designed.\n\n```json\n{"capabilities": ["cli"]}\n```\n'
@@ -73,7 +82,7 @@ function cannedSpawn(record) {
 
 /**
  * @param {string} root
- * @param {{ phases: string[], onBuild?: (cwd: string) => void }} record
+ * @param {Record_} record
  * @param {string[]} logs
  * @returns {Promise<number>}
  */
@@ -91,7 +100,7 @@ describe('the driver captures the specification it was started against', () => {
     const root = repo();
     /** @type {string[]} */
     const logs = [];
-    /** @type {{ phases: string[] }} */
+    /** @type {Record_} */
     const record = { phases: [] };
     await run(root, record, logs);
     const revision = JSON.parse(readFileSync(path.join(root, '.meeseeks', SPECIFICATION_FILE), 'utf8'));
@@ -111,7 +120,7 @@ describe('a builder that moves the finish line ends the run', () => {
     const root = repo();
     /** @type {string[]} */
     const logs = [];
-    /** @type {{ phases: string[], onBuild?: (cwd: string) => void }} */
+    /** @type {Record_} */
     const record = {
       phases: [],
       onBuild: (/** @type {string} */ cwd) => {
@@ -133,7 +142,7 @@ describe('a builder that moves the finish line ends the run', () => {
     const root = repo();
     /** @type {string[]} */
     const logs = [];
-    /** @type {{ phases: string[], onBuild?: (cwd: string) => void }} */
+    /** @type {Record_} */
     const record = {
       phases: [],
       onBuild: (/** @type {string} */ cwd) => rmSync(path.join(cwd, 'PRD.md')),
@@ -149,7 +158,7 @@ describe('a builder that moves the finish line ends the run', () => {
     const root = repo();
     /** @type {string[]} */
     const logs = [];
-    /** @type {{ phases: string[], onBuild?: (cwd: string) => void }} */
+    /** @type {Record_} */
     const record = {
       phases: [],
       onBuild: (/** @type {string} */ cwd) => {
@@ -164,5 +173,56 @@ describe('a builder that moves the finish line ends the run', () => {
     assert.equal(record.phases.includes('builder'), true, 'the run never reached a builder');
     // It got past the drift check and on to the ordinary business of the loop.
     assert.equal(all.includes('gates') || all.includes('run ended'), true, all.slice(-600));
+  });
+});
+
+describe('the transient window the before/after check cannot see (REVIEW F12, reopened)', () => {
+  const EASIER = '# Thing\n\n## Requirements\n\nPRD-1.1 Admin routes exist.\n';
+
+  it('completes without noticing a substitution that was reverted before the next check', () => {
+    // **This is the reproduction, and it is deliberately a demonstration of the hole rather than of
+    // the repair.** Codex reopened F12 on exactly this: replace canonical A with an easier B while a
+    // role reads it, restore A before the next sampling, and the digest comparison — which is a
+    // comparison of two samples — sees nothing. Every case above leaves the mutation *present*,
+    // which is why they all passed against a live defect.
+    //
+    // So this pins what the before/after check is and is not. It is a closure of persistent
+    // replacement. It is not, and cannot be, a defence against a document that is correct whenever
+    // anyone looks. That defence is delivery: the panel and the circuit-breaker receive the bytes,
+    // proved in `test/driver.test.mjs` against the exported prompt builders, because reaching a
+    // panel with canned children needs injected gate results and would assert against a fixture.
+    return (async () => {
+      const root = repo();
+      /** @type {string[]} */
+      const logs = [];
+      /** @type {Record_} */
+      const record = {
+        phases: [],
+        prompts: {},
+        onPhase: (phase, cwd) => {
+          // Present for the whole of the builder call and gone again the instant it returns.
+          if (phase !== 'builder') return;
+          writeFileSync(path.join(cwd, 'PRD.md'), EASIER);
+        },
+        onBuild: () => {},
+      };
+      // The revert, run after every child, so no later sampling ever sees the substitution.
+      const originalOnPhase = record.onPhase;
+      record.onPhase = (phase, cwd) => {
+        originalOnPhase?.(phase, cwd);
+        if (phase === 'builder') writeFileSync(path.join(cwd, 'PRD.md'), PRD);
+      };
+
+      await run(root, record, logs);
+
+      const all = logs.join('\n');
+      assert.equal(all.includes('has changed since this run captured it'), false, all.slice(-900));
+      assert.equal(readFileSync(path.join(root, 'PRD.md'), 'utf8'), PRD, 'the fixture left the substitution behind');
+      // The captured revision is still the canonical one, which is what makes the window invisible:
+      // the record and the working copy agree at every moment anything compared them.
+      const revision = JSON.parse(readFileSync(path.join(root, '.meeseeks', SPECIFICATION_FILE), 'utf8'));
+      assert.equal(revision.digest, specificationDigest(PRD));
+      assert.equal(record.phases.includes('builder'), true, 'the run never reached a builder');
+    })();
   });
 });
