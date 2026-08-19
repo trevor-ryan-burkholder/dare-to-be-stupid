@@ -1780,6 +1780,15 @@ way. A twelfth, in `main`, is the one this repair nearly reintroduced: reading t
 second `JSON.parse` crashed the guard on exactly the malformed payload it exists to deny, so the
 payload is parsed once.
 
+**And two more through a real `node hooks/guard.mjs`**, because this repository keeps paying for
+correct logic nothing proved was invoked — the guard itself was right for eleven versions while no
+builder ever loaded it. Four denials over stdin with the environment a Driver supplies: the first
+three identical, the fourth dampened, every one still a deny with its tag and provenance, and the
+ledger where the Driver said rather than where the guard chose. The neighbour runs five denials with
+no `MEESEEKS_DENIAL_STATE` and sees one unchanging explanation, which is every operator session. The
+fixture uses the *nesting* refusal rather than `git push --force`, because the latter is one sentence
+and the shortening-must-shorten rule deliberately leaves it alone.
+
 ### 53. Styled milestone lines: gate summary, panel convening, carry/outstanding — OPEN (micro-item, cosmetic, quota-funded)
 
 **Origin:** operator question, 16 Aug — should the heartbeat or milestones speak Meeseeks? **Answer

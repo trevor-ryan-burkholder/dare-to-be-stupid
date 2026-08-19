@@ -18,7 +18,7 @@
 import assert from 'node:assert/strict';
 import { execFile, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -1643,6 +1643,12 @@ describe('renderDecision', () => {
 });
 
 describe('guard.mjs as a process', () => {
+  /** @type {string[]} */
+  const scratchDirs = [];
+  after(() => {
+    for (const dir of scratchDirs) rmSync(dir, { recursive: true, force: true });
+  });
+
   /**
    * @param {string} stdin
    * @param {Record<string, string | undefined>} [env]
@@ -1661,6 +1667,51 @@ describe('guard.mjs as a process', () => {
       return { code: failure.code ?? 1, stdout: failure.stdout ?? '' };
     }
   }
+
+  it('counts denials through the real process, and dampens only after three', async () => {
+    // **The wiring, which no unit test of `denialVerbosity` can show** (PLAN item 52). This
+    // repository keeps paying for correct logic nothing proved was invoked — the guard hook itself
+    // was right for eleven versions while no builder ever loaded it. So the counter is exercised
+    // through a real `node hooks/guard.mjs`, over stdin, with the environment a Driver supplies.
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-denials-proc-'));
+    scratchDirs.push(dir);
+    // A rule whose refusal is long enough for shortening to shorten — the nesting refusal runs to
+    // 495 characters, where `git push --force` is one sentence and is deliberately left alone.
+    const payload = JSON.stringify({ ...bashEvent('node /plugin/scripts/driver.mjs PRD.md'), session_id: 'session-proc' });
+    const env = { ...process.env, MEESEEKS_RUNNING: '1', MEESEEKS_DENIAL_STATE: dir };
+
+    /** @type {string[]} */
+    const reasons = [];
+    for (let index = 0; index < 4; index += 1) {
+      const { code, stdout } = await run(payload, env);
+      assert.equal(code, 0);
+      reasons.push(JSON.parse(stdout).hookSpecificOutput.permissionDecisionReason);
+    }
+
+    // Every one is still a deny, still tagged, still provenanced. Only the words move.
+    for (const reason of reasons) {
+      assert.equal(reason.includes('[meeseeks:nested-meeseeks]'), true, reason);
+      assert.equal(reason.startsWith(PROVENANCE), true, reason);
+    }
+    assert.equal(reasons[0], reasons[1], 'the first three explanations should be identical');
+    assert.equal(reasons[1], reasons[2]);
+    assert.equal(reasons[3].includes('this rule was explained in full earlier'), true, reasons[3]);
+    // And the ledger really is where the Driver said, rather than somewhere the guard chose.
+    assert.equal(readdirSync(dir).length, 1, readdirSync(dir).join(', '));
+  });
+
+  it('dampens nothing when the Driver named no directory, which is every operator session', async () => {
+    // The neighbour that keeps an operator's own denials fully explained. `MEESEEKS_DENIAL_STATE` is
+    // set by a run and by nothing else.
+    const payload = JSON.stringify({ ...bashEvent('node /plugin/scripts/driver.mjs PRD.md'), session_id: 'session-proc' });
+    /** @type {Record<string, string | undefined>} */
+    const env = { ...process.env, MEESEEKS_RUNNING: '1' };
+    delete env.MEESEEKS_DENIAL_STATE;
+    /** @type {string[]} */
+    const reasons = [];
+    for (let index = 0; index < 5; index += 1) reasons.push(JSON.parse((await run(payload, env)).stdout).hookSpecificOutput.permissionDecisionReason);
+    assert.equal(new Set(reasons).size, 1, 'an operator denial was dampened');
+  });
 
   it('denies over stdin and still exits 0', async () => {
     const { code, stdout } = await run(JSON.stringify(bashEvent('git push --force')));
