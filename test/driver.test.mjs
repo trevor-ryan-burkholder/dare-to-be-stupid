@@ -2305,7 +2305,7 @@ describe('driveRun', () => {
    * @param {Partial<import('../scripts/driver.mjs').Effects>} [overrides]
    * @returns {import('../scripts/driver.mjs').Effects}
    */
-  function effectsWith(overrides = {}) {
+  function effectsWith(overrides = {}, root = '.') {
     /** @type {import('../scripts/driver.mjs').ClaudeResult} */
     const ok = { ok: true, text: '', costUsd: 0.01, tokens: 100, raw: '' };
     return {
@@ -2331,6 +2331,14 @@ describe('driveRun', () => {
       // A stable candidate identity unless a test says otherwise (REVIEW F14). `driveRun` refuses
       // to run without one rather than assuming the tree stood still.
       workspaceIdentity: () => 'sha256:candidate',
+      // **The materialized subject** (REVIEW F14). The default names the harness's own tree and the
+      // same identity `workspaceIdentity` reports, which is what a run looks like when nothing wrote
+      // to the repository while it was being judged; a test that models a writer overrides one of
+      // the two so they disagree. `driveRun` refuses to run without this rather than falling back to
+      // the live tree, because gating whatever is on disk is the behaviour it replaces.
+      snapshotCandidate: () => ({ ok: true, dir: root, tree: 'sha256:candidate', detail: '' }),
+      candidateSubject: () => root,
+      committedTree: () => 'sha256:candidate',
       commit: () => 'commit1',
       diffStat: () => ' 1 file changed',
       ship: () => {},
@@ -2383,6 +2391,8 @@ describe('driveRun', () => {
         lastGoodCommit: git(['rev-parse', 'HEAD']),
       });
     }
+    /** @type {string[]} */
+    const logs = [];
     const outcome = await driveRun({
       config: { ...defaultConfig(), maxIterations: 5, stallLimit: 3, reviewers: ['correctness'], ...configOverrides },
       meeseeksDir,
@@ -2390,9 +2400,9 @@ describe('driveRun', () => {
       requiredIds,
       task: 'build the thing',
       unitCommand,
-      effects: effectsWith(overrides),
+      effects: effectsWith({ log: (/** @type {string} */ line) => logs.push(line), ...overrides }, root),
     });
-    return { outcome, meeseeksDir, root };
+    return { outcome, meeseeksDir, root, logs };
   }
 
   // -------------------------------------------------------------------------
@@ -2456,7 +2466,7 @@ describe('driveRun', () => {
           specification: 'sha256:spec',
           config: 'sha256:config',
         },
-        effects: effectsWith({ readTestReports: () => GREEN_REPORT, ...overrides }),
+        effects: effectsWith({ readTestReports: () => GREEN_REPORT, ...overrides }, root),
         ...options,
       });
       return { root, outcome };
@@ -2685,7 +2695,7 @@ describe('driveRun', () => {
           },
           log: (/** @type {string} */ line) => logs.push(line),
           ...overrides,
-        }),
+        }, root),
       });
       return { reviewed, logs, root };
     }
@@ -2835,7 +2845,7 @@ describe('driveRun', () => {
             shipped += 1;
           },
           ...options.overrides,
-        }),
+        }, root),
       });
       return { outcome, logs, shipped, reviews };
     }
@@ -3081,11 +3091,14 @@ describe('driveRun', () => {
     ];
 
     /**
-     * A workspace identity that changes on the nth read, standing in for a background writer.
+     * A **main-tree** identity that changes on the nth read, standing in for a background writer.
      *
-     * One iteration reads it four times: the capture before the panel, the recheck after it, the
-     * recheck before the commit, and the proof after it. These tests run a single iteration so the
-     * position is exactly the boundary being aimed at.
+     * The subject is no longer this value (REVIEW F14, reopened): gates and the Panel judge a
+     * materialized snapshot, and `workspaceIdentity` now answers "what is in the working tree the
+     * commit is about to publish". One iteration reads it three times — the recheck after the panel,
+     * the recheck before the commit, and the proof after it — one fewer than before, because the
+     * capture is no longer a sample taken at review time. It agrees with the candidate until the
+     * writer fires, which is what an ordinary iteration looks like.
      *
      * @param {number} changesOnRead 1-based read after which the tree reads differently
      * @returns {{ identity: () => string, reads: () => number }}
@@ -3095,7 +3108,7 @@ describe('driveRun', () => {
       return {
         identity: () => {
           reads += 1;
-          return reads < changesOnRead ? 'sha256:reviewed' : 'sha256:changed';
+          return reads < changesOnRead ? 'sha256:candidate' : 'sha256:changed';
         },
         reads: () => reads,
       };
@@ -3119,9 +3132,9 @@ describe('driveRun', () => {
 
     it('commits nothing when the tree changes while the panel is reading it', async () => {
       // Codex's reproduction: the reviewer read `reviewed bytes`, a concurrent write changed them,
-      // and the loop committed the later bytes and returned SHIPPED. The second read here is the
+      // and the loop committed the later bytes and returned SHIPPED. The first read here is the
       // recheck after the panel returns.
-      const writer = writerAt(2);
+      const writer = writerAt(1);
       let commits = 0;
       let shipped = 0;
       const { outcome } = await run({
@@ -3141,8 +3154,8 @@ describe('driveRun', () => {
     });
 
     it('commits nothing when the tree changes between the panel and the commit', async () => {
-      // Reads: capture, after-panel, pre-commit. The writer fires on the third.
-      const writer = writerAt(3);
+      // Reads: after-panel, pre-commit. The writer fires on the second.
+      const writer = writerAt(2);
       let commits = 0;
       const { outcome } = await run({
         readTestReports: greenTest,
@@ -3159,7 +3172,7 @@ describe('driveRun', () => {
     it('withholds the ship when the tree changes as the commit lands', async () => {
       // The commit exists — the work is banked — but it is not the reviewed tree, so it cannot
       // carry that verdict to a deploy or a tag.
-      const writer = writerAt(4);
+      const writer = writerAt(3);
       let commits = 0;
       let shipped = 0;
       const { outcome } = await run({
@@ -3178,19 +3191,87 @@ describe('driveRun', () => {
       assert.equal(shipped, 0, 'a tag was written over a tree nobody reviewed');
     });
 
-    it('does not review at all when the workspace cannot be identified', async () => {
-      // Uncertainty is not a pass: a tree that cannot be hashed cannot have a verdict sealed to it.
+    it('does not gate or review at all when the candidate cannot be materialized', async () => {
+      // **The replacement for "the workspace could not be hashed"** (REVIEW F14, reopened). There is
+      // no longer a hash to fail: the subject is a materialized snapshot, so the uncertainty moved
+      // to making one. It ends the run rather than falling back to the live tree, because gating
+      // whatever is on disk is precisely the behaviour the snapshot replaces — "the snapshot
+      // machinery broke" is not evidence that the live tree is safe to judge.
       let reviews = 0;
+      let gates = 0;
       const { outcome } = await run({
         readTestReports: greenTest,
-        workspaceIdentity: () => null,
+        snapshotCandidate: () => ({ ok: false, dir: '', tree: null, detail: 'git said no' }),
+        gates: () => {
+          gates += 1;
+          return { ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }] };
+        },
         review: () => {
           reviews += 1;
           return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
         },
       }, { maxIterations: 1 });
-      assert.notEqual(outcome.state, 'SHIPPED');
+      assert.equal(outcome.state, 'ABORTED');
+      assert.equal(outcome.reason.includes('git said no'), true, outcome.reason);
+      assert.equal(gates, 0, 'the live tree was gated after the snapshot failed');
       assert.equal(reviews, 0, 'a panel was paid for on a tree nobody could name');
+    });
+
+    it('refuses to run at all without a way to materialize a candidate', async () => {
+      const root = makeTempDir();
+      await assert.rejects(
+        () =>
+          driveRun({
+            config: { ...defaultConfig(), maxIterations: 1, reviewers: ['correctness'] },
+            meeseeksDir: path.join(root, '.meeseeks'),
+            rootDir: root,
+            requiredIds: ['PRD-1.1'],
+            task: 'build the thing',
+            effects: /** @type {any} */ ({ ...effectsWith({}, root), snapshotCandidate: undefined }),
+          }),
+        /sampling a mutable working tree before and after/,
+      );
+    });
+
+    it('gates and reviews the snapshot, not the tree the builder can still write to', async () => {
+      // **The whole of the repair, in one assertion.** Before this, `effects.gates()` and the panel
+      // read `rootDir`. They now read whatever `snapshotCandidate` materialized, so a background
+      // writer in the main tree is writing to something nothing is judging.
+      const subject = makeTempDir();
+      /** @type {string[]} */
+      const judged = [];
+      await run({
+        readTestReports: greenTest,
+        snapshotCandidate: () => ({ ok: true, dir: subject, tree: 'sha256:candidate', detail: '' }),
+        candidateSubject: () => {
+          judged.push(subject);
+          return subject;
+        },
+      }, { maxIterations: 1 });
+      assert.equal(judged.length > 0, true, 'nothing ever asked which tree the subject was');
+      assert.deepStrictEqual([...new Set(judged)], [subject]);
+    });
+
+    it('withholds the ship when the commit names a different tree from the candidate', async () => {
+      // The post-commit proof that does not depend on the working tree at all. A commit that failed
+      // after staging, or one made from a different index, leaves the bytes on disk matching the
+      // seal while `HEAD` names something else — so the tree object the commit is *made of* is
+      // compared with the candidate directly.
+      let shipped = 0;
+      const { outcome, logs } = await run({
+        readTestReports: greenTest,
+        committedTree: () => 'sha256:somethingelse',
+        ship: () => {
+          shipped += 1;
+        },
+      }, { maxIterations: 1 });
+      assert.notEqual(outcome.state, 'SHIPPED');
+      assert.equal(shipped, 0, 'a tag was written over a tree nobody reviewed');
+      assert.equal(
+        logs.join('\n').includes('the commit names tree sha256:somethingelse'),
+        true,
+        logs.join('\n').slice(-600),
+      );
     });
 
     it('records which bytes the verdict was about, in the panel record and the outcome', async () => {
@@ -3565,7 +3646,7 @@ describe('driveRun', () => {
             return { ok: true, text: '', costUsd: 0.01, tokens: 100, raw: '' };
           },
           ...overrides,
-        }),
+        }, root),
       });
       return { outcome, builders };
     }
@@ -3614,7 +3695,7 @@ describe('driveRun', () => {
         rootDir: root,
         requiredIds: ['PRD-1.1'],
         task: 'build the thing',
-        effects: effectsWith({}),
+        effects: effectsWith({}, root),
       });
       assert.equal(outcome.reason.includes('token ceiling'), false, `stopped on tokens: ${outcome.reason}`);
     });
@@ -3646,7 +3727,7 @@ describe('driveRun', () => {
               ],
             },
           ],
-        }),
+        }, root),
       });
       return { outcome, meeseeksDir };
     }
@@ -3703,7 +3784,7 @@ describe('driveRun', () => {
             reviewed += 1;
             return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
           },
-        }),
+        }, root),
       });
       assert.equal(reviewed, 0);
     });
@@ -3743,7 +3824,7 @@ describe('driveRun', () => {
             },
           ],
           ...overrides,
-        }),
+        }, root),
       });
       return { outcome, meeseeksDir };
     }
@@ -4105,7 +4186,7 @@ describe('driveRun', () => {
           writeFileSync(path.join(root, 'app.txt'), 'broken by the builder\n', 'utf8');
           return { ok: true, text: '', costUsd: 0, tokens: 1, raw: '' };
         },
-      }),
+      }, root),
     });
 
     assert.equal(readFileSync(path.join(root, 'app.txt'), 'utf8'), 'good\n');
@@ -5458,10 +5539,13 @@ describe('staticGates', () => {
       true,
       'a skipped test is no longer separated from a failing one',
     );
-    // The call that turns an observation into durable evidence must receive the failed set.
+    // The call that turns an observation into durable evidence must receive the failed set, and it
+    // must write into the **run's** directory rather than the gated tree's (REVIEW F14): since the
+    // main candidate is a snapshot worktree, `treeStateDir` there is deleted when the run ends and
+    // `driveRun` reads this evidence from the Driver's `.meeseeks/`.
     assert.match(
       source,
-      /recordRedEvidence\(treeStateDir, failed, \[\.\.\.passing\], dir\)/,
+      /recordRedEvidence\(runStateDir, failed, \[\.\.\.passing\], dir\)/,
       'red evidence is recorded from something other than the genuinely failed set',
     );
     assert.equal(
@@ -6574,7 +6658,7 @@ describe('formatGateFailure', () => {
 
 describe('.meeseeks/outcome.json', () => {
   /** @param {Partial<import('../scripts/driver.mjs').Effects>} [overrides] */
-  function localEffects(overrides = {}) {
+  function localEffects(overrides = {}, root = '.') {
     /** @type {import('../scripts/driver.mjs').ClaudeResult} */
     const ok = { ok: true, text: '', costUsd: 0.01, tokens: 100, raw: '' };
     return {
@@ -6589,6 +6673,14 @@ describe('.meeseeks/outcome.json', () => {
       // A stable candidate identity unless a test says otherwise (REVIEW F14). `driveRun` refuses
       // to run without one rather than assuming the tree stood still.
       workspaceIdentity: () => 'sha256:candidate',
+      // **The materialized subject** (REVIEW F14). The default names the harness's own tree and the
+      // same identity `workspaceIdentity` reports, which is what a run looks like when nothing wrote
+      // to the repository while it was being judged; a test that models a writer overrides one of
+      // the two so they disagree. `driveRun` refuses to run without this rather than falling back to
+      // the live tree, because gating whatever is on disk is the behaviour it replaces.
+      snapshotCandidate: () => ({ ok: true, dir: root, tree: 'sha256:candidate', detail: '' }),
+      candidateSubject: () => root,
+      committedTree: () => 'sha256:candidate',
       commit: () => 'commit1',
       diffStat: () => ' 1 file changed',
       ship: () => {},
@@ -6615,7 +6707,7 @@ describe('.meeseeks/outcome.json', () => {
       rootDir: root,
       requiredIds: ['PRD-1.1'],
       task: 'build the thing',
-      effects: localEffects(overrides),
+      effects: localEffects(overrides, root),
     });
     const file = path.join(meeseeksDir, 'outcome.json');
     return { result, written: existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null };

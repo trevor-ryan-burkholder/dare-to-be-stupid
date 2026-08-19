@@ -20,30 +20,50 @@
  *
  * The exit-zero half is not simulated either: an operator gate writes a genuine passing vitest
  * report and exits zero, which before this repair was enough to have its ids read as the attempt's.
+ *
+ * **Where the hazard lives moved with the subject** (REVIEW F14). Gates now run in a materialized
+ * candidate worktree, so the declared report paths are that worktree's and not the main tree's — and
+ * the stuck path has to be created there, by something running inside a gate, because nothing else
+ * can reach it. The worktree is reused across iterations and `git clean -fd` leaves ignored paths
+ * alone, so a hazard an early iteration plants is still there for the next one's `clearReports`,
+ * which is exactly the "the previous attempt left this" shape the finding describes.
  */
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
+import { candidateDirFor } from '../../scripts/candidate.mjs';
 import { main } from '../../scripts/driver.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
 
-after(() => {
-  for (const dir of temporaryDirs) {
-    // The stuck path is stuck on purpose; give the permission back before removing the tree.
-    try {
-      chmodSync(path.join(dir, '.meeseeks', 'e2e-report.json'), 0o755);
-    } catch {
-      // Only the refused case creates it.
-    }
-    rmSync(dir, { recursive: true, force: true });
+/** The candidate worktree this process's runs materialize into (REVIEW F14). */
+const CANDIDATE = candidateDirFor(process.pid);
+
+/**
+ * Give the stuck path its permissions back and remove the worktree.
+ *
+ * Called after every run that plants one, not only at the end of the file: the candidate directory
+ * is per-process, so a leftover unremovable path would make the *next* case in this file fail for a
+ * reason that has nothing to do with what it is testing.
+ */
+function freeCandidate() {
+  try {
+    chmodSync(path.join(CANDIDATE, '.meeseeks', 'e2e-report.json'), 0o755);
+  } catch {
+    // Only the refused case creates it.
   }
+  rmSync(CANDIDATE, { recursive: true, force: true });
+}
+
+after(() => {
+  freeCandidate();
+  for (const dir of temporaryDirs) rmSync(dir, { recursive: true, force: true });
 });
 
 /** A real vitest reporter payload with one passing test, written by a gate that exits zero. */
@@ -83,48 +103,76 @@ function repoWithSeededReport(options = {}) {
   writeFileSync(
     path.join(root, '.meeseeks', 'config.json'),
     JSON.stringify({
-      maxIterations: 2,
+      // Three, because the hazard is planted from *inside* a gate and therefore lands one iteration
+      // before the clear it defeats: iteration 1 plants, iteration 2's clear fails, iteration 3's
+      // brief is where the builder is told which gate explains it.
+      maxIterations: options.stick === true ? 3 : 2,
       tokenCeiling: 1000,
       costCeiling: 1,
       extraGates: [
         {
           name: 'seed-report',
           command:
-            options.symlink === true
+            options.stick === true
               ? [
                   'node',
                   '-e',
-                  // The `rmSync` matters: the real unit gate runs first and vitest writes its
-                  // `--outputFile` even when it fails, so the declared path is already occupied by
-                  // a regular file by the time this gate replaces it with the link.
-                  'const fs = require("node:fs"); fs.writeFileSync(process.argv[1], process.argv[3]); ' +
-                    'fs.rmSync(process.argv[2], { force: true }); ' +
-                    'fs.symlinkSync(require("node:path").basename(process.argv[1]), process.argv[2]);',
-                  path.join('.meeseeks', 'elsewhere.json'),
+                  // **Plants first, seeds after.** On the first iteration it creates a directory
+                  // `rmSync` can enter and cannot empty at a declared report path, and writes no
+                  // report at all — so nothing is credited before the hazard exists. From the next
+                  // iteration on the hazard is already there, `clearReports` fails on it, and *this*
+                  // gate then writes a genuine passing report that must never be admitted.
+                  'const fs = require("node:fs"), p = require("node:path"); ' +
+                    'const stuck = process.argv[2]; ' +
+                    'if (fs.existsSync(stuck)) { fs.writeFileSync(process.argv[1], process.argv[3]); ' +
+                    'fs.writeFileSync(process.argv[4], fs.readFileSync(process.argv[1], "utf8")); } ' +
+                    'else { fs.mkdirSync(stuck, { recursive: true }); ' +
+                    'fs.writeFileSync(p.join(stuck, "held-open"), "the previous attempt left this here\\n"); ' +
+                    'fs.chmodSync(stuck, 0o555); }',
                   path.join('.meeseeks', 'test-report.json'),
+                  path.join('.meeseeks', 'e2e-report.json'),
                   SEEDED_REPORT,
+                  // Written back to the main tree by absolute path, because the candidate worktree
+                  // this gate runs in is torn down when the run ends — and `git worktree remove`
+                  // deletes what it can before it meets the unremovable path, so reading the report
+                  // back afterwards is a race this test must not depend on.
+                  path.join(root, 'seed-proof.json'),
                 ]
-              : [
-                  'node',
-                  '-e',
-                  'require("node:fs").writeFileSync(process.argv[1], process.argv[2]);',
-                  path.join('.meeseeks', 'test-report.json'),
-                  SEEDED_REPORT,
-                ],
+              : options.symlink === true
+                ? [
+                    'node',
+                    '-e',
+                    // The `rmSync` matters: the real unit gate runs first and vitest writes its
+                    // `--outputFile` even when it fails, so the declared path is already occupied by
+                    // a regular file by the time this gate replaces it with the link.
+                    //
+                    // The proof is written to an absolute path in the *main* tree, because the
+                    // candidate worktree the gate is running in is deleted when the run ends and a
+                    // test that cannot show the link was planted proves nothing about refusing it.
+                    'const fs = require("node:fs"); fs.writeFileSync(process.argv[1], process.argv[3]); ' +
+                      'fs.rmSync(process.argv[2], { force: true }); ' +
+                      'fs.symlinkSync(require("node:path").basename(process.argv[1]), process.argv[2]); ' +
+                      'fs.writeFileSync(process.argv[4], JSON.stringify({ ' +
+                      'link: fs.lstatSync(process.argv[2]).isSymbolicLink(), ' +
+                      'resolves: fs.readFileSync(process.argv[2], "utf8") }));',
+                    path.join('.meeseeks', 'elsewhere.json'),
+                    path.join('.meeseeks', 'test-report.json'),
+                    SEEDED_REPORT,
+                    path.join(root, 'symlink-proof.json'),
+                  ]
+                : [
+                    'node',
+                    '-e',
+                    'require("node:fs").writeFileSync(process.argv[1], process.argv[2]);',
+                    path.join('.meeseeks', 'test-report.json'),
+                    SEEDED_REPORT,
+                  ],
         },
       ],
     }),
   );
   git(['add', '-A']);
   git(['commit', '--quiet', '-m', 'prd']);
-  if (options.stick === true) {
-    // A directory `rmSync` can enter and cannot empty. `.meeseeks/` itself stays writable, so the
-    // run keeps its state, its gate cache and its specification record exactly as usual.
-    const stuck = path.join(root, '.meeseeks', 'e2e-report.json');
-    mkdirSync(stuck, { recursive: true });
-    writeFileSync(path.join(stuck, 'held-open'), 'the previous attempt left this here\n');
-    chmodSync(stuck, 0o555);
-  }
   return root;
 }
 
@@ -167,13 +215,22 @@ function redEvidence(root) {
 describe('an uncleared report path fails the attempt through the real gateTree', () => {
   it('refuses an exit-zero gate’s report and assigns it no authority at all', async () => {
     const root = repoWithSeededReport({ stick: true });
+    const { all, prompts } = await run(root);
+    const stuck = path.join(CANDIDATE, '.meeseeks', 'e2e-report.json');
+    // The gate that exited zero really did write a real passing report into the subject, which is
+    // what makes the absence asserted later a *refusal* rather than a gate that never ran. Proved
+    // from the copy the gate itself wrote into the main tree, for the reason recorded beside it.
+    const proofFile = path.join(root, 'seed-proof.json');
+    const seeded = existsSync(proofFile) ? readFileSync(proofFile, 'utf8') : '';
+
     // The condition has to be real or the case proves nothing, and root ignores the mode bits.
     // **Failed rather than skipped**, on the same argument that arms the live tier by environment
     // variable and fails without it: a green tick for a case that never ran is a lie the reader
     // takes for coverage. The symlink case below covers the driver-side composition without
     // needing permissions, so a root environment still proves the wiring — it loses only the
-    // unremovable-path half.
-    const stuck = path.join(root, '.meeseeks', 'e2e-report.json');
+    // unremovable-path half. Checked after the run, because the gate that plants it runs inside the
+    // candidate and nothing outside the run can reach that directory beforehand.
+    assert.equal(existsSync(stuck), true, 'the seeding gate never planted the stuck path');
     try {
       rmSync(stuck, { force: true, recursive: true });
       assert.fail(
@@ -181,12 +238,11 @@ describe('an uncleared report path fails the attempt through the real gateTree',
           'created and this case proved nothing. Run tier 2 as an ordinary user.',
       );
     } catch (error) {
-      // Good: the path is genuinely unremovable, which is what `clearReports` will find. An
-      // assertion failure is rethrown rather than swallowed by the catch that expects EACCES.
+      // Good: the path is genuinely unremovable, which is what `clearReports` found. An assertion
+      // failure is rethrown rather than swallowed by the catch that expects EACCES.
       if (/** @type {{ code?: string }} */ (error).code === 'ERR_ASSERTION') throw error;
     }
-
-    const { all, prompts } = await run(root);
+    freeCandidate();
 
     // 1. The gate exists, ran, and failed by name.
     assert.equal(all.includes('report-freshness'), true, `the gate never reached the roster:\n${all.slice(0, 4000)}`);
@@ -207,16 +263,22 @@ describe('an uncleared report path fails the attempt through the real gateTree',
     // 3. **No report-consuming authority was assigned.** The gate that exited zero really did write
     //    a real passing report — assert that first, so the absence below is a refusal rather than a
     //    gate that never ran — and the run recorded nothing derived from it.
+    assert.equal(seeded, SEEDED_REPORT, 'the seeding gate did not run, so this proves nothing about refusal');
+    // **The seeded id, specifically.** The earlier shape of this assertion demanded no red evidence
+    // at all, which was true only while the hazard existed before the first gate run. It is planted
+    // from inside a gate now (REVIEW F14), so iteration 1 is an ordinary attempt that produced no
+    // report and honestly recorded an empty baseline. What must never happen is that an id from a
+    // *refused* report becomes durable evidence, and that is what is asserted.
+    const evidence = redEvidence(root) ?? { seenFailing: [], baseline: [] };
     assert.equal(
-      readFileSync(path.join(root, '.meeseeks', 'test-report.json'), 'utf8'),
-      SEEDED_REPORT,
-      'the seeding gate did not run, so this proves nothing about refusal',
+      evidence.baseline.includes(SEEDED_ID),
+      false,
+      `a refused attempt's id reached the red-evidence baseline: ${evidence.baseline.join(', ')}`,
     );
     assert.equal(
-      redEvidence(root),
-      null,
-      'red-evidence was written from a refused attempt; its baseline is written exactly once, so an ' +
-        'empty one here leaves every later test permanently unproven',
+      evidence.seenFailing.includes(SEEDED_ID),
+      false,
+      `a refused attempt's id was recorded as observed failing: ${evidence.seenFailing.join(', ')}`,
     );
     // Absent is the ordinary outcome here — the ratchet only writes when it advances, and a refused
     // attempt never does — so both shapes are accepted and only a banked id is refused.
@@ -251,14 +313,15 @@ describe('an uncleared report path fails the attempt through the real gateTree',
     const root = repoWithSeededReport({ symlink: true });
     const { all } = await run(root);
 
-    // The gate really did plant the link, or this proves nothing.
+    // The gate really did plant the link, or this proves nothing. Read from the proof the gate wrote
+    // into the main tree, because the candidate worktree it planted the link in is deleted when the
+    // run ends (REVIEW F14) — the observation has to be made from inside the run.
+    const proofFile = path.join(root, 'symlink-proof.json');
+    assert.equal(existsSync(proofFile), true, 'the seeding gate never ran inside the candidate');
+    const proof = JSON.parse(readFileSync(proofFile, 'utf8'));
+    assert.equal(proof.link, true, 'the seeding gate did not create the symlink');
     assert.equal(
-      lstatSync(path.join(root, '.meeseeks', 'test-report.json')).isSymbolicLink(),
-      true,
-      'the seeding gate did not create the symlink',
-    );
-    assert.equal(
-      readFileSync(path.join(root, '.meeseeks', 'test-report.json'), 'utf8'),
+      proof.resolves,
       SEEDED_REPORT,
       'the link does not resolve to a readable passing report, so nothing was tempted',
     );

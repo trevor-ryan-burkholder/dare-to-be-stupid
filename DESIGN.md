@@ -1863,7 +1863,57 @@ excludes the read-only tools. That second test is the one that matters most here
 to the matcher would silently convert a write barrier into a blackout, and a blackout would look
 like a seal without being one.
 
-### 6.2 A cold role is handed the specification, not a path to it
+### 6.2 The candidate is materialized, not sampled
+
+Gates and the Panel judge a **worktree checked out from a content-addressed tree object**, not the
+working tree the Builder writes to. `scripts/candidate.mjs` owns it.
+
+The previous design hashed the working tree before the Panel and again afterwards and refused any
+difference. That closes *persistent* drift and nothing else: the same identity on both sides does not
+prove which bytes were visible in between. A Builder has arbitrary Bash and can leave a background
+process that swaps tree A for an easier tree B while a gate or a reviewer reads it and restores A
+before the next sample; both hashes return A. The gates were weaker still, because their identity was
+captured only *after* their results came back — there was not even a before. `REVIEW.md` F14 records
+the reproduction of the end of it: a reviewer read `src/a.js` as `reviewed bytes`, a concurrent write
+changed it, and the run committed the later bytes as `SHIPPED`.
+
+**How one is made.** After the Builder, and after the specification drift check, the Driver stages the
+working tree into a **temporary index** — never `.git/index`, which would leave the operator's
+repository staged and would race with the iteration's own commit — writes a tree object, wraps it in a
+commit no branch points at, and checks that commit out into a worktree outside the repository. One
+worktree per run, re-checked-out each iteration: a fresh one would discard the gate cache and the
+installed browsers and turn an optimization into a per-iteration reinstall, and ignored files survive
+`checkout --force`, which is what makes the reuse safe.
+
+**What the subject is.** Tracked files plus untracked-but-not-ignored ones — `git add -A`'s view, the
+same set the iteration's commit will contain. Ignored paths are outside it by definition: not
+committed, not reviewed, not part of the candidate. The tool caches among them (`TOOL_CACHE_PATHS`)
+are **shared by symlink**, because a snapshot that cannot resolve its dependencies cannot run a single
+gate. That sharing is the one mutable surface left and it is named rather than left to be discovered.
+
+**What reads it, and what does not.** Everything that decides — the deterministic gates and the reports
+they write, the ship-time mutation gate, the Panel, evidence citation resolution, test-definition
+digests, the agent-surface rescan. Everything that *repairs* the run stays on the main tree: the
+ratchet's hard reset, the scoped restore, and the commit, because that is the tree the operator owns
+and the one a commit publishes. Run-owned gate state — the gate cache and the red evidence — is written
+to the **Driver's** `.meeseeks/`, not the candidate's, which would be deleted with the worktree; a
+raced candidate still writes its own, because a candidate's observations may not reach the run.
+
+**The three checks that remain, and what they now compare.** The identity a verdict is sealed to is the
+candidate's tree object. Immediately before the commit, the working tree is staged again and its tree
+object must equal it — a difference means something wrote to the repository while it was being judged,
+and the verdict is discarded rather than the newer bytes committed under it. After the commit,
+`HEAD^{tree}` must equal it too, which is the same value by construction and therefore an inequality
+means the commit published something other than what was judged. The identity is recorded in
+`review.json` and `outcome.json`, where it can be looked up as a real git object.
+
+**Failure ends the run.** A candidate that cannot be materialized does not fall back to the live tree:
+gating whatever is on disk is exactly the behaviour this replaces, and a broken snapshot is not
+evidence that the live tree is safe to judge. Abandoned worktrees are swept at the start of the next
+run under the lock, the same self-healing races and components use, because cleanup on the way out
+cannot survive `SIGKILL`.
+
+### 6.3 A cold role is handed the specification, not a path to it
 
 `not supplied` is a discipline about what the Driver hands over, and delivery is the other half of it.
 The Panel's brief used to say "Read PRD.md". The Builder has unrestricted repository writes, so the
@@ -1888,7 +1938,7 @@ truncated into a different one.
 
 The held-out Oracle author has always been handed the bytes this way; the Panel now matches it.
 
-### 6.3 Nesting authority is a ticket, not a variable
+### 6.4 Nesting authority is a ticket, not a variable
 
 `--give-them-the-box` is the operator's permission to nest, to a depth of two. Until 0.215.0 both
 enforcement points read that permission out of the environment: `assertNotNested` treated a nonempty
@@ -1948,7 +1998,8 @@ meeseeks/
 │   ├── driver.mjs                # the loop. node, no deps.
 │   ├── components.mjs            # boxed component worktrees and nested-driver contract
 │   ├── run-lock.mjs              # .meeseeks/lock.json, one owner per repository
-│   ├── nesting.mjs               # .meeseeks/nesting.json, one-time nesting tickets (§6.3)
+│   ├── nesting.mjs               # .meeseeks/nesting.json, one-time nesting tickets (§6.4)
+│   ├── candidate.mjs             # the materialized immutable review subject (§6.2)
 │   ├── ratchet.mjs               # ratchet + extractTestIds (unit-tested first)
 │   ├── reporters/                # one module per test-report format (§11)
 │   │   ├── index.mjs             # the registry: detect, dispatch, collapse

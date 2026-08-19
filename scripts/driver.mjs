@@ -94,6 +94,16 @@ import { ArtifactTooLargeError, READ_LIMITS, readBounded } from './bounded-read.
 import { OUTCOME_FILE, writeRunOutcome } from './outcome.mjs';
 import { roleSupplyManifest } from './role-supply.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
+import {
+  candidateDirFor,
+  materializeCandidate,
+  removeCandidate,
+  shareToolCaches,
+  sweepCandidateWorktrees,
+  workingTreeMatchesCandidate,
+  writeSnapshotTree,
+  resolveGitDir,
+} from './candidate.mjs';
 import { captureSpecification, verifySpecification } from './specification.mjs';
 import { ACCEPTANCE_FILE } from './acceptance-file.mjs';
 import { buildAcceptanceReceipt, digest } from './acceptance.mjs';
@@ -1835,6 +1845,13 @@ export function repeatedRegressionNote(counts, regressions) {
  *   shipTimeMutation?: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
  *   checkSpecification: () => { ok: boolean, digest: string, detail: string },
  *   workspaceIdentity: () => string | null | Promise<string | null>,
+ *   snapshotCandidate: (iteration: number) =>
+ *     { ok: boolean, dir: string, tree: string | null, detail: string }
+ *     | Promise<{ ok: boolean, dir: string, tree: string | null, detail: string }>,
+ *   candidateSubject: () => string,
+ *   candidateStillHolds?: (tree: string) => { ok: boolean, tree: string | null, detail: string }
+ *     | Promise<{ ok: boolean, tree: string | null, detail: string }>,
+ *   committedTree?: () => string | null | Promise<string | null>,
  *   scanSurface?: typeof scanAgentSurface,
  *   verifyPublication: () => { ok: boolean, detail: string, head?: string | null }
  *     | Promise<{ ok: boolean, detail: string, head?: string | null }>,
@@ -2049,6 +2066,25 @@ export async function driveRun(options) {
         'PRD it is judging cannot judge anything (DESIGN.md §4, REVIEW F12).',
     );
   }
+  if (typeof effects.snapshotCandidate !== 'function' || typeof effects.candidateSubject !== 'function') {
+    throw new DriverError(
+      'driveRun was given no way to materialize a candidate. Gates and the panel must judge an immutable subject; ' +
+        'sampling a mutable working tree before and after proves only that nothing persisted, not which bytes were ' +
+        'visible while they were being read (REVIEW F14).',
+    );
+  }
+
+  /**
+   * The immutable subject this iteration is judging (REVIEW F14).
+   *
+   * Everything that decides — reports, test definitions, evidence citations, the agent-surface scan
+   * — resolves against this. Everything that *repairs* the run resolves against `rootDir`: the
+   * ratchet's hard reset, the scoped restore and the commit all act on the tree the operator owns
+   * and the one a commit publishes, which the candidate deliberately is not.
+   *
+   * @returns {string}
+   */
+  const subject = () => effects.candidateSubject();
 
   /**
    * Seal a verdict to the bytes it was formed over (REVIEW F14).
@@ -2617,6 +2653,23 @@ export async function driveRun(options) {
     const driftedBeforeGates = specificationDrift();
     if (driftedBeforeGates !== null) return driftedBeforeGates;
 
+    // ---- Phase 2d: materialize the candidate (REVIEW F14) ----------------
+    //
+    // **The bytes stop being a working tree here.** Everything that judges from this point reads a
+    // worktree checked out from a content-addressed tree object that no process in the run has a
+    // path to. A background writer left by the builder can do what it likes to the main tree: it is
+    // no longer writing to the thing being judged, and the pre-commit check below is an equality
+    // between two tree object ids rather than another sample of a directory.
+    //
+    // A failure here ends the run rather than falling back to the live tree. Gating whatever is on
+    // disk is exactly the behaviour this replaces, and "the snapshot machinery broke" is not
+    // evidence that the live tree is safe to judge.
+    const snapshot = await effects.snapshotCandidate(iterationNumber);
+    if (!snapshot.ok || snapshot.tree === null) {
+      return finish('ABORTED', `the candidate could not be materialized: ${snapshot.detail}`);
+    }
+    const candidateTree = snapshot.tree;
+
     // ---- Phase 3: gates -------------------------------------------------
     const commandGateOutcome = await effects.gates();
 
@@ -2648,7 +2701,7 @@ export async function driveRun(options) {
           // hashed the files again at the terminal transition would describe whatever was on disk by
           // then, which is the substitution F16 exists to prevent.
           readThisAttempt.push(digest(typeof report === 'string' ? report : JSON.stringify(report)));
-          const parsed = parseReport(report, { rootDir });
+          const parsed = parseReport(report, { rootDir: subject() });
           collected += parsed.tests.length;
           records.push(...parsed.tests);
         }
@@ -2666,7 +2719,7 @@ export async function driveRun(options) {
         // test no clean clone can execute. Withheld rather than refused: the report is still
         // readable, and `collected` above keeps counting it, so this cannot be mistaken for the
         // runner having produced nothing.
-        const backed = fileBackedIds(reported, rootDir);
+        const backed = fileBackedIds(reported, subject());
         if (backed.withheld.length > 0) {
           effects.log(
             `withholding ratchet credit from ${backed.withheld.length} passing test(s) whose defining file is not ` +
@@ -2733,12 +2786,12 @@ export async function driveRun(options) {
     // code that nothing called, which is the defect this repository keeps finding; the helpers were
     // green the whole time.
     const redEvidence = loadRedEvidence(meeseeksDir);
-    const rewritten = changedDefinitions(passing, rootDir, state.definitions);
+    const rewritten = changedDefinitions(passing, subject(), state.definitions);
     // The same comparison, against the digests the *evidence* was recorded under rather than the
     // ones the ratchet credited (REVIEW F17). `changedDefinitions` already reads an absent or
     // unreadable digest as changed, which is the answer that keeps a store written before this
     // field existed from vouching for bytes nobody measured.
-    const staleEvidence = changedDefinitions(passing, rootDir, redEvidence.definitions);
+    const staleEvidence = changedDefinitions(passing, subject(), redEvidence.definitions);
     const withheld = unprovenIds({
       previousPassing: state.passing,
       passing,
@@ -2762,7 +2815,7 @@ export async function driveRun(options) {
     for (const id of credited) {
       const file = testFilePath(id);
       if (file === '' || definitions[file] !== undefined) continue;
-      const digest = definitionDigest(rootDir, file);
+      const digest = definitionDigest(subject(), file);
       if (digest !== null) definitions[file] = digest;
     }
     // Regressions from `passing`, banking from `credited`. A withheld id still *passed*, so treating
@@ -2834,7 +2887,7 @@ export async function driveRun(options) {
             );
           } else {
             for (const report of effects.readTestReports()) {
-              for (const id of extractTestIds(report, { rootDir })) back.add(id);
+              for (const id of extractTestIds(report, { rootDir: subject() })) back.add(id);
             }
             scopedHeld = decision.regressions.every((id) => back.has(id));
           }
@@ -3091,41 +3144,29 @@ export async function driveRun(options) {
           // is a location in the repository the reviewer was reading.
           resolveReportEvidence(
             parseReviewerReport(result.text, { requiredIds: ids, minConfidence: config.advisory.minConfidence }),
-            { root: rootDir },
+            { root: subject() },
           ),
         );
       }
       return { done: true, reports: collected };
     };
 
-    // The bytes this panel is about (REVIEW F14). Captured after the gates and before the first
-    // reviewer, so everything downstream — every verdict, the commit, the tag — is sealed to one
-    // measurable tree rather than to whatever happens to be on disk when it is asked.
-    reviewedWorkspace = await effects.workspaceIdentity();
+    // The bytes this panel is about (REVIEW F14). **Not a sample taken here** — it is the tree
+    // object the candidate was materialized from, which is the tree the gates ran against and the
+    // tree the reviewers are reading right now. Sampling the main working tree at this line is what
+    // the reopened finding rejected: the same identity before and after an operation says nothing
+    // about which bytes were visible during it, and this identity was never about the main tree.
+    reviewedWorkspace = candidateTree;
     // **The seal and the checks become one fact here, or not at all** (REVIEW F22). This is the only
     // line where the tree that was gated and the gates that were run on it are both known and both
     // current; recording them separately is what let the receipt pair a seal with another
     // iteration's results. `commit` is filled in below, once this attempt has one.
-    sealedAttempt =
-      reviewedWorkspace === null
-        ? null
-        : { tree: reviewedWorkspace, commit: null, gates: iterationGateResults ?? [], reports: iterationReportDigests ?? [] };
-    if (reviewedWorkspace === null) {
-      // Uncertainty is not a pass. A tree that cannot be hashed is a tree whose verdict cannot be
-      // sealed, and shipping one would be exactly the false completion this seals against.
-      effects.log('cannot review: the candidate workspace could not be identified, so a verdict could not be sealed to it');
-      objective = {
-        kind: 'review',
-        headline: 'The workspace could not be read as a single set of bytes.',
-        reason:
-          'the gates passed, but the candidate tree could not be hashed — a deleted file, an unreadable path or a ' +
-          'broken symlink — so no verdict could be sealed to it. A review of bytes nobody can name authorises ' +
-          'whatever is on disk afterwards',
-        findings: ['the candidate workspace could not be identified'],
-      };
-      await closeIteration(iterationNumber, ['ship:workspace-identity'], score, passing.size);
-      continue;
-    }
+    // **No `null` branch here any more, and its absence is the repair** (REVIEW F14, reopened). The
+    // identity used to be a hash sampled at this line, so "the tree could not be read" was a state
+    // the panel had to be defended against. It is now the tree object the candidate was made from,
+    // and a run that could not make one never reached this line: `snapshotCandidate` above ends the
+    // run rather than falling back to the live tree. Keeping a dead guard here would read as a check.
+    sealedAttempt = { tree: reviewedWorkspace, commit: null, gates: iterationGateResults ?? [], reports: iterationReportDigests ?? [] };
 
     // **The agent surface, rescanned against the exact bytes about to be reviewed** (REVIEW F29).
     //
@@ -3150,12 +3191,12 @@ export async function driveRun(options) {
     let hostile;
     try {
       const scan = effects.scanSurface ?? scanAgentSurface;
-      hostile = blockingFindings(scan(rootDir).findings).map((finding) => ({
+      hostile = blockingFindings(scan(subject()).findings).map((finding) => ({
         file: finding.file,
         detail: finding.detail,
       }));
     } catch (error) {
-      hostile = [{ file: rootDir, detail: `the agent-surface scan could not run: ${/** @type {Error} */ (error).message}` }];
+      hostile = [{ file: subject(), detail: `the agent-surface scan could not run: ${/** @type {Error} */ (error).message}` }];
     }
     if (hostile.length > 0) {
       effects.log(`cannot review: the candidate tree carries ${hostile.length} blocking agent-surface finding(s)`);
@@ -3196,7 +3237,7 @@ export async function driveRun(options) {
     let reports =
       plan.carried.length === 0
         ? first.reports
-        : [...first.reports, resolveReportEvidence(carriedReport(plan.carried), { root: rootDir })];
+        : [...first.reports, resolveReportEvidence(carriedReport(plan.carried), { root: subject() })];
     let panel = combinePanel(reports, { requireUnanimous: config.requireUnanimous, requiredIds });
 
     if (plan.narrowed && panel.verdict === 'pass') {
@@ -3337,6 +3378,28 @@ export async function driveRun(options) {
     // After the commit, prove the tree that landed is the tree that was reviewed. The commit
     // stages the whole working tree, so a working tree still matching the sealed identity is the
     // committed tree matching it — which is what a deploy and a tag are about to assert.
+    // **And the tree `HEAD` actually names** (REVIEW F14). The seal above compares the working tree
+    // with the candidate; this compares the *commit* with it. They are the same value by
+    // construction when nothing went wrong — the commit is made of the staged working tree, and the
+    // candidate is a tree object written from those same bytes — so an inequality means the commit
+    // published something other than what was judged, whatever the working tree says.
+    const landedTree = effects.committedTree === undefined ? null : await effects.committedTree();
+    if (landedTree !== null && landedTree !== reviewedWorkspace) {
+      effects.log(
+        `the commit names tree ${landedTree} and the reviewed candidate was ${reviewedWorkspace}; this commit is ` +
+          'not the reviewed tree and will not ship',
+      );
+      objective = {
+        kind: 'review',
+        headline: 'The commit does not contain the bytes that were reviewed.',
+        reason:
+          'the commit landed a different tree object from the one the gates and the panel judged, so it cannot ' +
+          'carry that verdict to a deploy or a tag. The gates run again from scratch',
+        findings: ['the committed tree is not the candidate tree'],
+      };
+      await closeIteration(iterationNumber, ['ship:committed-tree'], score, passing.size);
+      continue;
+    }
     if (!(await workspaceStillMatches(reviewedWorkspace))) {
       effects.log('the workspace changed as the commit landed; this commit is not the reviewed tree and will not ship');
       objective = {
@@ -6365,6 +6428,7 @@ export function childEndLine(phase, result, seconds) {
  *   releasing: ((code: number, terminal: { state?: 'SHIPPED' | 'STALLED' | 'BUDGET' | 'ABORTED',
  *     reason: string, phase: string }) => number) | null,
  *   phase: string,
+ *   cleanup?: (() => Promise<void>) | null,
  * }} CrashGuard
  */
 
@@ -6394,7 +6458,7 @@ export function childEndLine(phase, result, seconds) {
  */
 export async function main(argv, io = {}) {
   /** @type {CrashGuard} */
-  const crash = { releasing: null, phase: 'pre-loop' };
+  const crash = { releasing: null, phase: 'pre-loop', cleanup: null };
   try {
     return await runInvocation(argv, io, crash);
   } catch (error) {
@@ -6410,6 +6474,20 @@ export async function main(argv, io = {}) {
     // The shared writer: it archives the previous run first, writes at most once — so a loop that
     // already decided keeps its own answer — and gives the repository back.
     return crash.releasing(1, { state: 'ABORTED', reason: failure.slice(0, 800), phase: crash.phase });
+  } finally {
+    // **The candidate worktree, on every path out including the throwing ones** (REVIEW F14). Its
+    // removal is asynchronous — `git worktree remove` — and `releasing` is not, so it cannot live
+    // there. Published the same way `releasing` is, for the same reason: the body is too long to
+    // wrap in a lexical `try` without re-indenting prompts. A leak is still self-healing, because
+    // `SIGKILL` outruns any `finally` and the next run sweeps under the lock.
+    if (crash.cleanup !== null && crash.cleanup !== undefined) {
+      try {
+        await crash.cleanup();
+      } catch {
+        // A cleanup that throws must not change the run's answer. The sweep at the next start is
+        // what actually guarantees the directory goes.
+      }
+    }
   }
 }
 
@@ -7583,6 +7661,40 @@ async function runInvocation(argv, io, crash) {
    */
   const clearOutcomes = new Map();
 
+  /**
+   * The immutable subject this iteration's gates and Panel are judging (REVIEW F14).
+   *
+   * **Before the first snapshot this is the main tree**, because the pre-loop phases — the PRD
+   * author, the architect, the oracle author — read a repository that no gate result or verdict is
+   * attributed to. From the first iteration on it is a worktree checked out from a content-addressed
+   * tree object, and `tree` is that object's name: not a hash somebody computed over a directory,
+   * but git's own identity for exactly these bytes.
+   *
+   * @type {{ dir: string, tree: string | null }}
+   */
+  let candidate = { dir: cwd, tree: null };
+  const candidateWorktree = candidateDirFor(process.pid);
+  /** Removed on every path out, and swept at the start, exactly as a race's worktrees are. */
+  let candidateMaterialized = false;
+  const releaseCandidate = async () => {
+    if (!candidateMaterialized) return;
+    candidateMaterialized = false;
+    candidate = { dir: cwd, tree: null };
+    const removed = await removeCandidate({ cwd, run: shell, dir: candidateWorktree });
+    if (!removed.removed && removed.detail !== '') {
+      write(verbatim(`the candidate worktree at ${candidateWorktree} could not be removed: ${removed.detail}`));
+    }
+  };
+
+  crash.cleanup = releaseCandidate;
+  // Self-healing at the start, exactly as races and components are: cleanup on the way out cannot
+  // survive `SIGKILL`, and `git worktree add` refuses a path git already knows about. Safe here
+  // because the run lock is held, so a registered candidate worktree cannot belong to a live run in
+  // this repository.
+  const sweptCandidates = await sweepCandidateWorktrees({ cwd, run: shell, timeoutMs: GIT_OPERATION_TIMEOUT_MS });
+  for (const entry of sweptCandidates.removed) write(verbatim(`candidate: removed an abandoned worktree at ${entry}`));
+  for (const problem of sweptCandidates.problems) write(verbatim(`candidate: ${problem}`));
+
   const toolchainGates = gateSummary(cwd, meeseeksDir);
   write(verbatim(`toolchain: ${toolchainGates.toolchain} (${toolchainGates.evidence})`));
   // A declined operation is announced rather than merely omitted. A gate list that quietly
@@ -7693,10 +7805,16 @@ async function runInvocation(argv, io, crash) {
    * driver's `.meeseeks`, never from a candidate's, so no candidate can influence what counts
    * as a regression (DESIGN.md §13.6).
    *
-   * @param {string} dir
+   * @param {string} dir the tree being gated, and where its reports are written
+   * @param {string} [runStateDir] where **run-owned** gate state lives — the gate cache and the red
+   *   evidence. It defaults to the gated tree's own `.meeseeks/`, which is what a raced candidate
+   *   needs: a candidate's observations are discarded with its worktree and may not reach the run.
+   *   The main candidate passes the Driver's directory instead, because since REVIEW F14 that tree
+   *   is a snapshot worktree — so leaving this to default would write the run's ratchet evidence
+   *   into a directory that is deleted when the run ends, and `driveRun` reads it from the Driver's.
    * @returns {Promise<{ ok: boolean, results: GateResult[], passing: Set<string> }>}
    */
-  const gateTree = async (dir) => {
+  const gateTree = async (dir, runStateDir = path.join(dir, '.meeseeks')) => {
     const treeStateDir = path.join(dir, '.meeseeks');
     // **Before anything runs** (REVIEW F16). The expected report paths are fixed, so a gate that
     // crashes, times out, or fails before writing leaves the *previous* attempt's report on disk
@@ -7754,7 +7872,7 @@ async function runInvocation(argv, io, crash) {
     // A skip only ever carries a prior FAILURE, so a skipped iteration is red by construction and
     // can never be a ship candidate. See `gate-cache.mjs` for the four safety rules.
     const currentHash = await workspaceHash({ cwd: dir, run: shell });
-    const gateCache = loadGateCache(treeStateDir);
+    const gateCache = loadGateCache(runStateDir);
     const plan = planGateRun({ gates: applicable.gates, cache: gateCache, currentHash });
     for (const carried of plan.skipped) {
       // Visible, per §3.8: a gate that vanished from the run reads exactly like one that was never
@@ -7770,7 +7888,7 @@ async function runInvocation(argv, io, crash) {
     const ran = await runGates(plan.toRun, { cwd: dir, run: shell, timeoutMs: config.gateTimeoutMs });
     // Persist the cache from the first pass only: failures recorded, passes cleared, carries
     // incremented. The second pass's gates are not skippable, so they never enter the cache.
-    saveGateCache(treeStateDir, updateGateCache({ cache: gateCache, currentHash, ranResults: ran.results, skipped: plan.skipped }));
+    saveGateCache(runStateDir, updateGateCache({ cache: gateCache, currentHash, ranResults: ran.results, skipped: plan.skipped }));
     // The carried failures rejoin the run as failed results, so downstream sees no difference
     // between a freshly-failed gate and a carried one except the annotation — and the run stays
     // red on them exactly as it would have.
@@ -7887,7 +8005,7 @@ async function runInvocation(argv, io, crash) {
     // what it found as a baseline: those tests have no "before" to have been red in.
     // `dir` is handed over so every observation is stamped with the bytes it was made under
     // (REVIEW F17). Without it the evidence records no digest, which later reads as unproven.
-    const red = freshness === null ? recordRedEvidence(treeStateDir, failed, [...passing], dir) : null;
+    const red = freshness === null ? recordRedEvidence(runStateDir, failed, [...passing], dir) : null;
     // **Which of these ids are still protected by the bytes that earned them** (REVIEW F17). A
     // changed defining file stops history vouching for its ids: they must be observed failing again
     // before they earn current credit. They stay in `passing` and are never a regression.
@@ -8255,10 +8373,44 @@ async function runInvocation(argv, io, crash) {
       history: (findings) => historyContext({ cwd, run: shell, findings, greenfield }),
       changedFiles,
       gates: async () => {
-        const gated = await gateTree(cwd);
+        const gated = await gateTree(candidate.dir, meeseeksDir);
         return { ok: gated.ok, results: gated.results };
       },
-      shipTimeMutation: () => shipTimeMutation(cwd, meeseeksDir, runStartCommit, config.gateTimeoutMs),
+      /**
+       * Materialize this iteration's candidate and make it the subject (REVIEW F14).
+       *
+       * Called by the loop after the builder and before the gates. Everything that *judges* — the
+       * deterministic gates, the reports they write, the Panel, evidence resolution, the agent
+       * surface scan — reads the worktree this returns. Everything that *repairs* the run — the
+       * ratchet's reset, the scoped restore, the commit — stays on the main tree, because that is
+       * the tree the operator owns and the one a commit publishes.
+       *
+       * @param {number} iteration
+       * @returns {Promise<{ ok: boolean, dir: string, tree: string | null, detail: string }>}
+       */
+      snapshotCandidate: async (iteration) => {
+        const made = await materializeCandidate({
+          cwd,
+          run: shell,
+          dir: candidateWorktree,
+          iteration,
+          timeoutMs: GIT_OPERATION_TIMEOUT_MS,
+        });
+        if (!made.ok) return { ok: false, dir: cwd, tree: null, detail: made.detail };
+        candidateMaterialized = true;
+        const shared = shareToolCaches({ cwd, dir: made.dir, caches: TOOL_CACHE_PATHS });
+        for (const problem of shared.problems) write(verbatim(`candidate: ${problem}`));
+        candidate = { dir: made.dir, tree: made.tree };
+        return { ok: true, dir: made.dir, tree: made.tree, detail: '' };
+      },
+      /** The directory the loop must resolve evidence, test definitions and the agent scan against. */
+      candidateSubject: () => candidate.dir,
+      // **The candidate, like every other deterministic gate** (REVIEW F14). This is a ship gate: its
+      // answer decides whether a passing panel becomes a `SHIPPED`, so it must judge the same bytes
+      // the panel judged. Pointing it at the snapshot also means the mutants it writes land in a
+      // worktree that is deleted at the end of the run rather than in the operator's tree.
+      shipTimeMutation: () =>
+        shipTimeMutation(candidate.dir, path.join(candidate.dir, '.meeseeks'), runStartCommit, config.gateTimeoutMs),
       // The captured revision, re-read from `.meeseeks/` each time rather than closed over. The
       // record lives where the run may not edit it, and reading it back is what makes the check a
       // check rather than a memory of one.
@@ -8267,7 +8419,36 @@ async function runInvocation(argv, io, crash) {
       // already needed exactly this pair — tracked plus untracked-not-ignored, hashed from real
       // bytes — so the identity a verdict is sealed to is the one the repository already trusts to
       // decide whether a deterministic gate may be skipped.
-      workspaceIdentity: () => workspaceHash({ cwd, run: shell }),
+      workspaceIdentity: async () => {
+        // **Git's own name for the bytes, not a hash somebody computed over a directory** (REVIEW
+        // F14). The seal is now an equality between two tree objects: the candidate the Panel judged
+        // and the main working tree about to be committed. `workspaceHash` covered the same file set
+        // and is still what the gate cache keys on, but a content-addressed object identifier is the
+        // thing a commit is *made of*, so the post-commit proof is the same value read back from
+        // `HEAD` rather than a second measurement of it.
+        const gitDir = await resolveGitDir({ cwd, run: shell });
+        if (gitDir === null) return null;
+        const written = await writeSnapshotTree({ cwd, run: shell, gitDir, timeoutMs: GIT_OPERATION_TIMEOUT_MS });
+        return written.ok ? written.tree : null;
+      },
+      /**
+       * Is the working tree still the candidate the Panel judged, and did the commit land it?
+       *
+       * @param {string} tree
+       * @returns {Promise<{ ok: boolean, tree: string | null, detail: string }>}
+       */
+      candidateStillHolds: (tree) =>
+        workingTreeMatchesCandidate({ cwd, run: shell, tree, timeoutMs: GIT_OPERATION_TIMEOUT_MS }),
+      /**
+       * The tree object `HEAD` names, for proving a commit landed the reviewed bytes.
+       *
+       * @returns {Promise<string | null>}
+       */
+      committedTree: async () => {
+        const shown = await git(['rev-parse', 'HEAD^{tree}'], { cwd });
+        const tree = shown.stdout.trim();
+        return shown.ok && /^[0-9a-f]{40,64}$/.test(tree) ? tree : null;
+      },
       // Only what this attempt produced, and only from regular files (REVIEW F16, F32). `gateTree`
       // cleared these paths before the gates ran, so a path that is here now was written by the
       // attempt just finished — **for every path the clear actually reached**, which is why the
@@ -8278,21 +8459,21 @@ async function runInvocation(argv, io, crash) {
         // `effects.gates()`, so the entry is always there in practice; the throw exists for the
         // ordering somebody changes later, and the loop reads it as an unreadable report, which is
         // the correct reading — the reports cannot be attributed to an attempt that never began.
-        const cleared = clearOutcomes.get(cwd);
+        const cleared = clearOutcomes.get(candidate.dir);
         if (cleared === undefined) {
           throw new DriverError(
             'the declared report paths were never cleared for this attempt, so nothing found at them can be read ' +
               "as this attempt's evidence",
           );
         }
-        const collected = collectReports(reportFiles(cwd), cleared);
+        const collected = collectReports(reportFiles(candidate.dir), cleared);
         // Named, not merely withheld. The gate result carries this to the builder; this line
         // carries it to the operator, who is the only one who can go and free the file.
         if (collected.uncleared.length > 0) {
           write(
             verbatim(
               `refusing every test report this attempt: ${collected.uncleared
-                .map((file) => path.relative(cwd, file))
+                .map((file) => path.relative(candidate.dir, file))
                 .join(', ')} could not be cleared before the gates ran, so what is there now may be the previous ` +
                 "attempt's",
             ),

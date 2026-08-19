@@ -2437,7 +2437,7 @@ the same one F32 draws between a report that is gone and one that is nameless.
 One case keeps `[]` for a file that exists: a manifest with no `capabilities` key predates 0.190.0
 and genuinely established nothing under this rule. That is an upgrade path, not a fallback.
 
-### 68. Seal Panel verdicts to an exact workspace identity — IMPLEMENTED (0.172.0); REVIEW F14 CLOSED at 0.194.0
+### 68. Seal Panel verdicts to an exact workspace identity — IMPLEMENTED (0.172.0); REVIEW F14 CLOSED at 0.194.0 and reopened against `3debe73`; the materialized subject is item 120
 
 **Landed at 0.172.0.** `driveRun` captures `workspaceHash`'s identity after the gates and before the
 first reviewer, rechecks it after every panel, immediately before the commit and once the commit has
@@ -4700,7 +4700,7 @@ positional rule — a marked process may not write under `.meeseeks/` at any dep
 that do not exist yet — replay by consumption, and reset because depth is a field of the record.
 `MEESEEKS_GIVE_THEM_THE_BOX` and `MEESEEKS_RUN_DEPTH` now decide nothing in a child; the flag remains
 the operator's intent at the parent, where `runInvocation` still reads it off argv, still refuses
-configured components without it, and still arms the boxed deadline. `DESIGN.md` §6.3 records this.
+configured components without it, and still arms the boxed deadline. `DESIGN.md` §6.4 records this.
 
 **The cap moved to both ends, fail-closed at both.** `authorizedNestingEnv` refuses to mint past
 `MAX_BOX_DEPTH`, so a run at the bottom never spends a spawn to be told so and the store never holds
@@ -4743,7 +4743,7 @@ existing case left the mutation *present*, which is why all of them passed again
 `realityCheckPrompt` are exported from `driver.mjs` and pure; the Panel and the circuit-breaker
 receive the captured bytes inside their prompt, fenced and stamped with the revision digest, and are
 told not to read the file — with the reason, because a reviewer holding tools reasons its way around
-an instruction that has none. `DESIGN.md` §6.2 records this. `templates/reviewer-system.md` agrees: the specification is listed as
+an instruction that has none. `DESIGN.md` §6.3 records this. `templates/reviewer-system.md` agrees: the specification is listed as
 arriving in the brief, and a specification file in the repository that disagrees with it is named as
 a finding rather than an amendment. There is no window left to sample, because the authority never
 lives on disk. Oversize delivery is already fail-closed: `checkContextBudget` refuses a prompt over
@@ -4800,6 +4800,66 @@ unexpected absence and a present manifest still read correctly. Eight go red wit
 reverted. Two positional cases hold the wiring, because the flag lives in a closure no unit test can
 reach: the Driver must pass its own write-state into the reader, and must set that state *after* the
 write rather than before it.
+
+### 120. The candidate is materialized, not sampled — IMPLEMENTED (0.218.0); REVIEW F14 open pending Codex
+
+**F14 reopened on what a before/after comparison cannot see.** Item 68 hashes the working tree after
+the gates, rechecks it after the Panel and around the commit, and refuses any difference. That closes
+*persistent* drift. It says nothing about which bytes were visible *during* an operation, and the
+gates were weaker still: their identity was captured only after their results came back, so a swap
+during a required gate left no trace at all. A Builder has arbitrary Bash and can leave a background
+process that exposes tree B while a gate or a reviewer reads it and restores tree A before the next
+sample. Every existing case left its write in place, which is why all of them passed against it.
+
+**`scripts/candidate.mjs`, and there is no interval left to tighten.** After the Builder the Driver
+stages the working tree into a temporary index — never `.git/index` — writes a tree object, wraps it
+in a commit no branch points at, and checks that commit out into a worktree outside the repository.
+Gates, the reports they write, the ship-time mutation gate, the Panel, evidence resolution,
+test-definition digests and the agent-surface rescan all read that worktree. The background writer is
+writing to a different directory. `DESIGN.md` §6.2 records the whole boundary.
+
+**The three checks became equalities.** The identity a verdict is sealed to is the candidate's tree
+object rather than a hash of a directory, so the pre-commit check is `write-tree` of the main tree
+compared with it, and the post-commit check is `HEAD^{tree}` compared with it — the same value by
+construction, which is what makes an inequality mean the commit published something else. The
+`reviewedWorkspace === null` branch is gone rather than kept: there is no hash to fail any more, and a
+run that could not materialize a candidate ends instead of falling back to the live tree, because
+gating whatever is on disk is precisely the behaviour this replaces.
+
+**Two placements that are decisions, not details.** Run-owned gate state — the gate cache and the red
+evidence — is written to the **Driver's** `.meeseeks/` rather than the gated tree's, which is deleted
+with the worktree; `gateTree` takes it as a second argument that defaults to the tree's own, so a
+raced candidate keeps its existing isolation. And the ignored tool caches are shared into the
+snapshot by symlink, because a subject that cannot resolve its dependencies cannot run a gate; that is
+the one mutable surface left and `TOOL_CACHE_PATHS` names it.
+
+**Evidence.** Twenty-one tier-2 cases on the module itself, because every claim it makes is a claim
+about git: that the temporary index leaves the repository's own alone, that the tree includes
+untracked and excludes ignored, that the same bytes get the same name and different bytes a different
+one, that a deleted file is forgotten rather than carried, that a write to the main tree afterwards
+does not reach the subject, that the worktree is reused with its caches intact and cleaned of the
+previous iteration's leftovers, that the sweep takes `meeseeks-candidate-<pid>` and leaves an
+operator's own worktree alone. Four more in `workspace-seal.integration.test.mjs` drive the real loop
+against a real repository and swap A→B→A from inside a reviewer's and a gate's own window, asserting
+what the *reader* held while the main tree held B; all four go red when the subject is pointed back at
+the live tree. Six tier-1 cases cover the loop's decisions: the refusal to run without the effect, the
+run ending when materialization fails without gating or reviewing anything, the subject being asked
+for, and the committed-tree mismatch.
+
+**One test's premise moved with the subject.** `report-freshness.integration.test.mjs` planted its
+unremovable report path in the main tree's `.meeseeks/`; the declared report paths are the candidate's
+now, and nothing outside the run can reach that directory. The hazard is planted from inside a gate
+instead — which lands one iteration before the clear it defeats, so the run takes three — and two
+assertions were narrowed honestly rather than contorted: the seeding gate proves it ran by writing a
+copy back to the main tree, because `git worktree remove` deletes what it can before meeting the stuck
+path, and the red-evidence assertion is now about the seeded id specifically rather than about the
+store being absent, since iteration one is an ordinary attempt that produced no report at all.
+
+**Residual, stated because it is a real gap.** The Panel's `cwd` is now a worktree rather than the
+repository root. That is a contract with the `claude` binary — settings resolution, plugin loading,
+cwd-relative tools — and this repository's own rule is that such a contract needs one live check.
+Tier 3 was not run for this slice, so the Panel-in-a-worktree behaviour is unverified against a real
+child. The tier-2 evidence covers the Driver's side of it completely.
 
 ## Observations recorded rather than repaired
 

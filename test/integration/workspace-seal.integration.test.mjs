@@ -26,9 +26,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
+import {
+  materializeCandidate,
+  removeCandidate,
+  resolveGitDir,
+  shareToolCaches,
+  writeSnapshotTree,
+} from '../../scripts/candidate.mjs';
 import { defaultConfig } from '../../scripts/config.mjs';
-import { driveRun, shell } from '../../scripts/driver.mjs';
-import { workspaceHash } from '../../scripts/gate-cache.mjs';
+import { TOOL_CACHE_PATHS, driveRun, shell } from '../../scripts/driver.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -63,16 +69,79 @@ function repo() {
 }
 
 /**
- * Drive one iteration against a real tree, with the real workspace hash.
+ * The candidate machinery these harnesses share, wired to a real git repository.
+ *
+ * `subject` is filled in the first time a run materializes, which is what everything that judges
+ * then reads. The directory is created under its own temporary parent so two harnesses in one file
+ * cannot collide on a worktree path git would then refuse.
  *
  * @param {string} root
- * @param {{ onReview?: () => void, onDeploy?: () => void | Promise<void> }} [hooks]
+ * @returns {{ effects: Pick<import('../../scripts/driver.mjs').Effects,
+ *   'snapshotCandidate' | 'candidateSubject' | 'committedTree' | 'workspaceIdentity'>,
+ *   subject: () => string, dir: string }}
+ */
+function candidateEffects(root) {
+  const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'meeseeks-seal-wt-')), 'meeseeks-candidate-1');
+  temporaryDirs.push(path.dirname(dir));
+  /** @type {string | null} */
+  let subject = null;
+  return {
+    dir,
+    subject: () => subject ?? root,
+    effects: {
+      snapshotCandidate: async (/** @type {number} */ iteration) => {
+        const made = await materializeCandidate({ cwd: root, run: shell, dir, iteration });
+        if (!made.ok) return { ok: false, dir: root, tree: null, detail: made.detail };
+        shareToolCaches({ cwd: root, dir: made.dir, caches: TOOL_CACHE_PATHS });
+        subject = made.dir;
+        return { ok: true, dir: made.dir, tree: made.tree, detail: '' };
+      },
+      candidateSubject: () => subject ?? root,
+      committedTree: () => git(root, ['rev-parse', 'HEAD^{tree}']),
+      // Git's own name for what is in the working tree right now — the same kind of object the
+      // candidate is, so the seal is an equality between two tree ids rather than a comparison of
+      // two measurements of a directory.
+      workspaceIdentity: async () => {
+        const gitDir = await resolveGitDir({ cwd: root, run: shell });
+        if (gitDir === null) return null;
+        const written = await writeSnapshotTree({ cwd: root, run: shell, gitDir });
+        return written.ok ? written.tree : null;
+      },
+    },
+  };
+}
+
+/**
+ * Drive one iteration against a real tree, with the real candidate machinery.
+ *
+ * `onReview` fires from inside the reviewer's own window, which is where a background writer would
+ * land. `seen` records what the *subject* held while that reviewer was reading, because the whole
+ * repair is that the subject and the tree the writer can reach are no longer the same directory.
+ *
+ * @param {string} root
+ * @param {{ onReview?: (probe: { subject: () => string }) => void,
+ *   onDeploy?: () => void | Promise<void>,
+ *   onGate?: (probe: { subject: () => string }) => void }} [hooks]
  * @returns {Promise<{ outcome: import('../../scripts/driver.mjs').RunOutcome, committed: string[],
- *   shipped: number, shippedCommit: string | null, logs: string[] }>}
+ *   shipped: number, shippedCommit: string | null, logs: string[], seen: string[],
+ *   gateSaw: string[], subject: string | null }>}
  */
 async function driveOnce(root, hooks = {}) {
   /** @type {string[]} */
   const logs = [];
+  /** @type {string[]} */
+  const seen = [];
+  /** @type {string[]} */
+  const gateSaw = [];
+  /** @type {string | null} */
+  let subject = null;
+  /** What `src/a.js` holds in the subject right now, or `<absent>`. @returns {string} */
+  const inSubject = () => {
+    const source = subject === null ? null : path.join(subject, 'src', 'a.js');
+    return source !== null && existsSync(source) ? readFileSync(source, 'utf8') : '<absent>';
+  };
+  const candidateDir = path.join(mkdtempSync(path.join(os.tmpdir(), 'meeseeks-seal-wt-')), 'meeseeks-candidate-1');
+  temporaryDirs.push(path.dirname(candidateDir));
   /** @type {string[]} */
   const committed = [];
   let shipped = 0;
@@ -94,7 +163,11 @@ async function driveOnce(root, hooks = {}) {
       },
       review: () => {
         // The concurrent write, fired from inside the reviewer's own window.
-        hooks.onReview?.();
+        hooks.onReview?.({ subject: inSubject });
+        // **What the reviewer could actually read while that write was happening** (REVIEW F14,
+        // reopened). Recorded from the subject rather than from `root`: if the two are the same
+        // directory the repair has not happened, and this is the assertion that says so.
+        seen.push(inSubject());
         return {
           ok: true,
           costUsd: 0,
@@ -106,13 +179,17 @@ async function driveOnce(root, hooks = {}) {
         };
       },
       realityCheck: () => ({ ok: true, text: 'buildable', costUsd: 0, tokens: 1, raw: '' }),
-      gates: () => ({
-        ok: true,
-        results: [
-          { name: 'lint', ok: true, status: 0, detail: 'passed' },
-          { name: 'mutation', ok: true, status: 0, detail: 'no survivors' },
-        ],
-      }),
+      gates: () => {
+        hooks.onGate?.({ subject: inSubject });
+        gateSaw.push(inSubject());
+        return {
+          ok: true,
+          results: [
+            { name: 'lint', ok: true, status: 0, detail: 'passed' },
+            { name: 'mutation', ok: true, status: 0, detail: 'no survivors' },
+          ],
+        };
+      },
       readTestReports: () => [
         {
           numTotalTests: 1,
@@ -122,6 +199,17 @@ async function driveOnce(root, hooks = {}) {
         },
       ],
       checkSpecification: () => ({ ok: true, digest: 'sha256:spec', detail: 'PRD.md unchanged' }),
+      // **The real thing** (REVIEW F14, reopened): a worktree checked out from a real tree object,
+      // not an injected identity. Everything that judges reads it; the writers below reach `root`.
+      snapshotCandidate: async (iteration) => {
+        const made = await materializeCandidate({ cwd: root, run: shell, dir: candidateDir, iteration });
+        if (!made.ok) return { ok: false, dir: root, tree: null, detail: made.detail };
+        shareToolCaches({ cwd: root, dir: made.dir, caches: TOOL_CACHE_PATHS });
+        subject = made.dir;
+        return { ok: true, dir: made.dir, tree: made.tree, detail: '' };
+      },
+      candidateSubject: () => subject ?? root,
+      committedTree: () => git(root, ['rev-parse', 'HEAD^{tree}']),
       // Real git, asked the real question (REVIEW F31): is the tree this commit holds the tree that
       // was reviewed?
       verifyPublication: async () => {
@@ -135,8 +223,15 @@ async function driveOnce(root, hooks = {}) {
           ? { ok: true, detail: 'clean', head }
           : { ok: false, detail: `${dirty.length} path(s) uncommitted after the commit`, head };
       },
-      // The real thing, over the real tree.
-      workspaceIdentity: () => workspaceHash({ cwd: root, run: shell }),
+      // Git's own name for what is in the working tree right now — the same kind of object the
+      // candidate is, so the seal is an equality between two tree ids rather than a comparison of
+      // two measurements of a directory.
+      workspaceIdentity: async () => {
+        const gitDir = await resolveGitDir({ cwd: root, run: shell });
+        if (gitDir === null) return null;
+        const written = await writeSnapshotTree({ cwd: root, run: shell, gitDir });
+        return written.ok ? written.tree : null;
+      },
       // **Production `shell`, not `execFileSync`** (REVIEW F31). `execFileSync` *throws* on a failed
       // command; `shell` *returns* a result the caller has to inspect. A fixture built on the
       // throwing one cannot exercise the branch where a failure is silently ignored, which is
@@ -167,7 +262,8 @@ async function driveOnce(root, hooks = {}) {
       log: (line) => logs.push(line),
     },
   });
-  return { outcome, committed, shipped, shippedCommit, logs };
+  await removeCandidate({ cwd: root, run: shell, dir: candidateDir });
+  return { outcome, committed, shipped, shippedCommit, logs, seen, gateSaw, subject };
 }
 
 describe('a real write during a real review cannot reach the commit', () => {
@@ -247,8 +343,97 @@ describe('a real write during a real review cannot reach the commit', () => {
     assert.equal(driven.outcome.state, 'SHIPPED', driven.logs.join('\n').slice(-900));
     assert.equal(driven.shipped, 1);
     assert.equal(driven.committed.length, 1, driven.committed.join(' | '));
-    // And the receipt says which bytes it was about.
-    assert.match(String(driven.outcome.workspace), /^sha256:[0-9a-f]{64}$/);
+    // And the receipt says which bytes it was about — git's own name for the reviewed tree, which
+    // is also the name the commit is made of, so the identity in the receipt can be looked up.
+    assert.match(String(driven.outcome.workspace), /^[0-9a-f]{40,64}$/);
+    assert.equal(driven.outcome.workspace, git(root, ['rev-parse', 'HEAD^{tree}']), 'the receipt names another tree');
+  });
+});
+
+describe('a swap that is put back cannot reach a gate or a reviewer (REVIEW F14, reopened)', () => {
+  // **The half a before/after comparison cannot see, and Codex reopened this on it.** The cases
+  // above leave their write in place, so the second hash differs and the verdict is discarded. The
+  // attack that survives them restores the original: expose tree B while a gate or a reviewer reads
+  // it, put tree A back before the next sample. Both hashes return A, both checks pass, and the run
+  // ships A on the strength of checks that observed B.
+  //
+  // There is no sampling interval to close, so nothing here tightens one. The subject is a worktree
+  // checked out from a tree object, and the writer below is writing to a different directory — which
+  // is why these assertions are about what the *reader* held rather than about what the checker saw.
+
+  const CANONICAL = 'export const reviewed = "reviewed bytes";\n';
+  const SWAPPED = 'export const reviewed = "easier bytes";\n';
+
+  it('a reviewer reads the candidate while the main tree holds the swapped bytes', async () => {
+    const root = repo();
+    /** @type {string[]} */
+    const duringSwap = [];
+    /** @type {string[]} */
+    const mainDuringSwap = [];
+    const driven = await driveOnce(root, {
+      onReview: (probe) => {
+        const file = path.join(root, 'src', 'a.js');
+        writeFileSync(file, SWAPPED);
+        // Measured at the instant B is on disk in the main tree: what the main tree holds, and what
+        // the thing actually being reviewed holds. Before the repair these were one directory and
+        // both would read `easier bytes`.
+        mainDuringSwap.push(readFileSync(file, 'utf8'));
+        duringSwap.push(probe.subject());
+        writeFileSync(file, CANONICAL);
+      },
+    });
+
+    assert.deepStrictEqual(mainDuringSwap, [SWAPPED], 'the fixture never exposed the swapped bytes');
+    assert.deepStrictEqual(duringSwap, [CANONICAL], 'the reviewer could read the swapped bytes');
+    assert.notEqual(driven.subject, root, 'the subject is the tree the writer can reach');
+    // And the run is honest about it: nothing persisted, so the verdict stands and A is what ships.
+    assert.equal(driven.outcome.state, 'SHIPPED', driven.logs.join('\n').slice(-900));
+    assert.equal(readFileSync(path.join(root, 'src', 'a.js'), 'utf8'), CANONICAL);
+    assert.equal(driven.outcome.workspace, git(root, ['rev-parse', 'HEAD^{tree}']));
+  });
+
+  it('a gate reads the candidate while the main tree holds the swapped bytes', async () => {
+    // **The gates were the weaker half.** Their identity was captured only *after* their results came
+    // back, so there was not even a before to compare with — a swap during a required gate left no
+    // trace at all. They now run in the same worktree the panel reads.
+    const root = repo();
+    /** @type {string[]} */
+    const duringSwap = [];
+    await driveOnce(root, {
+      onGate: (probe) => {
+        const file = path.join(root, 'src', 'a.js');
+        writeFileSync(file, SWAPPED);
+        duringSwap.push(probe.subject());
+        writeFileSync(file, CANONICAL);
+      },
+    });
+    assert.deepStrictEqual(duringSwap, [CANONICAL], 'a required gate could read the swapped bytes');
+  });
+
+  it('the subject is a different directory from the one the builder writes to', async () => {
+    // The property every assertion above rests on, stated once on its own so a change that quietly
+    // points the subject back at `root` fails here rather than only where it matters.
+    const root = repo();
+    const driven = await driveOnce(root);
+    assert.notEqual(driven.subject, root);
+    assert.equal(driven.gateSaw.length > 0, true, 'no gate ever ran');
+    assert.deepStrictEqual([...new Set(driven.gateSaw)], [CANONICAL]);
+    assert.deepStrictEqual([...new Set(driven.seen)], [CANONICAL]);
+  });
+
+  it('a swap left in place is still refused, which is the case that already worked', async () => {
+    // The neighbour in the other direction: materializing the subject must not have removed the
+    // protection against a write that *persists*. The reviewed tree and the tree about to be
+    // committed genuinely differ here, and nothing is committed.
+    const root = repo();
+    const driven = await driveOnce(root, {
+      onReview: () => writeFileSync(path.join(root, 'src', 'a.js'), SWAPPED),
+    });
+    assert.notEqual(driven.outcome.state, 'SHIPPED');
+    assert.deepStrictEqual(driven.committed, []);
+    // And the reviewer still read the canonical bytes, which is why the verdict is discarded rather
+    // than trusted: the panel judged A and A is not what is on disk.
+    assert.deepStrictEqual(driven.seen, [CANONICAL]);
   });
 });
 
@@ -272,6 +457,7 @@ describe('a real write during a real review cannot reach the commit', () => {
 async function drivePublication(root, options) {
   /** @type {string[]} */
   const logs = [];
+  const candidate = candidateEffects(root);
   let shipped = 0;
   let deploys = 0;
   const lock = path.join(root, '.git', 'index.lock');
@@ -312,7 +498,7 @@ async function drivePublication(root, options) {
         },
       ],
       checkSpecification: () => ({ ok: true, digest: 'sha256:spec', detail: 'PRD.md unchanged' }),
-      workspaceIdentity: () => workspaceHash({ cwd: root, run: shell }),
+      ...candidate.effects,
       verifyPublication: async () => {
         const status = await shell('git', ['status', '--porcelain'], { cwd: root });
         if (!status.ok) return { ok: false, detail: 'git could not describe the tree' };
@@ -397,6 +583,7 @@ describe('a failed git publication cannot reach deploy, tag or SHIPPED', () => {
     // The seal says the working bytes are the reviewed ones; this says git actually holds them. A
     // commit that silently left a reviewed path behind is not the reviewed tree.
     const root = repo();
+    const candidate = candidateEffects(root);
     let shipped = 0;
     const outcome = await driveRun({
       config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers: ['correctness'] },
@@ -429,7 +616,7 @@ describe('a failed git publication cannot reach deploy, tag or SHIPPED', () => {
           },
         ],
         checkSpecification: () => ({ ok: true, digest: 'sha256:spec', detail: 'PRD.md unchanged' }),
-        workspaceIdentity: () => workspaceHash({ cwd: root, run: shell }),
+        ...candidate.effects,
         // The real question, answered honestly against a tree that was never fully committed.
         verifyPublication: async () => {
           const status = await shell('git', ['status', '--porcelain'], { cwd: root });
