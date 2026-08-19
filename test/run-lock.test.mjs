@@ -18,7 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -600,6 +600,68 @@ describe('a contender recognizes its own restored claim', () => {
 
     assert.equal(result.ok, true, JSON.stringify(result));
     assert.equal(readRunLock(meeseeksDir)?.token, 'mine');
+  });
+});
+
+describe('the canonical lock is never published half-written (REVIEW F43)', () => {
+  // **`wx` makes arbitration atomic; it does not make publication atomic.** The kernel creates the
+  // canonical pathname on `O_CREAT|O_EXCL` and user space writes the pid and token afterwards, so a
+  // kill in that seam leaves a zero-length `lock.json` at the name every later contender consults.
+  // `readRunLock` refuses it — correctly, since a partial lock may belong to a creator still inside
+  // its write window — but the file carries no identity, so the refusal can never become
+  // recoverable. Codex's reproduction: materialize an empty canonical lock, call `acquireRunLock`
+  // twice with dead-owner liveness, and both calls return the same unreadable-JSON refusal forever.
+  // A transient crash became a permanent denial of service needing an operator with a shell.
+
+  it('leaves no partial canonical file at any point, because it links a finished one', () => {
+    // The property, asserted positionally: the canonical name is only ever created by `link`, so
+    // there is no interval in which it exists and is incomplete. A behavioural test cannot observe
+    // an interval that no longer exists, which is the same reason `readBounded`'s allocation bound
+    // is asserted this way.
+    const source = readFileSync(new URL('../scripts/run-lock.mjs', import.meta.url), 'utf8');
+    const create = source.slice(
+      source.indexOf('function createLockExclusively('),
+      source.indexOf('function refused('),
+    );
+    assert.equal(create.includes('linkSync('), true, 'the lock is no longer published by link');
+    assert.equal(
+      /writeFileSync\(\s*lockFile\(/.test(create),
+      false,
+      'the canonical name is written directly again, so a kill can expose a partial lock',
+    );
+    assert.equal(create.includes("flag: 'wx'"), false, 'the create-then-write seam is back');
+  });
+
+  it('still gives the directory to exactly one contender', () => {
+    // The semantics `wx` provided and `link` has to preserve: no-replace, exactly one winner.
+    const meeseeksDir = makeMeeseeksDir();
+    const first = acquireRunLock(meeseeksDir, { pid: process.pid, startedAt: 'a', token: 'first' });
+    const second = acquireRunLock(meeseeksDir, { pid: process.pid, startedAt: 'b', token: 'second', isAlive: realLiveness });
+
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, false, 'two contenders published a lock over one directory');
+    assert.equal(readRunLock(meeseeksDir)?.token, 'first', 'the loser replaced the winner');
+  });
+
+  it('publishes a complete record, readable the moment it exists', () => {
+    const meeseeksDir = makeMeeseeksDir();
+    acquireRunLock(meeseeksDir, { pid: 4242, startedAt: '2026-08-19T00:00:00.000Z', token: 'complete' });
+
+    const held = readRunLock(meeseeksDir);
+
+    assert.deepStrictEqual(held, { pid: 4242, startedAt: '2026-08-19T00:00:00.000Z', token: 'complete' });
+  });
+
+  it('leaves no staging artifact behind, on the winning or the losing path', () => {
+    // The private file is this contender's own litter and must not outlive the attempt — and a loser
+    // must clean only its own, never the canonical claim it just failed to take.
+    const meeseeksDir = makeMeeseeksDir();
+    acquireRunLock(meeseeksDir, { pid: process.pid, startedAt: 'a', token: 'winner' });
+    acquireRunLock(meeseeksDir, { pid: process.pid, startedAt: 'b', token: 'loser', isAlive: realLiveness });
+
+    const left = readdirSync(meeseeksDir).filter((name) => name.includes('staging'));
+    assert.deepStrictEqual(left, []);
+    assert.equal(readRunLock(meeseeksDir)?.token, 'winner', 'the losing contender cleared the winner’s lock');
   });
 });
 

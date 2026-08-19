@@ -4594,6 +4594,39 @@ value, and a source scan refuses any Git call that bypasses the door.
 **This was the prerequisite F44 named.** Bounded Git effects rely on termination reaching a helper
 the leader spawned, because the helper is in the group.
 
+### 115. Publish the run lock, do not assemble it in place — IMPLEMENTED (0.213.0); REVIEW F43 open pending Codex
+
+**`wx` makes arbitration atomic and publication is a separate step.** `O_CREAT|O_EXCL` creates the
+canonical pathname; user space writes the pid and token *afterwards*. A SIGKILL, a host failure or a
+process death in that seam leaves a zero-length or half-written `lock.json` at the name every later
+contender consults.
+
+**And the refusal that protects it is what makes it permanent.** `readRunLock` declines to read a
+partial lock — correctly, since it may belong to a creator still inside its write window — but the
+file carries no identity, so no later contender can ever tell the crashed creator from a live one.
+Codex's reproduction: materialize an empty canonical lock, call `acquireRunLock` twice with
+dead-owner liveness, and both calls return the same unreadable-JSON refusal, forever. **A transient
+crash became a permanent denial of service that only an operator with a shell could clear** — the
+crash-recovery mechanism turning a crash into the unrecoverable state.
+
+**So the bytes are published, never assembled.** The complete record is written to a private name in
+the same directory, and `link` moves it to the canonical name atomically **without replacing**: it
+fails `EEXIST` if another contender arrived first, which is exactly the no-replace, exactly-one-winner
+semantics `wx` provided, and it cannot expose a partial canonical file because the file it publishes
+was finished before it had that name. Same directory, so the link cannot cross a filesystem; named by
+the contender's own token, so two contenders cannot collide on the staging file either.
+
+**A loser cleans only its own litter.** The `finally` removes the private artifact and never the
+canonical name — clearing that would delete whichever owner won, which is the opposite of what a
+losing contender may do. F34's takeover claim already learned this; the canonical lock now matches it.
+
+**Evidence.** Four cases in `test/run-lock.test.mjs`: the publication path is asserted positionally —
+`link` present, no direct write to the canonical name, no `wx` — because the defect is an *interval*
+that no longer exists and a behavioural test cannot observe an absent interval, which is the same
+argument `readBounded`'s allocation bound uses. Then the semantics that had to survive: exactly one
+winner, a record readable the instant it exists, and no staging artifact left on either path with the
+winner's lock intact. Red against the reverted create-then-write.
+
 ## Observations recorded rather than repaired
 
 - **Tier 2 refused once and passed on an immediate re-run** (18 Aug 2026, committing 0.196.0 through

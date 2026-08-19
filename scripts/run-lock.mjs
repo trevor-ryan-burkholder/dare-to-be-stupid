@@ -63,7 +63,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 /** The lock's filename inside `.meeseeks/`. */
@@ -169,12 +169,40 @@ export function readRunLock(meeseeksDir) {
  * @returns {boolean} true when this call created it
  */
 function createLockExclusively(meeseeksDir, lock) {
+  // **`wx` makes arbitration atomic and publication is a separate step** (REVIEW F43). The kernel
+  // creates the canonical pathname on `O_CREAT|O_EXCL`, and user space writes the pid and token
+  // *afterwards*; a SIGKILL, a host failure or a process death in that seam leaves a zero-length or
+  // half-written `lock.json` at the name every later contender consults. `readRunLock` then refuses
+  // it — correctly, because a partial lock might belong to a creator still in its write window — but
+  // the file carries no identity, so the refusal can never become recoverable. A transient crash
+  // became a permanent denial of service that only an operator with a shell could clear.
+  //
+  // So the bytes are published, never assembled in place. The full record is written to a private
+  // name in the same directory, and `link` moves it to the canonical name **atomically and without
+  // replacing**: it fails `EEXIST` if somebody else got there, which is the same exactly-one-winner
+  // semantics `wx` gave, and it can never expose a partial canonical file because the file it
+  // publishes was already complete.
+  //
+  // Same directory so the link cannot cross a filesystem, and named by this contender's own token so
+  // two contenders cannot collide on the staging file itself.
+  const file = lockFile(meeseeksDir);
+  const staging = `${file}.staging-${createHash('sha256').update(lock.token).digest('hex').slice(0, 16)}`;
   try {
-    writeFileSync(lockFile(meeseeksDir), `${JSON.stringify(lock, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+    writeFileSync(staging, `${JSON.stringify(lock, null, 2)}\n`, 'utf8');
+    linkSync(staging, file);
     return true;
   } catch (error) {
     if (/** @type {{ code?: string }} */ (error).code === 'EEXIST') return false;
     throw error;
+  } finally {
+    // Only the private artifact. Clearing the canonical name here would delete whatever owner won,
+    // which is the opposite of what a losing contender may do.
+    try {
+      rmSync(staging, { force: true });
+    } catch {
+      // A staging file that cannot be removed is litter, not a correctness problem: it is named for
+      // this token, so no other contender will read or collide with it.
+    }
   }
 }
 
