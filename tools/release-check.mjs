@@ -92,17 +92,77 @@ export function statedHandoffVersion(text) {
   return { version: match[1], reason: '' };
 }
 
+/**
+ * Mutable Git state a handoff header must not claim (REVIEW F40, reopened).
+ *
+ * **The version discipline became a gate here; the Git-state one has to as well.** The header used
+ * to say which commit HEAD was and which uncommitted layer sat above it. Both are true for minutes.
+ * `release-check` passed anyway, because it validated the version token and nothing around it, and a
+ * fresh agent was told the wrong comparison base three separate times — the last of them while the
+ * finding about it was open. The rule is not "keep it up to date": nobody has managed that. The rule
+ * is that the header may not make the claim at all, and `PLAN.md` owns current order.
+ *
+ * Matched by shape rather than by phrase, because the phrasing is what drifted: an abbreviated or
+ * full object name in the `**State:**` paragraph is a claim about a commit, whoever wrote it. A
+ * version like `0.218.0` is not one and is checked separately; a word like `deadbeef` in prose would
+ * be, and refusing it is the right side to err on for a paragraph that should name no commits.
+ *
+ * @param {string} text the contents of `HANDOFF.md`
+ * @returns {string[]} one problem per claim found
+ */
+export function mutableStateClaims(text) {
+  const lines = text.split('\n');
+  const start = lines.findIndex((line) => line.includes('**State:**'));
+  if (start === -1) return [];
+  /** @type {string[]} */
+  const paragraph = [];
+  for (let index = start; index < lines.length; index += 1) {
+    if (index > start && lines[index].trim() === '') break;
+    paragraph.push(lines[index]);
+  }
+  const joined = paragraph.join(' ');
+  /** @type {string[]} */
+  const problems = [];
+  const object = joined.match(/\b[0-9a-f]{7,40}\b/);
+  if (object !== null) {
+    problems.push(
+      `HANDOFF.md's **State:** paragraph names the commit ${object[0]}. A handoff header may not claim mutable Git ` +
+        'state: it is true for minutes, it went stale three times under a warning saying so, and a reader is told ' +
+        'the wrong comparison base before reaching anything true. Say what the tree *is* and let git answer where ' +
+        'it is (REVIEW F40).',
+    );
+  }
+  if (/\bHEAD\b/.test(joined)) {
+    problems.push(
+      "HANDOFF.md's **State:** paragraph says HEAD. Where HEAD points is git's answer, not a document's (REVIEW F40).",
+    );
+  }
+  // **And no restated queue anywhere in the file.** Item 98 removed one; it grew back, out of order
+  // and disagreeing with `PLAN.md`, which is what reopened F40. A bullet naming a PLAN item is the
+  // exact shape, so it is refused by shape — prose that mentions an item in passing is not a list.
+  const restated = lines.filter((line) => /^\s*[-*]\s+items?\s+\d+\b/i.test(line));
+  if (restated.length > 0) {
+    problems.push(
+      `HANDOFF.md restates the queue: ${restated.length} bullet(s) naming PLAN items, beginning ` +
+        `"${restated[0].trim().slice(0, 60)}". PLAN.md is the only implementation queue; a second copy falls out ` +
+        'of order and then contradicts it, which is how this finding was reopened (REVIEW F40).',
+    );
+  }
+  return problems;
+}
+
 /** @typedef {{ ok: boolean, problems: string[] }} ReleaseVerdict */
 
 /**
  * Decide whether this working state may be released as-is.
  *
- * @param {{ changedFiles: string[], pluginVersion: string, packageVersion: string, handoffVersion: string | null, handoffReason?: string }} input
+ * @param {{ changedFiles: string[], pluginVersion: string, packageVersion: string, handoffVersion: string | null,
+ *   handoffReason?: string, handoffClaims?: string[] }} input
  * @returns {ReleaseVerdict}
  */
 export function evaluateRelease(input) {
   /** @type {string[]} */
-  const problems = [];
+  const problems = [...(input.handoffClaims ?? [])];
 
   if (input.pluginVersion !== input.packageVersion) {
     problems.push(
@@ -211,6 +271,7 @@ export function main(io = {}) {
     packageVersion,
     handoffVersion: handoff.version,
     handoffReason: handoff.reason,
+    handoffClaims: mutableStateClaims(readHandoff(path.join(cwd, 'HANDOFF.md'))),
   });
 
   if (verdict.ok) {

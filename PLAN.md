@@ -3898,7 +3898,7 @@ this contender's to destroy.
 read/rename window through the `isAlive` seam and proves the directory survives, the lock is
 untaken, and the current contender refuses. Verified red against the pre-F39 logic.
 
-### 98. Stop restating the queue in HANDOFF — IMPLEMENTED (0.185.0); REVIEW F40 CLOSED at 0.194.0
+### 98. Stop restating the queue in HANDOFF — IMPLEMENTED (0.185.0); REVIEW F40 CLOSED at 0.194.0 and reopened against `3debe73`; the gate that makes it stick is item 121
 
 **Problem solved:** `HANDOFF.md` restated the implementation order and the review counts, and both
 went stale — it recorded F7/item 61 as blocked on unauthorised expenditure three sections below its
@@ -4860,6 +4860,40 @@ repository root. That is a contract with the `claude` binary — settings resolu
 cwd-relative tools — and this repository's own rule is that such a contract needs one live check.
 Tier 3 was not run for this slice, so the Panel-in-a-worktree behaviour is unverified against a real
 child. The tier-2 evidence covers the Driver's side of it completely.
+
+### 121. A handoff header may not claim mutable state — IMPLEMENTED (0.219.0); REVIEW F40 open pending Codex
+
+**F40 reopened for the third time on the same shape.** The header said which commit HEAD was and
+which uncommitted layer sat above it. Both are true for minutes. Both went stale — and the last time
+was *while this finding was open and the warning about it was in the file*. `release-check` passed
+every time, because it validated the first version token and nothing around it. A fresh agent was
+told the wrong comparison base and the wrong completion state, which is the whole impact.
+
+**This repository's answer to a discipline that keeps failing is a gate**, and that is what the
+version half of this same header already got. So `mutableStateClaims` refuses, by shape rather than
+by phrase — the phrasing is what drifted:
+
+- an object name, abbreviated or full, anywhere in the `**State:**` paragraph;
+- the word `HEAD` in it, because where HEAD points is git's answer and not a document's;
+- a bullet naming a PLAN item **anywhere in the file**, which is item 98's finding growing back. It
+  did grow back, out of order and contradicting `PLAN.md`, and that is what reopened this.
+
+The header now names a version, a branch, and nothing git can contradict a minute later. The
+per-item list is gone; `PLAN.md` is the only queue and each slice's own numbers live at its item.
+`## Measured evidence` keeps only what outlives one slice, and says out loud that everything there
+carries the version it was taken at — an unstamped measurement reads as current and none of them are.
+
+**Evidence.** Nine cases: an abbreviated name, a full one, a claim hiding across a reflow, a restated
+queue of two bullets, and four neighbours that must stay silent — a paragraph naming only a version,
+an object name in `## Measured evidence` (stamped history, not a claim about now), a file with no
+`**State:**` paragraph at all, and prose mentioning an item without listing it. The ninth runs the
+rule against the real `HANDOFF.md`, because a rule written for one file and never applied to it is a
+comment.
+
+**Not done here, and it is Codex's to judge:** F40 also names a contradiction about F7's status and
+a finding-count mismatch. Neither is in the file any more — the header defers status and counts to
+`REVIEW.md` rather than restating them — so there is nothing left to reconcile, only a gate stopping
+them from being restated.
 
 ## Observations recorded rather than repaired
 

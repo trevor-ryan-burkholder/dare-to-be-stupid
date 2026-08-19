@@ -8,7 +8,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
@@ -19,6 +19,7 @@ import {
   evaluateRelease,
   isShipped,
   main,
+  mutableStateClaims,
   statedHandoffVersion,
 } from '../tools/release-check.mjs';
 import { FINGERPRINT_FILES, isFingerprintPath } from '../tools/slice-check.mjs';
@@ -60,6 +61,73 @@ describe('statedHandoffVersion', () => {
 
   it('refuses an empty file rather than treating it as agreement', () => {
     assert.equal(statedHandoffVersion('').version, null);
+  });
+});
+
+describe('mutableStateClaims (REVIEW F40, reopened)', () => {
+  // **The version discipline became a gate here; the Git-state one had to as well.** The header said
+  // which commit HEAD was and which uncommitted layer sat above it. Both are true for minutes, both
+  // went stale three separate times — the last of them while the finding about it was open — and
+  // `release-check` passed each time, because it validated the version token and nothing around it.
+
+  it('refuses an abbreviated object name in the State paragraph', () => {
+    const claims = mutableStateClaims('**State:** candidate `0.211.0`; HEAD is `b51d332`, the committed tree.\n');
+    assert.equal(claims.length, 2, claims.join(' | '));
+    assert.equal(claims.some((problem) => problem.includes('b51d332')), true, claims.join(' | '));
+    assert.equal(claims.some((problem) => problem.includes('says HEAD')), true, claims.join(' | '));
+  });
+
+  it('refuses a full object name too', () => {
+    const claims = mutableStateClaims('**State:** at `0.1.0`, above 3debe73f01d47e3844d1d0c76111ab3fa0fa7615.\n');
+    assert.equal(claims.length, 1, claims.join(' | '));
+    assert.equal(claims[0].includes('may not claim mutable Git state'), true, claims[0]);
+  });
+
+  it('follows the paragraph across a reflow, because that is where the claim hides', () => {
+    const text = '**State:** working-tree candidate `0.1.0` on `main`;\nHEAD is `abcdef1`, the committed tree.\n\nrest\n';
+    assert.equal(mutableStateClaims(text).length, 2);
+  });
+
+  it('says nothing about a paragraph that names only a version', () => {
+    // The neighbour, and the shape the header is supposed to have: a version, a branch, and no
+    // claim git can contradict a minute later.
+    const text = '**State:** working-tree candidate `0.219.0` on `main`; the manifests agree.\n\nrest\n';
+    assert.deepStrictEqual(mutableStateClaims(text), []);
+  });
+
+  it('ignores an object name outside the State paragraph, which is evidence rather than a claim', () => {
+    // `## Measured evidence` legitimately names commits: those are stamped historical facts, not a
+    // statement about where the tree is now.
+    const text = '**State:** at `0.1.0`.\n\n## Measured evidence\n\n- 0.182.0 committed at deadbeef.\n';
+    assert.deepStrictEqual(mutableStateClaims(text), []);
+  });
+
+  it('says nothing at all when there is no State paragraph, because the version check owns that', () => {
+    assert.deepStrictEqual(mutableStateClaims('# handoff\n\nprose about abcdef1.\n'), []);
+  });
+
+  it('refuses a restated queue anywhere in the file', () => {
+    // Item 98 removed one; it grew back, out of order and disagreeing with `PLAN.md`, which is what
+    // reopened this finding. Refused by shape, so the next one cannot arrive under a new heading.
+    const text = '**State:** at `0.1.0`.\n\n- item 118: something;\n- items 80 and 82: something else;\n';
+    const claims = mutableStateClaims(text);
+    assert.equal(claims.length, 1, claims.join(' | '));
+    assert.equal(claims[0].includes('2 bullet(s)'), true, claims[0]);
+    assert.equal(claims[0].includes('PLAN.md is the only implementation queue'), true, claims[0]);
+  });
+
+  it('leaves prose that mentions an item in passing alone', () => {
+    // The neighbour that keeps this from banning the word. A sentence about an item is not a queue;
+    // a bullet list of them is.
+    const text = '**State:** at `0.1.0`.\n\nWhat each slice did is recorded at its item in `PLAN.md`, once.\n';
+    assert.deepStrictEqual(mutableStateClaims(text), []);
+  });
+
+  it('is what the real HANDOFF.md now satisfies', () => {
+    // The file itself, because the rule exists for this file and a rule nothing is held to is a
+    // comment. It has been broken three times by people who had read the warning above it.
+    const handoff = readFileSync(new URL('../HANDOFF.md', import.meta.url), 'utf8');
+    assert.deepStrictEqual(mutableStateClaims(handoff), []);
   });
 });
 

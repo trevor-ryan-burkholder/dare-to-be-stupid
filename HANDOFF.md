@@ -1,11 +1,17 @@
 # START HERE — current handoff, last swept 19 August 2026
 
-**State:** working-tree candidate `0.218.0` on `main`; the manifests and package-lock root metadata
-agree. HEAD is `db280d6`, the committed 0.217.0 tree — the documentation-system sweep,
-the code-review repairs of PLAN items 100, 107 and 108, and the REVIEW re-baseline of item 109. The
-0.209.0 working-tree candidate on top of it is PLAN item 110: the installed-snapshot harness that
-F21 asked for, and the two evidence-quality repairs F15 and F17 turned out to still need.
-Deterministic validation of the complete tree is recorded below.
+**State:** working-tree candidate `0.219.0` on `main`; the manifests and the package-lock root
+metadata agree, and `npm run release-check` is the check that says so.
+
+**This paragraph names no commit, and that is a rule the gate now enforces** (`REVIEW.md` F40). It
+used to say which object HEAD was and which uncommitted layer sat above it. Both are true for
+minutes; both went stale, three separate times, the last of them while the finding about it was
+open — and `release-check` passed each time, because it validated the version token and nothing
+around it. Ask git where the tree is. Read `PLAN.md` for what is being worked on and in what order,
+and `REVIEW.md` for external finding status and its counts. Nothing here restates either.
+
+Every slice's own validation is recorded at its `PLAN.md` item, with the numbers it actually ran.
+The section below holds only evidence that outlives one slice.
 
 ## Acceptance and next work
 
@@ -13,51 +19,19 @@ Deterministic validation of the complete tree is recorded below.
 `PLAN.md` is the only implementation queue. Review-pending repairs do not pause independent work;
 request Codex closure only at a documented dependency or release boundary.
 
-The newest candidate work is recorded at its canonical PLAN items:
-
-- items 80 and 82: command-selection and exact role-tool contracts;
-- item 83: measured Claude Code compatibility, still partial until binary identity and update control
-  are sealed;
-- item 85: reviewer authority isolation, still partial pending its remaining evidence; and
-- item 100: the shared loader/release fingerprint now covers `skills/` and both plugin manifests;
-- item 107: Claude Code 2.1.235 was measured but not admitted after a 33-of-34 full-tier run; and
-- item 108: exact version-output parsing and fail-closed nesting-depth parsing; and
-- item 109: the re-baseline of every open `REVIEW.md` finding against this candidate, which closed
-  the last reproducible clauses of F2, F10, F17, F19, F26 and F41 and left the rest classified; and
-- item 110: F21's installed-snapshot harness, plus the two evidence leaks building it uncovered —
-  the oracle printing its own expected output into the builder's failure detail (F15), and a skipped
-  test being recorded as observed failing (F17); and
-- item 111: `npm run install-check`, which installs the candidate the way a loader does — offline,
-  isolated, free — and asserts the pinned commit, the installed bytes, and that the module graph
-  resolves entirely from the install rather than from this checkout; and
-- item 112: the acceptance receipt — a typed, versioned claim bound to the reviewed tree, written at
-  the terminal transition, recording the gate roster and results, the panel and ratchet edges, and
-  each role invocation's requested *and* vendor-observed model; and
-- item 120: F14's materialized candidate — gates and the Panel judge a worktree checked out from a
-  content-addressed tree object, so an A→B→A swap during a gate or a review reaches nothing. The
-  Panel-in-a-worktree half is unverified against a real `claude` child; tier 3 was not run;
-- item 119: F13's remaining reader holes — valid JSON of the wrong top-level type, and a manifest
-  deleted after this run wrote one, both used to read as "nothing established" and disarm a gate;
-- item 118: F12's transient window — the Panel and the circuit-breaker are handed the canonical
-  specification bytes instead of a path to a file the Builder can rewrite while they read it;
-- item 117: the Driver half of F42, and the load-bearing one — nesting permission is a one-time
-  ticket in the parent's `.meeseeks/`, which the guard already denies a child at any depth, so the
-  flag and the depth marker a Builder can forge now decide nothing in a child. Tier 2 runs the
-  cross-repository attack for real, with a counterfeit `claude` proving no paid child was spawned;
-- item 116: the guard half of F42 — the shipped Driver is a nested run however it is spelled — and
-  a wider bypass found while repairing it: an `env` prefix with flags blinded every command-name
-  rule, so `env -u FOO git push --force` and `env -u FOO rm -rf /` were both allowed;
-- item 115: the canonical run lock published atomically, so a crash in the create/write seam can no
-  longer brick a repository (F43);
-- item 114: process ownership as a kernel-level group, and every Driver-owned Git call bounded and
-  non-interactive on top of it (F33 reopened, F44); and
-- item 113: the repairs an adversarial audit of that receipt found — chief among them that it could
-  bind one iteration's gate results to another iteration's sealed tree and verify clean.
+**No list of items lives here, and the gate refuses one** (`REVIEW.md` F40, item 98 before it).
+This section held a bullet per recent PLAN item twice, and both times it fell out of order, out of
+date, and into disagreement with `PLAN.md` — which is the only queue. What each slice did, what it
+was measured against, and what remains are recorded at the item, in `PLAN.md`, once.
 
 Do not reconstruct priority from release chronology. Read the current traversal at the top of
 `PLAN.md`, then the selected item and any linked `REVIEW.md` finding.
 
 ## Measured evidence
+
+**Stamped with the version it was taken at, always.** A measurement with no version attached reads as
+current, and these do not stay current for one commit. The candidate's own numbers live at its
+`PLAN.md` item; what is here is evidence that keeps mattering after the slice that produced it.
 
 - **Deterministic gates for 0.208.0:** `npm run slice-check -- verify --no-integration` passed lint,
   type checking, unit tests, release checks, and the stable **66-file** loader/package fingerprint.
