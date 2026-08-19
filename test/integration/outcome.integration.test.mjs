@@ -24,6 +24,7 @@ import { after, describe, it } from 'node:test';
 
 import { main } from '../../scripts/driver.mjs';
 import { OUTCOME_FILE } from '../../scripts/outcome.mjs';
+import { QUESTION_FILE } from '../../scripts/question.mjs';
 import { RUN_ARCHIVE_DIR } from '../../scripts/run-manifest.mjs';
 
 /** @type {string[]} */
@@ -387,5 +388,44 @@ describe('an archive refusal does not destroy the receipt it refused to preserve
       JSON.parse(readFileSync(path.join(root, '.meeseeks', RUN_ARCHIVE_DIR, archived[0], OUTCOME_FILE), 'utf8')).state,
       'SHIPPED',
     );
+  });
+});
+
+describe('a non-shipped ending leaves a question, not only a diagnosis (PLAN item 50)', () => {
+  /** @param {string} root @returns {any | null} */
+  const question = (root) => {
+    const file = path.join(root, '.meeseeks', QUESTION_FILE);
+    return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
+  };
+
+  it('writes an answerable question beside the receipt when a run dies before the loop', async () => {
+    // The gap this closes: the receipt already said ABORTED and named the phase. What it could not
+    // say is what the operator should now change, which is the only thing that makes a re-run
+    // different from the run that just failed.
+    const root = repo();
+    await run(root, ['PRD.md', '--yes'], cannedSpawn({ fail: 'design' }));
+    const asked = question(root);
+    assert.notEqual(asked, null, 'a failed run left no question, so the operator has a diagnosis and no decision');
+    assert.equal(asked.state, 'ABORTED');
+    // Cited, or it would have been discarded. A crash knows the phase and nothing finer, and saying
+    // so is honest rather than inventing a requirement id it never established.
+    assert.equal(asked.citations.length > 0, true);
+    // An option list is answerable; a paragraph is not.
+    assert.equal(Array.isArray(asked.options) && asked.options.length > 0, true);
+  });
+
+  it('says in the run output where the answer goes, because an answer at a prompt evaporates', async () => {
+    const root = repo();
+    const { logs } = await run(root, ['PRD.md', '--yes'], cannedSpawn({ fail: 'design' }));
+    assert.match(logs.join('\n'), /Answer by editing PRD\.md, DOD\.md or the config and re-running/);
+  });
+
+  it('never waits: the run still returns a terminal code with the question written', async () => {
+    // The property the whole design turns on. A question is an output of a terminal state, never a
+    // pause inside one — a run holding at three in the morning is strictly worse than ABORTED.
+    const root = repo();
+    const { code } = await run(root, ['PRD.md', '--yes'], cannedSpawn({ fail: 'design' }));
+    assert.equal(code, 1);
+    assert.notEqual(question(root), null);
   });
 });

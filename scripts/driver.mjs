@@ -94,6 +94,7 @@ import { ArtifactTooLargeError, READ_LIMITS, readBounded } from './bounded-read.
 import { designSlopEvidence } from './design-slop.mjs';
 import { gitleaksEvidence } from './secrets-scan.mjs';
 import { OUTCOME_FILE, writeRunOutcome } from './outcome.mjs';
+import { writeQuestion } from './question.mjs';
 import { roleSupplyManifest } from './role-supply.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
 import {
@@ -2702,6 +2703,17 @@ export async function driveRun(options) {
   let reviewedWorkspace = null;
 
   /**
+   * What the last panel could not accept, so a terminal question can name it (PLAN item 50).
+   *
+   * Tracked rather than recomputed at the end: by the time a run finishes, the panel that judged it
+   * is gone and its verdict is not re-derivable from the tree. Empty on a run that never reached a
+   * panel, which is the honest answer — the question then cites the phase instead.
+   *
+   * @type {string[]}
+   */
+  let outstandingFindings = [];
+
+  /**
    * The one attempt the acceptance receipt may describe: a sealed tree and the checks run *on it*.
    *
    * **Three separate variables were three separate facts, and the receipt married the wrong ones.**
@@ -2807,6 +2819,32 @@ export async function driveRun(options) {
     // direct overwrite reachable only from here, so a kill mid-write destroyed the only record and
     // every pre-loop abort left none at all.
     writeRunOutcome(meeseeksDir, { ...outcome, phase: 'loop' }, { now: effects.now, log: effects.log, written: options.receipt });
+    // **The question, beside the state that produced it** (PLAN item 50). `outcome.json` records how
+    // a run ended; it cannot record the decision the operator now has to make. `STALLED — 6
+    // iterations with no gate improvement` is a diagnosis, and the run already knows the more useful
+    // sentence — what it could not satisfy, what it tried — and was discarding it.
+    //
+    // Derived from the terminal receipt, so a SHIPPED run emits nothing by construction rather than
+    // by a rule applied on top of it. It never blocks and cannot: it takes a finished state and
+    // writes a file. Failing to write it does not fail the run, for the same reason the receipt
+    // above does not — destroying a completed run's result because its forensics could not be filed
+    // would be the wrong way round.
+    try {
+      writeQuestion(
+        meeseeksDir,
+        { state: outcome.state, reason: outcome.reason, phase: 'loop' },
+        {
+          findings: outstandingFindings,
+          tried: [
+            `${progress.iteration} iteration(s) against this specification`,
+            ...(outstandingFindings.length === 0 ? [] : ['a cold panel reviewed the candidate and did not accept it']),
+          ],
+        },
+        { now: effects.now, log: effects.log },
+      );
+    } catch (failure) {
+      effects.log(`could not write the question artifact: ${/** @type {Error} */ (failure).message}`);
+    }
     // **The acceptance edge, written beside the terminal state** (REVIEW F22). `outcome.json` says
     // how a run ended; it cannot say which deterministic checks passed on which exact bytes, because
     // gate results are transient and the reports are deliberately not archived. So an operator could
@@ -4184,6 +4222,7 @@ export async function driveRun(options) {
     }
 
     effects.log(`review outstanding: ${panel.failing.length} finding(s)`);
+    outstandingFindings = panel.failing.map((finding) => String(finding));
     objective = {
       kind: 'review',
       headline: 'Address the audit findings below.',
@@ -7504,6 +7543,28 @@ async function runInvocation(argv, io, crash) {
         preserve: archiveFailed,
       },
     );
+    // **The question, at the pre-loop door too** (PLAN item 50). This is where a design phase, a PRD
+    // child, an Oracle store or a component ends a run, and it is the case where an operator most
+    // needs to be told what to change: the run never reached an iteration, so there is no gate
+    // history to read and the receipt's phase is the only clue it leaves.
+    //
+    // Cited by phase and nothing finer, because that is what a pre-loop failure knows. Inventing a
+    // requirement id here would be the confident vapour the citation bar exists to refuse. Failing
+    // to write it never fails the run, for the same reason the receipt above does not.
+    try {
+      writeQuestion(
+        meeseeksDir,
+        {
+          state: terminal.state ?? (code === 0 ? 'STALLED' : 'ABORTED'),
+          reason: terminal.reason,
+          phase: terminal.phase,
+        },
+        { tried: [`the run reached the ${terminal.phase} phase and stopped there`] },
+        { now: () => new Date().toISOString(), log: (line) => write(verbatim(line)) },
+      );
+    } catch (failure) {
+      write(verbatim(`could not write the question artifact: ${/** @type {Error} */ (failure).message}`));
+    }
     releaseRunLock(meeseeksDir, runLock.lock.token);
     return code;
   };

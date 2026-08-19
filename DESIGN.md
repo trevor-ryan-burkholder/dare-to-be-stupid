@@ -2121,6 +2121,7 @@ meeseeks/
 │   ├── specification.mjs         # .meeseeks/specification.json: the revision a run is held to (§4)
 │   ├── reports.mjs               # per-attempt test-report freshness (§4)
 │   ├── preflight.mjs             # the thirteen checks run before a run starts (§3.5)
+│   ├── question.mjs              # .meeseeks/question.json: the decision a non-SHIPPED run leaves (§8.3)
 │   ├── launch.mjs                # .meeseeks/launch.json: the driver's own launch observation
 │   │                             #   and each pre-loop phase's declared output contract (§3.5)
 │   ├── security-scan.mjs         # the agent surface, pre-run and pre-panel, with its tree-bound record (§3.6, §6.3)

@@ -417,6 +417,10 @@ describe('blocked: every mutation under .meeseeks/', () => {
     ['.meeseeks/e2e-report.json', 'the browser report'],
     ['.meeseeks/briefs/iter-004.md', 'an archived build brief, nested a directory deep'],
     ['.meeseeks/bloopers.log', 'the blooper reel'],
+    // The question a terminal state emits (PLAN item 50). Driver-owned like every other artifact
+    // here, and needing no new rule — the positional guard covered it before it existed, which is
+    // the whole reason the rule is positional rather than a list of names.
+    ['.meeseeks/question.json', 'the blocked-question artifact'],
     // A builder that could rewrite this could declare away the capability whose gate it
     // cannot pass, and the run would ship having never checked it (DESIGN.md §3.7).
     ['.meeseeks/capabilities.json', 'the capability manifest'],

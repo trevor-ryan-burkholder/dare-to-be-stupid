@@ -1798,12 +1798,52 @@ preserve provenance or refuse closed without secrets; receipt and carry fixtures
 when the bound source package changes; a job whose check cannot be stated is refused with that reason;
 and one live artifact run ships end to end.
 
-### 50. The blocked-question artifact — a question as OUTPUT, never as interrupt — **PROMOTED to pre-DoD (operator, 19 Aug 2026)**; OPEN
+### 50. The blocked-question artifact — a question as OUTPUT, never as interrupt — **DONE (0.233.0)**
 
 **Why it moved.** It completes an existing terminal state rather than adding one. A run that cannot
 proceed already ends at `STALLED` and already knows the sentence worth saying; it discards it. The
 "never blocks" rule below is what makes this safe to promote — a question is an output of a terminal
 state, never a pause inside one, so unattended operation is untouched.
+
+**Landed (0.233.0).** `scripts/question.mjs`, written at every terminal door: the loop's `finish`,
+the pre-loop `releasing`, and the crash handler. Derived from the terminal receipt, so **a `SHIPPED`
+run emits nothing by construction** rather than by a rule applied on top of it — the benign
+neighbour, and the reason it matters is that a machine which always has a question has stopped
+meaning anything by one.
+
+- **It cannot become an interrupt, and that is asserted positionally.** `question.mjs` contains no
+  `stdin`, `readline`, `prompt(`, `setTimeout` or `await` in its code — a scan no return value could
+  perform. The first draft of that scan failed on the module's *own docstring*, which explains the
+  rule using the words it forbids; it now strips comments, because a check that cannot tell an
+  implementation from an explanation of one punishes the comment that makes the rule legible.
+- **There is no ask verb.** The export list is asserted exactly, and no name may match `/^ask/i`.
+  Given one a builder would use it — models offload difficulty, and a builder declines hard things
+  whenever a decline is available (case J).
+- **An uncited question is discarded and the discard is counted.** Same bar as `validateLesson`. The
+  phase is a citation of last resort — coarser than a requirement id, still actionable, and used only
+  when nothing finer survived, so it cannot mask a run that had ids and dropped them.
+- **The decision differs by terminal state.** Telling an operator whose run ran out of money to make
+  the requirements decidable is advice about the wrong problem. Options are enumerated because an
+  option list is answerable and a paragraph is not, and every option is a change to the
+  specification, the budget or the config — the only places an answer is durable.
+
+**A defect this found in itself.** Wiring the pre-loop door broke a pre-existing case, *"files the
+receipt even when the logger is the thing that broke"*: this module assumed a logger works, and the
+handler reporting that it did not also logged. The terminal writer is exactly what a crashing run may
+have lost, and that is the run most in need of a question. The log is a courtesy; the file is the
+artifact, and a throwing logger can now cost neither.
+
+**Acceptance evidence.** 18 unit cases, 3 integration cases driving `main` to a real pre-loop
+terminal, and `.meeseeks/question.json` added to the guard's positional deny table — where it needed
+no new rule, having been covered before the file existed. Proved red four ways: a `SHIPPED` run
+permitted to ask (1 fail), an uncited question emitted (4 fail), a discard dropped quietly (2 fail),
+an `askOperator` export added (1 fail).
+
+**Residual.** The question is built by the Driver from what it holds, not authored by a model, so its
+wording is fixed per terminal state rather than specific to the requirement that blocked. That is the
+deliberate half — a builder authoring its own question is the ask verb by another route — but it does
+mean the *blocking fact* is the receipt's reason string rather than a sentence about the domain.
+Richer wording needs an authoring role that is not the builder, and no such role exists yet.
 
 **Origin:** operator, 15 Aug 2026 — *"what about meeseeks surfacing a question when unable to proceed? A
 meeseeks would do that."* Canon-accurate, and it names a real gap. Half of it is already answered and the
