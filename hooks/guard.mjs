@@ -528,6 +528,31 @@ function stripPrefixes(segment) {
     }
     if (COMMAND_WRAPPERS.has(value)) {
       i += 1;
+      // **`env` takes flags, and the flags were the bypass** (REVIEW F42). Stripping only the word
+      // left `env -u MEESEEKS_RUNNING node .../driver.mjs` with `-u` as its command name, so every
+      // rule that keys off the command word looked straight past it — including the nesting rule,
+      // while the very flag being stripped was the one clearing the run marker.
+      if (value === 'env') {
+        while (i < segment.length) {
+          const flag = segment[i].value;
+          // Anything option-shaped is `env`'s, not the command's — a command word never starts with
+          // a dash. `-u NAME` and `--unset NAME` take a separate argument; `--unset=NAME`, `-uNAME`,
+          // `-i` and `--` carry their own.
+          if (flag === '-u' || flag === '--unset') {
+            i += 2;
+            continue;
+          }
+          if (flag.startsWith('-')) {
+            i += 1;
+            continue;
+          }
+          if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(flag)) {
+            i += 1;
+            continue;
+          }
+          break;
+        }
+      }
       continue;
     }
     break;
@@ -1906,6 +1931,21 @@ function checkNestedRun(segments, env = process.env) {
 }
 
 /**
+ * Is this token the shipped Driver's entrypoint?
+ *
+ * The path is version-keyed inside a plugin cache, so no absolute path can be pinned. What every
+ * invocation must name is the file, and `scripts/driver.mjs` is the one that starts a run.
+ *
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isDriverEntrypoint(value) {
+  const segments = value.split(/[\\/]/);
+  const last = segments[segments.length - 1];
+  return fold(last) === 'driver.mjs' && segments.length > 1 && fold(segments[segments.length - 2]) === 'scripts';
+}
+
+/**
  * @param {Token[][]} segments
  * @returns {Decision}
  */
@@ -1917,6 +1957,20 @@ function checkNestedRunStrict(segments) {
     const name = commandName(segment);
     const first = segment[0].value;
     if (name === 'meeseeks' || first === '/meeseeks' || SLASH_MEESEEKS_RE.test(first)) {
+      return deny('nested-meeseeks', NESTED_REASON);
+    }
+
+    // **Running the shipped Driver directly is a nested run** (REVIEW F42). The rule above matches
+    // how an *operator* starts one; a builder holds the installed path — it is in the settings and
+    // argv it was handed — and `node /…/scripts/driver.mjs PRD.md --yes` matched nothing. Both
+    // reproduced spellings were allowed, and the second did not even put `--give-them-the-box` on
+    // argv, so it skipped the boxed wall clock as well.
+    //
+    // Matched positionally on the entrypoint any invocation must name, so an interpreter this list
+    // has never heard of is caught too. It is defense in depth and nothing more: a renamed copy of
+    // the whole plugin cannot be recognised by name, which is why the Driver's own authorization is
+    // the load-bearing half.
+    if (segment.some((token) => isDriverEntrypoint(token.value))) {
       return deny('nested-meeseeks', NESTED_REASON);
     }
 

@@ -239,6 +239,96 @@ describe('protected-state is scoped to a run, not to the plugin being installed'
   });
 });
 
+describe('an env prefix with flags does not blind the command-name rules', () => {
+  // **Found while repairing F42, and it is wider than F42.** `stripPrefixes` dropped the word `env`
+  // and stopped at the first thing that was not a `VAR=value` assignment — so in
+  // `env -u FOO git push --force` the command name became `-u`, and *every* rule that keys off the
+  // command word looked straight past it. Measured against the guard before the repair:
+  //
+  //     deny  git-history   <- git push --force
+  //     ALLOW               <- env -u FOO git push --force
+  //     deny  rm-recursive  <- rm -rf /
+  //     ALLOW               <- env -u FOO rm -rf /
+  //
+  // Two of the guard's strongest refusals, bypassed by four characters. The F42 nesting rule did not
+  // need this fix — it scans every token — which is exactly why it needs its own cases here.
+
+  for (const [command, rule] of [
+    ['env -u FOO git push --force', 'git-history'],
+    ['env --unset=FOO git push --force', 'git-history'],
+    ['env -u FOO rm -rf /', 'rm-recursive'],
+    ['env -i rm -rf /', 'rm-recursive'],
+    ['env -u A -u B git push --force', 'git-history'],
+    ['env -u FOO BAR=1 git push --force', 'git-history'],
+  ]) {
+    it(`still sees ${rule} through ${command.slice(0, 34)}…`, () => {
+      assert.deepStrictEqual(ruling(bashEvent(command)), { decision: 'deny', rule }, command);
+    });
+  }
+
+  it('leaves an ordinary env prefix on a benign command alone', () => {
+    // The neighbour. `env` is how a builder legitimately sets a variable for one command, and
+    // stripping its flags must not start denying that.
+    for (const benign of ['env -u FOO npm test', 'env CI=1 npm run lint', 'env -i /usr/bin/true']) {
+      assert.deepStrictEqual(ruling(bashEvent(benign)), { decision: 'allow' }, `denied: ${benign}`);
+    }
+  });
+});
+
+describe('the shipped Driver is a nested run however it is spelled (REVIEW F42)', () => {
+  // **The rule matched how an operator starts a run, not how a builder can.** A builder holds the
+  // installed Driver path — it is in the settings and argv it was handed — and both of Codex's
+  // reproduced commands were allowed:
+  //
+  //     env -u MEESEEKS_RUNNING node /plugin/scripts/driver.mjs PRD.md --yes
+  //     MEESEEKS_GIVE_THEM_THE_BOX=1 MEESEEKS_RUN_DEPTH=0 node /plugin/scripts/driver.mjs PRD.md --yes
+  //
+  // The first clears the run marker so the new Driver reads itself as top level; the second forges
+  // permission and resets the depth, and does not even put `--give-them-the-box` on argv, so it
+  // skips the boxed wall clock too.
+
+  for (const command of [
+    'node /home/me/.claude/plugins/cache/meeseeks/meeseeks/0.213.0/scripts/driver.mjs PRD.md --yes',
+    'env -u MEESEEKS_RUNNING node /plugin/scripts/driver.mjs PRD.md --yes',
+    'MEESEEKS_GIVE_THEM_THE_BOX=1 MEESEEKS_RUN_DEPTH=0 node /plugin/scripts/driver.mjs PRD.md --yes',
+    'env -i PATH=/usr/bin node /plugin/scripts/driver.mjs PRD.md',
+    'nohup node /plugin/scripts/driver.mjs PRD.md &',
+    'bash -c "node /plugin/scripts/driver.mjs PRD.md --yes"',
+    'sudo node /plugin/scripts/driver.mjs PRD.md',
+    'node ./scripts/driver.mjs --improve',
+  ]) {
+    it(`denies ${command.slice(0, 52)}…`, () => {
+      assert.deepStrictEqual(ruling(bashEvent(command)), { decision: 'deny', rule: 'nested-meeseeks' }, command);
+    });
+  }
+
+  it('leaves ordinary Node commands alone, including other scripts in the same tree', () => {
+    // **The neighbour, and it is the one that keeps this from being "deny node".** A builder runs
+    // Node constantly; only the Driver's own entrypoint is a nested run.
+    for (const benign of [
+      'node scripts/build.mjs',
+      'node tools/release-check.mjs',
+      'node --test test/driver.test.mjs',
+      'node -e "console.log(1)"',
+      'node scripts/driver-helper.mjs',
+      'node lib/scripts/driverx.mjs',
+      'npm run lint',
+    ]) {
+      assert.deepStrictEqual(ruling(bashEvent(benign)), { decision: 'allow' }, `denied: ${benign}`);
+    }
+  });
+
+  it('matches the entrypoint, not a mention of it', () => {
+    // A path is a path because of its shape. `driver.mjs` alone is somebody's own file; the rule is
+    // the `scripts/` parent that the shipped layout guarantees.
+    assert.deepStrictEqual(ruling(bashEvent('node driver.mjs')), { decision: 'allow' });
+    assert.deepStrictEqual(ruling(bashEvent('cat /plugin/scripts/driver.mjs')), {
+      decision: 'deny',
+      rule: 'nested-meeseeks',
+    });
+  });
+});
+
 describe('allowed: protected-state neighbours', () => {
   // The protected set is positional — inside a `.meeseeks` directory — so the neighbours that
   // matter are names that merely resemble one. Blocking these would make the guard a

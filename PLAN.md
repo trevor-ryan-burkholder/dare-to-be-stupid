@@ -4627,6 +4627,60 @@ argument `readBounded`'s allocation bound uses. Then the semantics that had to s
 winner, a record readable the instant it exists, and no staging artifact left on either path with the
 winner's lock intact. Red against the reverted create-then-write.
 
+### 116. The Driver's own entrypoint is a nested run — PARTIAL (0.214.0); REVIEW F42 open
+
+**The guard half, and an unrelated bypass it uncovered.** F42 has two halves and this is the smaller
+one; the Driver-side authority is **not** in this slice and is named below, because F42 says
+explicitly that command-name matching cannot substitute for it.
+
+**What the guard matched, and what a builder actually holds.** The nesting rule recognised
+`meeseeks`, `/meeseeks` and a `claude` slash-command argument — how an *operator* starts a run. A
+builder holds the installed Driver path, because it is in the settings and argv it was handed, and
+both of Codex's reproduced commands were allowed:
+
+```
+env -u MEESEEKS_RUNNING node /plugin/scripts/driver.mjs PRD.md --yes
+MEESEEKS_GIVE_THEM_THE_BOX=1 MEESEEKS_RUN_DEPTH=0 node /plugin/scripts/driver.mjs PRD.md --yes
+```
+
+The first clears the run marker so the new Driver reads itself as top level; the second forges
+permission and resets the depth, and does not put `--give-them-the-box` on argv at all, so it also
+skips the boxed wall clock. Both are denied now, matched **positionally on the entrypoint** —
+`scripts/driver.mjs` — so an interpreter this rule has never heard of is caught too.
+
+**And a bypass that is much wider than F42.** `stripPrefixes` dropped the word `env` and then stopped
+at the first token that was not a `VAR=value` assignment, so in `env -u FOO git push --force` the
+command name became `-u` and **every rule that keys off the command word looked straight past it**.
+Measured against the guard before the repair:
+
+```
+deny  git-history   <- git push --force
+ALLOW               <- env -u FOO git push --force
+deny  rm-recursive  <- rm -rf /
+ALLOW               <- env -u FOO rm -rf /
+```
+
+Two of the guard's strongest refusals, bypassed by four characters. The F42 nesting rule did not need
+this fix — it scans every token — which is precisely why it needed its own cases: the bypass would
+have survived the repair that found it.
+
+**Evidence.** Ten cases on the entrypoint rule, covering both reproduced commands, `env -i`, `nohup`,
+`sudo`, `bash -c` and a relative path, with benign Node neighbours — `node scripts/build.mjs`,
+`node --test`, `node scripts/driver-helper.mjs` — still allowed, and `node driver.mjs` with no
+`scripts/` parent still allowed because a path is a path by its shape. Nine of the ten go red without
+the rule. Six cases on the env bypass across `-u`, `--unset`, `--unset=`, `-i`, repeated flags and a
+mixed assignment, with `env -u FOO npm test` still allowed; all red without the flag handling.
+
+**Not done, and it is the load-bearing half:** the Driver-side authority. Nesting permission and
+depth must live somewhere a Builder cannot mint, clear, replay or reset, and environment presence
+cannot carry that. The design this slice does not yet implement: `runComponentDriver` issues a
+one-time ticket recorded in the parent's `.meeseeks/` — which the guard already protects positionally
+at any depth, so a builder can neither write one nor forge a directory to hold one — passes the nonce
+to the child, and the child refuses unless the ticket exists unconsumed and then consumes it. That
+defeats minting (cannot write the record), replay (consumed on use) and reset (depth comes from the
+record, not from argv or env). Until it lands, a renamed copy of the whole plugin remains
+unrecognisable by name, which is exactly the residual F42 warns about.
+
 ## Observations recorded rather than repaired
 
 - **Tier 2 refused once and passed on an immediate re-run** (18 Aug 2026, committing 0.196.0 through

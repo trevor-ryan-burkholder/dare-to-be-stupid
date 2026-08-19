@@ -1,7 +1,7 @@
 # START HERE — current handoff, last swept 18 August 2026
 
-**State:** working-tree candidate `0.213.0` on `main`; the manifests and package-lock root metadata
-agree. HEAD is `f47df6b`, the committed 0.212.0 tree — the documentation-system sweep,
+**State:** working-tree candidate `0.214.0` on `main`; the manifests and package-lock root metadata
+agree. HEAD is `0e1ed2e`, the committed 0.213.0 tree — the documentation-system sweep,
 the code-review repairs of PLAN items 100, 107 and 108, and the REVIEW re-baseline of item 109. The
 0.209.0 working-tree candidate on top of it is PLAN item 110: the installed-snapshot harness that
 F21 asked for, and the two evidence-quality repairs F15 and F17 turned out to still need.
@@ -33,6 +33,9 @@ The newest candidate work is recorded at its canonical PLAN items:
 - item 112: the acceptance receipt — a typed, versioned claim bound to the reviewed tree, written at
   the terminal transition, recording the gate roster and results, the panel and ratchet edges, and
   each role invocation's requested *and* vendor-observed model; and
+- item 116: the guard half of F42 — the shipped Driver is a nested run however it is spelled — and
+  a wider bypass found while repairing it: an `env` prefix with flags blinded every command-name
+  rule, so `env -u FOO git push --force` and `env -u FOO rm -rf /` were both allowed;
 - item 115: the canonical run lock published atomically, so a crash in the create/write seam can no
   longer brick a repository (F43);
 - item 114: process ownership as a kernel-level group, and every Driver-owned Git call bounded and
