@@ -3675,9 +3675,38 @@ bounded discovery inside Red, but its ephemeral agents gain no durable authority
 untrusted input until independently reproduced; prompt text does not expand authorization to
 production targeting, persistence, destructive action, credential collection, or data exfiltration.
 
-**Admission:** F2, item **40**, item **56**, item **65**/F11 cross-platform descendant cleanup,
-items **66**, **68**, **76**, **77**, **82**, **83**, **85**, and a recorded item **84** containment
-outcome must exist first. The permitted effect and network profile must fail closed, survive
+**Admission amended by the operator, 19 Aug 2026 — Windows is a safety-validation prerequisite, not
+a functional one, and it no longer blocks the item.** The distinction is exact and it was being
+missed: nothing about a red-team assessment needs Win32. What needed it was the *proof* that a Red
+job's descendants are gone, because Red is authorized to launch attack harnesses, shells,
+applications and deliberately resistant children, and this item's own Done-when requires every
+termination path to leave no orphan. Meeseeks currently kills the shell wrapper on Windows and
+cannot show its children and grandchildren died with it (item **65**, REVIEW F11), and WSL cannot
+stand in for that evidence — it runs POSIX process semantics, not Win32 process trees.
+
+Blocking the whole feature on a host nobody has is disproportionate to that. Red is therefore
+**POSIX-only at first**, and the platform limitation is a mechanism rather than a sentence in a
+document:
+
+- Red **refuses to launch on `win32`**, fail-closed, naming the platform and this item's reason. An
+  unsupported platform that merely warns is the shape §4 refuses everywhere else.
+- On Linux and macOS it proceeds once its remaining prerequisites are met — the Windows row is
+  removed from the admission list, not waived for every platform.
+- Windows enablement waits for item **65** to produce real Win32 evidence, and enabling it is a
+  separate slice with its own acceptance.
+
+**Added to Done-when:** a fixture proves the `win32` refusal fires and names the platform, and a
+POSIX neighbour proves the same code path launches — the deny-path rule this repository holds for
+`guard.mjs`, where blocking everything is not passing.
+
+**Still post-DoD.** This amendment removes one blocker; it does not promote the item. The remaining
+admission conditions — items 56, 76, 83, 84, 85 and a recorded containment outcome — are unchanged,
+and item 84 in particular is the right order: an agent is not handed an attack budget before its
+blast radius has been measured.
+
+**Admission (amended):** F2, item **40**, item **56**, items **66**, **68**, **76**, **77**, **82**,
+**83**, **85**, and a recorded item **84** containment outcome must exist first. Item **65**/F11 is no
+longer among them; it gates Windows *enablement* rather than the item. The permitted effect and network profile must fail closed, survive
 restart without broadening scope, and prove Red cannot mutate the candidate or reach Driver-owned
 decision stores. A benign synthetic pilot
 must show independently reproduced incremental detection beyond the existing Panel/security path;
@@ -3689,7 +3718,9 @@ every finding binds to the exact candidate and carries a reproduction plus contr
 independence and context starvation are live-proven; assessment harness identity is recorded
 separately; Red cannot write the candidate; accepted Builder repairs force reproduction and
 regression reruns; crash, timeout, output cap, budget exhaustion, unavailable containment, and
-malformed finding evidence all terminate fail-closed without orphan descendants; the final report
+malformed finding evidence all terminate fail-closed without orphan descendants **on the platforms
+Red supports**; a fixture proves the `win32` refusal fires and names the platform, and a POSIX
+neighbour proves the same path launches — blocking everything is not passing; the final report
 distinguishes reproduced, rejected, unresolved, and unattempted coverage; and a measured pilot
 improves incremental defect discovery or morning acceptance enough to justify its added cost.
 
