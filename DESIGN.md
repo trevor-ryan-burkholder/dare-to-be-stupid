@@ -1863,6 +1863,33 @@ excludes the read-only tools. That second test is the one that matters most here
 to the matcher would silently convert a write barrier into a blackout, and a blackout would look
 like a seal without being one.
 
+### 6.1a Denial dampening — verbosity only, and only where a run cannot reach
+
+A builder that has read the same three-sentence denial forty times is having its context spent on
+nothing (§3.9). So the first three denials **of each rule** are explained in full and later ones
+carry the first sentence, the provenance prefix and the `[meeseeks:rule]` tag — and nothing else
+changes. A dampened denial is still a deny. Nothing here can turn a refusal into an allow, which is
+what makes every failure path safe to render in full.
+
+This was built once and pulled before landing, and both reasons are worth stating:
+
+- **The guard is the one component that survives `--dangerously-skip-permissions`, and it is not
+  itself guarded.** The first cut counted denials at a predictable path in `os.tmpdir()` with a plain
+  write, which turns the guard's own bookkeeping into an arbitrary-file overwrite for anyone who
+  plants a symlink there. The Driver now names the directory — inside `.meeseeks/`, which the guard
+  already denies every in-run process at any depth — creates it `0700` after the lock is won, and
+  passes it in `MEESEEKS_DENIAL_STATE`. The guard opens with `O_NOFOLLOW` and refuses a target that
+  is not a regular file, because a component that turns its bookkeeping into a write primitive has to
+  be wrong twice before it hurts.
+- **Keyed by `(session, rule)`, never by session alone.** Per-session, three denials on rule A
+  followed by the first-ever denial on rule B renders B as "denied again" though B was never
+  explained — recreating the loop this exists to fix, for a rule the builder was never told about.
+
+An operator's own session has no `MEESEEKS_DENIAL_STATE`, so denials outside a run are never
+dampened. Appends avoid the read-modify-write a counter would need, so two hook processes racing lose
+nothing but ordering. And shortening is applied only when it *shortens*: the suffix costs about forty
+characters, so on a one-sentence refusal the dampened form was longer than the full one.
+
 ### 6.2 The candidate is materialized, not sampled
 
 Gates and the Panel judge a **worktree checked out from a content-addressed tree object**, not the

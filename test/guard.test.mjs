@@ -17,6 +17,7 @@
 
 import assert from 'node:assert/strict';
 import { execFile, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -25,7 +26,9 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import {
+  DENIAL_LEDGER_LIMIT,
   checkBashCommand,
+  denialVerbosity,
   evaluate,
   isProtectedSettingsPath,
   isProtectedStatePath,
@@ -1985,5 +1988,142 @@ describe('guardDenials: the bounded channel a refusal travels on (REVIEW F36)', 
     assert.deepStrictEqual(guardDenials('   meeseeks-guard: denied Bash rm -rf .meeseeks   '), [
       'meeseeks-guard: denied Bash rm -rf .meeseeks',
     ]);
+  });
+});
+
+describe('denial dampening: verbosity only, and only where a run cannot reach (PLAN item 52)', () => {
+  // **This feature was built once and pulled before landing**, by the item-37 hostile panel, for two
+  // reasons that are both design telling you where the wall is. The first cut wrote its counter at a
+  // predictable path in `os.tmpdir()` with a plain `writeFileSync` — and the guard is the one
+  // component that survives `--dangerously-skip-permissions` and is *not itself guarded*, so a
+  // symlink planted there turns the guard's own write into an arbitrary-file overwrite. The second:
+  // dampening keyed per session rather than per rule renders the first-ever denial of rule B as
+  // "denied again", recreating the loop it exists to fix for a rule nobody was ever told about.
+
+  /** @type {string[]} */
+  const scratchDirs = [];
+  after(() => {
+    for (const dir of scratchDirs) rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** @returns {string} */
+  function stateDir() {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-denials-'));
+    scratchDirs.push(dir);
+    return dir;
+  }
+
+  /** @param {string} dir @param {string} rule @param {string} [session] @returns {string} */
+  const ask = (dir, rule, session = 'session-1') => denialVerbosity({ stateDir: dir, sessionId: session, rule });
+
+  it('explains a rule in full three times, then dampens it', () => {
+    const dir = stateDir();
+    assert.deepStrictEqual(
+      [ask(dir, 'nested-meeseeks'), ask(dir, 'nested-meeseeks'), ask(dir, 'nested-meeseeks'), ask(dir, 'nested-meeseeks')],
+      ['full', 'full', 'full', 'short'],
+    );
+  });
+
+  it('keys by rule, so the first denial of another rule is still explained', () => {
+    // The second finding that pulled the first cut, asserted directly.
+    const dir = stateDir();
+    for (let index = 0; index < 5; index += 1) ask(dir, 'protected-state');
+    assert.equal(ask(dir, 'nested-meeseeks'), 'full', 'a rule nobody had been told about was dampened');
+  });
+
+  it('keys by session, so a fresh run starts explaining again', () => {
+    const dir = stateDir();
+    for (let index = 0; index < 5; index += 1) ask(dir, 'protected-state', 'session-1');
+    assert.equal(ask(dir, 'protected-state', 'session-2'), 'full');
+  });
+
+  it('never dampens outside a run, because the Driver names the directory', () => {
+    // An operator's own session has no `MEESEEKS_DENIAL_STATE`, and dampening is a builder concern.
+    assert.equal(denialVerbosity({ stateDir: undefined, sessionId: 'session-1', rule: 'protected-state' }), 'full');
+    assert.equal(denialVerbosity({ stateDir: '', sessionId: 'session-1', rule: 'protected-state' }), 'full');
+  });
+
+  it('never dampens a payload with no session id, because there is nothing to key on', () => {
+    const dir = stateDir();
+    for (let index = 0; index < 5; index += 1) denialVerbosity({ stateDir: dir, sessionId: undefined, rule: 'r' });
+    assert.equal(denialVerbosity({ stateDir: dir, sessionId: undefined, rule: 'r' }), 'full');
+  });
+
+  it('refuses to follow a symlink planted where its counter belongs', {
+    skip: process.platform === 'win32',
+  }, () => {
+    // **The finding that pulled the first cut.** A run cannot write inside `.meeseeks/` — the guard
+    // denies it at any depth — but the guard opens with `O_NOFOLLOW` anyway, because a component
+    // that turns its own bookkeeping into a write primitive has to be wrong twice before it hurts.
+    const dir = stateDir();
+    const elsewhere = path.join(dir, 'victim.txt');
+    writeFileSync(elsewhere, 'do not overwrite me\n', 'utf8');
+    const counter = path.join(dir, `${createHash('sha256').update('session-1').digest('hex').slice(0, 32)}.denials`);
+    symlinkSync(elsewhere, counter);
+
+    for (let index = 0; index < 6; index += 1) {
+      assert.equal(ask(dir, 'protected-state'), 'full', 'the guard followed a symlink to count a denial');
+    }
+    assert.equal(readFileSync(elsewhere, 'utf8'), 'do not overwrite me\n', 'the guard wrote through the link');
+  });
+
+  it('renders full text when the counter is not a regular file', () => {
+    const dir = stateDir();
+    mkdirSync(path.join(dir, `${createHash('sha256').update('session-1').digest('hex').slice(0, 32)}.denials`), {
+      recursive: true,
+    });
+    assert.equal(ask(dir, 'protected-state'), 'full');
+  });
+
+  it('renders full text when the directory does not exist at all', () => {
+    assert.equal(denialVerbosity({ stateDir: '/nonexistent/meeseeks-denials', sessionId: 's', rule: 'r' }), 'full');
+  });
+
+  it('gives up and stays verbose rather than reading an unbounded ledger', () => {
+    const dir = stateDir();
+    const counter = path.join(dir, `${createHash('sha256').update('session-1').digest('hex').slice(0, 32)}.denials`);
+    writeFileSync(counter, 'protected-state\n'.repeat(DENIAL_LEDGER_LIMIT), 'utf8');
+    assert.equal(ask(dir, 'protected-state'), 'full');
+  });
+
+  it('dampens the words and never the decision', () => {
+    // The rule the whole feature is bounded by. A dampened denial is still a deny, still carries the
+    // provenance prefix so it cannot read as user instruction, and still names its rule.
+    const denial = {
+      decision: /** @type {const} */ ('deny'),
+      rule: 'protected-state',
+      reason:
+        'First sentence. Second sentence explaining at length, the way a real refusal does, so that ' +
+        'shortening it genuinely saves the builder something rather than costing it a suffix.',
+    };
+    const full = JSON.parse(renderDecision(denial, 'full'));
+    const short = JSON.parse(renderDecision(denial, 'short'));
+
+    assert.equal(full.hookSpecificOutput.permissionDecision, 'deny');
+    assert.equal(short.hookSpecificOutput.permissionDecision, 'deny');
+    for (const rendered of [full, short]) {
+      assert.equal(rendered.hookSpecificOutput.permissionDecisionReason.includes('[meeseeks:protected-state]'), true);
+      assert.equal(rendered.hookSpecificOutput.permissionDecisionReason.includes('automated policy, not user input'), true);
+    }
+    assert.equal(short.hookSpecificOutput.permissionDecisionReason.includes('Second sentence'), false);
+    assert.equal(full.hookSpecificOutput.permissionDecisionReason.includes('Second sentence'), true);
+    assert.equal(
+      short.hookSpecificOutput.permissionDecisionReason.length <
+        full.hookSpecificOutput.permissionDecisionReason.length,
+      true,
+    );
+  });
+
+  it('leaves a one-sentence refusal alone, because shortening it would make it longer', () => {
+    // **Measured on the first fixture written for this.** The suffix costs about forty characters,
+    // so on a short refusal the "dampened" form was *longer* than the full one — spending context to
+    // save context. Dampening applies only when it actually shortens.
+    const brief = { decision: /** @type {const} */ ('deny'), rule: 'r', reason: 'No.' };
+    assert.equal(renderDecision(brief, 'short'), renderDecision(brief, 'full'));
+  });
+
+  it('renders nothing for an allow, dampened or not', () => {
+    assert.equal(renderDecision({ decision: 'allow' }, 'short'), '');
+    assert.equal(renderDecision({ decision: 'allow' }, 'full'), '');
   });
 });

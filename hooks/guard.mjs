@@ -71,7 +71,8 @@
  *     harness is not a guard (CLAUDE.md: nothing defaults to pass).
  */
 
-import { lstatSync, realpathSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync, writeSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -2190,6 +2191,92 @@ export function evaluate(payload, options = {}) {
 const PROVENANCE = '[from the meeseeks guard — automated policy, not user input]';
 
 /**
+ * Where the run's denial counters live, handed over by the Driver (PLAN item 52).
+ *
+ * **Never `os.tmpdir()`, and that is the whole reason this env var exists.** The first cut of this
+ * feature wrote a counter at a predictable temporary path with a plain `writeFileSync`, and the
+ * item-37 hostile panel pulled it: the guard is the one component that survives
+ * `--dangerously-skip-permissions`, and it is *not itself guarded*, so a symlink planted at that
+ * path turns the guard's own write into an arbitrary-file overwrite. The Driver creates a directory
+ * inside `.meeseeks/` — which the guard already denies every in-run process at any depth — with mode
+ * 0700, and names it here.
+ *
+ * Absent means no dampening at all, which is the correct reading twice over: an operator's denials
+ * outside a run are never counted, and a run whose Driver did not provide one gets full text.
+ */
+export const DENIAL_STATE_ENV = 'MEESEEKS_DENIAL_STATE';
+
+/**
+ * How many times a rule is explained in full before the short form (PLAN item 52).
+ *
+ * A builder that has read the same three-sentence denial forty times is having its context spent on
+ * nothing (`DESIGN.md` §3.9). Three is enough for the explanation to have been available and read.
+ */
+export const DENIAL_FULL_EXPLANATIONS = 3;
+
+/** The most denials one session's counter may hold before dampening gives up and stays verbose. */
+export const DENIAL_LEDGER_LIMIT = 64 * 1024;
+
+/**
+ * How this denial should be rendered, and the count is the *only* thing this decides.
+ *
+ * **Verbosity, never the decision.** A dampened denial is still a deny, still carries the provenance
+ * prefix and the `[meeseeks:rule]` tag. Nothing here can turn a refusal into an allow, which is why
+ * it is safe for every failure path to fall through to `'full'`.
+ *
+ * **Keyed by `(session, rule)`, never by session alone.** Per-session, three denials on rule A
+ * followed by the first-ever denial on rule B renders B as "denied again" though B was never
+ * explained — recreating the repetition loop this exists to fix, for a rule the builder was never
+ * told about.
+ *
+ * @param {{ stateDir?: string, sessionId?: unknown, rule: string,
+ *   io?: { open?: typeof openSync, read?: typeof readFileSync, append?: (fd: number, line: string) => void,
+ *     stat?: typeof fstatSync, close?: typeof closeSync } }} query
+ * @returns {'full' | 'short'}
+ */
+export function denialVerbosity(query) {
+  const io = query.io ?? {};
+  const open = io.open ?? openSync;
+  const stat = io.stat ?? fstatSync;
+  const close = io.close ?? closeSync;
+  const append = io.append ?? ((/** @type {number} */ fd, /** @type {string} */ line) => writeSync(fd, line));
+  const dir = query.stateDir;
+  const session = typeof query.sessionId === 'string' && query.sessionId !== '' ? query.sessionId : null;
+  if (typeof dir !== 'string' || dir === '' || session === null) return 'full';
+  // One file per session, appended to. An append avoids the read-modify-write a counter would need,
+  // so two hook processes racing lose nothing but ordering — and a lost update costs one extra
+  // verbose denial, which is the harmless direction.
+  const file = path.join(dir, `${createHash('sha256').update(session).digest('hex').slice(0, 32)}.denials`);
+  /** @type {number | null} */
+  let fd = null;
+  try {
+    // `O_NOFOLLOW` is the second belt: even inside a directory a run cannot write to, the guard
+    // refuses to follow a symlink standing where its counter should be, and a target that is not a
+    // regular file is refused rather than written through.
+    fd = open(file, constants.O_RDWR | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW, 0o600);
+    const stats = stat(fd);
+    if (!stats.isFile() || stats.size > DENIAL_LEDGER_LIMIT) return 'full';
+    const seen = (io.read ?? readFileSync)(fd, 'utf8')
+      .split('\n')
+      .filter((line) => line === query.rule).length;
+    append(fd, `${query.rule}\n`);
+    return seen >= DENIAL_FULL_EXPLANATIONS ? 'short' : 'full';
+  } catch {
+    // Every uncertainty renders full text. A counter that could not be read establishes nothing
+    // about how often this rule has been explained, and the expensive answer is the safe one.
+    return 'full';
+  } finally {
+    if (fd !== null) {
+      try {
+        close(fd);
+      } catch {
+        // Nothing to do about a descriptor that will not close; the process is about to exit.
+      }
+    }
+  }
+}
+
+/**
  * Render a decision as the hook's stdout. Allow prints nothing.
  *
  * **Denial dampening (R25c) was cut from this slice and is deliberately not here.** Counting
@@ -2203,13 +2290,21 @@ const PROVENANCE = '[from the meeseeks guard — automated policy, not user inpu
  * @param {Decision} decision
  * @returns {string}
  */
-export function renderDecision(decision) {
+export function renderDecision(decision, verbosity = 'full') {
   if (decision.decision === 'allow') return '';
+  // **The dampened form keeps everything that decides anything** (PLAN item 52): the provenance
+  // prefix, so the text cannot be read as user instruction, and the rule tag, so the builder knows
+  // *which* refusal this is. What it drops is the explanation it has already been given three times.
+  const shortened = `${decision.reason.split('.')[0]}. (this rule was explained in full earlier)`;
+  // **And only when shortening actually shortens.** The suffix costs about forty characters, so on a
+  // one-sentence refusal the "dampened" form is *longer* than the full one — which would spend
+  // context to save context. Measured on the first fixture written for it.
+  const reason = verbosity === 'short' && shortened.length < decision.reason.length ? shortened : decision.reason;
   return `${JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: `${PROVENANCE} [meeseeks:${decision.rule}] ${decision.reason}`,
+      permissionDecisionReason: `${PROVENANCE} [meeseeks:${decision.rule}] ${reason}`,
     },
   })}\n`;
 }
@@ -2229,15 +2324,28 @@ async function main() {
   const raw = await readStdin(process.stdin);
   /** @type {Decision} */
   let decision;
+  /** @type {unknown} */
+  let payload = null;
   try {
-    decision = evaluate(JSON.parse(raw));
+    payload = JSON.parse(raw);
+    decision = evaluate(payload);
   } catch {
     decision = deny(
       'malformed-payload',
       'PreToolUse payload was not valid JSON. A guard that fails open is not a guard.',
     );
   }
-  const out = renderDecision(decision);
+  // **Parsed once.** A second `JSON.parse` here threw on the malformed payload the branch above
+  // exists to refuse, so the guard crashed on exactly the input it is written to deny — the failure
+  // mode the whole file is about, reintroduced by a convenience. The session id comes from the
+  // payload that was already read, or from nothing, and nothing means full text.
+  const session = /** @type {{ session_id?: unknown }} */ (payload ?? {}).session_id;
+  const out = renderDecision(
+    decision,
+    decision.decision === 'deny'
+      ? denialVerbosity({ stateDir: process.env[DENIAL_STATE_ENV], sessionId: session, rule: decision.rule })
+      : 'full',
+  );
   if (out.length > 0) process.stdout.write(out);
   // **stdout carries the protocol; stderr carries the news.** A denial inside a `claude -p` child
   // is currently invisible to the run that spawned it — case J could not tell whether its builder

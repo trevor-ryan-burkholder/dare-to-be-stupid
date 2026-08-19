@@ -115,6 +115,7 @@ import {
 } from './nesting.mjs';
 import { installQualityPlugins } from './plugins.mjs';
 import { blockingFindings, recordSurfaceScan, scanAgentSurface } from './security-scan.mjs';
+import { DENIAL_STATE_ENV } from '../hooks/guard.mjs';
 import { SUPPLY_FILE, appendSupplyRecord } from './role-supply.mjs';
 import {
   applyWinner,
@@ -6717,7 +6718,21 @@ async function runInvocation(argv, io, crash) {
   // the same place — a permission that lived only in this function would be invisible to the
   // hook that also enforces the rule.
   const boxed = argv.includes('--give-them-the-box');
-  const env = boxed ? { ...(io.env ?? process.env), [BOX_ENV]: '1' } : (io.env ?? process.env);
+  // **Where the guard may count denials, and nowhere else** (PLAN item 52). Named by the Driver
+  // rather than derived by the guard, because a guard deriving a temporary path is the defect the
+  // item-37 hostile panel pulled: the guard is the one component that survives
+  // `--dangerously-skip-permissions` and is not itself guarded, so a predictable path is a symlink
+  // target. This one is inside `.meeseeks/`, which the guard already denies every in-run process at
+  // any depth. The directory is created after the lock is won — a run that never started writes
+  // nothing — and until it exists the guard's open fails and every denial renders in full, which is
+  // the direction every uncertainty here takes.
+  const denialStateDir = path.join(cwd, '.meeseeks', 'denials');
+  /** @type {Record<string, string | undefined>} */
+  const env = {
+    ...(io.env ?? process.env),
+    ...(boxed ? { [BOX_ENV]: '1' } : {}),
+    [DENIAL_STATE_ENV]: denialStateDir,
+  };
   const write = io.log ?? ((/** @type {string} */ line) => process.stdout.write(`${line}\n`));
   const spawn = io.spawn ?? spawnClaude;
   const heartbeatMs = io.heartbeatMs ?? HEARTBEAT_MS;
@@ -7943,6 +7958,14 @@ async function runInvocation(argv, io, crash) {
       write(verbatim(`the candidate worktree at ${candidateWorktree} could not be removed: ${removed.detail}`));
     }
   };
+
+  // 0700, so nothing but this user can plant anything in it. Failure is not fatal: the guard's own
+  // uncertainty path renders every denial in full, which is the behaviour this feature replaces.
+  try {
+    mkdirSync(denialStateDir, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    write(verbatim(`denial dampening is off for this run: ${/** @type {Error} */ (error).message}`));
+  }
 
   crash.cleanup = releaseCandidate;
   // Self-healing at the start, exactly as races and components are: cleanup on the way out cannot

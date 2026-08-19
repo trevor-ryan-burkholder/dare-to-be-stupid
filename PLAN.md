@@ -1725,7 +1725,7 @@ capability canaries. Item numbering records chronology, not priority. Item **77*
 **76** despite its later number. The top-level build order is authoritative when physical placement
 and execution order differ.
 
-### 52. Denial dampening (R25c), done without giving the guard a write primitive — OPEN (was part of item 37, cut on review)
+### 52. Denial dampening (R25c), done without giving the guard a write primitive — IMPLEMENTED (0.225.0)
 
 **Origin:** R25c, built into item 37's first cut and **removed before landing** when the item-37 hostile
 panel (three lenses, 15 Aug) found two real defects in it. Recorded here so the good idea is not lost and
@@ -1759,6 +1759,26 @@ first ~3 denials, then a one-liner.
 the counter path and shows the guard refuses to follow it); dampening is per-rule (a test denies rule A
 three times then rule B once and sees B rendered in full); an operator denial outside a run is never
 dampened; and any counter failure renders full text.
+
+**Landed at 0.225.0, to that design exactly.** The Driver names `.meeseeks/denials/` in
+`MEESEEKS_DENIAL_STATE`, creates it `0700` after the lock is won, and the guard opens with
+`O_NOFOLLOW`, refuses a non-regular target, and falls through to full text on every uncertainty —
+an absent directory, an unreadable file, a ledger past 64KB, a missing session id, no env var at all.
+`DESIGN.md` §6.1a records the boundary.
+
+**One thing the first fixture found that the design had not.** The dampened form appends about forty
+characters of "this rule was explained earlier", so on a *one-sentence* refusal it was **longer** than
+the full one — spending context to save context. Shortening now applies only when it shortens, with a
+case asserting a brief refusal renders identically either way.
+
+**Evidence.** Eleven cases: three-then-dampen, per-rule keying with the exact B-was-never-explained
+reproduction, per-session keying, no dampening without the env var or without a session id, the
+planted symlink (asserting both that the guard stays verbose *and* that the victim file is untouched),
+a directory where the counter belongs, a missing directory, an oversized ledger, the decision and both
+tags surviving dampening, the shortening-must-shorten neighbour, and an allow rendering nothing either
+way. A twelfth, in `main`, is the one this repair nearly reintroduced: reading the session id with a
+second `JSON.parse` crashed the guard on exactly the malformed payload it exists to deny, so the
+payload is parsed once.
 
 ### 53. Styled milestone lines: gate summary, panel convening, carry/outstanding — OPEN (micro-item, cosmetic, quota-funded)
 
