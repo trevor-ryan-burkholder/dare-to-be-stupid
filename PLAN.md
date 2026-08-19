@@ -1093,17 +1093,67 @@ reader. **Campaign A** — hardens the substrate every later run reads.
 Fix: temp+rename, exactly as ratchet/pins/lessons already do. Surface: `scripts/driver.mjs`.
 **Campaign A** — land before any long dogfood run writes this file.
 
-### 40. Reviewer contract — an `unverifiable[]` channel + a mandatory attack account (R27) — OPEN
+### 40. Reviewer contract — an `unverifiable[]` channel + a mandatory attack account (R27) — **DONE (0.231.0)**
+
 Two parsed reviewer-JSON fields: `unverifiable[]` fails closed at the driver; a pass with no
 non-empty attack account is an unparseable pass (already a fail by law). Makes lazy charitable
 passes machine-detectable. Surface: `templates/reviewer-system.md` + the envelope parser + tests in
 one commit; **tier 3**. **Campaign B**.
 
+**`unverifiable[]` exists because its absence was being scored as success.** A reviewer that cannot
+reach a requirement — an assertion about a service it cannot call, behaviour needing credentials the
+tree does not carry — had two options and both were wrong. `fail` reports a defect that may not exist
+and sends a builder to repair working code. `pass` ships an unexamined requirement, and it is the
+tempting one: told that its verdict defaults to fail and that evidence is mandatory, a reviewer takes
+it whenever the requirement looks fine, because a plausible `file:line` is always available for code
+that exists. Naming the gap is the third option, and it **blocks acceptance exactly as a failure
+does**. It is not an excuse slot; it converts "nobody checked this" from a silent pass into a
+visible, blocking, repairable fact.
+
+Fail-closed in every direction: an `unverifiable` sent as the wrong type yields a blocking entry
+rather than an empty list, because returning `[]` there would let a reviewer disable the channel with
+the cheapest possible evasion. An **absent** channel is a positive claim and is accepted, because
+requiring a non-empty list would make fabrication the cheapest way to satisfy the contract.
+
+**`attackAccount` has a length floor (`ATTACK_ACCOUNT_MIN`, 120), and the floor is the whole
+mechanism.** Requiring the field only forces a reviewer to type something — "I tried to break it and
+could not" is 34 characters and satisfies any non-empty test. It errs strict because the harm is
+asymmetric: a genuine account runs to several hundred characters without effort, and a lazy
+charitable pass is exactly the thing that cannot produce one. Not a list of forbidden phrases —
+enumerating "n/a", "none" is the guard hook's enumeration defect, where each new evasion defaults to
+accepted. Only a **pass** must account for itself; demanding paperwork behind a fail would add noise
+to the reports already doing their job.
+
+**Both fields are carried through `resolveReportEvidence`, and that is not bookkeeping.** That
+function rebuilds the verdict against a real tree. It re-judges *citations* and has no view on what a
+reviewer could not reach, so dropping either field there would silently restore a pass the parser had
+just blocked — one layer later, and looking exactly like correct behaviour. `carriedReport` answers
+both itself rather than leaving them absent: a carried pin has nothing unverifiable by construction,
+and its account states the mechanism rather than imitating an attack nobody performed.
+
+**Acceptance evidence.** 15 parser cases, 2 evidence-layer carry-through cases, 3 template-agreement
+cases binding the documented example to the parser rules — the example must itself satisfy the floor
+it documents, and it demonstrates a real blocking `unverifiable` entry rather than describing one.
+
+**Tier 3 passed before this landed**, which the item required. `test/live/reviewer-contract.live.test.mjs`
+gave a real `claude -p` reviewer the updated template and a small, genuinely **correct** tree — the
+case worth paying for, because a reviewer failing broken code needs no account. It returned a usable
+attack account, a well-formed `unverifiable`, and no complaint about either field's format. That is
+the check no unit test could make: the parser is correct whether or not real reviewers comply, every
+fixture supplies the field because a human wrote it knowing it was wanted, and if reviewers routinely
+omitted it then **every clean iteration of every run** would fail on paperwork rather than on
+software. 83 seconds, one child.
+
+**The fixture churn was the rule working.** Thirty-odd existing reviewer fixtures across tier 1 and
+tier 2 began failing on the new rule, each because it passed every requirement while saying nothing
+about what had been attacked — which is precisely the lazy charitable pass this item exists to make
+machine-detectable.
 
 **Done when:** schema/parser fixtures prove a non-empty `unverifiable[]` blocks acceptance, a missing
 or empty attack account cannot parse as `pass`, and valid hostile findings remain intact. Benign
 neighbours prove ordinary evidence still parses; malformed or extra authority-bearing output fails
-closed; the required paid tier-3 contract passes before the template/parser slice lands.
+closed; the required paid tier-3 contract passes before the template/parser slice lands. — all met.
+
 ### 41. Review packaging — truncation honesty + the diff base (R28) — **CLOSED (not applicable, source-traced 16 Aug 2026)**
 The proposed implementation surface does not exist. Panel processes receive a bounded prompt and
 inspect the candidate repository directly with read-only tools; the Driver does not assemble or
@@ -1362,13 +1412,44 @@ Otherwise reject the backend. A passing experiment may justify a separately revi
 adapter slice; it never makes the Driver, command, install format, or default execution path
 model-agnostic.
 
-### 33. More language toolchains + reporters (Python, Go, Rust) — OPEN
+### 33. More language toolchains + reporters (Python, Go, Rust) — **DEFERRED (operator decision, 19 Aug 2026): add after completion**
+
 New `scripts/toolchains/*.mjs` + `scripts/reporters/*.mjs` behind the existing fixed toolchain
 contract (the same shape dotnet proved). Each: detect, map the gates, parse the framework's
 reporter output into ratchet ids. **Invariant:** fixture-tests-over-mocks against real committed
 reporter output; each new reporter owns a contract another binary defines → one **tier-2/3 live
 check** per toolchain. The core loop is already language-agnostic (the ratchet parses reporter
 JSON, not syntax) — this is surface, not spine.
+
+**Deferred by the operator to after code completion.** The shipped `dotnet` toolchain is unaffected
+and stays; the deferral is on *adding* toolchains, not on the ones already proved.
+
+**What the abandoned Python probe measured, kept because it is the expensive half.** Nothing reached
+the repository — this was captured against real binaries in a scratch tree, and every finding is the
+`dotnet` trap arriving again: a command that exits non-zero for a reason that is not the one the
+gate is asking about.
+
+- **pytest has no built-in JSON reporter.** `pytest-json-report` is a dependency of the *target*,
+  which the loop cannot assume and must not install on the target's behalf. `--junit-xml` ships with
+  pytest itself, and dotnet already proved an XML report is readable here.
+- **Identity cannot come from a path.** pytest's `classname` is a dotted module path
+  (`tests.test_total.TestTotal`), and the only real file path in the document is an absolute one
+  inside `<skipped>`/`<failure>` bodies. An id built from that differs between machines and the
+  ratchet reads every test as new elsewhere — a *widening*, which is §11's silent failure. The id is
+  `classname::name`, exactly the reasoning `trx.mjs` records, and a parametrised case's arguments are
+  part of the identity.
+- **Three of four gate commands exited non-zero on a tree with nothing wrong with it**
+  (pytest 8.3.5, ruff 0.16.3, mypy 1.14.1, pip-audit 2.7.3, Python 3.8.10):
+  - `mypy .` exits **2** on `Source file found twice under different module names` — a module
+    resolution failure, not a type error.
+  - `pytest -q` exits **2** on a collection error, which is a different fact from a failing test and
+    must not be read as one.
+  - `pip-audit` exits **1** from an internal pip traceback on a project with no dependencies at all.
+  - Only `ruff check .` behaved: 0 clean, 1 dirty.
+
+  A toolchain written from documentation would have wired all four and reported three permanent
+  failures that mean "the gate never ran". Whoever resumes this starts from here rather than from
+  the same four discoveries.
 
 ### 34. Verified research mode — OPEN (the first instance of item 49's substrate)
 

@@ -167,7 +167,7 @@ async function run(root) {
         options.phase === 'design'
           ? 'Designed.\n\n```json\n{"capabilities": ["web-ui", "cli"]}\n```\n'
           : options.phase === 'review'
-            ? JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'src/core.js:1', detail: 'ok' }] })
+            ? JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'src/core.js:1', detail: 'ok' }] , attackAccount: 'Called the handler directly to bypass the role check, replayed an expired session cookie, and sent a negative quantity to the order endpoint. All three were rejected.' })
             : 'built';
       return { ok: true, text, costUsd: 0, tokens: 0, raw: '{}' };
     }),

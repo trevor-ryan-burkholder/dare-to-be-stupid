@@ -94,7 +94,7 @@ function cannedSpawn(ledger) {
         : options.phase === 'oracle-author'
           ? ORACLE_CASES
           : options.phase === 'review'
-            ? JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'PRD.md:1', detail: 'ok' }] })
+            ? JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'PRD.md:1', detail: 'ok' }] , attackAccount: 'Called the handler directly to bypass the role check, replayed an expired session cookie, and sent a negative quantity to the order endpoint. All three were rejected.' })
             : 'done';
     return { ok: true, text, costUsd: usage.costUsd, tokens: usage.tokens, raw: '{}' };
   };

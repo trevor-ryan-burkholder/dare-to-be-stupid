@@ -197,7 +197,36 @@ describe('resolveReportEvidence is the boundary between a document and a reposit
     requirements: [{ id: 'PRD-1.1', status: /** @type {'pass'} */ ('pass'), evidence: 'src/app.ts:1', detail: 'found' }],
     advisories: [],
     problems: [],
+    // resolveReportEvidence judges citations against a real tree; it has no view on what a reviewer
+    // could not reach. Both fields are supplied so these cases assert citation resolution rather
+    // than re-asserting the parser's accountability rules, which have their own tests.
+    unverifiable: /** @type {string[]} */ ([]),
+    attackAccount:
+      'Called the handler directly to bypass the role check, replayed an expired session cookie, ' +
+      'and sent a negative quantity to the order endpoint. All three were rejected at the boundary.',
     ...overrides,
+  });
+
+  it('carries the accountability fields through, so the block cannot be undone one layer later', () => {
+    // This function rebuilds the report against a real tree. It re-judges *citations* and has no
+    // view on what a reviewer could not reach, so dropping either field here would silently restore
+    // a pass the parser had just blocked — a defect that would look exactly like correct behaviour.
+    const { root } = makeRepo();
+    const resolved = resolveReportEvidence(
+      report({ unverifiable: ['PRD-2.1 asserts behaviour against a service I cannot call'] }),
+      { root },
+    );
+    assert.equal(resolved.verdict, 'fail');
+    assert.deepStrictEqual(resolved.unverifiable, ['PRD-2.1 asserts behaviour against a service I cannot call']);
+    assert.match(resolved.attackAccount, /^Called the handler directly/);
+  });
+
+  it('re-applies the attack-account floor when it rebuilds the verdict', () => {
+    // The same hazard in the other field: a report that arrived blocked for a short account must not
+    // come back out of this function as a pass just because every citation resolved.
+    const { root } = makeRepo();
+    const resolved = resolveReportEvidence(report({ attackAccount: 'looked at it' }), { root });
+    assert.equal(resolved.verdict, 'fail');
   });
 
   it('leaves a report whose citations resolve exactly as it was', () => {

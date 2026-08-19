@@ -36,6 +36,18 @@ import {
 import { defaultConfig } from '../../scripts/config.mjs';
 import { TOOL_CACHE_PATHS, driveRun, shell } from '../../scripts/driver.mjs';
 
+/**
+ * An attack account long enough to satisfy the parsers floor (PLAN item 40).
+ *
+ * These fixtures pass every requirement, and a passing reviewer report that says nothing about what
+ * it attacked is no longer counted as a pass. Supplied here so these cases keep asserting what they
+ * are about — the seal, the commit, the publication — rather than the reviewer contract, which has
+ * its own tests.
+ */
+const ATTACK_ACCOUNT =
+  'Called the handler directly to bypass the role check, replayed an expired session cookie, and ' +
+  'sent a negative quantity to the order endpoint. All three were rejected at the boundary.';
+
 /** @type {string[]} */
 const temporaryDirs = [];
 
@@ -175,6 +187,7 @@ async function driveOnce(root, hooks = {}) {
           raw: '',
           text: JSON.stringify({
             requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'src/a.js:1', detail: 'found it' }],
+            attackAccount: ATTACK_ACCOUNT,
           }),
         };
       },
@@ -479,6 +492,7 @@ async function drivePublication(root, options) {
         raw: '',
         text: JSON.stringify({
           requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'src/a.js:1', detail: 'found it' }],
+          attackAccount: ATTACK_ACCOUNT,
         }),
       }),
       realityCheck: () => ({ ok: true, text: 'buildable', costUsd: 0, tokens: 1, raw: '' }),
@@ -603,6 +617,7 @@ describe('a failed git publication cannot reach deploy, tag or SHIPPED', () => {
           raw: '',
           text: JSON.stringify({
             requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'src/a.js:1', detail: 'found it' }],
+            attackAccount: ATTACK_ACCOUNT,
           }),
         }),
         realityCheck: () => ({ ok: true, text: 'buildable', costUsd: 0, tokens: 1, raw: '' }),

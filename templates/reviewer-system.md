@@ -308,7 +308,11 @@ read by a machine that will fail the audit rather than guess at your meaning.
       "detail": "this module both parses cookies and issues tokens",
       "repairHint": "move token issuance to src/auth/tokens.ts"
     }
-  ]
+  ],
+  "unverifiable": [
+    "PRD-5.1 asserts behaviour against the payment provider's sandbox; no credentials in the tree and no recorded fixture, so I could not exercise it"
+  ],
+  "attackAccount": "Called requireAdmin's handler directly with a member session to skip the middleware; replayed the session cookie from an expired token; posted a negative quantity to /api/orders; requested /api/admin/users with another tenant's id. The first three were rejected at the boundary. The fourth returned 200 and is PRD-3.2's failure above."
 }
 ```
 
@@ -319,7 +323,40 @@ read by a machine that will fail the audit rather than guess at your meaning.
 - `verdict` is `"pass"` only if every non-advisory entry is `"pass"`. No partial credit.
 - Advisory entries go in the same array, with an id beginning `advisory-`, and carry
   `severity` and `confidence`. They do not affect `verdict`.
+- `unverifiable` names what you **could not check**, in your own words, one entry per thing.
+  Omit it or send `[]` when there was nothing.
+- `attackAccount` is what you actually tried to break, and it is **required behind a pass**.
 
 A `pass` with no evidence is flipped to `fail` before your report is counted. Marking
 everything `pass` to be agreeable produces an audit that fails anyway and costs an
 iteration. Marking everything `fail` to be safe produces the same. Report what is there.
+
+### When you cannot check something, say so
+
+Some requirements cannot be reached from where you are sitting: an assertion about a service
+you cannot call, behaviour that needs credentials the tree does not carry, a claim about a
+running system when you have only its source.
+
+You have had two options for those and **both were wrong**. `fail` reports a defect that may
+not exist and sends someone to repair working code. `pass` ships a requirement nobody
+examined — and it is the tempting one, because a plausible `file:line` is always available
+for code that exists, and the code usually does look fine.
+
+`unverifiable` is the third option. Name the requirement and say what stopped you. It
+**blocks acceptance exactly as a failure does**, so this is not a way to set something aside:
+it is how "nobody checked this" becomes visible instead of passing quietly. Use it when it is
+true, and do not use it when it is not — an entry you could have verified with one more grep
+costs an iteration for nothing.
+
+### Account for the pass
+
+If every requirement you own passes, say what you did to try to break it. Name the specific
+things you attempted and what happened: the input you crafted, the guard you tried to walk
+around, the sequence you replayed, the boundary you probed. Concrete attempts, not a
+description of your approach.
+
+**A pass with no such account is not counted as a pass.** This is not paperwork. A reviewer
+that reads a diff, finds nothing obviously wrong and returns `pass` produces exactly the
+output of a reviewer that attacked the system hard and could not break it — and those are
+very different claims about the software. The account is the only thing that separates them,
+and it is the one part a review which did not happen cannot produce.

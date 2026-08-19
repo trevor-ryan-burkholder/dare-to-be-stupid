@@ -70,7 +70,7 @@ async function run(root, envelope = {}) {
         options.phase === 'design'
           ? 'Designed.\n\n```json\n{"capabilities": ["cli"]}\n```\n'
           : options.phase === 'review'
-            ? JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'PRD.md:1', detail: 'ok' }] })
+            ? JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'PRD.md:1', detail: 'ok' }] , attackAccount: 'Called the handler directly to bypass the role check, replayed an expired session cookie, and sent a negative quantity to the order endpoint. All three were rejected.' })
             : 'built';
       // The real `spawnClaude` derives `observedModels` from the envelope; an injected spawn has to
       // state it, and stating it is what lets this fixture model a substitution.

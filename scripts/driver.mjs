@@ -183,7 +183,8 @@ import { CONDITIONAL_GATE_OPERATIONS, gatesFor, resolveToolchain } from './toolc
 /**
  * @typedef {{
  *   verdict: 'pass' | 'fail', requirements: RequirementVerdict[],
- *   advisories: AdvisoryFinding[], problems: string[]
+ *   advisories: AdvisoryFinding[], problems: string[],
+ *   unverifiable: string[], attackAccount: string
  * }} ReviewerReport
  */
 
@@ -577,6 +578,78 @@ function readAdvisory(record, id, minConfidence) {
 }
 
 /**
+ * The shortest attack account this parser will accept behind a `pass` (PLAN.md item 40, R27).
+ *
+ * **A number, and therefore arbitrary — but the alternative is worse.** Requiring the field at all
+ * only forces a reviewer to type something; "I tried to break it and could not" is 34 characters and
+ * satisfies any non-empty test. The floor is what makes the requirement bite, and it errs strict
+ * because the direction of harm is asymmetric: a genuine account of what you attacked runs to
+ * several hundred characters without effort, while a lazy charitable pass is exactly the thing that
+ * cannot produce one.
+ *
+ * Not a list of forbidden phrases. Enumerating "n/a", "none", "nothing" is the same defect the guard
+ * hook's positional rule exists to avoid — each new evasion defaults to accepted until somebody
+ * remembers to add it.
+ */
+export const ATTACK_ACCOUNT_MIN = 120;
+
+/**
+ * Read the reviewer's account of what it tried to break.
+ *
+ * @param {Record<string, unknown>} parsed
+ * @returns {string} the account, trimmed; empty when absent or unusable
+ */
+function readAttackAccount(parsed) {
+  return typeof parsed.attackAccount === 'string' ? parsed.attackAccount.trim() : '';
+}
+
+/**
+ * Read the reviewer's declaration of what it could **not** verify.
+ *
+ * **This channel exists because its absence was being scored as success.** A reviewer that cannot
+ * reach a requirement — no runnable artifact, an assertion about a service it cannot call, a claim
+ * needing state it was not given — had two options and both were wrong. Marking `fail` reports a
+ * defect that may not exist and sends a builder to repair working code. Marking `pass` ships an
+ * unexamined requirement. Told that its verdict defaults to fail and that evidence is mandatory, a
+ * reviewer takes the second whenever the requirement looks fine, because a plausible `file:line` is
+ * always available for code that exists.
+ *
+ * Naming it is now the third option, and it **fails closed at the driver**: a non-empty list blocks
+ * acceptance exactly as a failed requirement does. That is the point. This is not an excuse slot —
+ * it converts "I could not check this" from a silent pass into a visible, blocking, repairable fact.
+ *
+ * @param {Record<string, unknown>} parsed
+ * @param {string[]} problems appended to in place when the field itself is malformed
+ * @returns {string[]}
+ */
+function readUnverifiable(parsed, problems) {
+  const raw = parsed.unverifiable;
+  // Absent is a positive claim — "nothing was beyond me" — and an honest one for a reviewer with a
+  // runnable tree. It is not a malformation, because forcing a non-empty list would make fabrication
+  // the cheapest way to satisfy the contract.
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) {
+    problems.push(
+      'reviewer output has an `unverifiable` that is not an array; unparseable output is a fail (DESIGN.md §4)',
+    );
+    // A malformed field yields a blocking entry rather than an empty list. Returning [] would let a
+    // reviewer disable the channel by sending the wrong type, which is the cheapest possible evasion.
+    return ['`unverifiable` could not be read'];
+  }
+  /** @type {string[]} */
+  const entries = [];
+  for (const [index, entry] of raw.entries()) {
+    if (typeof entry !== 'string' || entry.trim() === '') {
+      problems.push('unverifiable[' + index + '] is not a non-empty string');
+      entries.push('unverifiable[' + index + '] could not be read');
+      continue;
+    }
+    entries.push(entry.trim());
+  }
+  return entries;
+}
+
+/**
  * Parse and *judge* a reviewer's output.
  *
  * The parser is where the adversarial framing is actually enforced, so it is deliberately
@@ -615,6 +688,8 @@ export function parseReviewerReport(raw, options) {
       requirements: [],
       advisories,
       problems: ['reviewer output could not be parsed as JSON; unparseable output is a fail (DESIGN.md §4)'],
+      unverifiable: [],
+      attackAccount: '',
     };
   }
 
@@ -625,6 +700,8 @@ export function parseReviewerReport(raw, options) {
       requirements: [],
       advisories,
       problems: ['reviewer output has no `requirements` array'],
+      unverifiable: readUnverifiable(/** @type {Record<string, unknown>} */ (parsed), problems),
+      attackAccount: readAttackAccount(/** @type {Record<string, unknown>} */ (parsed)),
     };
   }
 
@@ -687,9 +764,37 @@ export function parseReviewerReport(raw, options) {
   }
 
   if (requirements.length === 0) problems.push('reviewer returned no requirement entries at all');
-  const verdict = requirements.length > 0 && requirements.every((entry) => entry.status === 'pass') ? 'pass' : 'fail';
+  /** @type {'pass' | 'fail'} */
+  let verdict = requirements.length > 0 && requirements.every((entry) => entry.status === 'pass') ? 'pass' : 'fail';
 
-  return { verdict, requirements, advisories, problems };
+  const unverifiable = readUnverifiable(/** @type {Record<string, unknown>} */ (parsed), problems);
+  const attackAccount = readAttackAccount(/** @type {Record<string, unknown>} */ (parsed));
+
+  // Fails closed, and it outranks the requirement tally on purpose. A reviewer that passed every id
+  // it could reach and named one it could not has not audited the tree; it has audited part of it,
+  // and the part it skipped is the part nobody looked at.
+  if (unverifiable.length > 0) {
+    verdict = 'fail';
+    problems.push(
+      'the reviewer could not verify ' + unverifiable.length + ' item(s), which blocks acceptance: ' +
+        unverifiable.join('; ') + ' (DESIGN.md §4)',
+    );
+  }
+
+  // Only a pass has to account for itself. A fail is already a fail, and demanding the paperwork
+  // behind one would add noise to the reports that are already doing their job.
+  if (verdict === 'pass' && attackAccount.length < ATTACK_ACCOUNT_MIN) {
+    verdict = 'fail';
+    problems.push(
+      attackAccount === ''
+        ? 'every requirement passed but the report carries no `attackAccount`; a pass that does not say ' +
+          'what was attacked is an unparseable pass (DESIGN.md §4)'
+        : 'every requirement passed but the `attackAccount` is ' + attackAccount.length + ' characters, under ' +
+          'the ' + ATTACK_ACCOUNT_MIN + ' required; an account too short to describe an attack is not evidence of one',
+    );
+  }
+
+  return { verdict, requirements, advisories, problems, unverifiable, attackAccount };
 }
 
 /**
@@ -737,8 +842,21 @@ export function resolveReportEvidence(report, options) {
     );
     return { ...finding, actionable: false };
   });
-  const verdict = requirements.length > 0 && requirements.every((entry) => entry.status === 'pass') ? 'pass' : 'fail';
-  return { verdict, requirements, advisories, problems };
+  /** @type {'pass' | 'fail'} */
+  let verdict = requirements.length > 0 && requirements.every((entry) => entry.status === 'pass') ? 'pass' : 'fail';
+  // Carried through rather than recomputed. This function re-judges *citations*; it has no view on
+  // what the reviewer could not reach, and silently dropping the channel here would undo the block
+  // one layer after the parser applied it.
+  if (report.unverifiable.length > 0) verdict = 'fail';
+  if (verdict === 'pass' && report.attackAccount.length < ATTACK_ACCOUNT_MIN) verdict = 'fail';
+  return {
+    verdict,
+    requirements,
+    advisories,
+    problems,
+    unverifiable: report.unverifiable,
+    attackAccount: report.attackAccount,
+  };
 }
 
 /** Where the panel's verdict is written. Machine state: driver-owned, never tracked. */
@@ -5067,6 +5185,15 @@ export function narrowedPanelPlan(assignments, carriedPins, requiredIds) {
 export function carriedReport(carried) {
   return {
     verdict: 'pass',
+    // Driver-authored, so the two reviewer-accountability fields are answered by the Driver rather
+    // than left absent. Nothing is unverifiable about a pin whose evidenced file is byte-identical
+    // to the one already reviewed, and the account states the mechanism instead of imitating an
+    // attack nobody performed. A carried pass is a pre-filter, never a substitute for the panel
+    // (DESIGN.md §4.3), so this cannot become a route to an unexamined ship.
+    unverifiable: [],
+    attackAccount:
+      'Carried pin, not a fresh audit: this requirement passed a cold panel earlier in the run and ' +
+      'the file its evidence cites is byte-identical since. The full panel still decides the ship.',
     requirements: carried.map((pin) => ({
       id: pin.id,
       status: /** @type {'pass'} */ ('pass'),

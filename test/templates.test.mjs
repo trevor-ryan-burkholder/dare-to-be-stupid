@@ -23,7 +23,7 @@ import { describe, it } from 'node:test';
 
 import { parseAssumptions } from '../scripts/assumptions.mjs';
 import { CAPABILITY_ORDER, parseCapabilityDeclaration } from '../scripts/capabilities.mjs';
-import { parseReviewerReport, toolchainGuidance } from '../scripts/driver.mjs';
+import { ATTACK_ACCOUNT_MIN, parseReviewerReport, toolchainGuidance } from '../scripts/driver.mjs';
 import { TOOLCHAINS } from '../scripts/toolchains/index.mjs';
 import { parseLessonExtraction } from '../scripts/lessons.mjs';
 
@@ -66,7 +66,13 @@ describe('the reviewer template and the parser agree', () => {
       .map((/** @type {{ id: string }} */ entry) => entry.id)
       .filter((/** @type {string} */ id) => !id.startsWith('advisory-'));
     const report = parseReviewerReport(jsonBlocks(REVIEWER)[0], { requiredIds: ids });
-    assert.deepStrictEqual(report.problems, [], 'the documented example must not trip the parser');
+    // Exactly one complaint, and it is the one the example is teaching: the `unverifiable` entry
+    // blocks acceptance. Asserting "no problems" would have been wrong here for a good reason —
+    // the example deliberately demonstrates a blocking condition — so the assertion names the
+    // complaint instead of forbidding all of them, which would let a second, real defect hide
+    // behind the intended one.
+    assert.equal(report.problems.length, 1, 'the example must trip the parser exactly once, on purpose');
+    assert.match(report.problems[0], /^the reviewer could not verify 1 item\(s\), which blocks acceptance/);
     assert.deepStrictEqual(
       report.requirements.map((entry) => [entry.id, entry.status]),
       [
@@ -104,8 +110,42 @@ describe('the reviewer template and the parser agree', () => {
     const example = JSON.parse(jsonBlocks(REVIEWER)[0]);
     const passing = example.requirements.filter((/** @type {{ status: string }} */ e) => e.status === 'pass');
     assert.equal(passing.length, 1);
-    const report = parseReviewerReport(JSON.stringify({ requirements: passing }), { requiredIds: ['PRD-3.2'] });
+    // The example's own `attackAccount` is used rather than a substitute, so the template cannot
+    // document a field while demonstrating a value the parser would reject (PLAN item 40).
+    const report = parseReviewerReport(
+      JSON.stringify({ requirements: passing, attackAccount: example.attackAccount }),
+      { requiredIds: ['PRD-3.2'] },
+    );
     assert.equal(report.verdict, 'pass');
+  });
+
+  it('demonstrates an unverifiable entry, and one that would really block acceptance', () => {
+    // A channel documented in prose and absent from the example teaches the shape by omission.
+    const example = JSON.parse(jsonBlocks(REVIEWER)[0]);
+    assert.equal(Array.isArray(example.unverifiable), true);
+    assert.equal(example.unverifiable.length, 1);
+    const report = parseReviewerReport(
+      JSON.stringify({
+        requirements: example.requirements.filter((/** @type {{ status: string }} */ e) => e.status === 'pass'),
+        attackAccount: example.attackAccount,
+        unverifiable: example.unverifiable,
+      }),
+      { requiredIds: ['PRD-3.2'] },
+    );
+    assert.equal(report.verdict, 'fail');
+    assert.equal(report.unverifiable.length, 1);
+    assert.match(report.problems.join('\n'), /could not verify 1 item\(s\), which blocks acceptance/);
+  });
+
+  it('demonstrates an attack account the parser will accept behind a pass', () => {
+    // Documenting the requirement while showing a two-word value would teach the evasion.
+    const example = JSON.parse(jsonBlocks(REVIEWER)[0]);
+    assert.equal(typeof example.attackAccount, 'string');
+    assert.equal(
+      example.attackAccount.length >= ATTACK_ACCOUNT_MIN,
+      true,
+      'the template example must itself satisfy the floor it documents',
+    );
   });
 
   it('documents every DoD id the parser will be asked to find', () => {

@@ -76,7 +76,7 @@ async function run(root) {
         spawned.phase === 'design'
           ? 'Designed.\n\n```json\n{"capabilities": ["cli"]}\n```\n'
           : spawned.phase === 'review'
-            ? JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'PRD.md:1', detail: 'ok' }] })
+            ? JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'PRD.md:1', detail: 'ok' }] , attackAccount: 'Called the handler directly to bypass the role check, replayed an expired session cookie, and sent a negative quantity to the order endpoint. All three were rejected.' })
             : spawned.phase === 'oracle-author'
               ? ORACLE_CASES
               : 'built';

@@ -116,6 +116,7 @@ import {
   childStartLine,
   heartbeatLine,
   parseClaudeEnvelope,
+  ATTACK_ACCOUNT_MIN,
   parseReviewerReport,
   recordProgress,
   runGates,
@@ -196,11 +197,24 @@ after(() => {
 });
 
 /**
+ * An attack account long enough to satisfy `ATTACK_ACCOUNT_MIN` (PLAN item 40).
+ *
+ * Every fixture expecting a `pass` needs one now, and that churn is the rule working rather than a
+ * cost of it: each of these was previously a report that passed every requirement while saying
+ * nothing about what had been attacked — precisely the lazy charitable pass the field exists to make
+ * machine-detectable.
+ */
+const ATTACK_ACCOUNT =
+  'Called the handler directly to bypass the role check, replayed an expired session cookie, and ' +
+  'sent a negative quantity to the order endpoint. All three were rejected at the boundary.';
+
+/**
  * @param {Record<string, unknown>[]} entries
+ * @param {Record<string, unknown>} [extra] overrides, for the tests that attack these fields
  * @returns {string}
  */
-function reviewerJson(entries) {
-  return JSON.stringify({ verdict: 'pass', requirements: entries });
+function reviewerJson(entries, extra = {}) {
+  return JSON.stringify({ verdict: 'pass', requirements: entries, attackAccount: ATTACK_ACCOUNT, ...extra });
 }
 
 const GOOD_ENTRY = {
@@ -380,6 +394,14 @@ describe('combinePanel', () => {
     ],
     advisories: /** @type {import('../scripts/driver.mjs').AdvisoryFinding[]} */ ([]),
     problems: /** @type {string[]} */ ([]),
+    // combinePanel judges already-parsed reports, so these two carry whatever the parser produced.
+    // A satisfying account is the default here because the rule they encode is the parser's, and it
+    // has its own tests; leaving them empty would make every panel test fail for a reason that has
+    // nothing to do with what it is asserting.
+    unverifiable: /** @type {string[]} */ ([]),
+    attackAccount:
+      'Attempted a role check bypass by calling the handler directly, replayed an expired session ' +
+      'cookie, and sent a negative quantity to the order endpoint. All three were rejected.',
   });
 
   it('passes only when every member passes', () => {
@@ -406,6 +428,8 @@ describe('combinePanel', () => {
       requirements: /** @type {import('../scripts/driver.mjs').RequirementVerdict[]} */ ([]),
       advisories: /** @type {import('../scripts/driver.mjs').AdvisoryFinding[]} */ ([]),
       problems: ['id missing'],
+      unverifiable: /** @type {string[]} */ ([]),
+      attackAccount: ATTACK_ACCOUNT,
     };
     assert.equal(combinePanel([suspicious], { requireUnanimous: true }).verdict, 'fail');
   });
@@ -1762,7 +1786,7 @@ describe('advisory findings', () => {
    */
   function parseWith(advisory, minConfidence = 0.7) {
     return parseReviewerReport(
-      JSON.stringify({ requirements: [{ ...GOOD_ENTRY }, advisory] }),
+      reviewerJson([{ ...GOOD_ENTRY }, advisory]),
       { requiredIds: ['PRD-1.1'], minConfidence },
     );
   }
@@ -1819,7 +1843,7 @@ describe('advisory findings', () => {
   it('keeps a required id required even when it wears an advisory name', () => {
     // Otherwise a reviewer could demote a DoD line by renaming it.
     const report = parseReviewerReport(
-      JSON.stringify({ requirements: [{ id: 'advisory-2', status: 'fail', evidence: null, detail: 'x' }] }),
+      reviewerJson([{ id: 'advisory-2', status: 'fail', evidence: null, detail: 'x' }]),
       { requiredIds: ['advisory-2'] },
     );
     assert.equal(report.verdict, 'fail');
@@ -1832,7 +1856,7 @@ describe('advisory findings', () => {
 
   it('surfaces only actionable advisories from the panel, worst first', () => {
     const withAdvisories = (/** @type {Record<string, unknown>[]} */ advisories) =>
-      parseReviewerReport(JSON.stringify({ requirements: [GOOD_ENTRY, ...advisories] }), {
+      parseReviewerReport(reviewerJson([GOOD_ENTRY, ...advisories]), {
         requiredIds: ['PRD-1.1'],
       });
     const panel = combinePanel(
@@ -2396,7 +2420,7 @@ describe('driveRun', () => {
     const ok = { ok: true, text: '', costUsd: 0.01, tokens: 100, raw: '' };
     return {
       build: () => ok,
-      review: () => ({ ...ok, text: JSON.stringify({ requirements: [GOOD_ENTRY] }) }),
+      review: () => ({ ...ok, text: reviewerJson([GOOD_ENTRY]) }),
       realityCheck: () => ({ ...ok, text: 'buildable' }),
       // A ship needs evidence the suite can fail (0.56.0), so the default harness carries a
       // passing mutation gate - the ordinary shipping condition. Tests exercising the withheld
@@ -2782,7 +2806,7 @@ describe('driveRun', () => {
               ? { ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }, { name: 'mutation', ok: true, status: 0, detail: 'no survivors' }] }
               : { ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'failed' }, { name: 'mutation', ok: false, status: 1, detail: 'survivors' }] };
           },
-          review: () => ({ ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0.01, tokens: 100, raw: '' }),
+          review: () => ({ ok: true, text: reviewerJson([GOOD_ENTRY]), costUsd: 0.01, tokens: 100, raw: '' }),
         },
         {},
       );
@@ -2871,7 +2895,7 @@ describe('driveRun', () => {
             reviewed = true;
             return {
               ok: true,
-              text: JSON.stringify({ requirements: [GOOD_ENTRY] }),
+              text: reviewerJson([GOOD_ENTRY]),
               costUsd: 0.01,
               tokens: 100,
               raw: '',
@@ -3079,7 +3103,7 @@ describe('driveRun', () => {
           readTestReports: () => makeReports(root),
           review: () => {
             reviews += 1;
-            return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
+            return { ok: true, text: reviewerJson([GOOD_ENTRY]), costUsd: 0, tokens: 1, raw: '' };
           },
           ship: () => {
             shipped += 1;
@@ -3185,7 +3209,7 @@ describe('driveRun', () => {
             reviews += 1;
             return {
               ok: next.ok,
-              text: JSON.stringify({ requirements: [GOOD_ENTRY] }),
+              text: reviewerJson([GOOD_ENTRY]),
               costUsd: next.costUsd,
               tokens: next.tokens,
               raw: 'reviewer output',
@@ -3210,7 +3234,7 @@ describe('driveRun', () => {
           build: () => ({ ok: true, text: 'built', costUsd: 0.01, tokens: 100, raw: '' }),
           review: () => ({
             ok: true,
-            text: JSON.stringify({ requirements: [GOOD_ENTRY] }),
+            text: reviewerJson([GOOD_ENTRY]),
             costUsd: 2,
             tokens: 20,
             raw: '',
@@ -3448,7 +3472,7 @@ describe('driveRun', () => {
         },
         review: () => {
           reviews += 1;
-          return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
+          return { ok: true, text: reviewerJson([GOOD_ENTRY]), costUsd: 0, tokens: 1, raw: '' };
         },
       }, { maxIterations: 1 });
       assert.equal(outcome.state, 'ABORTED');
@@ -3579,7 +3603,7 @@ describe('driveRun', () => {
         },
         review: () => {
           reviews += 1;
-          return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
+          return { ok: true, text: reviewerJson([GOOD_ENTRY]), costUsd: 0, tokens: 1, raw: '' };
         },
         ship: () => {
           shipped += 1;
@@ -3682,7 +3706,7 @@ describe('driveRun', () => {
           costUsd: 0.01,
           tokens: 100,
           raw: '',
-          text: JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence, detail: 'found it' }] }),
+          text: reviewerJson([{ id: 'PRD-1.1', status: 'pass', evidence, detail: 'found it' }]),
         }),
         ship: () => {
           shipped += 1;
@@ -4022,7 +4046,7 @@ describe('driveRun', () => {
           build: () => ({ ok: true, text: '```json\n{"assumptions": [ }\n```', costUsd: 0, tokens: 1, raw: '' }),
           review: () => {
             reviewed += 1;
-            return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
+            return { ok: true, text: reviewerJson([GOOD_ENTRY]), costUsd: 0, tokens: 1, raw: '' };
           },
         }, root),
       });
@@ -4292,7 +4316,7 @@ describe('driveRun', () => {
         costUsd: 0,
         tokens: 10,
         raw: '',
-        text: JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: null, detail: 'fine' }] }),
+        text: reviewerJson([{ id: 'PRD-1.1', status: 'pass', evidence: null, detail: 'fine' }]),
       }),
     });
     assert.notEqual(outcome.state, 'SHIPPED');
@@ -4670,7 +4694,7 @@ describe('driveRun', () => {
         build: () => ({ ok: true, text: '', costUsd: 0.01, tokens: 900, raw: '' }),
         review: () => {
           reviews += 1;
-          return { ok: true, text: JSON.stringify({ requirements: [GOOD_ENTRY] }), costUsd: 0, tokens: 1, raw: '' };
+          return { ok: true, text: reviewerJson([GOOD_ENTRY]), costUsd: 0, tokens: 1, raw: '' };
         },
       },
       { tokenCeiling: 500, maxIterations: 5 },
@@ -4758,9 +4782,7 @@ describe('driveRun', () => {
             costUsd: 0,
             tokens: 1,
             raw: '',
-            text: JSON.stringify({
-              requirements: ids.map((id) => ({ id, status: 'pass', evidence: 'src/a.ts:1', detail: 'found' })),
-            }),
+            text: reviewerJson(ids.map((id) => ({ id, status: 'pass', evidence: 'src/a.ts:1', detail: 'found' }))),
           };
         },
       },
@@ -4799,7 +4821,7 @@ describe('driveRun', () => {
           costUsd: 0,
           tokens: 1,
           raw: '',
-          text: JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'fail', evidence: null, detail: 'missing' }] }),
+          text: reviewerJson([{ id: 'PRD-1.1', status: 'fail', evidence: null, detail: 'missing' }]),
         }),
         extractLesson: (evidence) => {
           extractions.push(evidence);
@@ -5015,7 +5037,7 @@ describe('driveRun', () => {
           costUsd: 0.25,
           tokens: 10,
           raw: '',
-          text: JSON.stringify({ requirements: [GOOD_ENTRY] }),
+          text: reviewerJson([GOOD_ENTRY]),
         }),
       },
       { maxIterations: 3 },
@@ -6924,7 +6946,7 @@ describe('.meeseeks/outcome.json', () => {
     const ok = { ok: true, text: '', costUsd: 0.01, tokens: 100, raw: '' };
     return {
       build: () => ok,
-      review: () => ({ ...ok, text: JSON.stringify({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'a.ts:1', detail: 'd' }] }) }),
+      review: () => ({ ...ok, text: reviewerJson([{ id: 'PRD-1.1', status: 'pass', evidence: 'a.ts:1', detail: 'd' }]) }),
       realityCheck: () => ({ ...ok, text: 'buildable' }),
       gates: () => ({
         ok: true,
@@ -7966,5 +7988,139 @@ describe('spawnClaude enforces the supply boundary at the one door (PLAN item 77
     const result = await spawnSupplying({});
     assert.equal(result.ok, true);
     assert.equal(result.supply, undefined);
+  });
+});
+
+describe('the reviewer must account for a pass, and may say what it could not check (item 40, R27)', () => {
+  const PASSING = [GOOD_ENTRY];
+
+  describe('unverifiable[] fails closed', () => {
+    it('blocks acceptance even when every requirement it could reach passed', () => {
+      // The case the channel exists for. Before it, this reviewer had to choose between reporting a
+      // defect that may not exist and shipping a requirement nobody examined.
+      const report = parseReviewerReport(
+        reviewerJson(PASSING, { unverifiable: ['PRD-2.1 asserts behaviour against a payment sandbox I cannot reach'] }),
+        { requiredIds: ['PRD-1.1'] },
+      );
+      assert.equal(report.verdict, 'fail');
+      assert.deepStrictEqual(report.unverifiable, [
+        'PRD-2.1 asserts behaviour against a payment sandbox I cannot reach',
+      ]);
+      assert.equal(report.requirements[0].status, 'pass', 'the reachable requirement still passed');
+      assert.match(report.problems.join('\n'), /could not verify 1 item\(s\), which blocks acceptance/);
+    });
+
+    it('treats an absent channel as a positive claim rather than a malformation', () => {
+      // Requiring a non-empty list would make fabrication the cheapest way to satisfy the contract.
+      const report = parseReviewerReport(reviewerJson(PASSING), { requiredIds: ['PRD-1.1'] });
+      assert.equal(report.verdict, 'pass');
+      assert.deepStrictEqual(report.unverifiable, []);
+    });
+
+    it('refuses a channel sent as the wrong type, which would otherwise disable it', () => {
+      // The cheapest possible evasion: send a string, get an empty list, pass. It blocks instead.
+      const report = parseReviewerReport(reviewerJson(PASSING, { unverifiable: 'nothing' }), {
+        requiredIds: ['PRD-1.1'],
+      });
+      assert.equal(report.verdict, 'fail');
+      assert.deepStrictEqual(report.unverifiable, ['`unverifiable` could not be read']);
+      assert.match(report.problems.join('\n'), /`unverifiable` that is not an array/);
+    });
+
+    it('names the index of an entry that is not a non-empty string', () => {
+      const report = parseReviewerReport(reviewerJson(PASSING, { unverifiable: ['real one', '   ', 7] }), {
+        requiredIds: ['PRD-1.1'],
+      });
+      assert.equal(report.verdict, 'fail');
+      assert.deepStrictEqual(report.unverifiable, [
+        'real one',
+        'unverifiable[1] could not be read',
+        'unverifiable[2] could not be read',
+      ]);
+      assert.match(report.problems.join('\n'), /unverifiable\[1\] is not a non-empty string/);
+      assert.match(report.problems.join('\n'), /unverifiable\[2\] is not a non-empty string/);
+    });
+
+    it('trims entries, so whitespace cannot pad an evasion into looking substantial', () => {
+      const report = parseReviewerReport(reviewerJson(PASSING, { unverifiable: ['   spaced out   '] }), {
+        requiredIds: ['PRD-1.1'],
+      });
+      assert.deepStrictEqual(report.unverifiable, ['spaced out']);
+    });
+  });
+
+  describe('a pass has to account for itself', () => {
+    it('refuses a pass that carries no attackAccount at all', () => {
+      const report = parseReviewerReport(
+        JSON.stringify({ verdict: 'pass', requirements: PASSING }),
+        { requiredIds: ['PRD-1.1'] },
+      );
+      assert.equal(report.verdict, 'fail');
+      assert.equal(report.attackAccount, '');
+      assert.match(report.problems.join('\n'), /carries no `attackAccount`; a pass that does not say/);
+    });
+
+    it('refuses an account too short to describe an attack, and says how short', () => {
+      // "I tried to break it and could not" satisfies any non-empty test and says nothing. The
+      // floor is what makes the field bite.
+      const report = parseReviewerReport(
+        reviewerJson(PASSING, { attackAccount: 'I tried to break it and could not.' }),
+        { requiredIds: ['PRD-1.1'] },
+      );
+      assert.equal(report.verdict, 'fail');
+      assert.match(report.problems.join('\n'), new RegExp(`is 34 characters, under the ${ATTACK_ACCOUNT_MIN} required`));
+    });
+
+    it('measures the account after trimming, so whitespace cannot reach the floor', () => {
+      const report = parseReviewerReport(reviewerJson(PASSING, { attackAccount: `short${' '.repeat(400)}` }), {
+        requiredIds: ['PRD-1.1'],
+      });
+      assert.equal(report.verdict, 'fail');
+      assert.equal(report.attackAccount, 'short');
+    });
+
+    it('accepts a real account, and keeps it on the report', () => {
+      const report = parseReviewerReport(reviewerJson(PASSING), { requiredIds: ['PRD-1.1'] });
+      assert.equal(report.verdict, 'pass');
+      assert.equal(report.attackAccount, ATTACK_ACCOUNT);
+    });
+
+    it('does not demand an account from a report that already failed', () => {
+      // A fail is already a fail. Adding the complaint here would put noise on every report that is
+      // doing its job, and would say nothing a reader can act on.
+      const report = parseReviewerReport(
+        JSON.stringify({
+          verdict: 'fail',
+          requirements: [{ id: 'PRD-1.1', status: 'fail', evidence: null, detail: 'grepped src/, no handler' }],
+        }),
+        { requiredIds: ['PRD-1.1'] },
+      );
+      assert.equal(report.verdict, 'fail');
+      assert.equal(
+        report.problems.some((problem) => problem.includes('attackAccount')),
+        false,
+      );
+    });
+  });
+
+  it('leaves a genuine hostile finding exactly as it was', () => {
+    // The benign neighbour. Neither new field may disturb a report that is already reporting a real
+    // defect with real evidence.
+    const report = parseReviewerReport(
+      reviewerJson([
+        GOOD_ENTRY,
+        { id: 'DoD-2-security', status: 'fail', evidence: null, detail: 'no rate limiting; grepped rateLimit|throttle' },
+      ]),
+      { requiredIds: ['PRD-1.1', 'DoD-2-security'] },
+    );
+    assert.equal(report.verdict, 'fail');
+    assert.deepStrictEqual(
+      report.requirements.map((entry) => [entry.id, entry.status, entry.detail]),
+      [
+        ['PRD-1.1', 'pass', 'role guard checks session.role'],
+        ['DoD-2-security', 'fail', 'no rate limiting; grepped rateLimit|throttle'],
+      ],
+    );
+    assert.deepStrictEqual(report.unverifiable, []);
   });
 });
