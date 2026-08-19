@@ -16,7 +16,7 @@
  * it found has just written it to your terminal scrollback and your CI log.
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 /** @typedef {'block' | 'warn'} Severity */
@@ -382,4 +382,63 @@ export function formatFindings(findings) {
   return findings
     .map((f) => `${f.severity.toUpperCase()} ${f.file}:${f.line} [${f.rule}] ${f.detail}`)
     .join('\n');
+}
+
+/** Driver-owned. Protected by the `.meeseeks/**` invariant (§6) with no rule of its own. */
+export const SURFACE_SCAN_FILE = 'surface-scan.json';
+
+/** The store's own schema version, bumped when a field's meaning changes. */
+const SURFACE_SCAN_VERSION = 1;
+
+/**
+ * @typedef {{ at: string, iteration: number | null, tree: string | null, blocking: boolean,
+ *   findings: { severity: Severity, rule: string, file: string, line: number, detail: string }[],
+ *   error?: string }} SurfaceScanRecord
+ */
+
+/**
+ * The pre-Panel scan, bound to the exact bytes it was run against (REVIEW F29).
+ *
+ * **A scan whose subject nobody can name is not evidence.** The rescan before the Panel already
+ * fails closed on a known-hostile form, and until now its result existed only as a log line and an
+ * objective: an auditor reading `.meeseeks/` afterwards could not say *which tree* had been scanned,
+ * or that it was the same tree the verdict was sealed to. F29 asks for a durable binding between the
+ * two, and item 68's identity — since REVIEW F14 a git tree object — is the thing to bind it to.
+ *
+ * `tree` is that identity. A `null` one is recorded as `null` rather than omitted, because "the scan
+ * ran against something nobody could name" is a fact worth having and an absent field is not.
+ *
+ * **It records, it does not decide.** The loop has already acted on the findings by the time this is
+ * written; nothing reads this file back, and no gate result, ratchet state or verdict may depend on
+ * it. A write failure is reported and swallowed for the same reason `run.json`'s is: losing the
+ * account of a healthy run must not end it.
+ *
+ * @param {string} meeseeksDir
+ * @param {SurfaceScanRecord} record
+ * @param {{ readStore?: (file: string) => string, writeStore?: (file: string, body: string) => void }} [io]
+ * @returns {string} the path written
+ */
+export function recordSurfaceScan(meeseeksDir, record, io = {}) {
+  const read = io.readStore ?? ((/** @type {string} */ file) => readFileSync(file, 'utf8'));
+  const file = path.join(meeseeksDir, SURFACE_SCAN_FILE);
+  /** @type {{ version: number, scans: SurfaceScanRecord[] }} */
+  let store = { version: SURFACE_SCAN_VERSION, scans: [] };
+  try {
+    const parsed = JSON.parse(read(file));
+    if (parsed?.version === SURFACE_SCAN_VERSION && Array.isArray(parsed.scans)) {
+      store = { version: SURFACE_SCAN_VERSION, scans: parsed.scans };
+    }
+  } catch {
+    // Absent, unreadable, or from a schema this build does not know. The store is rebuilt from this
+    // scan onward: it decides nothing, so a damaged one is lost history rather than a reason to
+    // stop — the same rule `review.json` follows and the opposite of the one the ratchet follows.
+  }
+  store.scans.push(record);
+  const write = io.writeStore ?? ((/** @type {string} */ target, /** @type {string} */ body) => {
+    mkdirSync(meeseeksDir, { recursive: true });
+    writeFileSync(`${target}.tmp`, body, 'utf8');
+    renameSync(`${target}.tmp`, target);
+  });
+  write(file, `${JSON.stringify(store, null, 2)}\n`);
+  return file;
 }

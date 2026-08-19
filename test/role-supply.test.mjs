@@ -23,6 +23,8 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import {
+  AMBIENT_DISABLED,
+  CLASS_TRUST,
   INPUT_CLASSES,
   SUPPLY_FILE,
   appendSupplyRecord,
@@ -43,11 +45,21 @@ after(() => {
 const digestOf = (text) => `sha256:${createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 32)}`;
 
 describe('classify', () => {
-  it('records the class, a recomputable digest, and a byte count — and not the bytes', () => {
+  it('records the class, its trust, a recomputable digest, and a byte count — and not the bytes', () => {
     const entry = classify('brief', 'the build brief');
-    assert.deepStrictEqual(entry, { class: 'brief', digest: digestOf('the build brief'), bytes: 15 });
+    assert.deepStrictEqual(entry, { class: 'brief', trust: 'authority', digest: digestOf('the build brief'), bytes: 15 });
     // The manifest describing the prompt must not be a second copy of the prompt.
     assert.equal(Object.values(entry).some((value) => String(value).includes('the build brief')), false);
+  });
+
+  it('carries the trust class with the input rather than leaving it to be looked up', () => {
+    // **The distinction F29 is about.** A reviewer that treats a file it found in the candidate as a
+    // rule has been instructed by the thing it is auditing, and every panel member reads the same
+    // tree — so process independence does not diversify that attack. A reader of the manifest has to
+    // be able to say which inputs could bind the verdict without holding this module's table.
+    assert.equal(classify('candidate-evidence', 'src/a.js:1').trust, 'evidence');
+    assert.equal(classify('specification', '# PRD').trust, 'authority');
+    assert.equal(classify('builder-log', 'what happened').trust, 'evidence');
   });
 
   it('counts bytes rather than characters, so a multi-byte prompt is measured honestly', () => {
@@ -162,6 +174,65 @@ describe('the allowed classes still arrive', () => {
       supply: [{ class: 'builder-log', text: 'anything' }],
     });
     assert.equal(manifest.inputs.length, 1);
+  });
+});
+
+describe('trust classes: what may bind a verdict and what may only inform one (REVIEW F29)', () => {
+  it('classifies every declared input class, so nothing arrives unclassified', () => {
+    // An input class with no trust entry would produce `trust: undefined` in the record, which reads
+    // as "nobody decided" and is the shape every false guarantee in this repository has taken.
+    for (const inputClass of INPUT_CLASSES) {
+      assert.equal(['authority', 'evidence'].includes(CLASS_TRUST[inputClass]), true, `${inputClass} has no trust`);
+    }
+  });
+
+  it('makes only Driver- and plugin-owned inputs authority', () => {
+    // Asserted as exact sets rather than spot-checked, so promoting a candidate-produced class to
+    // authority is a test failure and not a quiet reclassification.
+    const authority = INPUT_CLASSES.filter((entry) => CLASS_TRUST[entry] === 'authority');
+    assert.deepStrictEqual(authority, ['specification', 'system-prompt', 'template', 'brief', 'oracle-cases']);
+  });
+
+  it('makes everything the candidate produced evidence', () => {
+    const evidence = INPUT_CLASSES.filter((entry) => CLASS_TRUST[entry] === 'evidence');
+    assert.deepStrictEqual(evidence, [
+      'candidate-evidence',
+      'builder-log',
+      'iteration-history',
+      'workflow-synthesis',
+      'panel-transcript',
+      'lesson-history',
+    ]);
+  });
+
+  it('records the ambient surfaces the child was started with disabled, and says nobody measured it', () => {
+    // **`verified: false` is the load-bearing field.** `--safe-mode` is what the Driver asks for;
+    // whether the CLI honoured it is a contract owned by another binary, and F29's own acceptance
+    // asks for a paid canary to establish it. Writing this as though it were measured would be the
+    // overclaim §6.1 warns about, in the artifact meant to prevent one.
+    const manifest = roleSupplyManifest({ role: 'review', supply: [{ class: 'brief', text: 'x' }] });
+    assert.equal(manifest.ambient.by, '--safe-mode');
+    assert.equal(manifest.ambient.verified, false);
+    assert.deepStrictEqual(manifest.ambient.disabled, [...AMBIENT_DISABLED]);
+    assert.equal(manifest.ambient.disabled.includes('CLAUDE.md'), true);
+    assert.equal(manifest.ambient.disabled.includes('hooks'), true);
+  });
+
+  it('reports the trust of every input a role actually received', () => {
+    const manifest = roleSupplyManifest({
+      role: 'review',
+      supply: [
+        { class: 'system-prompt', text: 'you are the auditor' },
+        { class: 'candidate-evidence', text: 'src/a.js:1' },
+      ],
+    });
+    assert.deepStrictEqual(
+      manifest.inputs.map((input) => [input.class, input.trust]),
+      [
+        ['system-prompt', 'authority'],
+        ['candidate-evidence', 'evidence'],
+      ],
+    );
   });
 });
 

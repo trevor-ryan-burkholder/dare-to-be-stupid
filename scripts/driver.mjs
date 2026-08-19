@@ -114,7 +114,7 @@ import {
   redeemNestingTicket,
 } from './nesting.mjs';
 import { installQualityPlugins } from './plugins.mjs';
-import { blockingFindings, scanAgentSurface } from './security-scan.mjs';
+import { blockingFindings, recordSurfaceScan, scanAgentSurface } from './security-scan.mjs';
 import { SUPPLY_FILE, appendSupplyRecord } from './role-supply.mjs';
 import {
   applyWinner,
@@ -3189,14 +3189,38 @@ export async function driveRun(options) {
     // that did not happen. Both fail closed here.
     /** @type {{ file: string, detail: string }[]} */
     let hostile;
+    /** @type {import('./security-scan.mjs').SurfaceScanRecord} */
+    let scanRecord = {
+      at: effects.now(),
+      iteration: iterationNumber,
+      // **Bound to the exact reviewed tree** (REVIEW F29). A scan whose subject nobody can name is
+      // not evidence: an auditor reading `.meeseeks/` afterwards has to be able to say that the tree
+      // that was scanned is the tree the verdict was sealed to, and since REVIEW F14 that identity is
+      // a git tree object rather than a description of a directory.
+      tree: reviewedWorkspace,
+      blocking: false,
+      findings: [],
+    };
     try {
       const scan = effects.scanSurface ?? scanAgentSurface;
-      hostile = blockingFindings(scan(subject()).findings).map((finding) => ({
+      const scanned = scan(subject());
+      scanRecord = { ...scanRecord, findings: scanned.findings };
+      hostile = blockingFindings(scanned.findings).map((finding) => ({
         file: finding.file,
         detail: finding.detail,
       }));
     } catch (error) {
       hostile = [{ file: subject(), detail: `the agent-surface scan could not run: ${/** @type {Error} */ (error).message}` }];
+      // A scan that threw is a scan that did not happen, and the record says so rather than reading
+      // as a clean one.
+      scanRecord = { ...scanRecord, error: /** @type {Error} */ (error).message };
+    }
+    scanRecord.blocking = hostile.length > 0;
+    try {
+      recordSurfaceScan(meeseeksDir, scanRecord);
+    } catch (error) {
+      // It records, it does not decide. Losing the account of a healthy run must not end it.
+      effects.log(`the agent-surface scan could not be recorded: ${/** @type {Error} */ (error).message}`);
     }
     if (hostile.length > 0) {
       effects.log(`cannot review: the candidate tree carries ${hostile.length} blocking agent-surface finding(s)`);

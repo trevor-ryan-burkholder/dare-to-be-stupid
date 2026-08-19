@@ -4700,7 +4700,7 @@ positional rule — a marked process may not write under `.meeseeks/` at any dep
 that do not exist yet — replay by consumption, and reset because depth is a field of the record.
 `MEESEEKS_GIVE_THEM_THE_BOX` and `MEESEEKS_RUN_DEPTH` now decide nothing in a child; the flag remains
 the operator's intent at the parent, where `runInvocation` still reads it off argv, still refuses
-configured components without it, and still arms the boxed deadline. `DESIGN.md` §6.4 records this.
+configured components without it, and still arms the boxed deadline. `DESIGN.md` §6.5 records this.
 
 **The cap moved to both ends, fail-closed at both.** `authorizedNestingEnv` refuses to mint past
 `MAX_BOX_DEPTH`, so a run at the bottom never spends a spawn to be told so and the store never holds
@@ -4743,7 +4743,7 @@ existing case left the mutation *present*, which is why all of them passed again
 `realityCheckPrompt` are exported from `driver.mjs` and pure; the Panel and the circuit-breaker
 receive the captured bytes inside their prompt, fenced and stamped with the revision digest, and are
 told not to read the file — with the reason, because a reviewer holding tools reasons its way around
-an instruction that has none. `DESIGN.md` §6.3 records this. `templates/reviewer-system.md` agrees: the specification is listed as
+an instruction that has none. `DESIGN.md` §6.4 records this. `templates/reviewer-system.md` agrees: the specification is listed as
 arriving in the brief, and a specification file in the repository that disagrees with it is named as
 a finding rather than an amendment. There is no window left to sample, because the authority never
 lives on disk. Oversize delivery is already fail-closed: `checkContextBudget` refuses a prompt over
@@ -4923,6 +4923,43 @@ overwrites exactly as before rather than leaving a second copy. Two tier-2 cases
 `main` against a real repository with a regular file where `runs/` must be: this run's `ABORTED` is at
 the canonical path, the previous run's `SHIPPED` is beside it under a findable name, and the ordinary
 second run archives into `runs/` and preserves nothing. Three go red with the preservation removed.
+
+### 123. Trust classes, and the scan bound to the bytes it scanned — IMPLEMENTED (0.221.0); REVIEW F29 open pending Codex
+
+**Two of F29's three remaining requirements; the third is paid and is named as not done.** Item 85
+landed the reviewer-prompt authority boundary and the pre-Panel rescan. Codex's verification says
+what is still missing: *"Required trust-class supply reporting, a durable binding between the scan
+and the exact reviewed tree, and the staged-installed hostile/benign calibration remain absent."*
+
+**Trust classes.** §6.1 draws one distinction — driver-owned versus not supplied. A cold reviewer
+needs a third, because it can read the whole candidate: **authority** versus **evidence**.
+`CLASS_TRUST` marks the Driver- and plugin-owned classes as authority and everything the candidate
+produced as evidence, and the trust travels *with each input* in the manifest rather than being
+looked up afterwards — a reader can say which inputs could bind a verdict without holding the table.
+Each manifest also records `ambient`: the customization surfaces `--safe-mode` is asked to disable,
+and **`verified: false`**, because whether another binary honoured a flag is not something this
+process measured and F29 asks for a live canary to establish it. Writing it as measured would be the
+overclaim §6.1 warns about, in the artifact meant to prevent one.
+
+**The scan's binding.** `recordSurfaceScan` appends to `.meeseeks/surface-scan.json` the moment, the
+iteration, the findings, whether they blocked, and the tree object the scan ran against — the same
+identity item 120 seals the verdict to, which is why this item follows it. A scan whose subject
+nobody can name is not evidence. A *blocked* scan ends the iteration before any panel record exists,
+so recording it only on the way to a verdict would leave the interesting half with no account at all;
+a scan that threw is recorded as an error rather than as a clean tree.
+
+**Evidence.** Eight tier-1 cases on the recorder — the named tree, a `null` tree recorded rather than
+omitted, findings and the blocking flag, the error case, appending across iterations, rebuilding from
+an unreadable store and from an unknown schema, and no temp file left behind. Five on the trust
+table: every declared class classified, the exact authority set, the exact evidence set, the ambient
+record with its unverified flag, and the per-input trust in a real manifest. Three at the loop, where
+the binding actually has to hold: a clean scan whose record names the same identity `review.json`
+carries, a blocked scan recorded with the finding that blocked it, and a scan that threw.
+
+**Not done, and it is not implementable here:** F29's third requirement is a pinned paid canary
+proving a cold reviewer does not auto-load seeded project/user/local customizations, in a paired
+hostile/benign calibration. That is live-tier work and this session is not authorized to spend. The
+`verified: false` field exists precisely so the artifact does not claim it in the meantime.
 
 ## Observations recorded rather than repaired
 

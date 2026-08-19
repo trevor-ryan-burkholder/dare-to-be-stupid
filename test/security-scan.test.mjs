@@ -10,12 +10,19 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
-import { blockingFindings, formatFindings, listScannableFiles, scanAgentSurface } from '../scripts/security-scan.mjs';
+import {
+  SURFACE_SCAN_FILE,
+  blockingFindings,
+  formatFindings,
+  listScannableFiles,
+  recordSurfaceScan,
+  scanAgentSurface,
+} from '../scripts/security-scan.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -335,5 +342,102 @@ describe('the credential rule can read the file formats it actually scans', () =
   it('leaves a short value alone, because it is not a credential', () => {
     const contents = JSON.stringify({ mcpServers: { db: { command: 'node', env: { PASSWORD: 'short' } } } });
     assert.equal(rules(contents).includes('secret-assigned-credential'), false);
+  });
+});
+
+describe('recordSurfaceScan: the scan bound to the bytes it scanned (REVIEW F29)', () => {
+  // **A scan whose subject nobody can name is not evidence.** The rescan before the Panel already
+  // fails closed; its result existed only as a log line, so an auditor reading `.meeseeks/`
+  // afterwards could not say which tree had been scanned or that it was the tree the verdict was
+  // sealed to. F29 asks for a durable binding between the two.
+
+  /** @returns {string} */
+  function scratch() {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-surface-'));
+    temporaryDirs.push(dir);
+    return dir;
+  }
+
+  /** @param {string} dir @returns {any} */
+  const store = (dir) => JSON.parse(readFileSync(path.join(dir, SURFACE_SCAN_FILE), 'utf8'));
+
+  /** @param {Partial<import('../scripts/security-scan.mjs').SurfaceScanRecord>} [over] */
+  const record = (over = {}) => ({
+    at: '2026-08-19T00:00:00.000Z',
+    iteration: 3,
+    tree: 'aa11bb22cc33dd44ee55ff6600112233445566aa',
+    blocking: false,
+    findings: [],
+    ...over,
+  });
+
+  it('names the tree the scan was run against', () => {
+    const dir = scratch();
+    recordSurfaceScan(dir, record());
+    const written = store(dir);
+    assert.equal(written.version, 1);
+    assert.equal(written.scans.length, 1);
+    assert.equal(written.scans[0].tree, 'aa11bb22cc33dd44ee55ff6600112233445566aa');
+    assert.equal(written.scans[0].iteration, 3);
+    assert.equal(written.scans[0].blocking, false);
+  });
+
+  it('records a tree nobody could name as null rather than omitting it', () => {
+    // "The scan ran against something nobody could identify" is a fact worth having, and an absent
+    // field is indistinguishable from a field nobody wrote.
+    const dir = scratch();
+    recordSurfaceScan(dir, record({ tree: null }));
+    assert.equal('tree' in store(dir).scans[0], true);
+    assert.equal(store(dir).scans[0].tree, null);
+  });
+
+  it('carries the findings and says when they blocked', () => {
+    const dir = scratch();
+    const finding = { severity: 'block', rule: 'agent-instruction-file', file: 'CLAUDE.md', line: 1, detail: 'obey me' };
+    recordSurfaceScan(dir, record({ blocking: true, findings: [/** @type {any} */ (finding)] }));
+    const written = store(dir).scans[0];
+    assert.equal(written.blocking, true);
+    assert.deepStrictEqual(written.findings, [finding]);
+  });
+
+  it('says so when the scan threw, rather than recording a clean one', () => {
+    // A scan that did not happen must not read as a scan that found nothing — the same rule the
+    // gates follow, in the artifact rather than in the decision.
+    const dir = scratch();
+    recordSurfaceScan(dir, record({ blocking: true, error: 'EACCES' }));
+    assert.equal(store(dir).scans[0].error, 'EACCES');
+  });
+
+  it('appends, because a run scans once per iteration', () => {
+    const dir = scratch();
+    recordSurfaceScan(dir, record({ iteration: 1 }));
+    recordSurfaceScan(dir, record({ iteration: 2 }));
+    assert.deepStrictEqual(
+      store(dir).scans.map((/** @type {{ iteration: number }} */ entry) => entry.iteration),
+      [1, 2],
+    );
+  });
+
+  it('rebuilds from an unreadable store rather than ending a healthy run', () => {
+    // It records, it does not decide. A damaged store is lost history; the ratchet's rule — refuse
+    // rather than continue — belongs to files that are read back, and nothing reads this one.
+    const dir = scratch();
+    writeFileSync(path.join(dir, SURFACE_SCAN_FILE), '{ not json', 'utf8');
+    assert.doesNotThrow(() => recordSurfaceScan(dir, record()));
+    assert.equal(store(dir).scans.length, 1);
+  });
+
+  it('rebuilds from a schema it does not know, for the same reason', () => {
+    const dir = scratch();
+    writeFileSync(path.join(dir, SURFACE_SCAN_FILE), JSON.stringify({ version: 99, scans: [{ tree: 'x' }] }), 'utf8');
+    recordSurfaceScan(dir, record());
+    assert.equal(store(dir).version, 1);
+    assert.equal(store(dir).scans.length, 1);
+  });
+
+  it('leaves no temp file, so a reader never finds half a store', () => {
+    const dir = scratch();
+    recordSurfaceScan(dir, record());
+    assert.deepStrictEqual(readdirSync(dir).filter((name) => name.endsWith('.tmp')), []);
   });
 });

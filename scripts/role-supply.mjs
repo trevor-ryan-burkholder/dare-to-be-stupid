@@ -48,10 +48,66 @@ export const INPUT_CLASSES = /** @type {const} */ ([
 ]);
 
 /** @typedef {(typeof INPUT_CLASSES)[number]} InputClass */
+/** @typedef {'authority' | 'evidence'} Trust */
 /**
  * @typedef {{ role: string, specification: string | null,
- *   inputs: { class: InputClass, digest: string, bytes: number }[] }} RoleSupplyManifest
+ *   inputs: { class: InputClass, trust: Trust, digest: string, bytes: number }[],
+ *   ambient: { disabled: string[], by: string, verified: boolean } }} RoleSupplyManifest
  */
+
+/**
+ * Which classes are **authority** over a cold role, and which are only **evidence** (REVIEW F29).
+ *
+ * The distinction is the whole of the finding. A reviewer that treats a file it found in the
+ * candidate as a rule has been instructed by the thing it is auditing, and every panel member reads
+ * the same tree, so process independence does not diversify that attack. What may bind a verdict is
+ * Driver-owned or plugin-owned and fixed before the Builder ran: the specification revision, the
+ * system prompt, the templates, and the brief the Driver composed from them. Everything the
+ * candidate produced is material to read and reason about, and nothing more.
+ *
+ * `oracle-cases` is authority because the Driver holds them and the Builder never sees them; the
+ * policy above still refuses them to the Panel, for a different reason — a reviewer that knows the
+ * held-out cases stops being independent of them.
+ *
+ * **Recorded, not enforced here.** This table makes the classification machine-readable so an
+ * acceptance receipt can state it and a refactor that reclassifies something has to say so. The
+ * enforcement lives where it can: the deny lists above, `--safe-mode` on the child, and the
+ * reviewer prompt's own instruction that candidate text is evidence.
+ *
+ * @type {Record<InputClass, Trust>}
+ */
+export const CLASS_TRUST = {
+  specification: 'authority',
+  'system-prompt': 'authority',
+  template: 'authority',
+  brief: 'authority',
+  'oracle-cases': 'authority',
+  'candidate-evidence': 'evidence',
+  'builder-log': 'evidence',
+  'iteration-history': 'evidence',
+  'workflow-synthesis': 'evidence',
+  'panel-transcript': 'evidence',
+  'lesson-history': 'evidence',
+};
+
+/**
+ * The ambient customization surfaces a cold child is started with disabled, and how.
+ *
+ * `--safe-mode` is what Claude Code documents as disabling automatic discovery of these. **This is a
+ * record of what the Driver asked for, not a measurement of what the CLI did** — `verified: false`
+ * says so in the artifact, because the only thing that could establish the second is a live child,
+ * and F29's own acceptance asks for exactly that as a separate paid canary. Writing it as though it
+ * were measured would be the overclaim §6.1 warns about, in the file meant to prevent one.
+ */
+export const AMBIENT_DISABLED = /** @type {const} */ ([
+  'CLAUDE.md',
+  'rules',
+  'skills',
+  'plugins',
+  'hooks',
+  'mcp',
+  'memory',
+]);
 
 /**
  * What each role may never receive, and why.
@@ -113,7 +169,7 @@ export class SupplyBoundaryError extends Error {
  *
  * @param {InputClass} inputClass
  * @param {string} text
- * @returns {{ class: InputClass, digest: string, bytes: number }}
+ * @returns {{ class: InputClass, trust: Trust, digest: string, bytes: number }}
  */
 export function classify(inputClass, text) {
   if (!INPUT_CLASSES.includes(inputClass)) {
@@ -127,6 +183,10 @@ export function classify(inputClass, text) {
   const body = typeof text === 'string' ? text : '';
   return {
     class: inputClass,
+    // The trust class travels with the input rather than being looked up later (REVIEW F29): a
+    // reader of the manifest must be able to say which of these could bind the role's verdict
+    // without holding this module's table.
+    trust: CLASS_TRUST[inputClass],
     digest: `sha256:${createHash('sha256').update(body, 'utf8').digest('hex').slice(0, 32)}`,
     bytes: Buffer.byteLength(body, 'utf8'),
   };
@@ -161,6 +221,9 @@ export function roleSupplyManifest(invocation) {
     // held to rather than merely which bytes it received.
     specification: invocation.specification ?? null,
     inputs,
+    // What the Driver asked the CLI to disable, and an honest statement that nobody here measured
+    // whether it did (REVIEW F29).
+    ambient: { disabled: [...AMBIENT_DISABLED], by: '--safe-mode', verified: false },
   };
 }
 

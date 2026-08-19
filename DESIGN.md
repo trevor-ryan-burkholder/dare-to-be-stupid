@@ -1913,7 +1913,35 @@ evidence that the live tree is safe to judge. Abandoned worktrees are swept at t
 run under the lock, the same self-healing races and components use, because cleanup on the way out
 cannot survive `SIGKILL`.
 
-### 6.3 A cold role is handed the specification, not a path to it
+### 6.3 Trust classes, and the scan bound to the bytes it scanned
+
+§6.1 draws one distinction — *driver-owned* versus *not supplied*. A cold reviewer needs a third,
+because it can read the whole candidate: **authority** versus **evidence**. A reviewer that treats a
+file it found in the candidate as a rule has been instructed by the thing it is auditing, and every
+Panel member reads the same tree, so process independence does not diversify that attack
+(`REVIEW.md` F29).
+
+`scripts/role-supply.mjs` makes the classification machine-readable. `CLASS_TRUST` marks the
+Driver- and plugin-owned classes — the specification revision, the system prompt, the templates, the
+brief composed from them, and the held-out Oracle cases — as **authority**, and everything the
+candidate produced as **evidence**. The trust travels *with each input* in the manifest rather than
+being looked up afterwards, so a reader can say which inputs could bind a verdict without holding
+this table. It records; the enforcement is elsewhere — the per-role deny lists, `--safe-mode` on the
+child, and the reviewer prompt's own statement that candidate text is evidence.
+
+Each manifest also records `ambient`: the customization surfaces the Driver asked the CLI to disable
+and **`verified: false`**. `--safe-mode` is a request to another binary. Whether it was honoured can
+only be established by a live child, which F29 asks for separately, and writing it as measured would
+be the overclaim §6.1 warns about — in the artifact meant to prevent one.
+
+The pre-Panel agent-surface rescan is recorded the same way. `recordSurfaceScan` appends to
+`.meeseeks/surface-scan.json` the moment, the iteration, the findings, whether they blocked, and
+**the tree object the scan ran against** — the same identity §6.2 seals the verdict to. A scan whose
+subject nobody can name is not evidence, and a *blocked* scan ends the iteration before any panel
+record exists, so recording it only on the way to a verdict would leave the interesting half with no
+account at all. A scan that threw is recorded as an error rather than as a clean tree.
+
+### 6.4 A cold role is handed the specification, not a path to it
 
 `not supplied` is a discipline about what the Driver hands over, and delivery is the other half of it.
 The Panel's brief used to say "Read PRD.md". The Builder has unrestricted repository writes, so the
@@ -1938,7 +1966,7 @@ truncated into a different one.
 
 The held-out Oracle author has always been handed the bytes this way; the Panel now matches it.
 
-### 6.4 Nesting authority is a ticket, not a variable
+### 6.5 Nesting authority is a ticket, not a variable
 
 `--give-them-the-box` is the operator's permission to nest, to a depth of two. Until 0.215.0 both
 enforcement points read that permission out of the environment: `assertNotNested` treated a nonempty
@@ -1998,7 +2026,7 @@ meeseeks/
 │   ├── driver.mjs                # the loop. node, no deps.
 │   ├── components.mjs            # boxed component worktrees and nested-driver contract
 │   ├── run-lock.mjs              # .meeseeks/lock.json, one owner per repository
-│   ├── nesting.mjs               # .meeseeks/nesting.json, one-time nesting tickets (§6.4)
+│   ├── nesting.mjs               # .meeseeks/nesting.json, one-time nesting tickets (§6.5)
 │   ├── candidate.mjs             # the materialized immutable review subject (§6.2)
 │   ├── ratchet.mjs               # ratchet + extractTestIds (unit-tested first)
 │   ├── reporters/                # one module per test-report format (§11)
@@ -2035,7 +2063,7 @@ meeseeks/
 │   ├── preflight.mjs             # the thirteen checks run before a run starts (§3.5)
 │   ├── launch.mjs                # .meeseeks/launch.json: the driver's own launch observation
 │   │                             #   and each pre-loop phase's declared output contract (§3.5)
-│   ├── security-scan.mjs         # the repo's own agent surface, pre-run (§3.6)
+│   ├── security-scan.mjs         # the agent surface, pre-run and pre-panel, with its tree-bound record (§3.6, §6.3)
 │   ├── config.mjs                # defaults, validation, and the risky-remote words (§10)
 │   ├── configure.mjs             # interactive author for validated config
 │   ├── style.mjs                 # the Meeseeks render layer, output only (§9)

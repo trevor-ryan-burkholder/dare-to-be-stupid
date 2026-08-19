@@ -37,6 +37,7 @@ import { READ_LIMITS } from '../scripts/bounded-read.mjs';
 import { MUTATION_CONFIG_CONTENTS } from '../scripts/toolchains/node.mjs';
 import { pinSecurityElement, quarantinePin, readPins, writePins } from '../scripts/pins.mjs';
 import { RUN_ARCHIVE_DIR } from '../scripts/run-manifest.mjs';
+import { SURFACE_SCAN_FILE } from '../scripts/security-scan.mjs';
 import { DEFAULT_OWNERSHIP, defaultConfig } from '../scripts/config.mjs';
 import {
   DriverError,
@@ -2751,6 +2752,62 @@ describe('driveRun', () => {
 
       assert.equal(reviewed, false, 'a panel convened on a scan that never happened');
       assert.equal(logs.join('\n').includes('could not be walked'), true, logs.join('\n').slice(-400));
+    });
+
+    // -----------------------------------------------------------------------
+    // The scan, bound to the bytes it scanned (REVIEW F29)
+    // -----------------------------------------------------------------------
+
+    /** @param {string} root @returns {any[]} */
+    const scans = (root) => {
+      const file = path.join(root, '.meeseeks', SURFACE_SCAN_FILE);
+      assert.equal(existsSync(file), true, 'the run recorded nothing about what it scanned');
+      return JSON.parse(readFileSync(file, 'utf8')).scans;
+    };
+
+    it('records the scan against the same tree the verdict is sealed to', async () => {
+      // **The binding F29 asks for.** The rescan already fails closed; its result lived only in a log
+      // line, so nobody reading `.meeseeks/` afterwards could say which tree had been scanned — or
+      // that it was the tree the panel's verdict was about.
+      const { reviewed, root } = await drive(() => {});
+
+      assert.equal(reviewed, true, 'the clean case did not reach a panel, so this proves nothing');
+      const recorded = scans(root);
+      assert.equal(recorded.length, 1, JSON.stringify(recorded));
+      assert.equal(recorded[0].tree, 'sha256:candidate', 'the scan names a different tree from the seal');
+      assert.equal(recorded[0].blocking, false);
+      assert.equal(recorded[0].iteration, 1);
+      // And the same identity is what `review.json` and the outcome carry.
+      const panel = JSON.parse(readFileSync(path.join(root, '.meeseeks', 'review.json'), 'utf8'));
+      assert.equal(panel.panels[0].workspace, recorded[0].tree);
+    });
+
+    it('records a blocked scan too, with the findings that blocked it', async () => {
+      // The iteration ends before any panel record exists, so a scan recorded only on the way to a
+      // verdict would leave the *refusals* — the interesting half — with no durable account at all.
+      const { reviewed, root } = await drive((target) => writeFileSync(path.join(target, 'CLAUDE.md'), HOSTILE, 'utf8'));
+
+      assert.equal(reviewed, false);
+      const recorded = scans(root);
+      assert.equal(recorded[0].blocking, true);
+      assert.equal(recorded[0].tree, 'sha256:candidate');
+      assert.equal(
+        recorded[0].findings.some((/** @type {{ file: string }} */ finding) => finding.file.endsWith('CLAUDE.md')),
+        true,
+        JSON.stringify(recorded[0].findings),
+      );
+    });
+
+    it('records a scan that threw as an error rather than as a clean tree', async () => {
+      const { root } = await drive(() => {}, {
+        scanSurface: () => {
+          throw new Error('the tree could not be walked');
+        },
+      });
+      const recorded = scans(root);
+      assert.equal(recorded[0].error, 'the tree could not be walked');
+      assert.equal(recorded[0].blocking, true);
+      assert.deepStrictEqual(recorded[0].findings, [], 'a scan that threw reported findings');
     });
   });
 
