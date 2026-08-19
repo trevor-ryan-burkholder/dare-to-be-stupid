@@ -1539,7 +1539,18 @@ delta and refusal reason so the promoter can avoid repeating harmful edits; this
 a Builder brief. Item 59 owns the offline optimization experiment, while this item owns the durable
 store, adoption, rollback, and retraction boundary.
 
-### 36. Terminal detachment and later resumability — PARKED (evidence-gated)
+### 36. Terminal detachment and later resumability — PARKED (evidence-gated); **promotion pending one measurement (19 Aug 2026)**
+
+**A correction recorded rather than quietly dropped.** This item was set aside on the reasoning that
+it existed to survive capstone relaunches, and that when the capstone was withdrawn its justification
+went with it. That reasoning was half wrong: **the capstone was the test, resumability is the
+feature.** A real run on a real project meets the same quota window, and if an unattended run dies
+partway through, "unattended loop" does not hold for the product's own purpose — a feature gap, not a
+test-harness one.
+
+What it is still waiting on is evidence rather than an argument. The ~1.3-iteration figure comes from
+**capstone attempt 3 alone**; nothing measures an ordinary run. One long non-capstone run decides
+whether the wall exists outside the flagship build, and this stays parked until it does.
 
 **Done when:** the durable store has a measured size/age bound, append-only promotion and retraction
 history, and an explicit rollback for a false lesson; only independently sourced support can promote
@@ -1769,7 +1780,12 @@ preserve provenance or refuse closed without secrets; receipt and carry fixtures
 when the bound source package changes; a job whose check cannot be stated is refused with that reason;
 and one live artifact run ships end to end.
 
-### 50. The blocked-question artifact — a question as OUTPUT, never as interrupt — OPEN (Phase-6 class, post-DoD)
+### 50. The blocked-question artifact — a question as OUTPUT, never as interrupt — **PROMOTED to pre-DoD (operator, 19 Aug 2026)**; OPEN
+
+**Why it moved.** It completes an existing terminal state rather than adding one. A run that cannot
+proceed already ends at `STALLED` and already knows the sentence worth saying; it discards it. The
+"never blocks" rule below is what makes this safe to promote — a question is an output of a terminal
+state, never a pause inside one, so unattended operation is untouched.
 
 **Origin:** operator, 15 Aug 2026 — *"what about meeseeks surfacing a question when unable to proceed? A
 meeseeks would do that."* Canon-accurate, and it names a real gap. Half of it is already answered and the
@@ -1811,7 +1827,34 @@ dropped quietly); a test proves **no code path lets a builder emit a question or
 artifact is driver-owned and refused to a process inside the run by the positional guard; and a `SHIPPED`
 run emits none (the benign neighbour — a machine that always has a question has stopped meaning anything by it).
 
-### 51. `CONSTITUTION.md` — the invariants, extracted, numbered and enforced — OPEN (Phase-6 class, post-DoD)
+### 51. `CONSTITUTION.md` — the invariants, extracted, numbered and enforced — **DONE (19 Aug 2026)**
+
+**Why it moved.** It is not new product surface. The invariants already exist and already govern the
+code; they live in three places with no citable source, which is a completeness defect in what is
+already built rather than an addition to it. Its enforcement condition — a test asserting every
+`CONST-N` names at least one enforcing code site or test — is the shape of check that would have
+caught the guard-registration hole, where the guard's *logic* was tested and green for eleven
+versions while nothing asserted its *invocation*. The three conditions below are unchanged: without
+all three this is churn and must not be built.
+
+**Landed (no version bump: `CONSTITUTION.md`, `CLAUDE.md`, `AGENTS.md` and `test/` are not
+loader-shipped paths; `release-check` agrees).** All three conditions met, which was the price of
+building it at all.
+
+1. **Single source.** Thirteen articles, moved **verbatim** — rewording law during a move is how a
+   "refactor" silently changes it. `CLAUDE.md`'s section is now a pointer, and `AGENTS.md` mirrors it
+   byte-for-byte through the existing mirror test, so Codex reads the same pointer.
+2. **Numbered `CONST-1`…`CONST-13`.** Citable in a commit, a review, or a plan item, which is what
+   the numbering is for.
+3. **Enforced.** Every article carries an `**Enforced by:**` line naming real paths, and
+   `test/constitution.test.mjs` refuses a citation that does not resolve, an article enforced only by
+   documents, a missing enforcement line, and a `CLAUDE.md` that keeps the old restatement beside the
+   pointer. Proved red on all four before landing.
+
+The fourth check is the one the item's own argument demanded. Its failure mode is not a wrong
+citation — it is the section left in place "for convenience", drifting one edit at a time, until the
+copy nobody updated is the copy somebody reads. That is the `HANDOFF.md` header again, and what fixed
+that was a gate rather than discipline.
 
 **Origin:** operator, 15 Aug 2026 — *"should we have a constitution.md"*. **One already exists**: the
 `CLAUDE.md` section *"Invariants — do not violate these"*, 13 bullets, carrying the constitutional test
