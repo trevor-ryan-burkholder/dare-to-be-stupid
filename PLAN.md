@@ -2736,7 +2736,7 @@ to the definition digest receiving current credit.
 reporters; spaces, Unicode, whitespace, and platform separators remain stable for valid neighbors;
 and a clean-clone integration case proves every credited test definition is present in-repository.
 
-### 75. Validate the real installed plugin snapshot before release — PARTIAL (0.209.0 candidate, item 110): the snapshot harness and its offline proofs landed; the paid loader canary is built and unrun. REVIEW F21 open
+### 75. Validate the real installed plugin snapshot before release — IMPLEMENTED (item 111): the candidate is installed the way a loader installs it, offline and isolated, and interrogated. REVIEW F21 open pending Codex
 
 **Problem solved:** source-tree shape and version history can pass while the Claude loader's cached
 snapshot is absent, stale, incomplete, or differently interpreted.
@@ -4324,6 +4324,50 @@ strictly correct, and closes the same hole from underneath.
 **Evidence.** Six tier-2 cases on the snapshot, four tier-1 cases on the answer-key leak, four on the
 narrowed claim, one structural case on the three-way classification. Every one red-proven against
 its reverted body. Tier 3 built and unrun.
+
+### 111. Install the candidate the way a loader does — IMPLEMENTED
+
+**`npm run install-check`.** It bare-clones HEAD, registers that clone as a git-sourced marketplace
+inside a disposable `CLAUDE_CONFIG_DIR`, installs `meeseeks@meeseeks` with the real CLI, and then
+interrogates the result. **Free, offline, and about eight seconds** — the marketplace source is a
+local bare repository, so nothing is fetched and no model is invoked.
+
+**What it asserts, and every clause is one F21 names:**
+
+- the registry records the **declared version** and the **HEAD commit** (`gitCommitSha`), and the
+  install path is keyed by version;
+- every shipped file in the install is **byte-identical to the commit** — compared against
+  `git ls-tree` of HEAD, not against the working tree, because HEAD is what an install carries;
+- **where the module graph actually resolves from**: importing the installed `driver.mjs` under
+  `NODE_V8_COVERAGE` recorded **40 modules, every one under the install path and none from this
+  checkout**. That is F21's "prove no source-checkout path is used", at zero spend;
+- the **installed** guard denies a write under `.meeseeks/` from inside a run — the hook executed,
+  not the hook declared;
+- the operator's `~/.claude/settings.json` and real plugin registry are **byte-identical afterwards**,
+  hashed before and after.
+
+**Isolation is by `CLAUDE_CONFIG_DIR`, and the marketplace is registered by writing
+`known_marketplaces.json` directly.** Both choices are forced by measurement, not taste:
+`CLAUDE_CODE_PLUGIN_CACHE_DIR` moves the plugin root but *not* the user settings file, so
+`claude plugin marketplace add` under it writes `extraKnownMarketplaces` into the operator's real
+settings — which happened once during this work and was reverted and verified. The loader's schema
+also requires a `lastUpdated`; omitting it is reported as a corrupt configuration.
+
+**It is aimed away from three measured false greens.** `plugin list` reports a plugin healthy while
+reading the *marketplace clone*, so a renamed cache directory does not fail it. The loader never
+checks that a hook command's file exists, so a deleted `guard.mjs` still shows `Hooks (1)`. And
+`claude plugin validate` validates the *marketplace* manifest when one is present and never opens
+`plugin.json`. None of those three is what this asks. A canary built the obvious way passes on a
+broken snapshot.
+
+**Red-proven:** with the manifest bumped to a version HEAD does not carry, it refuses —
+*"the loader resolved version 0.209.0; the manifest declares 0.210.0"* — and exits 1, which is the
+`CLAUDE.md` trap it exists for: a fix that appears not to work because the loader is still reading
+the previous build.
+
+**What this unblocks.** F25's remaining clause, and F27/F28/F29's canaries, now have an installed
+snapshot to attach to. Only F25's needs a model, and only for the *skill surface* question — the
+rest of what those findings ask about the installed plugin is answerable here for free.
 
 ## Observations recorded rather than repaired
 

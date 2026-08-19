@@ -26,7 +26,10 @@ The newest candidate work is recorded at its canonical PLAN items:
   the last reproducible clauses of F2, F10, F17, F19, F26 and F41 and left the rest classified; and
 - item 110: F21's installed-snapshot harness, plus the two evidence leaks building it uncovered —
   the oracle printing its own expected output into the builder's failure detail (F15), and a skipped
-  test being recorded as observed failing (F17).
+  test being recorded as observed failing (F17); and
+- item 111: `npm run install-check`, which installs the candidate the way a loader does — offline,
+  isolated, free — and asserts the pinned commit, the installed bytes, and that the module graph
+  resolves entirely from the install rather than from this checkout.
 
 Do not reconstruct priority from release chronology. Read the current traversal at the top of
 `PLAN.md`, then the selected item and any linked `REVIEW.md` finding.

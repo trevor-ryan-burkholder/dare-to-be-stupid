@@ -16,6 +16,7 @@
     "test:live": "node tools/run-live.mjs",
     "test:all": "npm test && npm run test:integration",
     "release-check": "node tools/release-check.mjs",
+    "install-check": "node tools/plugin-install-check.mjs",
     "slice-check": "node tools/slice-check.mjs"
   },
   "devDependencies": {
