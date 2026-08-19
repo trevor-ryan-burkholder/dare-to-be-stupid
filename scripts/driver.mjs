@@ -97,6 +97,12 @@ import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
 import { captureSpecification, verifySpecification } from './specification.mjs';
 import { ACCEPTANCE_FILE } from './acceptance-file.mjs';
 import { buildAcceptanceReceipt, digest } from './acceptance.mjs';
+import {
+  NESTING_AUTHORITY_ENV,
+  NESTING_TICKET_ENV,
+  issueNestingTicket,
+  redeemNestingTicket,
+} from './nesting.mjs';
 import { installQualityPlugins } from './plugins.mjs';
 import { blockingFindings, scanAgentSurface } from './security-scan.mjs';
 import { SUPPLY_FILE, appendSupplyRecord } from './role-supply.mjs';
@@ -241,26 +247,74 @@ export function assertNotNested(env) {
   // still owns `.meeseeks/`, review is still cold, nothing still defaults to pass — and it is
   // still refused past `MAX_BOX_DEPTH`, because a joke that keeps spawning stops being one to
   // the machine running it.
-  const permitted = env[BOX_ENV] !== undefined && env[BOX_ENV] !== '';
-  const depth = parseRunDepth(env[DEPTH_ENV]);
-  if (permitted && depth !== null && depth < MAX_BOX_DEPTH) return;
-
-  if (permitted) {
-    if (depth === null) {
-      throw new DriverError(
-        `--give-them-the-box found an invalid ${DEPTH_ENV} marker. ` +
-          'A malformed nesting depth is refused rather than treated as room under the cap.',
-      );
-    }
+  // **Permission is a ticket, not a variable** (REVIEW F42). `MEESEEKS_GIVE_THEM_THE_BOX` and
+  // `MEESEEKS_RUN_DEPTH` are environment strings, and a Builder with unrestricted Bash can forge the
+  // first and reset the second at every generation — both reproduced. So the flag no longer decides
+  // anything here on its own: a nested run must redeem a record its parent wrote under `.meeseeks/`,
+  // which the guard refuses to let any child create, and redeeming consumes it so a nonce read out
+  // of an inherited environment cannot be used twice.
+  //
+  // Depth comes from that record too. A child cannot declare itself shallower than the ticket it was
+  // issued, which is what made the cap resettable.
+  /** @type {{ depth: number }} */
+  let authorized;
+  try {
+    authorized = redeemNestingTicket({ authority: env[NESTING_AUTHORITY_ENV], nonce: env[NESTING_TICKET_ENV] });
+  } catch (error) {
     throw new DriverError(
-      `--give-them-the-box permits nesting to depth ${MAX_BOX_DEPTH}, and this would be ${depth + 1}. ` +
+      `${/** @type {Error} */ (error).message} Nested runs are refused at the driver and at the guard hook ` +
+        '(DESIGN.md §13.6).',
+    );
+  }
+  if (authorized.depth <= MAX_BOX_DEPTH) return;
+  throw new DriverError(
+    `--give-them-the-box permits nesting to depth ${MAX_BOX_DEPTH}, and this ticket authorizes ${authorized.depth}. ` +
+      'Even the box has a bottom.',
+  );
+}
+
+/**
+ * The environment a component sub-run needs in order to prove it was authorized.
+ *
+ * Issued by the Driver that is about to spawn it, under the operator's flag, and never in response
+ * to anything a child asked for. The nonce travels in the environment because that is how a spawned
+ * process learns anything; it authorizes nothing on its own.
+ *
+ * **The cap is applied here as well as at redemption**, which is not redundancy: refusing before the
+ * ticket exists means a run that has reached the bottom of the box never spends a spawn to be told
+ * so, and the record under `.meeseeks/` never accumulates authority nobody may use.
+ *
+ * `parentDepth` is the raw inherited marker rather than a number, so the one place that decides how
+ * deep a child is also decides what an unreadable marker means. It means refusal — the depth cap is
+ * fail-closed on a malformed marker, and `?? 0` here would have laundered corrupt state into a fresh
+ * generation of permission before either boundary saw it.
+ *
+ * @param {{ meeseeksDir: string, parentDepth: string | undefined,
+ *   env: Record<string, string | undefined> }} options
+ * @returns {Record<string, string | undefined>}
+ * @throws {DriverError}
+ */
+export function authorizedNestingEnv(options) {
+  const inherited = parseRunDepth(options.parentDepth);
+  if (inherited === null) {
+    throw new DriverError(
+      `${DEPTH_ENV} is ${JSON.stringify(options.parentDepth)}, which is not a depth. Refusing to issue nesting ` +
+        'authority from a marker nobody can read, because a malformed value is not evidence of room under the cap.',
+    );
+  }
+  const depth = inherited + 1;
+  if (depth > MAX_BOX_DEPTH) {
+    throw new DriverError(
+      `--give-them-the-box permits nesting to depth ${MAX_BOX_DEPTH}, and this child would be ${depth}. ` +
         'Even the box has a bottom.',
     );
   }
-  throw new DriverError(
-    'a meeseeks run is already in progress in this process tree. Nested runs are refused at the driver and at the ' +
-      'guard hook (DESIGN.md §13.6): they re-enter and exhaust memory long before they finish anything.',
-  );
+  const ticket = issueNestingTicket(options.meeseeksDir, { depth });
+  return {
+    ...options.env,
+    [NESTING_AUTHORITY_ENV]: options.meeseeksDir,
+    [NESTING_TICKET_ENV]: ticket.nonce,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -7322,9 +7376,17 @@ async function runInvocation(argv, io, crash) {
               driver: nestedDriver,
               spec: component.spec,
               cwd: componentCwd,
-              // The ordinary child environment: the re-entrancy marker, and — because the box is
-              // armed — the depth count that keeps the bottom of the box where it is.
-              env: childEnvironment(env),
+              // **The one place a nested run is legitimately authorized** (REVIEW F42). The ticket
+              // is issued here, by the Driver that is about to spawn the component, under the flag
+              // the operator typed — never in response to anything a child asked for. Its depth is
+              // this run's depth plus one, read from the environment the *parent* was started with
+              // rather than from anything the child can influence, and the child cannot present a
+              // shallower one because the depth lives in the record and not in the variable.
+              env: authorizedNestingEnv({
+                meeseeksDir,
+                parentDepth: env[DEPTH_ENV],
+                env: childEnvironment(env),
+              }),
               onLine: (line) => write(verbatim(`component:${component.name}: ${line}`)),
             });
 

@@ -1,7 +1,7 @@
-# START HERE — current handoff, last swept 18 August 2026
+# START HERE — current handoff, last swept 19 August 2026
 
-**State:** working-tree candidate `0.214.0` on `main`; the manifests and package-lock root metadata
-agree. HEAD is `0e1ed2e`, the committed 0.213.0 tree — the documentation-system sweep,
+**State:** working-tree candidate `0.215.0` on `main`; the manifests and package-lock root metadata
+agree. HEAD is `c6524b3`, the committed 0.214.0 tree — the documentation-system sweep,
 the code-review repairs of PLAN items 100, 107 and 108, and the REVIEW re-baseline of item 109. The
 0.209.0 working-tree candidate on top of it is PLAN item 110: the installed-snapshot harness that
 F21 asked for, and the two evidence-quality repairs F15 and F17 turned out to still need.
@@ -33,6 +33,10 @@ The newest candidate work is recorded at its canonical PLAN items:
 - item 112: the acceptance receipt — a typed, versioned claim bound to the reviewed tree, written at
   the terminal transition, recording the gate roster and results, the panel and ratchet edges, and
   each role invocation's requested *and* vendor-observed model; and
+- item 117: the Driver half of F42, and the load-bearing one — nesting permission is a one-time
+  ticket in the parent's `.meeseeks/`, which the guard already denies a child at any depth, so the
+  flag and the depth marker a Builder can forge now decide nothing in a child. Tier 2 runs the
+  cross-repository attack for real, with a counterfeit `claude` proving no paid child was spawned;
 - item 116: the guard half of F42 — the shipped Driver is a nested run however it is spelled — and
   a wider bypass found while repairing it: an `env` prefix with flags blinded every command-name
   rule, so `env -u FOO git push --force` and `env -u FOO rm -rf /` were both allowed;

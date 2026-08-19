@@ -1863,6 +1863,49 @@ excludes the read-only tools. That second test is the one that matters most here
 to the matcher would silently convert a write barrier into a blackout, and a blackout would look
 like a seal without being one.
 
+### 6.2 Nesting authority is a ticket, not a variable
+
+`--give-them-the-box` is the operator's permission to nest, to a depth of two. Until 0.215.0 both
+enforcement points read that permission out of the environment: `assertNotNested` treated a nonempty
+`MEESEEKS_GIVE_THEM_THE_BOX` plus a below-cap `MEESEEKS_RUN_DEPTH` as authorization, and a Builder
+with unrestricted Bash owns both strings. `REVIEW.md` F42 reproduced it in one command —
+`MEESEEKS_GIVE_THEM_THE_BOX=1 MEESEEKS_RUN_DEPTH=0 node /plugin/scripts/driver.mjs PRD.md --yes` —
+which forges the flag, resets the cap, points the new run at some other repository so the current
+lock is irrelevant, and never puts the flag on argv, so it skips the boxed wall clock too. Repeated
+at every generation, one unattended task becomes unbounded paid fan-out.
+
+**So permission is now a record, and the record lives where a Builder cannot write.** The Driver that
+is about to spawn a component issues a one-time ticket into the *parent's* `.meeseeks/nesting.json`
+(`scripts/nesting.mjs`) and passes the nonce to the child. The child refuses to start unless that
+ticket exists unconsumed, and redeeming it marks it consumed. Three attacks close at once:
+
+- **Minting** — the store is under `.meeseeks/`, which §6's positional rule already denies to any
+  process marked `MEESEEKS_RUNNING`, at any depth, including files that do not exist yet. A Builder
+  cannot write a ticket, and a store it writes somewhere else is not the one the ticket names.
+- **Replay** — consumption is part of redemption, so a nonce read out of an inherited environment
+  buys exactly the one run it was issued for.
+- **Reset** — depth is a field of the record, not of the environment. A child cannot declare itself
+  shallower than the ticket it was issued, and `MEESEEKS_RUN_DEPTH` no longer authorizes anything.
+
+The cap is applied at both ends: `authorizedNestingEnv` refuses to mint past `MAX_BOX_DEPTH`, so a
+run at the bottom of the box never spends a spawn to be told so and the store never accumulates
+authority nobody may use; `assertNotNested` refuses to redeem past it, so a ticket that somehow
+exists is still not permission. Both are fail-closed on a malformed inherited marker — an unreadable
+depth is refused rather than read as zero, which is what `?? 0` used to do.
+
+**The environment flag still exists and still matters**, at the parent: `runInvocation` reads
+`--give-them-the-box` off argv, refuses configured components without it, and arms the boxed
+deadline. What changed is that the flag no longer *decides* anything in a child. It is the operator's
+intent; the ticket is the authority.
+
+**The guard is the second, independent half and cannot substitute for this one.** It denies direct
+and wrapped execution of the shipped entrypoint — matched positionally on `scripts/driver.mjs`, so
+`env -u MEESEEKS_RUNNING node …`, `nohup`, `sudo` and `bash -c` are all caught — which is the only
+place the marker-clearing form can be stopped, because a Driver started with no run marker is reading
+its own environment correctly. A renamed copy of the whole plugin remains unrecognisable by name;
+that residual is why the Driver-side authority is the load-bearing half and the guard is defense in
+depth.
+
 ---
 
 ## 7. File layout
@@ -1880,6 +1923,7 @@ meeseeks/
 │   ├── driver.mjs                # the loop. node, no deps.
 │   ├── components.mjs            # boxed component worktrees and nested-driver contract
 │   ├── run-lock.mjs              # .meeseeks/lock.json, one owner per repository
+│   ├── nesting.mjs               # .meeseeks/nesting.json, one-time nesting tickets (§6.2)
 │   ├── ratchet.mjs               # ratchet + extractTestIds (unit-tested first)
 │   ├── reporters/                # one module per test-report format (§11)
 │   │   ├── index.mjs             # the registry: detect, dispatch, collapse

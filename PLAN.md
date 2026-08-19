@@ -4627,7 +4627,7 @@ argument `readBounded`'s allocation bound uses. Then the semantics that had to s
 winner, a record readable the instant it exists, and no staging artifact left on either path with the
 winner's lock intact. Red against the reverted create-then-write.
 
-### 116. The Driver's own entrypoint is a nested run — PARTIAL (0.214.0); REVIEW F42 open
+### 116. The Driver's own entrypoint is a nested run — IMPLEMENTED (0.214.0); the Driver-side half is item 117; REVIEW F42 open pending Codex
 
 **The guard half, and an unrelated bypass it uncovered.** F42 has two halves and this is the smaller
 one; the Driver-side authority is **not** in this slice and is named below, because F42 says
@@ -4680,6 +4680,55 @@ to the child, and the child refuses unless the ticket exists unconsumed and then
 defeats minting (cannot write the record), replay (consumed on use) and reset (depth comes from the
 record, not from argv or env). Until it lands, a renamed copy of the whole plugin remains
 unrecognisable by name, which is exactly the residual F42 warns about.
+
+### 117. Nesting authority is a ticket, not a variable — IMPLEMENTED (0.215.0); REVIEW F42 open pending Codex
+
+**The load-bearing half of F42**, and item 116 named it as not done. Item 116 taught the guard to
+recognise the shipped entrypoint; this makes the permission itself unforgeable, which F42 says
+explicitly that command-name matching cannot substitute for.
+
+**What a Builder owned.** `assertNotNested` read authorization out of two environment strings: a
+nonempty `MEESEEKS_GIVE_THEM_THE_BOX` and a below-cap `MEESEEKS_RUN_DEPTH`. A Builder with
+unrestricted Bash sets both. Codex's reproduction forges the flag, resets the depth, points the new
+run at another repository so the current lock is irrelevant, and never puts the flag on argv — so it
+also skips the boxed wall clock. Repeated at each generation, the depth-two cap bounds nothing.
+
+**What replaced it.** `scripts/nesting.mjs`: the Driver about to spawn a component issues a one-time
+ticket into the *parent's* `.meeseeks/nesting.json` and passes the nonce down. A nested run refuses
+unless that ticket exists unconsumed, and redemption consumes it. Minting is closed by §6's
+positional rule — a marked process may not write under `.meeseeks/` at any depth, including files
+that do not exist yet — replay by consumption, and reset because depth is a field of the record.
+`MEESEEKS_GIVE_THEM_THE_BOX` and `MEESEEKS_RUN_DEPTH` now decide nothing in a child; the flag remains
+the operator's intent at the parent, where `runInvocation` still reads it off argv, still refuses
+configured components without it, and still arms the boxed deadline. `DESIGN.md` §6.2 records this.
+
+**The cap moved to both ends, fail-closed at both.** `authorizedNestingEnv` refuses to mint past
+`MAX_BOX_DEPTH`, so a run at the bottom never spends a spawn to be told so and the store never holds
+authority nobody may use; `assertNotNested` refuses to redeem past it. A malformed inherited depth is
+refused rather than read as zero — the `parseRunDepth(...) ?? 0` at the spawn site was itself a
+launder, turning corrupt state into a fresh generation of permission before either boundary saw it.
+
+**Evidence.** Tier 1: the three box cases were rewritten to the ticket contract and one of them is
+now *inverted* — an armed flag with no ticket is refused, where it used to be the proof that the flag
+worked. Six more cover consumption, an invented nonce, a child declaring itself shallower than its
+ticket, the cap, and the message that names it. Six cases on `authorizedNestingEnv`: the round trip,
+the depth chain one and two with three refused, that a refusal mints nothing, and five malformed
+markers. Tier 2 (`test/integration/nesting-authority.integration.test.mjs`) starts the attack for
+real — a Driver process, launched from one repository against another, with a counterfeit `claude`
+first on `PATH` — across four hostile environments and two forged tickets, proving in each case a
+nonzero exit with the nesting refusal, **no paid child recorded**, no launch receipt, no lock in the
+victim, its history and worktree untouched, and the parent's state and ticket store unchanged. Three
+guard cases run the real hook as a subprocess, including the marker-clearing form only it can see.
+
+**Both neighbours are asserted, because refusing everything is not a fix.** An ordinary top-level run
+reaches configuration loading — asserted on the message it *does* stop at, since asserting only the
+absence of the nesting refusal would pass for a Driver that died on its first line. And a component
+that redeems a properly issued ticket gets equally far, with the replay of that same environment
+refused immediately after.
+
+**Residual.** A renamed copy of the whole plugin is still unrecognisable to the guard by name. That
+is defense-in-depth's limit and not this half's: such a copy still cannot mint a ticket, so it is
+refused by the Driver.
 
 ## Observations recorded rather than repaired
 

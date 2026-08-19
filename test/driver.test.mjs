@@ -24,6 +24,13 @@ import { after, describe, it } from 'node:test';
 import { ACCEPTANCE_CLAIM, ACCEPTANCE_VERSION, digest, verifyAcceptanceReceipt } from '../scripts/acceptance.mjs';
 import { ACCEPTANCE_FILE } from '../scripts/acceptance-file.mjs';
 import { readAssumptions } from '../scripts/assumptions.mjs';
+import {
+  NESTING_AUTHORITY_ENV,
+  NESTING_FILE,
+  NESTING_TICKET_ENV,
+  issueNestingTicket,
+  redeemNestingTicket,
+} from '../scripts/nesting.mjs';
 import { appendSupplyRecord } from '../scripts/role-supply.mjs';
 import { changedDefinitions } from '../scripts/ratchet.mjs';
 import { READ_LIMITS } from '../scripts/bounded-read.mjs';
@@ -62,6 +69,7 @@ import {
   appendBlooper,
   assertNotNested,
   assertOwnershipCovers,
+  authorizedNestingEnv,
   carriedReport,
   TOOL_CACHE_PATHS,
   armingNote,
@@ -6807,20 +6815,91 @@ describe('--give-them-the-box: the refusal, and the one way past it', () => {
     assert.doesNotThrow(() => assertNotNested({ [BOX_ENV]: '1' }));
   });
 
-  it('permits nesting only when the box is armed', () => {
-    assert.doesNotThrow(() => assertNotNested({ [REENTRANCY_ENV]: '1', [BOX_ENV]: '1' }));
+  it('refuses an armed box with no ticket, because a variable is not permission (REVIEW F42)', () => {
+    // **This assertion is inverted from what it used to be, deliberately.** It used to prove that
+    // `MEESEEKS_GIVE_THEM_THE_BOX=1` permitted nesting — and a Builder with unrestricted Bash can
+    // set that. Codex reproduced it: `MEESEEKS_GIVE_THEM_THE_BOX=1 MEESEEKS_RUN_DEPTH=0 node
+    // .../driver.mjs PRD.md --yes` forged the permission and reset the depth in one command. The
+    // flag now decides nothing on its own; a redeemable ticket does.
+    assert.throws(() => assertNotNested({ [REENTRANCY_ENV]: '1', [BOX_ENV]: '1' }), DriverError);
+    assert.throws(() => assertNotNested({ [REENTRANCY_ENV]: '1', [BOX_ENV]: '1', [DEPTH_ENV]: '0' }), DriverError);
+  });
+
+  it('permits a nested run that redeems a ticket its parent issued', () => {
+    const meeseeksDir = makeTempDir();
+    const ticket = issueNestingTicket(meeseeksDir, { depth: 1 });
+
+    assert.doesNotThrow(() =>
+      assertNotNested({
+        [REENTRANCY_ENV]: '1',
+        [NESTING_AUTHORITY_ENV]: meeseeksDir,
+        [NESTING_TICKET_ENV]: ticket.nonce,
+      }),
+    );
+  });
+
+  it('refuses the same ticket twice, so a nonce read from the environment buys one run', () => {
+    // A Builder can certainly read its own environment. Consumption is what makes that worthless:
+    // the nonce it finds has already been spent by the run it was issued for.
+    const meeseeksDir = makeTempDir();
+    const ticket = issueNestingTicket(meeseeksDir, { depth: 1 });
+    const env = {
+      [REENTRANCY_ENV]: '1',
+      [NESTING_AUTHORITY_ENV]: meeseeksDir,
+      [NESTING_TICKET_ENV]: ticket.nonce,
+    };
+
+    assert.doesNotThrow(() => assertNotNested(env));
+    assert.throws(() => assertNotNested(env), DriverError, 'a redeemed ticket was accepted again');
+  });
+
+  it('refuses a nonce that names no record, so one cannot be invented', () => {
+    const meeseeksDir = makeTempDir();
+    issueNestingTicket(meeseeksDir, { depth: 1 });
+
+    assert.throws(
+      () =>
+        assertNotNested({
+          [REENTRANCY_ENV]: '1',
+          [NESTING_AUTHORITY_ENV]: meeseeksDir,
+          [NESTING_TICKET_ENV]: 'a-nonce-nobody-issued',
+        }),
+      DriverError,
+    );
+  });
+
+  it('takes the depth from the record, so a child cannot declare itself shallower', () => {
+    // The reset half of the defect. `MEESEEKS_RUN_DEPTH=0` in the environment is now irrelevant:
+    // the cap is applied to the depth the *parent* wrote into the ticket.
+    const meeseeksDir = makeTempDir();
+    const tooDeep = issueNestingTicket(meeseeksDir, { depth: MAX_BOX_DEPTH + 1 });
+
+    assert.throws(
+      () =>
+        assertNotNested({
+          [REENTRANCY_ENV]: '1',
+          [DEPTH_ENV]: '0',
+          [NESTING_AUTHORITY_ENV]: meeseeksDir,
+          [NESTING_TICKET_ENV]: tooDeep.nonce,
+        }),
+      (error) => error instanceof DriverError && error.message.includes('Even the box has a bottom'),
+    );
   });
 
   it('stops at MAX_BOX_DEPTH, because a joke that keeps spawning is not one to the machine', () => {
-    const boxed = { [REENTRANCY_ENV]: '1', [BOX_ENV]: '1' };
-    assert.doesNotThrow(() => assertNotNested({ ...boxed, [DEPTH_ENV]: String(MAX_BOX_DEPTH - 1) }));
-    assert.throws(() => assertNotNested({ ...boxed, [DEPTH_ENV]: String(MAX_BOX_DEPTH) }), DriverError);
-    assert.throws(() => assertNotNested({ ...boxed, [DEPTH_ENV]: '99' }), DriverError);
+    const meeseeksDir = makeTempDir();
+    const allowed = issueNestingTicket(meeseeksDir, { depth: MAX_BOX_DEPTH });
+    const beyond = issueNestingTicket(meeseeksDir, { depth: MAX_BOX_DEPTH + 1 });
+    const base = { [REENTRANCY_ENV]: '1', [NESTING_AUTHORITY_ENV]: meeseeksDir };
+
+    assert.doesNotThrow(() => assertNotNested({ ...base, [NESTING_TICKET_ENV]: allowed.nonce }));
+    assert.throws(() => assertNotNested({ ...base, [NESTING_TICKET_ENV]: beyond.nonce }), DriverError);
   });
 
   it('refuses malformed depth markers instead of treating them as room under the cap', () => {
     // `parseInt` used to turn `1garbage` into 1 and every other malformed value into 0, granting
-    // exactly the nesting permission the marker is supposed to bound.
+    // exactly the nesting permission the marker is supposed to bound. The marker no longer grants
+    // anything at all, but a malformed one must still never read as permission.
     const boxed = { [REENTRANCY_ENV]: '1', [BOX_ENV]: '1' };
     for (const marker of ['banana', '1garbage', '-1', '01', '9007199254740992']) {
       assert.throws(() => assertNotNested({ ...boxed, [DEPTH_ENV]: marker }), DriverError, marker);
@@ -6829,8 +6908,15 @@ describe('--give-them-the-box: the refusal, and the one way past it', () => {
   });
 
   it('says which limit stopped it, so the message is not the ordinary refusal', () => {
+    const meeseeksDir = makeTempDir();
+    const beyond = issueNestingTicket(meeseeksDir, { depth: MAX_BOX_DEPTH + 1 });
     assert.throws(
-      () => assertNotNested({ [REENTRANCY_ENV]: '1', [BOX_ENV]: '1', [DEPTH_ENV]: '2' }),
+      () =>
+        assertNotNested({
+          [REENTRANCY_ENV]: '1',
+          [NESTING_AUTHORITY_ENV]: meeseeksDir,
+          [NESTING_TICKET_ENV]: beyond.nonce,
+        }),
       (error) => error instanceof DriverError && error.message.includes('Even the box has a bottom'),
     );
   });
@@ -6858,6 +6944,74 @@ describe('--give-them-the-box: the refusal, and the one way past it', () => {
     assert.equal(parseDriverArgs(['PRD.md']).giveThemTheBox, false);
     // The config half is covered where config strictness lives: `validateConfig` rejects any
     // unknown key, so there is no spelling of this that a config file could smuggle in.
+  });
+});
+
+describe('authorizedNestingEnv: the one place nesting authority is minted (REVIEW F42)', () => {
+  it('hands the child an authority directory and a nonce, and nothing else new', () => {
+    const meeseeksDir = makeTempDir();
+    const inherited = { PATH: '/usr/bin', [REENTRANCY_ENV]: '1' };
+    const child = authorizedNestingEnv({ meeseeksDir, parentDepth: undefined, env: inherited });
+
+    assert.equal(child[NESTING_AUTHORITY_ENV], meeseeksDir);
+    assert.equal(typeof child[NESTING_TICKET_ENV], 'string');
+    assert.equal(child.PATH, '/usr/bin');
+    assert.deepStrictEqual(
+      Object.keys(child).filter((key) => !(key in inherited)).sort(),
+      [NESTING_AUTHORITY_ENV, NESTING_TICKET_ENV].sort(),
+    );
+  });
+
+  it('issues a ticket the child can actually redeem, which is the round trip', () => {
+    const meeseeksDir = makeTempDir();
+    const child = authorizedNestingEnv({ meeseeksDir, parentDepth: undefined, env: { [REENTRANCY_ENV]: '1' } });
+    assert.doesNotThrow(() => assertNotNested(child));
+  });
+
+  it('counts one deeper than the parent, taken from the parent and not from the child', () => {
+    const meeseeksDir = makeTempDir();
+    const child = authorizedNestingEnv({ meeseeksDir, parentDepth: '1', env: {} });
+    assert.equal(
+      redeemNestingTicket({ authority: meeseeksDir, nonce: /** @type {string} */ (child[NESTING_TICKET_ENV]) }).depth,
+      2,
+    );
+  });
+
+  it('reaches depths one and two and refuses three, which is the whole of the cap', () => {
+    // The operator's real path, asserted end to end: a top-level boxed run authorizes a component,
+    // that component authorizes one more, and the third generation is refused before it is spawned.
+    const meeseeksDir = makeTempDir();
+    const first = authorizedNestingEnv({ meeseeksDir, parentDepth: undefined, env: {} });
+    assert.doesNotThrow(() => assertNotNested({ ...first, [REENTRANCY_ENV]: '1' }));
+
+    const second = authorizedNestingEnv({ meeseeksDir, parentDepth: '1', env: {} });
+    assert.doesNotThrow(() => assertNotNested({ ...second, [REENTRANCY_ENV]: '1' }));
+
+    assert.throws(
+      () => authorizedNestingEnv({ meeseeksDir, parentDepth: '2', env: {} }),
+      (/** @type {unknown} */ error) => {
+        assert.equal(error instanceof DriverError, true);
+        assert.equal(/** @type {Error} */ (error).message.includes('Even the box has a bottom'), true);
+        return true;
+      },
+    );
+  });
+
+  it('mints nothing when it refuses, so the store never accumulates unusable authority', () => {
+    // Refusing after writing the record would leave a nonce on disk that only the cap stops anyone
+    // using — one weakened check away from being permission again.
+    const meeseeksDir = makeTempDir();
+    assert.throws(() => authorizedNestingEnv({ meeseeksDir, parentDepth: '2', env: {} }), DriverError);
+    assert.equal(existsSync(path.join(meeseeksDir, NESTING_FILE)), false);
+  });
+
+  it('refuses a malformed inherited depth rather than reading it as zero', () => {
+    // `parseRunDepth(...) ?? 0` used to sit here, which turned every unreadable marker into a fresh
+    // depth-one authorization. The cap is fail-closed on a malformed marker at *both* ends.
+    const meeseeksDir = makeTempDir();
+    for (const marker of ['banana', '1garbage', '-1', '01', '9007199254740992']) {
+      assert.throws(() => authorizedNestingEnv({ meeseeksDir, parentDepth: marker, env: {} }), DriverError, marker);
+    }
   });
 });
 
