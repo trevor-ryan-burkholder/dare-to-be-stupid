@@ -1,6 +1,6 @@
 # START HERE — current handoff, last swept 19 August 2026
 
-**State:** working-tree candidate `0.221.0` on `main`; the manifests and the package-lock root
+**State:** working-tree candidate `0.222.0` on `main`; the manifests and the package-lock root
 metadata agree, and `npm run release-check` is the check that says so.
 
 **This paragraph names no commit, and that is a rule the gate now enforces** (`REVIEW.md` F40). It

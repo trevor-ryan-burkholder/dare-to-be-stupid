@@ -3828,7 +3828,7 @@ then asks the operating system — not the probe — whether that pid is alive a
 still answers. The cooperative long-running server is the neighbour. Verified red by removing the
 reap.
 
-### 95. Do not read an absent report as a regression when its gate did not produce one — OPEN (found reviewing item 89)
+### 95. Do not read an absent report as a regression when its gate did not produce one — IMPLEMENTED (0.222.0)
 
 **Problem solved:** `reportFiles` is what the toolchain *declares*, not what any gate is armed to
 write. `scripts/toolchains/node.mjs` declares `test-report.json` and `e2e-report.json`
@@ -4960,6 +4960,48 @@ carries, a blocked scan recorded with the finding that blocked it, and a scan th
 proving a cold reviewer does not auto-load seeded project/user/local customizations, in a paired
 hostile/benign calibration. That is live-tier work and this session is not authorized to spend. The
 `verified: false` field exists precisely so the artifact does not claim it in the meantime.
+
+### 124. A regression has to be attributable — IMPLEMENTED (0.222.0), closing item 95
+
+**The livelock item 95 specified, repaired.** `collected === 0` catches a *whole* collection failure.
+It cannot see one report of several going missing: the other keeps `collected` comfortably non-zero,
+so every id the missing one used to bank is absent from `passing` and compares equal to regressed.
+The tree is hard-reset, the verification gate re-runs the same non-producing gate, and it repeats to
+the ceiling. Reproduced before the repair as 30 e2e ids reported as regressions and a run burned to
+`BUDGET`.
+
+**Attribution is the whole mechanism.** The ratchet state now records, per banked id, the report that
+produced it — merged like the definition digests, so an id whose report did not run keeps the owner it
+was banked under. `unmeasuredIds` answers which previously-passing ids are absent *and* owned by a
+report this attempt did not produce; `evaluateIteration` excludes exactly those from the comparison
+and from credit alike. An id with no recorded owner is treated as **measured**, which is the
+conservative direction: it costs a reset that could have been avoided, where the other direction hides
+a real regression. Nothing else moved — `collected === 0` keeps its meaning, and an id whose report
+*was* produced and which is now absent still resets exactly as before.
+
+**And a defect this found in the slice above it.** The tier-2 case is the first test in the repository
+to let a real gate write a real report into a real candidate, and it did not work: `.meeseeks/` is
+ignored, so item 120's snapshot worktree never had one, and a runner told
+`--outputFile=<candidate>/.meeseeks/test-report.json` wrote nothing, exited zero, and left the loop
+reading "the test report contained no tests at all" **on every iteration of every run**. Every other
+tier-2 suite injects `readTestReports` and could not see it. `materializeCandidate` creates the
+directory now, and `candidate.integration.test.mjs` holds it.
+
+**Evidence.** Five tier-1 cases on `unmeasuredIds` — the named id, a real regression left alone, an id
+that is currently passing, an id with no owner treated as measured, and sorted output — and six on
+`evaluateIteration`: advancing while holding the unmeasured id, still resetting when the report was
+produced, still resetting on a measured absence beside an unmeasured one, `collected === 0` unchanged,
+rejecting when everything remaining is unmeasured, and ownership banked and merged. Ten go red with
+the exclusion removed.
+
+**Tier 2 drives the real `main`** over a real repository with counterfeit `npx` runners first on
+`PATH` — the property under test is what the *loop* concludes when a declared report stops appearing,
+and the real `npx vitest` would make it a test about an installed dependency instead. Everything
+downstream of the runner is real: the toolchain, the roster, `gateTree`, `collectReports`, the
+reporters, the ratchet, the reset. The first case proves both ids are banked with their owners, the
+e2e ids are named as unmeasured when the report stops appearing, no reset happens, `repeated
+regression` never appears, and the builder's work is still on disk. The second keeps the runner
+producing a report with the test *failing*, and the reset happens exactly as before.
 
 ## Observations recorded rather than repaired
 

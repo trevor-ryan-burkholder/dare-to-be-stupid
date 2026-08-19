@@ -130,6 +130,7 @@ import { collapseByWorstStatus, parseReport } from './reporters/index.mjs';
 import { clearReports, collectReports } from './reports.mjs';
 import {
   evaluateIteration,
+  unmeasuredIds,
   changedDefinitions,
   definitionDigest,
   testFilePath,
@@ -1822,6 +1823,7 @@ export function repeatedRegressionNote(counts, regressions) {
 // ---------------------------------------------------------------------------
 
 /** @typedef {{ applied: boolean, detail: string, tokens: number, costUsd: number }} RaceOutcome */
+/** @typedef {{ produced: string[], missing: string[], irregular: string[] }} ReportSources */
 
 /**
  * Every effect that shells out or spawns a child may now return a promise, because the real
@@ -1856,6 +1858,7 @@ export function repeatedRegressionNote(counts, regressions) {
  *   verifyPublication: () => { ok: boolean, detail: string, head?: string | null }
  *     | Promise<{ ok: boolean, detail: string, head?: string | null }>,
  *   readTestReports: () => unknown[],
+ *   readReportSources?: () => ReportSources,
  *   commit: (message: string) => string | Promise<string>,
  *   diffStat: () => string | Promise<string>,
  *   deploy?: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
@@ -2257,6 +2260,15 @@ export async function driveRun(options) {
   let iterationGateResults;
   /** @type {string[] | undefined} */
   let iterationReportDigests;
+  /**
+   * Which report produced each id this attempt (PLAN item 95).
+   *
+   * Banked with the ratchet's advance so a *later* attempt can say which ids the report that stopped
+   * being produced used to own — which is the whole of an attributable regression.
+   *
+   * @type {Record<string, string>}
+   */
+  let reportOwners = {};
 
   /**
    * The deploy this run performed, if it performed one (REVIEW F22).
@@ -2696,7 +2708,16 @@ export async function driveRun(options) {
         const records = [];
         /** @type {string[]} */
         const readThisAttempt = [];
-        for (const report of effects.readTestReports()) {
+        const read = effects.readTestReports();
+        // Which report each id came from (PLAN item 95), built in the same pass. `produced` is in
+        // lockstep with the contents, so index *i* names the report index *i* was read from; a
+        // caller that supplies no sources contributes no ownership, and an id with no owner is
+        // treated as measured — the direction that costs an avoidable reset rather than one that
+        // hides a real regression.
+        const producedNames = effects.readReportSources?.().produced ?? [];
+        /** @type {Record<string, string>} */
+        const owners = {};
+        for (const [index, report] of read.entries()) {
           // Digested where the loop actually reads them, rather than re-read later: a receipt that
           // hashed the files again at the terminal transition would describe whatever was on disk by
           // then, which is the substitution F16 exists to prevent.
@@ -2704,7 +2725,10 @@ export async function driveRun(options) {
           const parsed = parseReport(report, { rootDir: subject() });
           collected += parsed.tests.length;
           records.push(...parsed.tests);
+          const name = producedNames[index];
+          if (name !== undefined) for (const test of parsed.tests) owners[test.id] = name;
         }
+        reportOwners = owners;
         iterationReportDigests = readThisAttempt;
         /** @type {Set<string>} */
         const reported = new Set();
@@ -2822,7 +2846,33 @@ export async function driveRun(options) {
     // its absence from the credited set as a regression would hard-reset the tree over a test that
     // is working — rewriting the monotonic record to state something about the present, which F17
     // explicitly refuses.
-    const decision = evaluateIteration(state, passing, { commit: null, collected, definitions, credited });
+    // **Absent because nothing measured it, or absent because it broke** (PLAN item 95). One report
+    // of several going missing leaves `collected` comfortably non-zero from the other, so every id
+    // the missing one used to bank is absent from `passing` and compares equal to regressed — and
+    // the tree is hard-reset, the verification gate re-runs the same non-producing gate, and the run
+    // repeats it to the ceiling. Attributed from the ownership the ratchet banked, so this can only
+    // ever exclude ids whose *own* report is not there.
+    const unmeasured = unmeasuredIds({
+      previousPassing: state.passing,
+      nowPassing: passing,
+      owners: state.reports ?? {},
+      produced: effects.readReportSources?.().produced ?? [],
+    });
+    if (unmeasured.length > 0) {
+      effects.log(
+        `${unmeasured.length} protected test(s) were not measured this attempt: the report that banked them was not ` +
+          `produced, so they keep their ratchet protection and are not read as regressions — ` +
+          `${unmeasured.slice(0, 10).join(', ')}${unmeasured.length > 10 ? ` and ${unmeasured.length - 10} more` : ''}`,
+      );
+    }
+    const decision = evaluateIteration(state, passing, {
+      commit: null,
+      collected,
+      definitions,
+      credited,
+      reports: reportOwners,
+      unmeasured,
+    });
 
     // ---- bank the ids as soon as the suite has proven them -------------
     // **Case I is why this is here.** `saveState` used to be reachable only from Phase 6, after
@@ -3459,7 +3509,14 @@ export async function driveRun(options) {
     // The same credited set Phase 4 computed (REVIEW F17, reopened). This second advance is what
     // records the commit, and it banked the *full* passing set — so every id Phase 4 had withheld
     // for having no red evidence under its current definition was banked here a moment later.
-    const advanced = evaluateIteration(state, passing, { commit, collected, definitions, credited });
+    const advanced = evaluateIteration(state, passing, {
+      commit,
+      collected,
+      definitions,
+      credited,
+      reports: reportOwners,
+      unmeasured,
+    });
     if (advanced.action === 'advance') saveState(meeseeksDir, advanced.state);
 
     // Quarantine is not free, and this is the whole of what makes that true rather than a
@@ -7719,6 +7776,15 @@ async function runInvocation(argv, io, crash) {
    * @type {{ dir: string, tree: string | null }}
    */
   let candidate = { dir: cwd, tree: null };
+  /**
+   * Which declared reports the last collection produced, by name (PLAN item 95).
+   *
+   * Empty until the first `readTestReports`, which is the conservative reading: with nothing
+   * produced, nothing is attributable, and an id with no attributable owner is treated as measured.
+   *
+   * @type {ReportSources}
+   */
+  let lastReportSources = { produced: [], missing: [], irregular: [] };
   const candidateWorktree = candidateDirFor(process.pid);
   /** Removed on every path out, and swept at the start, exactly as a race's worktrees are. */
   let candidateMaterialized = false;
@@ -8528,8 +8594,20 @@ async function runInvocation(argv, io, crash) {
         for (const file of collected.irregular) {
           write(verbatim(`ignoring ${path.relative(cwd, file)}: a report path that is not a regular file is not a report`));
         }
+        // **Which declared reports this attempt actually produced** (PLAN item 95). Stashed here
+        // rather than recomputed by a second effect, because a second `collectReports` would read
+        // the files again and could disagree with the one the loop is about to parse — and the
+        // whole mechanism turns on the two agreeing. `contents` and `produced` are built in
+        // lockstep by `collectReports`, so index *i* of what this returns is index *i* of that.
+        lastReportSources = {
+          produced: collected.produced.map((file) => path.basename(file)),
+          missing: collected.missing.map((file) => path.basename(file)),
+          irregular: collected.irregular.map((file) => path.basename(file)),
+        };
         return collected.contents;
       },
+      /** What the last `readTestReports` collected, by report name. @returns {ReportSources} */
+      readReportSources: () => lastReportSources,
       commit: async (message) => {
         // Re-asserted here rather than once before the loop: a hard reset can land on a
         // commit that predates the stanza, which would quietly un-ignore the ratchet and

@@ -85,7 +85,7 @@ export function extractTestIds(input, options) {
 
 /**
  * @typedef {{ version: 1, iteration: number, passing: string[], lastGoodCommit: string | null,
- *   definitions?: Record<string, string> }} RatchetState
+ *   definitions?: Record<string, string>, reports?: Record<string, string> }} RatchetState
  *
  * `definitions` maps a test file's repository-relative path to a digest of its bytes at the moment
  * ids from it earned credit (REVIEW F17). `passing` stays exactly what it was — the append-only
@@ -119,7 +119,7 @@ export class RatchetStateError extends Error {
  * @returns {RatchetState}
  */
 export function emptyState() {
-  return { version: STATE_VERSION, iteration: 0, passing: [], lastGoodCommit: null, definitions: {} };
+  return { version: STATE_VERSION, iteration: 0, passing: [], lastGoodCommit: null, definitions: {}, reports: {} };
 }
 
 /**
@@ -162,12 +162,26 @@ function validateState(value, file) {
           ),
         )
       : {};
+  // Report ownership (PLAN item 95). Optional and dropped when malformed, on exactly the reasoning
+  // above: an id whose owner is unknown is treated as *measured*, which is the conservative
+  // direction — it can still be read as a regression, and losing the map costs a reset that would
+  // have been avoided rather than granting anything.
+  const owners = record.reports;
+  const reports =
+    owners !== null && typeof owners === 'object' && !Array.isArray(owners)
+      ? Object.fromEntries(
+          Object.entries(/** @type {Record<string, unknown>} */ (owners)).filter(
+            ([id, name]) => typeof id === 'string' && typeof name === 'string',
+          ),
+        )
+      : {};
   return {
     version: STATE_VERSION,
     iteration: record.iteration,
     passing: [.../** @type {string[]} */ (record.passing)],
     lastGoodCommit: record.lastGoodCommit,
     definitions: /** @type {Record<string, string>} */ (definitions),
+    reports: /** @type {Record<string, string>} */ (reports),
   };
 }
 
@@ -240,6 +254,8 @@ export function saveState(meeseeksDir, state) {
     lastGoodCommit: state.lastGoodCommit,
     // Sorted by path for the same reason `passing` is: this file is read in diffs (REVIEW F17).
     definitions: Object.fromEntries(Object.entries(state.definitions ?? {}).sort(([a], [b]) => (a < b ? -1 : 1))),
+    // Which report produced each banked id (PLAN item 95), sorted for the same reason.
+    reports: Object.fromEntries(Object.entries(state.reports ?? {}).sort(([a], [b]) => (a < b ? -1 : 1))),
   };
   writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
   renameSync(temporary, file);
@@ -270,7 +286,7 @@ export function diffAgainstRatchet(everPassed, nowPassing) {
  *
  * @param {RatchetState} state
  * @param {{ passing: Iterable<string>, commit?: string | null, definitions?: Record<string, string>,
- *   credited?: Iterable<string> }} iteration
+ *   credited?: Iterable<string>, reports?: Record<string, string> }} iteration
  *        `credited` is the subset that earned ratchet credit; `passing` is everything the reports
  *        said passed. They differ when a definition changed (REVIEW F17), and the difference must
  *        not become a regression — so regressions are computed from `passing` and banking from
@@ -292,6 +308,9 @@ export function recordAdvance(state, iteration) {
     // The bytes that earned this credit (REVIEW F17). Merged rather than replaced, so a file whose
     // tests did not run this iteration keeps the digest it was credited under instead of losing it.
     definitions: { ...(state.definitions ?? {}), ...(iteration.definitions ?? {}) },
+    // Which report produced each id (PLAN item 95). Merged for the same reason the digests are: an
+    // id whose report did not run this iteration keeps the owner it was banked under.
+    reports: { ...(state.reports ?? {}), ...(iteration.reports ?? {}) },
   };
 }
 
@@ -330,6 +349,47 @@ export function formatBlooperRecord(event) {
 }
 
 /**
+ * Ids the ratchet holds that **nothing measured** this attempt (PLAN item 95).
+ *
+ * **Absent is not failing, and a partial absence is the case nobody had covered.** `collected === 0`
+ * already stops a whole-report collection failure from reading as a mass regression. What it cannot
+ * see is one report of several going missing: the other report keeps `collected` comfortably
+ * non-zero, so every id the missing one used to bank is absent from `passing` and compares equal to
+ * regressed. `driveRun` then hard-resets the tree, the verification gate re-runs the same
+ * non-producing gate, and the run repeats it to the ceiling. Reproduced end to end: 30 e2e ids
+ * reported as regressions, the iteration's work destroyed, `repeated regression: … (2 times)`, run
+ * burned to `BUDGET`.
+ *
+ * **A regression has to be attributable.** An id is unmeasured when the report that banked it was
+ * not produced this attempt — so the answer needs the ownership the state now records, and an id
+ * with no recorded owner is treated as measured, because "nobody knows" must not become "nothing to
+ * see". That direction costs a reset that could have been avoided; the other direction hides a real
+ * regression.
+ *
+ * An unmeasured id keeps its ratchet protection and blocks nothing. Whatever gate failed to produce
+ * the report is what fails the iteration.
+ *
+ * @param {{ previousPassing: Iterable<string>, nowPassing: Iterable<string>,
+ *   owners: Record<string, string>, produced: Iterable<string> }} attempt
+ *        `owners` maps a banked id to the report name that produced it; `produced` is the report
+ *        names this attempt actually collected
+ * @returns {string[]} sorted
+ */
+export function unmeasuredIds(attempt) {
+  const now = new Set(attempt.nowPassing);
+  const producedNames = new Set(attempt.produced);
+  /** @type {string[]} */
+  const unmeasured = [];
+  for (const id of new Set(attempt.previousPassing)) {
+    if (now.has(id)) continue;
+    const owner = attempt.owners[id];
+    if (typeof owner !== 'string' || owner === '') continue;
+    if (!producedNames.has(owner)) unmeasured.push(id);
+  }
+  return unmeasured.sort();
+}
+
+/**
  * Decide what an iteration's results mean for the ratchet.
  *
  * Order is deliberate. Regressions are checked first, so an iteration that both gains new
@@ -356,13 +416,23 @@ export function formatBlooperRecord(event) {
  * @param {RatchetState} state
  * @param {Iterable<string>} nowPassing ids that passed this iteration
  * @param {{ commit?: string | null, collected?: number, definitions?: Record<string, string>,
- *   credited?: Iterable<string> }} [iteration]
- *        `collected` is how many test ids the report yielded at all, passing or not
+ *   credited?: Iterable<string>, reports?: Record<string, string>,
+ *   unmeasured?: Iterable<string> }} [iteration]
+ *        `collected` is how many test ids the report yielded at all, passing or not; `unmeasured`
+ *        is what {@link unmeasuredIds} answered for this attempt, which is excluded from the
+ *        regression comparison and from credit alike
  * @returns {RatchetDecision}
  */
 export function evaluateIteration(state, nowPassing, iteration = {}) {
   const after = new Set(nowPassing);
-  const { regressions, gained } = diffAgainstRatchet(state.passing, after);
+  // **Unmeasured ids are not compared** (PLAN item 95). They are absent because the report that
+  // banked them was not produced, not because they failed, and resetting the tree over that
+  // destroys the iteration's work to punish a fault it did not commit — then repeats, because the
+  // verification gate re-runs the same non-producing gate. They keep their protection and are not
+  // credited either: nothing here observed them.
+  const unmeasured = new Set(iteration.unmeasured ?? []);
+  const held = unmeasured.size === 0 ? state.passing : [...state.passing].filter((id) => !unmeasured.has(id));
+  const { regressions, gained } = diffAgainstRatchet(held, after);
 
   if (iteration.collected === 0 && after.size === 0) {
     return {
@@ -404,6 +474,7 @@ export function evaluateIteration(state, nowPassing, iteration = {}) {
       commit: iteration.commit,
       definitions: iteration.definitions,
       credited: iteration.credited,
+      reports: iteration.reports,
     }),
   };
 }

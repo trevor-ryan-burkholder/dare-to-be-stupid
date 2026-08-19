@@ -149,6 +149,23 @@ describe('materializeCandidate', () => {
     await removeCandidate({ cwd: root, run: shell, dir: ready.dir });
   });
 
+  it('gives the subject a `.meeseeks/` for its gates to write reports into', async () => {
+    // **Found by the first test that let a real gate write a real report into a real candidate**
+    // (PLAN item 95). `.meeseeks/` is ignored, so a checkout never creates it — and a runner told
+    // `--outputFile=<candidate>/.meeseeks/test-report.json` writes nothing, exits zero, and the loop
+    // reads "the test report contained no tests at all" on every iteration forever. Every earlier
+    // tier-2 suite injects `readTestReports` and could not see it.
+    const root = repo();
+    const made = /** @type {any} */ (await materialize(root));
+    temporaryDirs.push(made.dir);
+
+    const stateDir = path.join(made.dir, '.meeseeks');
+    assert.equal(existsSync(stateDir), true, 'a gate writing a report into the candidate would write nothing');
+    writeFileSync(path.join(stateDir, 'test-report.json'), '{"numTotalTests":0}');
+    assert.equal(existsSync(path.join(stateDir, 'test-report.json')), true);
+    await removeCandidate({ cwd: root, run: shell, dir: made.dir });
+  });
+
   it('leaves the main tree unchanged, including its branch', async () => {
     const root = repo();
     const head = git(root, ['rev-parse', 'HEAD']);

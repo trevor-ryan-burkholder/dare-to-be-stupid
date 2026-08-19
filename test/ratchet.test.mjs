@@ -18,6 +18,7 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import {
+  unmeasuredIds,
   RatchetStateError,
   changedDefinitions,
   definitionDigest,
@@ -102,6 +103,7 @@ describe('recordAdvance is monotonic', () => {
       passing: ['a::1', 'm::1', 'z::1'],
       lastGoodCommit: null,
       definitions: {},
+      reports: {},
     });
   });
 
@@ -154,7 +156,7 @@ describe('evaluateIteration advances', () => {
     assert.deepStrictEqual(decision, {
       action: 'advance',
       gained: ['a::1', 'b::2'],
-      state: { version: 1, iteration: 1, passing: ['a::1', 'b::2'], lastGoodCommit: 'aaaaaaa' , definitions: {}},
+      state: { version: 1, iteration: 1, passing: ['a::1', 'b::2'], lastGoodCommit: 'aaaaaaa', definitions: {}, reports: {} },
     });
   });
 
@@ -286,6 +288,7 @@ describe('loadState', () => {
       passing: [],
       lastGoodCommit: null,
       definitions: {},
+      reports: {},
     });
   });
 
@@ -297,6 +300,7 @@ describe('loadState', () => {
       passing: ['b::2', 'a::1'],
       lastGoodCommit: 'abc1234',
       definitions: {},
+      reports: {},
     });
     assert.deepStrictEqual(loadState(dir), {
       version: 1,
@@ -304,6 +308,7 @@ describe('loadState', () => {
       passing: ['a::1', 'b::2'],
       lastGoodCommit: 'abc1234',
       definitions: {},
+      reports: {},
     });
   });
 
@@ -373,7 +378,7 @@ describe('loadState', () => {
     /** @type {string[]} */
     const logged = [];
     const state = loadState(dir, { now: 1700000000000, log: (line) => logged.push(line) });
-    assert.deepStrictEqual(state, { version: 1, iteration: 4, passing: ['a::1', 'b::2'], lastGoodCommit: 'c0ffee' , definitions: {}});
+    assert.deepStrictEqual(state, { version: 1, iteration: 4, passing: ['a::1', 'b::2'], lastGoodCommit: 'c0ffee', definitions: {}, reports: {} });
     // No sibling was written and nothing was announced: a readable ratchet is left untouched.
     assert.deepStrictEqual(readdirSync(dir).sort(), ['state.json']);
     assert.deepStrictEqual(logged, []);
@@ -398,7 +403,7 @@ describe('saveState', () => {
     saveState(dir, stateWith({ iteration: 2, passing: ['z::1', 'a::1'], lastGoodCommit: 'abc1234' }));
     assert.equal(
       readFileSync(path.join(dir, 'state.json'), 'utf8'),
-      `${JSON.stringify({ version: 1, iteration: 2, passing: ['a::1', 'z::1'], lastGoodCommit: 'abc1234' , definitions: {}}, null, 2)}\n`,
+      `${JSON.stringify({ version: 1, iteration: 2, passing: ['a::1', 'z::1'], lastGoodCommit: 'abc1234', definitions: {}, reports: {} }, null, 2)}\n`,
     );
   });
 
@@ -412,6 +417,7 @@ describe('saveState', () => {
       passing: ['a::1', 'b::2'],
       lastGoodCommit: null,
       definitions: {},
+      reports: {},
     });
   });
 });
@@ -567,6 +573,7 @@ describe('a run across several iterations', () => {
       passing: ['a::1', 'b::2', 'c::3', 'd::4'],
       lastGoodCommit: 'commit4',
       definitions: {},
+      reports: {},
     });
   });
 });
@@ -738,5 +745,151 @@ describe('current credit is bound to the current definition (REVIEW F17)', () =>
     const first = recordAdvance(emptyState(), { passing: ['a/x.test.js::one'], definitions: { 'a/x.test.js': 'aaa' } });
     const second = recordAdvance(first, { passing: ['b/y.test.js::two'], definitions: { 'b/y.test.js': 'bbb' } });
     assert.deepStrictEqual(second.definitions, { 'a/x.test.js': 'aaa', 'b/y.test.js': 'bbb' });
+  });
+});
+
+describe('unmeasuredIds: absent because nothing measured it (PLAN item 95)', () => {
+  // **`collected === 0` covers a whole-report collection failure and nothing else.** One report of
+  // several going missing leaves `collected` comfortably non-zero from the other, so every id the
+  // missing one used to bank is absent from `passing` and compares equal to regressed — the tree is
+  // hard-reset, the verification gate re-runs the same non-producing gate, and the run repeats it to
+  // the ceiling. Reproduced end to end: 30 e2e ids reported as regressions and the run burned to
+  // `BUDGET`.
+
+  const owners = { 'e2e/a.spec.ts::works': 'e2e-report.json', 'test/a.test.js::works': 'test-report.json' };
+
+  it('names an id whose report was not produced', () => {
+    assert.deepStrictEqual(
+      unmeasuredIds({
+        previousPassing: Object.keys(owners),
+        nowPassing: ['test/a.test.js::works'],
+        owners,
+        produced: ['test-report.json'],
+      }),
+      ['e2e/a.spec.ts::works'],
+    );
+  });
+
+  it('says nothing about an id whose report *was* produced, which is a real regression', () => {
+    // The case that must keep resetting. The report is there, the runner ran, the id is gone.
+    assert.deepStrictEqual(
+      unmeasuredIds({
+        previousPassing: Object.keys(owners),
+        nowPassing: ['e2e/a.spec.ts::works'],
+        owners,
+        produced: ['test-report.json', 'e2e-report.json'],
+      }),
+      [],
+    );
+  });
+
+  it('says nothing about an id that is passing right now', () => {
+    assert.deepStrictEqual(
+      unmeasuredIds({ previousPassing: Object.keys(owners), nowPassing: Object.keys(owners), owners, produced: [] }),
+      [],
+    );
+  });
+
+  it('treats an id with no recorded owner as measured, because nobody knows is not nothing to see', () => {
+    // The conservative direction, and the one a state file written before this field existed lands
+    // in. It costs a reset that could have been avoided; the other direction hides a regression.
+    assert.deepStrictEqual(
+      unmeasuredIds({ previousPassing: ['orphan::1'], nowPassing: [], owners: {}, produced: [] }),
+      [],
+    );
+    assert.deepStrictEqual(
+      unmeasuredIds({ previousPassing: ['orphan::1'], nowPassing: [], owners: { 'orphan::1': '' }, produced: [] }),
+      [],
+    );
+  });
+
+  it('answers in sorted order, because this list reaches a log line', () => {
+    assert.deepStrictEqual(
+      unmeasuredIds({
+        previousPassing: ['z::1', 'a::1'],
+        nowPassing: [],
+        owners: { 'z::1': 'e2e-report.json', 'a::1': 'e2e-report.json' },
+        produced: [],
+      }),
+      ['a::1', 'z::1'],
+    );
+  });
+});
+
+describe('evaluateIteration does not reset over what nothing measured (PLAN item 95)', () => {
+  /** @type {import('../scripts/ratchet.mjs').RatchetState} */
+  const state = {
+    version: 1,
+    iteration: 3,
+    passing: ['e2e/a.spec.ts::works', 'test/a.test.js::works'],
+    lastGoodCommit: 'abc1234',
+    definitions: {},
+    reports: { 'e2e/a.spec.ts::works': 'e2e-report.json', 'test/a.test.js::works': 'test-report.json' },
+  };
+
+  it('advances on the reports that did run, holding the unmeasured id', () => {
+    const decision = evaluateIteration(state, ['test/a.test.js::works'], {
+      collected: 1,
+      unmeasured: ['e2e/a.spec.ts::works'],
+    });
+    assert.equal(decision.action, 'advance', JSON.stringify(decision));
+    // Held, not lost: the ratchet is a union, so the id it could not measure keeps its protection.
+    assert.deepStrictEqual(
+      /** @type {any} */ (decision).state.passing,
+      ['e2e/a.spec.ts::works', 'test/a.test.js::works'],
+    );
+  });
+
+  it('still resets when the same id is absent and its report *was* produced', () => {
+    // The neighbour that keeps this from being "never reset". Nothing about this iteration changed
+    // except that the report exists, and the answer flips.
+    const decision = evaluateIteration(state, ['test/a.test.js::works'], { collected: 2, unmeasured: [] });
+    assert.equal(decision.action, 'reset');
+    assert.deepStrictEqual(/** @type {any} */ (decision).regressions, ['e2e/a.spec.ts::works']);
+  });
+
+  it('keeps the collected-nothing rejection exactly as it was', () => {
+    // `collected === 0` is a different fact from an unmeasured id and must keep its own meaning.
+    const decision = evaluateIteration(state, [], { collected: 0, unmeasured: ['e2e/a.spec.ts::works'] });
+    assert.equal(decision.action, 'reject');
+    assert.equal(/** @type {any} */ (decision).reason.includes('no tests at all'), true);
+  });
+
+  it('still resets on an id that *was* measured, even beside one that was not', () => {
+    // The half of that iteration nothing excuses. The unit report was produced and its id is gone,
+    // so that is a regression whatever happened to the e2e report — an unmeasured neighbour must not
+    // launder a measured absence.
+    const decision = evaluateIteration(state, [], { collected: 3, unmeasured: ['e2e/a.spec.ts::works'] });
+    assert.equal(decision.action, 'reset');
+    assert.deepStrictEqual(/** @type {any} */ (decision).regressions, ['test/a.test.js::works']);
+  });
+
+  it('rejects rather than advancing when every remaining id is unmeasured and nothing passed', () => {
+    // Unmeasured ids are not credited either, so an iteration that measured nothing has established
+    // nothing and lands on the pre-existing rejection rather than on an advance.
+    const decision = evaluateIteration(state, [], {
+      collected: 3,
+      unmeasured: ['e2e/a.spec.ts::works', 'test/a.test.js::works'],
+    });
+    assert.equal(decision.action, 'reject');
+    assert.equal(/** @type {any} */ (decision).reason.includes('No tests passed'), true);
+  });
+
+  it('banks which report produced each id, so a later attempt can attribute an absence', () => {
+    const decision = evaluateIteration({ ...state, passing: [], reports: {} }, ['test/a.test.js::works'], {
+      collected: 1,
+      reports: { 'test/a.test.js::works': 'test-report.json' },
+    });
+    assert.equal(decision.action, 'advance');
+    assert.deepStrictEqual(/** @type {any} */ (decision).state.reports, { 'test/a.test.js::works': 'test-report.json' });
+  });
+
+  it('merges ownership rather than replacing it, so a report that did not run keeps its ids', () => {
+    const decision = evaluateIteration(state, ['test/a.test.js::works'], {
+      collected: 1,
+      unmeasured: ['e2e/a.spec.ts::works'],
+      reports: { 'test/a.test.js::works': 'test-report.json' },
+    });
+    assert.equal(/** @type {any} */ (decision).state.reports['e2e/a.spec.ts::works'], 'e2e-report.json');
   });
 });

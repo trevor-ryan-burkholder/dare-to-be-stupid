@@ -244,6 +244,13 @@ export async function materializeCandidate(options) {
     // caches, which `-x` would take with it.
     await options.run('git', ['clean', '-fd'], { cwd: options.dir, timeoutMs: options.timeoutMs });
   }
+  // **The gates write their reports into `<candidate>/.meeseeks/`, and a fresh worktree has no such
+  // directory.** `.meeseeks/` is ignored, so a checkout never creates it — and a runner told
+  // `--outputFile=<candidate>/.meeseeks/test-report.json` writes nothing, exits zero, and the loop
+  // reads "the test report contained no tests at all" on every iteration forever. Found by the first
+  // test that let a real gate write a real report into a real candidate; every earlier tier-2 suite
+  // injects `readTestReports` and could not see it.
+  mkdirSync(path.join(options.dir, '.meeseeks'), { recursive: true });
   return { ok: true, dir: options.dir, tree: snapshot.tree, commit };
 }
 
