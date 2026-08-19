@@ -1,7 +1,7 @@
 # START HERE — current handoff, last swept 18 August 2026
 
-**State:** working-tree candidate `0.211.0` on `main`; the manifests and package-lock root metadata
-agree. HEAD is `b51d332`, the committed and pushed 0.210.0 tree — the documentation-system sweep,
+**State:** working-tree candidate `0.212.0` on `main`; the manifests and package-lock root metadata
+agree. HEAD is `6d0d0d5`, which carries Codex's independent audit of the 0.211.0 tree — the documentation-system sweep,
 the code-review repairs of PLAN items 100, 107 and 108, and the REVIEW re-baseline of item 109. The
 0.209.0 working-tree candidate on top of it is PLAN item 110: the installed-snapshot harness that
 F21 asked for, and the two evidence-quality repairs F15 and F17 turned out to still need.
@@ -33,6 +33,8 @@ The newest candidate work is recorded at its canonical PLAN items:
 - item 112: the acceptance receipt — a typed, versioned claim bound to the reviewed tree, written at
   the terminal transition, recording the gate roster and results, the panel and ratchet edges, and
   each role invocation's requested *and* vendor-observed model; and
+- item 114: process ownership as a kernel-level group, and every Driver-owned Git call bounded and
+  non-interactive on top of it (F33 reopened, F44); and
 - item 113: the repairs an adversarial audit of that receipt found — chief among them that it could
   bind one iteration's gate results to another iteration's sealed tree and verify clean.
 

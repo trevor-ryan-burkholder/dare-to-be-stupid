@@ -402,6 +402,69 @@ import { setTimeout as later } from 'node:timers';
 later(() => process.stdout.write('sibling-finished'), 4_000);
 `;
 
+  /**
+   * A sibling whose **leader exits immediately** while a grandchild keeps the pipe open.
+   *
+   * This is the shape that falsified the previous repair. The sibling's `shell` call is still in
+   * flight — waiting for EOF on a pipe the grandchild holds — but its direct child is gone, so a
+   * parentage-based owner lookup finds no live subtree for it. The grandchild has been reparented,
+   * is absent from the other call's pre-spawn snapshot, and therefore reads as that call's leaked
+   * descendant. It was killed, and the sibling settled hundreds of milliseconds into work meant to
+   * last seconds.
+   */
+  const ORPHANED_SIBLING = `
+import { spawn } from 'node:child_process';
+const [holder] = process.argv.slice(2);
+// The grandchild inherits stdout, so the pipe stays open after this leader exits.
+spawn(process.execPath, [holder], { stdio: ['ignore', 'inherit', 'inherit'] });
+`;
+
+  const PIPE_HOLDER = `
+import { setTimeout as later } from 'node:timers';
+later(() => { process.stdout.write('sibling-finished'); }, 4_000);
+`;
+
+  it('protects a sibling whose own leader has already exited (REVIEW F33, reopened)', async () => {
+    // **Ownership must survive the owner.** The previous mechanism reconstructed it from parentage
+    // at sweep time, and parentage is exactly what a reparented grandchild no longer has. A process
+    // group is a kernel fact: the grandchild keeps the pgid its leader had, so the timed-out call's
+    // group kill cannot reach it however long its leader has been dead.
+    const dir = scratch();
+    const grandPid = path.join(dir, 'grand.pid');
+    const sleeper = script(dir, 'sleeper.mjs', SLEEPER);
+    const holder = script(dir, 'holder.mjs', PIPE_HOLDER);
+    const orphaning = script(dir, 'orphaning.mjs', ORPHANED_SIBLING);
+
+    // A: backgrounds a descendant of its own and is killed at 2s, after B exists.
+    const timingOut = shell(
+      'sh',
+      ['-c', `${JSON.stringify(process.execPath)} ${JSON.stringify(sleeper)} ${JSON.stringify(grandPid)} & exec sleep 30`],
+      { cwd: dir, timeoutMs: 2_000 },
+    );
+
+    // B: born after A's spawn, and its leader exits within milliseconds while its grandchild keeps
+    // the call alive. Nothing about B is discoverable by parentage by the time A is swept.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 400);
+    });
+    const sibling = shell(process.execPath, [orphaning, holder], { cwd: dir, timeoutMs: 30_000 });
+
+    const [killed, survivor] = await Promise.all([timingOut, sibling]);
+
+    assert.equal(killed.timedOut, true, 'the first call did not time out, so nothing was swept');
+    assert.equal(
+      survivor.stdout.includes('sibling-finished'),
+      true,
+      `the orphaned sibling's work was reaped by the timed-out call: ${JSON.stringify(survivor.stdout)}`,
+    );
+    assert.equal(survivor.timedOut, false, 'the sibling reports a timeout it never had');
+
+    // And F2 is intact: the timed-out call's own descendant is still taken.
+    const grand = pidFrom(grandPid);
+    toClean.push(grand);
+    assert.equal(died(grand, 10_000), true, `the timed-out call's descendant ${grand} survived`);
+  });
+
   it('lets the sibling finish while the timed-out call and its descendants are gone', async () => {
     const dir = scratch();
     const grandPid = path.join(dir, 'grand.pid');

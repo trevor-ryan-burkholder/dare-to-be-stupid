@@ -5262,189 +5262,79 @@ export function requiredIdsFor(prd) {
  *   be reinterpreted as a successful role result.
  */
 
-/**
- * Every pid sharing this process's process group, or `null` when that cannot be established.
- *
- * `null` is load-bearing and is not an empty set. The caller uses this to decide what to
- * **kill**, so an unreadable answer must mean "sweep nothing" rather than "nothing is there".
- * The same reasoning as nothing-defaults-to-pass, pointed the other way: nothing defaults to
- * killable.
- *
- * Windows has no process groups, so this returns `null` there and the sweep is a no-op — the
- * same degradation `health-probe.mjs` already takes for its own group signal.
- *
- * `ps` is itself a child in this group and would appear in the second snapshot as a process
- * that was not in the first. It is excluded by name rather than left to the `ESRCH` catch,
- * because by the time we parse the output `execFileSync` has reaped it and its pid is free
- * for reuse — a microsecond-wide window in which the catch would not fire and the kill would
- * land on whatever inherited the number.
- *
- * @returns {Set<number> | null}
- */
-function processGroupMembers() {
-  if (process.platform === 'win32') return null;
-  try {
-    const out = execFileSync('ps', ['-eo', 'pid=,pgid=,comm='], {
-      stdio: 'pipe',
-      encoding: 'utf8',
-      timeout: 10_000,
-      maxBuffer: 8 * 1024 * 1024,
-    });
-    /** @type {{ pid: number, pgid: number, comm: string }[]} */
-    const rows = [];
-    for (const line of out.split('\n')) {
-      const parts = line.trim().split(/\s+/);
-      if (parts.length < 3) continue;
-      const pid = Number(parts[0]);
-      const pgid = Number(parts[1]);
-      if (!Number.isInteger(pid) || !Number.isInteger(pgid)) continue;
-      rows.push({ pid, pgid, comm: parts.slice(2).join(' ') });
-    }
-    const self = rows.find((row) => row.pid === process.pid);
-    if (self === undefined) return null;
-    return new Set(rows.filter((row) => row.pgid === self.pgid && row.comm !== 'ps').map((row) => row.pid));
-  } catch {
-    return null;
-  }
-}
+
+
+
 
 /**
- * One `ps` reading: who is in this process's group, and who is whose child.
+ * Signal the process group this call owns, falling back to the child alone where groups do not exist.
  *
- * @returns {{ group: Set<number>, childrenOf: Map<number, number[]> } | null} null when `ps`
- *   cannot answer, which the callers read as "sweep nothing" — nothing defaults to killable.
+ * **Ownership is the whole point** (REVIEW F33, reopened). The previous mechanism reconstructed it:
+ * snapshot the process group before spawning, subtract concurrent siblings' live subtrees
+ * afterwards, kill whatever is left. It failed exactly where it mattered — a sibling's grandchild
+ * that outlived its own leader was reparented, belonged to no live subtree, was not in the
+ * pre-image, and so read as this call's leak. One reviewer timing out reaped another reviewer's
+ * work, hundreds of milliseconds into a five-second job.
+ *
+ * A group cannot be lost that way. The child is spawned `detached`, so its pgid is its own pid and
+ * every descendant inherits it; killing `-pgid` reaches exactly the processes this invocation
+ * started and no others, whether or not the leader is still alive to be asked about them.
+ *
+ * @param {import('node:child_process').ChildProcess} child
+ * @param {NodeJS.Signals} signal
+ * @returns {void}
  */
-function processSnapshot() {
-  if (process.platform === 'win32') return null;
-  try {
-    const out = execFileSync('ps', ['-eo', 'pid=,ppid=,pgid=,comm='], {
-      stdio: 'pipe',
-      encoding: 'utf8',
-      timeout: 10_000,
-      maxBuffer: 8 * 1024 * 1024,
-    });
-    /** @type {Map<number, number[]>} */
-    const childrenOf = new Map();
-    /** @type {{ pid: number, pgid: number }[]} */
-    const rows = [];
-    for (const line of out.split('\n')) {
-      const parts = line.trim().split(/\s+/);
-      if (parts.length < 4) continue;
-      const [pid, ppid, pgid] = parts.slice(0, 3).map(Number);
-      if (!Number.isInteger(pid) || !Number.isInteger(ppid) || !Number.isInteger(pgid)) continue;
-      if (parts.slice(3).join(' ') === 'ps') continue;
-      childrenOf.set(ppid, [...(childrenOf.get(ppid) ?? []), pid]);
-      rows.push({ pid, pgid });
-    }
-    const self = rows.find((row) => row.pid === process.pid);
-    if (self === undefined) return null;
-    return { group: new Set(rows.filter((row) => row.pgid === self.pgid).map((row) => row.pid)), childrenOf };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * `rootPid` and everything under it, from a snapshot.
- *
- * @param {Map<number, number[]>} childrenOf
- * @param {number} rootPid
- * @returns {Set<number>}
- */
-function subtreeOf(childrenOf, rootPid) {
-  /** @type {Set<number>} */
-  const found = new Set([rootPid]);
-  /** @type {number[]} */
-  const queue = [rootPid];
-  while (queue.length > 0) {
-    const pid = /** @type {number} */ (queue.pop());
-    for (const child of childrenOf.get(pid) ?? []) {
-      if (found.has(child)) continue;
-      found.add(child);
-      queue.push(child);
-    }
-  }
-  return found;
-}
-
-/**
- * The direct children of every `shell` call currently in flight.
- *
- * **This registry is what makes the sweep safe under concurrency** (REVIEW F33). Nothing is
- * detached, so every `shell` child and grandchild shares the driver's one process group, and
- * membership alone cannot tell one call's leaked orphan from another call's healthy child. The
- * Panel runs its reviewers under `Promise.all`: reviewer A samples the group before B and C exist,
- * and on timing out classifies them as its own survivors and kills them — one reviewer's failure
- * manufacturing failures in the cold reviewers whose independence is the point of the Panel.
- *
- * Parentage answers it, and the asymmetry is what makes it work: the sweeper's *own* child is dead
- * by the time it sweeps, so its orphans have been reparented and cannot be identified by parentage
- * — but every sibling it must protect is by definition still **alive**, so a sibling's subtree can
- * be read straight out of `ps` at the moment of the sweep.
- *
- * @type {Set<number>}
- */
-const inFlightShellChildren = new Set();
-
-/**
- * Kill whatever joined this process group while a command was running, and report it.
- *
- * **The defect this closes** (`HANDOFF.md`, "the real hang"): `execFileSync`'s timeout signals
- * the direct child and nothing else. A gate that backgrounds a dev server, a watcher or a test
- * runner leaves that grandchild alive after the kill, holding its port and its memory against
- * every later iteration — measured, with the grandchild still running after the timeout fired.
- * `health-probe.mjs` has always done this properly for its own child by signalling a **process
- * group**; gates never did.
- *
- * **Why the group is found by subtraction rather than by `detached: true`.** The obvious fix is
- * to spawn each gate into its own group and signal that. It was measured and rejected: a
- * detached child does not receive the `SIGINT` a terminal sends to its foreground process
- * group, so Ctrl-C would stop reaching gates. That trades a rare orphan — one that only appears
- * after a 45-minute ceiling — for a common one, on the operator's most-used control. `spawnSync`
- * does honour `detached` (undocumented, and verified), so the option was available and is not
- * taken.
- *
- * A leaked grandchild **inherits the driver's own process group**, because nothing detached it.
- * So the membership of that group, sampled before the command and again after it, differs by
- * exactly the command's survivors. No signals move, and Ctrl-C behaves as it always has.
- *
- * Called only on a **timeout**, which is narrower than it could be and deliberately so: the
- * deploy starts a server and then probes it, so a sweep on the success path would kill the
- * thing the smoke check is about to talk to.
- *
- * **Subtraction, minus every live sibling's subtree** (REVIEW F33). A pid is swept when it joined
- * the group after this command started and does not belong to another `shell` call that is still
- * running. The subtraction is what reaches a reparented orphan whose parent link is gone; the
- * sibling exclusion is what stops one timed-out call from reaping another's healthy children.
- *
- * @param {Set<number> | null} before membership sampled before the command started
- * @param {number | undefined} selfPid this call's own child, which is not a sibling of itself
- * @returns {number[]} pids killed, newest-arrival order not guaranteed
- */
-function sweepLeakedGroup(before, selfPid) {
-  if (before === null) return [];
-  const snapshot = processSnapshot();
-  if (snapshot === null) return [];
-  const { group: after, childrenOf } = snapshot;
-  /** @type {Set<number>} */
-  const siblings = new Set();
-  for (const child of inFlightShellChildren) {
-    if (child === selfPid) continue;
-    for (const pid of subtreeOf(childrenOf, child)) siblings.add(pid);
-  }
-  /** @type {number[]} */
-  const killed = [];
-  for (const pid of after) {
-    if (pid === process.pid || before.has(pid) || siblings.has(pid)) continue;
+function signalOwnedGroup(child, signal) {
+  const pid = child.pid;
+  if (typeof pid !== 'number') return;
+  if (process.platform !== 'win32') {
     try {
-      process.kill(pid, 'SIGKILL');
-      killed.push(pid);
+      process.kill(-pid, signal);
+      return;
     } catch {
-      // Already gone between the snapshot and the signal. Not an error: the sweep's job is
-      // that nothing survives, not that it personally did the killing.
+      // No such group: the leader is gone and took the group with it, or this platform refused.
+      // Fall through to the direct child, which is the most that can be done either way.
     }
   }
-  return killed;
+  try {
+    child.kill(signal);
+  } catch {
+    // Already gone between the decision and the signal; 'exit' has fired or is about to.
+  }
+}
+
+/**
+ * Who is in the group this call owns, sampled only when it is about to be killed.
+ *
+ * Reported rather than inferred, and **only on the termination path** — the pre-image this used to
+ * take before every spawn cost a `ps` on each of the hundreds of short Git calls a run makes, to
+ * describe a sweep that almost never happened.
+ *
+ * @param {import('node:child_process').ChildProcess} child
+ * @returns {number[]}
+ */
+function ownedGroupMembers(child) {
+  const pid = child.pid;
+  if (typeof pid !== 'number' || process.platform === 'win32') return [];
+  try {
+    const out = execFileSync('ps', ['-eo', 'pid=,pgid='], {
+      stdio: 'pipe',
+      encoding: 'utf8',
+      timeout: 10_000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    /** @type {number[]} */
+    const members = [];
+    for (const line of out.split('\n')) {
+      const [member, group] = line.trim().split(/\s+/).map(Number);
+      if (Number.isInteger(member) && group === pid && member !== pid) members.push(member);
+    }
+    return members;
+  } catch {
+    // `ps` is unavailable or refused. The kill below still reaches the group; only the report of
+    // what it reached is missing, and an empty list says exactly that.
+    return [];
+  }
 }
 
 /**
@@ -5513,6 +5403,43 @@ const MAX_SHELL_BUFFER = 64 * 1024 * 1024;
 export const TERMINATION_GRACE_MS = 5_000;
 
 /**
+ * The ceiling on one local Git operation (REVIEW F44).
+ *
+ * **Git is not a short local syscall just because it usually is.** It runs repository-configured
+ * clean and smudge filters, `fsmonitor` hooks, commit and tag signing with its pinentry, credential
+ * helpers — and the Builder has unrestricted Bash and can add `.gitattributes` or repository-local
+ * configuration before the Driver's final commit. Codex's reproduction assigned `payload.txt` a
+ * clean filter of `sleep 30`; a `git add -A` then ran past every ceiling the product has, because
+ * Driver-owned Git calls carried none. Nothing else could fire: no timer, no forced kill, no
+ * descendant cleanup, no terminal receipt, no lock release, while the helper stayed alive.
+ *
+ * Two minutes is a ceiling on a hang and not a budget. A `git add` over a very large tree can take
+ * seconds; nothing legitimate here takes minutes, and a run that reached this bound has met a helper
+ * that is not coming back.
+ */
+export const GIT_OPERATION_TIMEOUT_MS = 120_000;
+
+/**
+ * Configuration forced on every Driver-owned Git call.
+ *
+ * Unattended means nothing may wait for a person. Signing is disabled for Driver-owned commits and
+ * tags — an operator who wants signed Meeseeks commits needs a bounded non-interactive policy, and
+ * F44 says so explicitly rather than leaving a pinentry able to hold a run open forever. The
+ * terminal prompt and the askpass helpers are refused for the same reason: a credential prompt with
+ * nobody at the keyboard is a hang wearing a question.
+ */
+export const GIT_NON_INTERACTIVE_ARGS = ['-c', 'commit.gpgSign=false', '-c', 'tag.gpgSign=false'];
+
+/** @type {Record<string, string>} */
+export const GIT_NON_INTERACTIVE_ENV = {
+  GIT_TERMINAL_PROMPT: '0',
+  GIT_ASKPASS: '',
+  SSH_ASKPASS: '',
+  GIT_PAGER: 'cat',
+};
+
+
+/**
  * Really shell out. Exported for tier 2 only.
  *
  * Every unit test drives the gate runners through an injected double, which is what makes the
@@ -5552,16 +5479,31 @@ export function shell(command, args, options) {
   // measured on 18 August 2026 rather than assumed: `ps -eo pid=,pgid=,comm=` is **4.3ms**, about
   // two `git rev-parse` calls, against a run whose iterations are minutes long. Correctness on the
   // overflow path is worth four milliseconds.
-  const before = processGroupMembers();
   return new Promise((resolve) => {
     /** @type {import('node:child_process').ChildProcess} */
     let child;
+    /** What the group kill reached, if one happened. Filled immediately before the kill. */
+    /** @type {number[]} */
+    let reapedGroup = [];
     try {
       child = spawnProcess(command, args, {
         cwd: options.cwd,
         // Defaults to this process's environment, so gates and git calls are unaffected.
         env: options.env ?? process.env,
         stdio: 'pipe',
+        // **Ownership as a kernel fact rather than an inference** (REVIEW F33, reopened). `detached`
+        // makes this child a process-group leader, so every descendant it spawns inherits that
+        // group and termination can name the group instead of guessing which stray pids belonged to
+        // whom. The guessing is what failed: ownership was reconstructed from a pre-spawn snapshot
+        // minus the live subtrees of concurrent siblings, and a sibling's grandchild that outlived
+        // its own leader — reparented, still holding a pipe — belonged to no live subtree and looked
+        // exactly like this call's leak. One reviewer timing out then killed another reviewer's
+        // work. A group cannot be lost that way: the grandchild keeps the pgid its leader had.
+        //
+        // Not on Windows, where there are no POSIX process groups and `process.kill(-pid)` is
+        // unsupported; that platform keeps the direct-child kill it already had, and F11 owns the
+        // gap.
+        detached: process.platform !== 'win32',
       });
     } catch (error) {
       // A spawn that throws synchronously never started anything: nothing to sweep, nothing
@@ -5569,10 +5511,6 @@ export function shell(command, args, options) {
       resolve({ ok: false, status: 1, stdout: '', stderr: /** @type {Error} */ (error).message, timedOut: false });
       return;
     }
-    // Registered for the length of this call so a *concurrent* `shell` that times out can tell this
-    // command's children from its own leaked ones (REVIEW F33). Removed in `settle`, on every path
-    // out, so a finished call protects nothing and a crashed one leaves no permanent exclusion.
-    if (typeof child.pid === 'number') inFlightShellChildren.add(child.pid);
 
     /** @type {Buffer[]} */
     const outChunks = [];
@@ -5603,8 +5541,6 @@ export function shell(command, args, options) {
       if (settled) return;
       settled = true;
       // Deregistered before the sweep runs, not after: the sweep is an argument to `settle`, and a
-      // call must not protect itself from its own cleanup.
-      if (typeof child.pid === 'number') inFlightShellChildren.delete(child.pid);
       if (timer !== undefined) clearTimeout(timer);
       if (graceTimer !== undefined) clearTimeout(graceTimer);
       // Close this side of the pipes. On the timed-out path a leaked descendant may still hold
@@ -5636,10 +5572,10 @@ export function shell(command, args, options) {
         // with SIGTERM must not be read as a timeout, which is why the exit signal is never
         // consulted for this flag.
         timedOut: true,
-        // Absent rather than empty when no sweep ran, so a reader can tell "swept, found
-        // nothing" from "never looked". `before` was sampled above; the survivors are killed
-        // here, after the command is done being waited on.
-        reaped: sweepLeakedGroup(before, child.pid),
+        // What the group kill reached, sampled just before it (REVIEW F33). Empty means the group
+        // held nothing but the leader, which is the ordinary shape; the killing itself is not
+        // conditional on being able to name the members.
+        reaped: reapedGroup,
       });
     };
 
@@ -5656,10 +5592,9 @@ export function shell(command, args, options) {
         overflowed: true,
         // Swept for the same reason the timeout path is: a gate that backgrounded a dev server
         // and then flooded a stream leaks exactly the same descendants, and the cap is no more
-        // able to reap them than the ceiling was. The pre-image is now sampled for every command
-        // (REVIEW F2), so this is absent only where `ps` itself is unavailable — Windows, where
-        // F11 owns the question — rather than wherever a caller happened not to set a ceiling.
-        ...(before === null ? {} : { reaped: sweepLeakedGroup(before, child.pid) }),
+        // able to reap them than the ceiling was. Reported for the same reason and from the same
+        // group kill; F11 owns the platform where groups do not exist.
+        reaped: reapedGroup,
       });
     };
 
@@ -5678,20 +5613,41 @@ export function shell(command, args, options) {
      *
      * @param {() => void} finish the verdict this termination belongs to
      */
+    /**
+     * Kill the group when the leader is already gone.
+     *
+     * The graceful half of `insist` is addressed to a process that no longer exists; what is left is
+     * the group its descendants are still in. Before the group existed this path relied on the
+     * subtraction sweep, which is why removing that sweep without this left an orphaned gate
+     * grandchild alive — caught by the gate-orphan tier-2 fixture, which is exactly the shape it was
+     * written for.
+     */
+    const reapOwnedGroup = () => {
+      if (terminating) return;
+      terminating = true;
+      reapedGroup = ownedGroupMembers(child);
+      signalOwnedGroup(child, 'SIGKILL');
+    };
+
+    /**
+     * Ask the group to stop, give it a bounded moment, then insist — and settle either way.
+     *
+     * @param {() => void} finish the verdict this termination belongs to
+     */
     const insist = (finish) => {
       if (terminating) return;
       terminating = true;
-      try {
-        child.kill('SIGTERM');
-      } catch {
-        // Already gone between the decision and the signal; 'exit' has fired or is about to.
-      }
+      // Sampled **before the first signal**, which is the only moment the group is both doomed and
+      // still nameable. Sampling after the grace reported an empty list for the ordinary case: a
+      // descendant that does not trap `SIGTERM` dies on the group's first signal, so by kill time
+      // there was nothing left to name and the operator saw "nothing was reaped" about a group that
+      // had just been reaped.
+      reapedGroup = ownedGroupMembers(child);
+      signalOwnedGroup(child, 'SIGTERM');
       graceTimer = setTimeout(() => {
-        try {
-          child.kill('SIGKILL');
-        } catch {
-          // Gone during the grace period after all, which is the outcome this was aiming at.
-        }
+        // The whole group again, so a helper that ignored the first signal cannot outlive the
+        // ceiling that bounded its parent.
+        signalOwnedGroup(child, 'SIGKILL');
         finish();
       }, TERMINATION_GRACE_MS);
     };
@@ -5716,6 +5672,7 @@ export function shell(command, args, options) {
         chunks.push(chunk.subarray(0, chunk.length - (total - MAX_SHELL_BUFFER)));
         overflowed = true;
         if (exited) {
+          reapOwnedGroup();
           finishOverflowed();
           return;
         }
@@ -5798,16 +5755,44 @@ export function shell(command, args, options) {
       // it has always had.
       timer = setTimeout(() => {
         timedOut = true;
-        // The direct child may already be gone — a gate whose own process exits at once while
-        // a grandchild holds the pipe is the measured shape — and a kill on a dead pid is not
-        // an error, it is the sweep's problem now.
+        // **The leader may already be gone, and the group is why that no longer matters** — a gate
+        // whose own process exits at once while a backgrounded grandchild holds the pipe is the
+        // measured shape. There is nobody left to ask for a graceful stop, so this goes straight to
+        // the group kill rather than paying a grace period on behalf of a dead process.
         if (exited) {
+          reapOwnedGroup();
           finishTimedOut();
           return;
         }
         insist(finishTimedOut);
       }, options.timeoutMs);
     }
+  });
+}
+
+/**
+ * Every Driver-owned Git call, bounded and non-interactive (REVIEW F44).
+ *
+ * One door, for the reason the context budget lives inside `spawnClaude`: twenty call sites each
+ * remembering to pass a ceiling is twenty chances to forget, and the one that forgets is the one a
+ * hostile `.gitattributes` finds. The ceiling and the non-interactive configuration are applied
+ * here, so a Git call added later inherits both.
+ *
+ * A timeout is reported as a timeout. `shell` already distinguishes it from an ordinary nonzero
+ * exit, and callers key their diagnosis on that: "git add failed: exit 1" and "a clean filter never
+ * returned" send an operator to different places.
+ *
+ * @param {string[]} args
+ * @param {{ cwd: string, timeoutMs?: number }} options `timeoutMs` exists so a test can prove the
+ *   bound in seconds rather than waiting out the production ceiling; no caller in the loop passes
+ *   it, and the default is asserted separately so shortening it here could not go unnoticed.
+ * @returns {Promise<ShellResult>}
+ */
+export function git(args, options) {
+  return shell('git', [...GIT_NON_INTERACTIVE_ARGS, ...args], {
+    cwd: options.cwd,
+    env: { ...process.env, ...GIT_NON_INTERACTIVE_ENV },
+    timeoutMs: options.timeoutMs ?? GIT_OPERATION_TIMEOUT_MS,
   });
 }
 
@@ -6786,7 +6771,9 @@ async function runInvocation(argv, io, crash) {
     /** @type {string[]} */
     let changed;
     try {
-      changed = await changedPaths({ run: (command, args) => shell(command, args, { cwd }), cwd });
+      // Through the bounded door: `changedPaths` runs `git status`, which fsmonitor and clean
+      // filters reach exactly as `git add` does (REVIEW F44).
+      changed = await changedPaths({ run: (command, args) => git(args, { cwd }), cwd });
     } catch (error) {
       // A tree git cannot describe is not an unchanged one, and an exception escaping here would
       // leave the run lock held and reach the operator as a stack trace instead of a verdict.
@@ -6813,7 +6800,7 @@ async function runInvocation(argv, io, crash) {
       // own commit closure has checked both since F31; this is the same rule, at the door.
       //
       // `--` so a path that looks like a revision is still a path.
-      const added = await shell('git', ['add', '--', ...staged], { cwd });
+      const added = await git(['add', '--', ...staged], { cwd });
       if (!added.ok) {
         write(verbatim(`${options.phase}: git add failed: ${(added.stderr || added.stdout).trim().slice(0, 400)}`));
         return false;
@@ -6821,13 +6808,13 @@ async function runInvocation(argv, io, crash) {
       // Asked rather than assumed, for the same reason the loop's closure asks: `git commit` exits
       // non-zero when there is nothing staged, and that is an ordinary phase that produced no
       // change rather than a fault. Only a *staged* tree that then fails to commit is a failure.
-      const pending = await shell('git', ['diff', '--cached', '--name-only'], { cwd });
+      const pending = await git(['diff', '--cached', '--name-only'], { cwd });
       if (!pending.ok) {
         write(verbatim(`${options.phase}: git could not list the staged changes: ${(pending.stderr || '').trim().slice(0, 400)}`));
         return false;
       }
       if (pending.stdout.trim() !== '') {
-        const committed = await shell('git', ['commit', '--no-verify', '-m', options.message], { cwd });
+        const committed = await git(['commit', '--no-verify', '-m', options.message], { cwd });
         if (!committed.ok) {
           write(
             verbatim(
@@ -6860,7 +6847,9 @@ async function runInvocation(argv, io, crash) {
     /** @type {string[]} */
     let changed;
     try {
-      changed = await changedPaths({ run: (command, args) => shell(command, args, { cwd }), cwd });
+      // Through the bounded door: `changedPaths` runs `git status`, which fsmonitor and clean
+      // filters reach exactly as `git add` does (REVIEW F44).
+      changed = await changedPaths({ run: (command, args) => git(args, { cwd }), cwd });
     } catch (error) {
       write(verbatim(/** @type {Error} */ (error).message));
       return false;
@@ -7451,7 +7440,7 @@ async function runInvocation(argv, io, crash) {
   // Captured once, into a name, because two things read it now: the run manifest below and
   // the ship-time mutation scope. Asking git twice would invite the two to disagree after the
   // first commit of the run, which is exactly when the scope stops being empty.
-  const runStartCommit = (await shell('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim();
+  const runStartCommit = (await git(['rev-parse', 'HEAD'], { cwd })).stdout.trim();
   writeRunManifest(
     meeseeksDir,
     buildRunManifest({
@@ -7802,12 +7791,12 @@ async function runInvocation(argv, io, crash) {
    * @returns {Promise<string[]>}
    */
   const changedFiles = async () => {
-    const dirty = (await shell('git', ['diff', '--name-only', 'HEAD'], { cwd })).stdout.split('\n').filter(Boolean);
-    const untracked = (await shell('git', ['ls-files', '--others', '--exclude-standard'], { cwd })).stdout
+    const dirty = (await git(['diff', '--name-only', 'HEAD'], { cwd })).stdout.split('\n').filter(Boolean);
+    const untracked = (await git(['ls-files', '--others', '--exclude-standard'], { cwd })).stdout
       .split('\n')
       .filter(Boolean);
     if (dirty.length > 0 || untracked.length > 0) return [...new Set([...dirty, ...untracked])].sort();
-    return (await shell('git', ['diff', '--name-only', 'HEAD~1', 'HEAD'], { cwd })).stdout.split('\n').filter(Boolean).sort();
+    return (await git(['diff', '--name-only', 'HEAD~1', 'HEAD'], { cwd })).stdout.split('\n').filter(Boolean).sort();
   };
 
   /**
@@ -7823,7 +7812,7 @@ async function runInvocation(argv, io, crash) {
    * @returns {Promise<RaceOutcome>}
    */
   const runRace = async (objective, iteration, baselineShare = 1) => {
-    const base = (await shell('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim();
+    const base = (await git(['rev-parse', 'HEAD'], { cwd })).stdout.trim();
     const parentDir = path.join(os.tmpdir(), `meeseeks-race-${process.pid}-${iteration}`);
     mkdirSync(parentDir, { recursive: true });
     // Before creating anything, clear whatever a killed race left registered. Cleanup on the
@@ -7894,18 +7883,18 @@ async function runInvocation(argv, io, crash) {
           continue;
         }
 
-        await shell('git', ['add', '-A'], { cwd: worktree.dir });
-        await shell('git', ['commit', '--no-verify', '-m', `meeseeks: race candidate ${worktree.index} (iteration ${iteration})`], {
+        await git(['add', '-A'], { cwd: worktree.dir });
+        await git(['commit', '--no-verify', '-m', `meeseeks: race candidate ${worktree.index} (iteration ${iteration})`], {
           cwd: worktree.dir,
         });
-        const commit = (await shell('git', ['rev-parse', 'HEAD'], { cwd: worktree.dir })).stdout.trim();
+        const commit = (await git(['rev-parse', 'HEAD'], { cwd: worktree.dir })).stdout.trim();
         const gated = await gateTree(worktree.dir);
         candidates.push({
           ...worktree,
           commit: commit === base ? null : commit,
           gates: gated.results,
           regressions: ratchetPassing.filter((id) => !gated.passing.has(id)),
-          ...parseNumstat((await shell('git', ['diff', '--numstat', `${base}..HEAD`], { cwd: worktree.dir })).stdout),
+          ...parseNumstat((await git(['diff', '--numstat', `${base}..HEAD`], { cwd: worktree.dir })).stdout),
         });
       }
 
@@ -8162,17 +8151,17 @@ async function runInvocation(argv, io, crash) {
         // after staging returned the *previous* commit as this iteration's candidate. The working
         // bytes still matched F14's seal, because the seal hashes the working tree, and deploy and
         // tag then published an older tree under a `SHIPPED`.
-        const added = await shell('git', ['add', '-A'], { cwd });
+        const added = await git(['add', '-A'], { cwd });
         if (!added.ok) throw new DriverError(`git add failed: ${(added.stderr || added.stdout).trim().slice(0, 400)}`);
         // Distinguished from a failure rather than inferred from one: `git commit` exits non-zero
         // when there is nothing staged, which is an ordinary iteration in which the builder changed
         // nothing, not a fault. Asking git what is staged answers the two apart.
-        const staged = await shell('git', ['diff', '--cached', '--name-only'], { cwd });
+        const staged = await git(['diff', '--cached', '--name-only'], { cwd });
         if (!staged.ok) {
           throw new DriverError(`git could not list the staged changes: ${(staged.stderr || '').trim().slice(0, 400)}`);
         }
         if (staged.stdout.trim() !== '') {
-          const committed = await shell('git', ['commit', '--no-verify', '-m', message], { cwd });
+          const committed = await git(['commit', '--no-verify', '-m', message], { cwd });
           if (!committed.ok) {
             throw new DriverError(
               `git commit failed: ${(committed.stderr || committed.stdout).trim().slice(0, 400)}. ` +
@@ -8180,7 +8169,7 @@ async function runInvocation(argv, io, crash) {
             );
           }
         }
-        const head = await shell('git', ['rev-parse', 'HEAD'], { cwd });
+        const head = await git(['rev-parse', 'HEAD'], { cwd });
         const sha = head.stdout.trim();
         if (!head.ok || !/^[0-9a-f]{7,}$/.test(sha)) {
           throw new DriverError(`git could not name HEAD after committing: ${(head.stderr || '').trim().slice(0, 400)}`);
@@ -8191,14 +8180,14 @@ async function runInvocation(argv, io, crash) {
       // tree; this asks git whether that tree is what is actually committed. A clean worktree after
       // a commit is the evidence that the reviewed bytes are in the commit rather than beside it.
       verifyPublication: async () => {
-        const head = await shell('git', ['rev-parse', 'HEAD'], { cwd });
+        const head = await git(['rev-parse', 'HEAD'], { cwd });
         if (!head.ok || !/^[0-9a-f]{7,}$/.test(head.stdout.trim())) {
           return { ok: false, detail: 'git could not name HEAD, so nothing can be said about what would be published' };
         }
         // Reported, not just validated (REVIEW F38): the caller re-runs this after the deploy and
         // has to compare `HEAD` against the commit it verified, which it cannot do from `ok` alone.
         const sha = head.stdout.trim();
-        const status = await shell('git', ['status', '--porcelain'], { cwd });
+        const status = await git(['status', '--porcelain'], { cwd });
         if (!status.ok) {
           return { ok: false, detail: 'git could not describe the tree, so its cleanliness at publication is unknown' };
         }
@@ -8213,7 +8202,7 @@ async function runInvocation(argv, io, crash) {
         }
         return { ok: true, detail: `published ${sha.slice(0, 7)} with a clean tree`, head: sha };
       },
-      diffStat: async () => (await shell('git', ['diff', '--stat', 'HEAD~1'], { cwd })).stdout.trim(),
+      diffStat: async () => (await git(['diff', '--stat', 'HEAD~1'], { cwd })).stdout.trim(),
       ship: async (iteration, commit) => {
         const tag = `meeseeks/iter-${String(iteration).padStart(3, '0')}`;
         // **Both tags name the reviewed commit explicitly** (REVIEW F38). `git tag -f <name>` with
@@ -8227,7 +8216,7 @@ async function runInvocation(argv, io, crash) {
         // Both tag operations are required (REVIEW F31). A tag that silently failed to be written
         // leaves a run reporting `SHIPPED` with no artifact identifying what shipped, which is the
         // audit that could not verify the first `SHIPPED` at all, repeated.
-        const iterationTag = await shell('git', ['tag', '-f', tag, commit], { cwd });
+        const iterationTag = await git(['tag', '-f', tag, commit], { cwd });
         if (!iterationTag.ok) {
           throw new DriverError(
             `git could not write the iteration tag ${tag}: ${(iterationTag.stderr || '').trim().slice(0, 400)}`,

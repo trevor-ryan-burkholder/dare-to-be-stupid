@@ -4517,6 +4517,83 @@ The one worth remembering: **`subject.tree` and `results.gates` were two variabl
 married the wrong ones.** Nothing about either variable was wrong on its own. They were correct,
 current, well-named, and describing different iterations.
 
+### 114. Process ownership is a group, and Driver-owned Git is bounded by it — IMPLEMENTED (0.212.0); REVIEW F33 and F44 open pending Codex
+
+**Codex reopened F33 by falsifying the previous repair, and the falsification is exact.** Ownership
+was *reconstructed*: snapshot the process group before spawning, subtract each concurrent sibling's
+live subtree afterwards, kill what remains. The subtraction reads parentage out of `ps` at sweep
+time — and a sibling's grandchild that has outlived its own leader has no parentage left. It is
+reparented, it belongs to no live subtree, it is absent from the pre-image, and so it reads as *this*
+call's leaked descendant. Codex's reproduction: A reaped both its own descendant and B's, and B
+settled hundreds of milliseconds into work meant to last five seconds. The existing evidence could
+not see it, because that fixture keeps B's leader alive.
+
+**The repair is to stop inferring.** Each `shell` child is spawned `detached`, making it a
+process-group leader; every descendant inherits that pgid; termination signals `-pgid`. Ownership
+becomes a kernel fact that survives the owner: the grandchild keeps the group its leader had, so no
+other call's termination can reach it however long ago that leader died.
+
+**It deletes the machinery rather than patching it.** `processGroupMembers`, `processSnapshot`,
+`subtreeOf`, `sweepLeakedGroup` and the `inFlightShellChildren` registry are gone — about 120 lines
+whose whole job was reconstructing what the kernel already knew. The pre-spawn `ps` that 0.208.0 made
+unconditional for F2 goes with them: the group is sampled **once, at the moment of termination**,
+which is also the only moment it is both doomed and still nameable. Sampling after the grace reported
+an empty list for the ordinary case, because a descendant that does not trap `SIGTERM` dies on the
+group's first signal.
+
+**Windows keeps what it had.** There are no POSIX groups there and `process.kill(-pid)` is
+unsupported, so that platform still signals the direct child alone, and F11 still owns the gap.
+
+**Evidence.** A tier-2 case reproduces the exact falsified shape: a sibling whose leader exits within
+milliseconds while a grandchild holds the pipe open, born after the other call's spawn. Red against
+the old ownership — the sibling's work is reaped and it settles early — green under the group. The
+eleven existing termination cases stay green, including the resistant child, its descendants, the
+overflow verdict, the cooperative child that does not pay the grace, and the bystander that predates
+the call.
+
+**One gap the change opened, and the fixture that caught it.** Removing the subtraction sweep broke
+the path where the *leader has already exited* when the ceiling fires — a gate that backgrounds work
+and returns immediately is the measured shape, and that branch never called `insist`, so nothing
+signalled the group. The gate-orphan tier-2 fixture failed exactly there, which is what it was
+written for. That path now goes straight to the group kill: the graceful half of `insist` is
+addressed to a process that no longer exists, and what is left is the group its descendants are
+still in.
+
+**F44 lands on top of it, in the same slice, because the two cannot be separated.** Codex states the
+dependency itself — bounded Git cleanup must not reintroduce F33's cross-call killing — and both
+changes live in the same function. Committing them apart would mean committing a Git ceiling whose
+termination still guessed at ownership.
+
+**Git is not a short local syscall just because it usually is.** It runs repository-configured clean
+and smudge filters, `fsmonitor` hooks, signing with its pinentry, and credential helpers — and the
+Builder has unrestricted Bash, so it can add a `.gitattributes` or a repository-local config entry
+before the Driver's final commit. Codex's reproduction assigned `payload.txt` a clean filter of
+`sleep 30`, and `git add -A` then ran past every ceiling the product has, because **all twenty
+Driver-owned Git calls carried none**. Nothing else could fire while the helper stayed alive: no
+timer, no forced kill, no descendant cleanup, no terminal receipt, no lock release.
+
+**One door, not twenty ceilings.** `git(args, { cwd })` applies the bound and the non-interactive
+configuration, and every Driver-owned call goes through it — including the two `changedPaths`
+callbacks, which run `git status` and reach fsmonitor exactly as `add` does. Twenty call sites each
+remembering to pass a ceiling is twenty chances to forget, and the one that forgets is the one a
+hostile `.gitattributes` finds. The ceiling is **120 seconds**: a bound on a hang, not a budget.
+
+**Signing is disabled for Driver-owned commits and tags**, because a pinentry with nobody at the
+keyboard is a hang wearing a question. So are the terminal prompt and the askpass helpers. F44 asks
+for this explicitly rather than leaving an operator's signing policy able to hold a run open.
+
+**Evidence.** A tier-2 fixture arms the same hostile clean filter Codex used — repository-local
+config plus `.gitattributes`, verified with `git check-attr` — and proves the call returns on the
+Driver's bound, reports a *timeout* rather than an ordinary failure, and **leaves no stalled helper
+running**: that last one is the half group ownership had to land first for, since the filter is a
+grandchild that killing `git` alone would strand. A repository demanding a signature still commits.
+An ordinary repository pays nothing. A repository with no commits still reports an ordinary failure
+rather than a timeout, which is the discriminator F44 asks for. The 120-second default is pinned as a
+value, and a source scan refuses any Git call that bypasses the door.
+
+**This was the prerequisite F44 named.** Bounded Git effects rely on termination reaching a helper
+the leader spawned, because the helper is in the group.
+
 ## Observations recorded rather than repaired
 
 - **Tier 2 refused once and passed on an immediate re-run** (18 Aug 2026, committing 0.196.0 through
