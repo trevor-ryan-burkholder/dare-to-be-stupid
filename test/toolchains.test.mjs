@@ -119,6 +119,43 @@ describe('the operation constructors', () => {
 });
 
 describe('the node toolchain', () => {
+
+  it('gives the e2e gate a reporter and an output path, so browser ids can reach the ratchet', () => {
+    // **The defect this asserts against.** `e2e` was a bare `npx playwright test` while `reports`
+    // and `reportOwners` both declared that it writes `e2e-report.json`. Playwright's json reporter
+    // goes to stdout unless `PLAYWRIGHT_JSON_OUTPUT_NAME` names a file, so the declared report was
+    // never produced, and every Playwright id was permanently unmeasured: it could not regress
+    // (item 95 reads an absent owning report as unmeasured), and it could never bank either.
+    //
+    // `templates/builder-system.md` and `templates/frontend-direction.md` both promise the builder
+    // that a named Playwright test enters the monotonic ratchet. That promise had no wiring behind
+    // it for 226 versions, and it is the silent-degradation class `CLAUDE.md` says this repository
+    // is worst at seeing: nothing failed, no gate complained, the accessibility guarantee simply
+    // was not there.
+    const e2e = /** @type {{ kind: 'command', command: string[], env?: Record<string, string> }} */ (
+      nodeToolchain.operations.e2e(CONTEXT)
+    );
+    assert.deepEqual(e2e.command, ['npx', 'playwright', 'test', '--reporter=json']);
+    assert.deepEqual(e2e.env, {
+      PLAYWRIGHT_JSON_OUTPUT_NAME: path.join('/repo', '.meeseeks', 'e2e-report.json'),
+    });
+  });
+
+  it('carries an operation environment onto the gate that will run it', () => {
+    // The env is useless if `gatesFor` drops it between the toolchain and the runner, which is
+    // exactly where a report path would go missing without anything failing.
+    const { gates } = gatesFor(nodeToolchain, CONTEXT);
+    const e2e = /** @type {{ name: string, command: string[], env?: Record<string, string> }} */ (
+      gates.find((gate) => gate.name === 'e2e')
+    );
+    assert.deepEqual(e2e.env, {
+      PLAYWRIGHT_JSON_OUTPUT_NAME: path.join('/repo', '.meeseeks', 'e2e-report.json'),
+    });
+    // A gate with nothing to declare carries no env key at all rather than an empty object, so a
+    // reader cannot mistake "no environment needed" for "environment computed and came out empty".
+    const lint = /** @type {{ env?: Record<string, string> }} */ (gates.find((gate) => gate.name === 'lint'));
+    assert.equal(Object.hasOwn(lint, 'env'), false);
+  });
   it('produces the exact commands it replaced', () => {
     assert.deepEqual(
       GATE_OPERATIONS.map((name) => nodeToolchain.operations[name](CONTEXT)),
@@ -136,7 +173,11 @@ describe('the node toolchain', () => {
             `--outputFile=${path.join('/repo', '.meeseeks', 'test-report.json')}`,
           ],
         },
-        { kind: 'command', command: ['npx', 'playwright', 'test'] },
+        {
+          kind: 'command',
+          command: ['npx', 'playwright', 'test', '--reporter=json'],
+          env: { PLAYWRIGHT_JSON_OUTPUT_NAME: path.join('/repo', '.meeseeks', 'e2e-report.json') },
+        },
         { kind: 'command', command: ['npm', 'audit', '--audit-level=high'] },
       ],
     );

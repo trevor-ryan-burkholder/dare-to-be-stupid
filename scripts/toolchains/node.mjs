@@ -123,7 +123,25 @@ export const nodeToolchain = {
     /** @param {{ meeseeksDir: string }} context */
     unit: ({ meeseeksDir }) =>
       command(['npx', 'vitest', 'run', '--reporter=json', `--outputFile=${path.join(meeseeksDir, UNIT_REPORT)}`]),
-    e2e: () => command(['npx', 'playwright', 'test']),
+    /**
+     * **The reporter is not optional, and its output path is not either.** `reports` below
+     * declares that this operation writes `e2e-report.json`, and for 226 versions nothing made
+     * it do so: playwright's json reporter writes to stdout unless `PLAYWRIGHT_JSON_OUTPUT_NAME`
+     * names a file. So the declared report never appeared, every Playwright id stayed permanently
+     * unmeasured, and `templates/builder-system.md`'s promise that "a named Playwright test enters
+     * the ratchet" had no wiring behind it. Nothing failed while that was true, which is what made
+     * it survive: an absent report reads as an unproduced one (item 95), not as a broken gate.
+     *
+     * The variable, not a flag, because playwright exposes no CLI option for the json output path.
+     * That contract belongs to another binary, so it is owed one installed check rather than more
+     * assertions here — the argv defect's rule, `DESIGN.md` §11.1.
+     *
+     * @param {{ meeseeksDir: string }} context
+     */
+    e2e: ({ meeseeksDir }) =>
+      command(['npx', 'playwright', 'test', '--reporter=json'], {
+        PLAYWRIGHT_JSON_OUTPUT_NAME: path.join(meeseeksDir, E2E_REPORT),
+      }),
     'security-audit': () => command(['npm', 'audit', '--audit-level=high']),
 
     // Every element of this argv has been executed against Stryker 9.6.1 rather than read
@@ -211,7 +229,7 @@ export const nodeToolchain = {
   reports: [UNIT_REPORT, E2E_REPORT],
 
   // Which operation writes each of them (REVIEW F22, PLAN item 126). `unit` passes `--outputFile`;
-  // `e2e` writes playwright's own reporter output. Stated rather than matched on the name, because
+  // `e2e` passes `PLAYWRIGHT_JSON_OUTPUT_NAME`. Stated rather than matched on the name, because
   // the driver binds a report digest to a gate result through this and a convention is not a
   // contract.
   reportOwners: { [UNIT_REPORT]: 'unit', [E2E_REPORT]: 'e2e' },

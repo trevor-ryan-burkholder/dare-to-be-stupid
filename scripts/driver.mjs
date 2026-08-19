@@ -167,7 +167,7 @@ import { CONDITIONAL_GATE_OPERATIONS, gatesFor, resolveToolchain } from './toolc
 
 /** @typedef {import('./config.mjs').MeeseeksConfig} MeeseeksConfig */
 /** @typedef {'SHIPPED' | 'STALLED' | 'BUDGET' | 'ABORTED'} TerminalState */
-/** @typedef {{ name: string, command: string[], required: boolean }} Gate */
+/** @typedef {{ name: string, command: string[], required: boolean, env?: Record<string, string> }} Gate */
 /** @typedef {{ name: string, ok: boolean, status: number, detail: string }} GateResult */
 /**
  * @typedef {{ id: string, status: 'pass' | 'fail', evidence: string | null, detail: string }} RequirementVerdict
@@ -924,6 +924,12 @@ export async function runGates(gates, options) {
       // Absent unless supplied, so every existing caller and test double keeps the unbounded
       // wait gates had before 0.81.0. `main` always supplies it.
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      // **Merged over the run's environment, never replacing it.** A gate's declared variables say
+      // where to write a report; they are not a sandbox. Handing `shell` the bare pair would drop
+      // PATH and the command would not be found — a failure that at least announces itself, unlike
+      // the one this exists to fix. Still absent when the gate declares nothing, so `shell` keeps
+      // its `process.env` default and no existing caller changes shape.
+      ...(gate.env === undefined ? {} : { env: { ...process.env, ...gate.env } }),
     });
     // A killed gate is distinguished from one that ran and failed, and the distinction is not
     // cosmetic: this detail is copied into the brief the builder is handed. Told `exit 1` for

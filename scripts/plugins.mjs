@@ -34,7 +34,12 @@ import { execFileSync } from 'node:child_process';
  * A runner may answer synchronously (every test double does) or with a promise (the driver's
  * real `shell` does, since the async conversion); consumers `await` the call either way.
  *
- * @typedef {(command: string, args: string[], options: { cwd: string, timeoutMs?: number }) => RunResult | Promise<RunResult>} Runner
+ * `env`, when given, is the **complete** environment for the child, already merged by the caller
+ * over the run's own. The real `shell` defaults to `process.env` when it is absent, so a runner
+ * that ignores it silently drops whatever a gate needed — which is why it is in the contract rather
+ * than left to whichever implementation happens to support it.
+ *
+ * @typedef {(command: string, args: string[], options: { cwd: string, timeoutMs?: number, env?: Record<string, string | undefined> }) => RunResult | Promise<RunResult>} Runner
  */
 /**
  * @typedef {{
@@ -135,6 +140,7 @@ export function defaultRunner(command, args, options) {
       cwd: options.cwd,
       stdio: 'pipe',
       encoding: 'utf8',
+      ...(options.env === undefined ? {} : { env: options.env }),
       ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
     });
     return { ok: true, status: 0, stdout, stderr: '' };

@@ -212,14 +212,17 @@ export function resolveToolchain(root) {
  * @param {Toolchain} toolchain
  * @param {OperationContext} context
  * @param {OperationName[]} [operations] which pass to build; defaults to the first
+ * A gate carries `env` only when its operation declared one, so that an absent key means "this
+ * command needs nothing added" rather than "an environment was computed and came out empty".
+ *
  * @returns {{
- *   gates: { name: string, command: string[], required: boolean }[],
+ *   gates: { name: string, command: string[], required: boolean, env?: Record<string, string> }[],
  *   skipped: { name: string, reason: string }[]
  * }}
  * @throws {ToolchainError} when the toolchain does not implement a gate operation
  */
 export function gatesFor(toolchain, context, operations = GATE_OPERATIONS) {
-  /** @type {{ name: string, command: string[], required: boolean }[]} */
+  /** @type {{ name: string, command: string[], required: boolean, env?: Record<string, string> }[]} */
   const gates = [];
   /** @type {{ name: string, reason: string }[]} */
   const skipped = [];
@@ -238,7 +241,12 @@ export function gatesFor(toolchain, context, operations = GATE_OPERATIONS) {
       skipped.push({ name, reason: operation.reason });
       continue;
     }
-    gates.push({ name, command: operation.command, required: true });
+    gates.push({
+      name,
+      command: operation.command,
+      required: true,
+      ...(operation.env === undefined ? {} : { env: operation.env }),
+    });
   }
 
   return { gates, skipped };

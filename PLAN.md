@@ -5175,6 +5175,61 @@ fingerprint. `npm run test:integration` passed 242 of 242 in 508.5 seconds. No p
 needed: the changed contracts are local Git/filesystem/receipt behavior and do not depend on a Claude
 CLI response.
 
+### 128. The e2e gate declared a report nothing told it to write — IMPLEMENTED (0.227.0)
+
+**Origin:** Phase 1, 19 Aug 2026. Found by an adversarial reviewer of the completeness evaluation
+and confirmed by hand before any repair. It appears in no ledger, no `REVIEW.md` finding and no
+prior item.
+
+**The defect.** `nodeToolchain.reports` and `reportOwners` both declared that the `e2e` operation
+writes `e2e-report.json`, and the operation was `command(['npx', 'playwright', 'test'])`. Playwright's
+json reporter writes to **stdout** unless `PLAYWRIGHT_JSON_OUTPUT_NAME` names a file, and that
+variable appeared nowhere in `scripts/`, `templates/`, `hooks/` or `test/`. The declared report was
+therefore never produced, and **no Playwright id could ever enter the ratchet.**
+
+It survived 226 versions because every signal was silent. The gate exits zero. An absent report whose
+owning gate did not produce it reads as *unmeasured*, not regressed — item 95, correct behaviour,
+which here masked the fact that the ids never banked in the first place. The comment at the
+`reportOwners` site asserted the belief directly (`e2e` writes playwright's own reporter output) and
+nothing tested it, because a unit test of an argv cannot see what another binary does with it.
+
+Meanwhile `templates/builder-system.md` and `templates/frontend-direction.md` both promise the
+builder that a named Playwright test enters the monotonic ratchet, and
+`templates/toolchain-node.md` warns at length about the *unit* reporter while saying nothing about
+this one. The accessibility guarantee the frontend direction sells was unenforced.
+
+**The repair.** The toolchain vocabulary gained an operation environment, because there is no CLI
+flag for playwright's json output path:
+
+- `command(argv, env)` validates the environment and fails closed on anything that is not non-empty
+  names mapped to non-empty strings, and refuses an empty object outright so that "needs no
+  environment" and "computed an environment and it came out empty" stay distinguishable.
+- `gatesFor` carries `env` onto the gate only when the operation declared one.
+- `runGates` merges it **over** `process.env` rather than replacing it. A gate variable says where to
+  write a report; it is not a sandbox, and a child without PATH cannot find the binary it was told to
+  run.
+- The `Runner` contract now names `env`. The real `shell` already honoured it — this was the one
+  link where a runner could silently drop what a gate needed.
+- `e2e` became `npx playwright test --reporter=json` with `PLAYWRIGHT_JSON_OUTPUT_NAME` pointing at
+  `<meeseeksDir>/e2e-report.json`.
+
+**Acceptance evidence.** Red first at tier 1 (two assertions, against the real `nodeToolchain` and
+`gatesFor`), and red again at tier 2 at **two separate links**: with `runGates` dropping the gate
+env, and with `e2e` reverted to the bare command. Both restored green.
+`test/integration/e2e-report.integration.test.mjs` runs the real `commandGates`, `runGates` and
+`shell` against a counterfeit `npx` that writes only when the variable is set, and asserts the
+landed file is **byte-identical** to the committed Playwright 1.62.1 capture. A first draft of that
+test invented a plausible report; `parseReport` rejected it as matching no known reporter, which is
+the fixtures-over-mocks rule earning its place again.
+
+**What is deliberately not claimed.** That Playwright honours `PLAYWRIGHT_JSON_OUTPUT_NAME` is a
+contract owned by another binary. Playwright is not a dependency of this repository, so per §11.1's
+rule from the argv defect it is **owed one installed check**, not more assertions — recorded here as
+the residual, and the cheapest place to discharge it is the next live web-ui run.
+
+**Gates:** lint clean, typecheck clean, tier 1 2924/2924, tier 2 244/244, release-check ok,
+`git diff --check` clean.
+
 ## Observations recorded rather than repaired
 
 - **Tier 2 refused once and passed on an immediate re-run** (18 Aug 2026, committing 0.196.0 through

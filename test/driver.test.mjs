@@ -5361,9 +5361,30 @@ describe('commandGates', () => {
         ['npm', 'run', 'lint'],
         ['npm', 'run', 'typecheck'],
         ['npx', 'vitest', 'run', '--reporter=json', `--outputFile=${path.join('/repo/.meeseeks', 'test-report.json')}`],
-        ['npx', 'playwright', 'test'],
+        ['npx', 'playwright', 'test', '--reporter=json'],
         ['npm', 'audit', '--audit-level=high'],
       ],
+    );
+  });
+
+  it('hands the e2e gate the variable that makes its declared report exist', () => {
+    // `commandGates` is the production path the driver runs, so the report path has to survive
+    // the whole trip: toolchain operation -> `gatesFor` -> the gate the runner is handed. It did
+    // not exist at all until this slice; playwright's json reporter writes to stdout unless
+    // `PLAYWRIGHT_JSON_OUTPUT_NAME` names a file, so the gate declared a report it never wrote and
+    // Playwright ids could not enter the ratchet.
+    const gates = commandGates('/repo', '/repo/.meeseeks');
+    const e2e = /** @type {{ env?: Record<string, string> }} */ (
+      gates.find((gate) => gate.name === 'e2e')
+    );
+    assert.deepStrictEqual(e2e.env, {
+      PLAYWRIGHT_JSON_OUTPUT_NAME: path.join('/repo/.meeseeks', 'e2e-report.json'),
+    });
+    // Every other gate needs nothing added, and says so by carrying no key rather than an empty
+    // object — the same distinction `command()` refuses to blur.
+    assert.deepStrictEqual(
+      gates.filter((gate) => Object.hasOwn(gate, 'env')).map((gate) => gate.name),
+      ['e2e'],
     );
   });
 
