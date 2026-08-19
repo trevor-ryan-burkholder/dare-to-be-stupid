@@ -352,3 +352,78 @@ describe('a provisioning deadline that fires is reported as a deadline (REVIEW F
     assert.deepStrictEqual(result.warnings, []);
   });
 });
+
+describe('a detect-only plugin (PLAN item 29)', () => {
+  const GITLEAKS_DETECT = 'gitleaks version';
+  const GITLEAKS_GATE = [
+    'gitleaks',
+    'dir',
+    '--report-format',
+    'json',
+    '--report-path',
+    '-',
+    '--redact',
+    '--no-banner',
+    '.',
+  ];
+
+  it('contributes its gate when the binary is present', async () => {
+    const cwd = makeProject({ 'package.json': '{"name":"app"}\n' });
+    const { runner, calls } = fakeRunner({ [GITLEAKS_DETECT]: { ok: true, stdout: '8.30.1' } });
+    const result = await installQualityPlugins({ cwd, plugins: ['gitleaks'], runner });
+    assert.deepStrictEqual(result.gates, [
+      { plugin: 'gitleaks', command: GITLEAKS_GATE, interpret: 'gitleaks' },
+    ]);
+    assert.deepStrictEqual(result.warnings, []);
+    // Detected and therefore not installed — and nothing else was run.
+    assert.deepStrictEqual(calls, [GITLEAKS_DETECT]);
+    assert.deepStrictEqual(result.skipped, ['gitleaks']);
+  });
+
+  it('warns and contributes no gate when the binary is absent, without inventing an installer', async () => {
+    // The gate must not survive the absence. A gate whose command is not on PATH fails with
+    // "command not found" every iteration, which reads to a builder as a defect in its own code.
+    const cwd = makeProject({ 'package.json': '{"name":"app"}\n' });
+    const { runner, calls } = fakeRunner({ [GITLEAKS_DETECT]: { ok: false } });
+    const result = await installQualityPlugins({ cwd, plugins: ['gitleaks'], runner });
+    assert.deepStrictEqual(result.gates, []);
+    assert.deepStrictEqual(result.installed, []);
+    // Exactly one command ran: the detection. No install was attempted or guessed.
+    assert.deepStrictEqual(calls, [GITLEAKS_DETECT]);
+    assert.equal(result.warnings.length, 1);
+    assert.match(result.warnings[0], /^quality plugin gitleaks is not installed and has no cross-platform install command/);
+    // Silence is the failure mode here: a check that vanishes reads exactly like one that passed.
+    assert.match(result.warnings[0], /this run has no gitleaks gate/);
+  });
+
+  it('refuses to register a required plugin that has no installer', async () => {
+    // A required plugin contributes a definition-of-done line. One that cannot be provisioned when
+    // absent would let a run reach its gates having silently dropped that line, which is the shape
+    // DESIGN.md section 5 refuses. Caught at resolution rather than at gate time.
+    const contradiction = { ...KNOWN_PLUGINS.gitleaks, required: true };
+    const original = KNOWN_PLUGINS.gitleaks;
+    try {
+      /** @type {Record<string, unknown>} */ (KNOWN_PLUGINS).gitleaks = contradiction;
+      assert.throws(
+        () => resolvePlugin('gitleaks'),
+        (error) => error instanceof PluginInstallError && error.message.includes('required with no install command'),
+      );
+    } finally {
+      /** @type {Record<string, unknown>} */ (KNOWN_PLUGINS).gitleaks = original;
+    }
+  });
+
+  it('is registered optional, with no capability, and named as detect-only', () => {
+    // Asserted as values because each one is a decision: optional because it cannot be installed,
+    // uncapability'd because a committed credential is a defect in every project shape, and
+    // `install: null` because no cross-platform argv exists.
+    const spec = resolvePlugin('gitleaks');
+    assert.equal(spec.required, false);
+    assert.equal(spec.capability, undefined);
+    assert.equal(spec.install, null);
+    assert.equal(spec.interpret, 'gitleaks');
+    // `detect`, not `dir`, is what a version check must not be: the subcommand gitleaks removed.
+    assert.deepStrictEqual(spec.detect, ['gitleaks', 'version']);
+    assert.equal(spec.gate?.includes('detect'), false);
+  });
+});

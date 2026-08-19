@@ -42,10 +42,17 @@ import { execFileSync } from 'node:child_process';
  * @typedef {(command: string, args: string[], options: { cwd: string, timeoutMs?: number, env?: Record<string, string | undefined> }) => RunResult | Promise<RunResult>} Runner
  */
 /**
+ * `install: null` is a **detect-only** plugin: one with no canonical cross-platform install
+ * command. It is used rather than inventing an installer, because guessing one is how a run ends up
+ * executing something nobody chose — the same reasoning that makes an unknown plugin name an error.
+ * A detect-only plugin that is absent warns and contributes no gate; it may therefore never be
+ * `required`, and {@link resolvePlugin} refuses that combination rather than leaving a run to
+ * discover at gate time that a required check was never installable.
+ *
  * @typedef {{
  *   name: string, required: boolean, capability?: string,
- *   detect: string[], install: string[], gate: string[] | null, note: string,
- *   interpret?: 'design-slop'
+ *   detect: string[], install: string[] | null, gate: string[] | null, note: string,
+ *   interpret?: 'design-slop' | 'gitleaks'
  * }} PluginSpec
  */
 
@@ -82,6 +89,30 @@ export const KNOWN_PLUGINS = {
     gate: ['npx', 'impeccable', 'detect', '--json', 'src/'],
     interpret: 'design-slop',
     note: 'frontend design-slop detector; deterministic rules, JSON output, exit codes (DESIGN.md §5.1)',
+  },
+  gitleaks: {
+    name: 'gitleaks',
+    // Optional, and it has to be: it is detect-only, so a run on a machine without the binary
+    // cannot be given the check no matter how much it is wanted.
+    required: false,
+    // No capability. A committed credential is a defect in a CLI, a library and a web application
+    // alike; there is no project shape this question does not apply to.
+    detect: ['gitleaks', 'version'],
+    // **Detect-only on purpose** (PLAN item 29). gitleaks ships as a single binary through
+    // Homebrew, apt, scoop, Docker and a GitHub release tarball, and there is no one argv that
+    // installs it across the platforms this repository supports. An installer picked for the
+    // author's machine would fail on the other two and read as "the tool is broken".
+    install: null,
+    // Every element measured against gitleaks 8.30.1 rather than read from documentation, and the
+    // first measurement paid for itself: **`detect` is no longer a subcommand**. The captured
+    // contract and its fixtures are in `test/fixtures/gitleaks/README.md`.
+    //
+    // `--redact` is a security decision, not tidiness. This gate's output becomes repair context
+    // handed to a builder and evidence handed to a reviewer; a scanner that copied the credential
+    // it found into a model's context would widen the exposure it exists to report.
+    gate: ['gitleaks', 'dir', '--report-format', 'json', '--report-path', '-', '--redact', '--no-banner', '.'],
+    interpret: 'gitleaks',
+    note: 'committed-secret scanner; deterministic rules, JSON report, redacted findings (DESIGN.md §14, PLAN item 29)',
   },
   knip: {
     name: 'knip',
@@ -175,6 +206,13 @@ export function resolvePlugin(name) {
         `Known plugins: ${Object.keys(KNOWN_PLUGINS).join(', ')}. Refusing to guess an install command.`,
     );
   }
+  if (spec.required && spec.install === null) {
+    throw new PluginInstallError(
+      `${JSON.stringify(name)} is registered as required with no install command. A detect-only plugin ` +
+        'cannot be provisioned when it is absent, so a run could reach its gates having silently dropped a ' +
+        'required definition-of-done line. Register it as optional, or give it an installer.',
+    );
+  }
   return spec;
 }
 
@@ -201,7 +239,7 @@ export const INSTALL_TIMEOUT_MS = 10 * 60_000;
  * @param {{ cwd: string, plugins: string[], runner?: Runner }} options
  * @returns {Promise<{
  *   installed: string[], skipped: string[], warnings: string[],
- *   gates: { plugin: string, command: string[], capability?: string, interpret?: 'design-slop' }[]
+ *   gates: { plugin: string, command: string[], capability?: string, interpret?: 'design-slop' | 'gitleaks' }[]
  * }>}
  * @throws {PluginInstallError} when a required plugin cannot be provisioned
  */
@@ -215,7 +253,7 @@ export async function installQualityPlugins(options) {
   const skipped = [];
   /** @type {string[]} */
   const warnings = [];
-  /** @type {{ plugin: string, command: string[], capability?: string, interpret?: 'design-slop' }[]} */
+  /** @type {{ plugin: string, command: string[], capability?: string, interpret?: 'design-slop' | 'gitleaks' }[]} */
   const gates = [];
 
   for (const name of plugins) {
@@ -237,6 +275,16 @@ export async function installQualityPlugins(options) {
     }
     if (present.ok) {
       skipped.push(spec.name);
+    } else if (spec.install === null) {
+      // Detect-only and absent. Not an error and not silence: the operator is told the check did
+      // not run, because a gate that vanishes reads exactly like one that passed. `continue`
+      // rather than falling through, so no gate is contributed — a scanner that is not installed
+      // must not leave a gate that will fail on `command not found` every iteration.
+      warnings.push(
+        `quality plugin ${spec.name} is not installed and has no cross-platform install command, so this run ` +
+          `has no ${spec.name} gate. Install it yourself to enable the check: ${spec.note}`,
+      );
+      continue;
     } else {
       const result = await run(spec.install[0], spec.install.slice(1), { cwd, timeoutMs: INSTALL_TIMEOUT_MS });
       if (result.timedOut === true) {

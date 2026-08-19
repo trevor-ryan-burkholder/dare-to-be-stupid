@@ -67,7 +67,7 @@ describe('defaultConfig', () => {
       designModel: 'claude-opus-5',
       prdModel: 'claude-sonnet-5',
       lessonModel: 'claude-sonnet-5',
-      qualityPlugins: ['impeccable', 'knip', 'semgrep', 'schemathesis'],
+      qualityPlugins: ['impeccable', 'knip', 'semgrep', 'schemathesis', 'gitleaks'],
       extraGates: [],
       // Empty means the component phase does not exist: no nested runs, no flag demanded, no
       // behaviour change from a pre-components build.

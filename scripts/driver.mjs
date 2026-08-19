@@ -92,6 +92,7 @@ import {
 } from './launch.mjs';
 import { ArtifactTooLargeError, READ_LIMITS, readBounded } from './bounded-read.mjs';
 import { designSlopEvidence } from './design-slop.mjs';
+import { gitleaksEvidence } from './secrets-scan.mjs';
 import { OUTCOME_FILE, writeRunOutcome } from './outcome.mjs';
 import { roleSupplyManifest } from './role-supply.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
@@ -168,7 +169,7 @@ import { CONDITIONAL_GATE_OPERATIONS, gatesFor, resolveToolchain } from './toolc
 
 /** @typedef {import('./config.mjs').MeeseeksConfig} MeeseeksConfig */
 /** @typedef {'SHIPPED' | 'STALLED' | 'BUDGET' | 'ABORTED'} TerminalState */
-/** @typedef {{ name: string, command: string[], required: boolean, env?: Record<string, string>, interpret?: 'design-slop' }} Gate */
+/** @typedef {{ name: string, command: string[], required: boolean, env?: Record<string, string>, interpret?: 'design-slop' | 'gitleaks' }} Gate */
 /** @typedef {{ name: string, ok: boolean, status: number, detail: string }} GateResult */
 /**
  * @typedef {{ id: string, status: 'pass' | 'fail', evidence: string | null, detail: string }} RequirementVerdict
@@ -987,7 +988,7 @@ export async function runGates(gates, options) {
  *
  * @type {Record<string, (outcome: { stdout: string, status: number, stderr: string }) => { ok: boolean, detail: string }>}
  */
-const INTERPRETERS = { 'design-slop': designSlopEvidence };
+const INTERPRETERS = { 'design-slop': designSlopEvidence, gitleaks: gitleaksEvidence };
 
 /**
  * The sentence a builder needs when Stryker says "No tests were executed" — the `runnerHint`
@@ -6406,9 +6407,9 @@ export function armingNote(gate) {
  * Operator gates carry no arming condition. An operator who declared a gate is the arming
  * condition, and there is nothing to detect.
  *
- * @param {{ plugin: string, command: string[], capability?: string, interpret?: 'design-slop' }[]} qualityGates
+ * @param {{ plugin: string, command: string[], capability?: string, interpret?: 'design-slop' | 'gitleaks' }[]} qualityGates
  * @param {{ name: string, command: string[] }[]} extraGates
- * @returns {{ name: string, command: string[], text: string, capability?: string, interpret?: 'design-slop' }[]}
+ * @returns {{ name: string, command: string[], text: string, capability?: string, interpret?: 'design-slop' | 'gitleaks' }[]}
  */
 export function overlayGates(qualityGates, extraGates) {
   return [

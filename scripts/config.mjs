@@ -183,7 +183,15 @@ export function defaultConfig() {
     // impeccable is required and fails a run it cannot provision; knip and semgrep are
     // optional and degrade to a warning, because neither is worth killing a run over on a
     // machine without python3 or a reachable registry (DESIGN.md §5.1).
-    qualityPlugins: ['impeccable', 'knip', 'semgrep', 'schemathesis'],
+    //
+    // **gitleaks is in the default list, and that is the half of item 29 that makes it real.**
+    // A plugin absent from this array is provisioned by nobody and gates nothing, so registering
+    // one without listing it here builds a check that never runs — the same shape as a parser
+    // imported only by its own test. It is detect-only, so on a machine without the binary it
+    // costs one warning and no gate; on a machine with it, it is the only thing in the roster
+    // that looks for a committed credential at all (npm audit judges dependencies, and semgrep's
+    // ruleset is not a secrets scanner).
+    qualityPlugins: ['impeccable', 'knip', 'semgrep', 'schemathesis', 'gitleaks'],
     // Empty by default, and an empty list changes nothing: a project that declares no gates of
     // its own gets exactly the roster it got before this key existed. See `requireExtraGates`
     // for why these are declared rather than detected, and why they live somewhere the builder

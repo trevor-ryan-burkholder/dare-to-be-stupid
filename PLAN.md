@@ -940,7 +940,7 @@ tightened pure-reader carve-out (closed the over-allow). Verified by 24 real-gua
 beyond the suite. R39's Factorio citation landed in DESIGN §6 as external evidence for the
 positional stance. Built entirely in an isolated worktree so no live run's hot guard was touched.
 
-### 29. gitleaks as a detect-first quality plugin, and registry version pinning — OPEN, **SPECIFIED**
+### 29. gitleaks as a detect-first quality plugin, and registry version pinning — **gitleaks landed (0.229.0); pinning remains**
 
 From the same scan. Secrets scanning is the one hole in current security coverage (`npm audit`
 is dependencies-only, semgrep's ruleset is not a secrets scanner). gitleaks: single binary,
@@ -954,10 +954,54 @@ whatever is current at run time — the CLI-registry analog of the marketplace a
 reproducibility trap the official docs now warn about). If gitleaks findings ever become pinned
 security elements, design the escape before the enforcement (§4.3).
 
-**Done when:** the registry accepts a detect-only plugin without inventing an installer; an absent
-binary produces the documented warning, a clean installed scanner passes, and a committed synthetic
-secret fails with bounded JSON-backed evidence. Every Driver-installed registry command is version
-pinned and records the resolved version; no finding becomes monotonic until its escape is specified.
+**Slice 1 landed (0.229.0) — the scanner.** The registry admits `install: null`, gitleaks is
+registered, and it is in the **default** `qualityPlugins` roster, which is the half that makes it
+real: a plugin absent from that array is provisioned by nobody and gates nothing. That check was
+added to this slice deliberately, because the two defects repaired immediately before it
+(items 128 and 42B) were both features that existed and were reachable from no call path.
+
+- `resolvePlugin` refuses `required: true` with `install: null`. A required check that cannot be
+  provisioned when absent lets a run reach its gates having silently dropped a done-bar line.
+- An absent detect-only plugin warns and contributes **no gate**. A gate left behind fails on
+  `command not found` every iteration and reads to a builder as a defect in its own code.
+- `scripts/secrets-scan.mjs` parses the JSON report and renders bounded evidence through the
+  interpreter mechanism item 42B built one slice earlier — its second entry, added when a second
+  caller actually appeared rather than in advance of one.
+
+**Everything about gitleaks here was measured against the real 8.30.1 binary, not recalled**, and
+the first two measurements would each have shipped a broken gate:
+
+- **`detect` is no longer a subcommand.** It is `dir`, `git`, `stdin`. A gate argv written from
+  memory says `gitleaks detect` and fails at the first real run.
+- **The default configuration allowlists AWS's own documented example key**, so the obvious fixture
+  secret produces an empty report that reads as a clean pass. The captured finding is a
+  `github-pat` built from `/dev/urandom` at capture time instead.
+- **A target gitleaks cannot read exits 1 with an empty report** — the same status as a found
+  secret. The exit code alone therefore cannot distinguish "secrets found" from "the scan never
+  happened", which is why an empty report is refused rather than called clean and a status
+  disagreeing with the report count is refused in both directions.
+- A malformed flag exits 126, not 1.
+
+Contract and fixtures: `test/fixtures/gitleaks/README.md`. `--redact` is in the gate argv as a
+security decision: this output becomes repair context for a builder and evidence for a reviewer, and
+the parser additionally never carries `Secret`, `Match`, `Author`, `Email` or `Commit` off
+the report at all.
+
+**Acceptance evidence:** 15 unit cases against the real captures, 5 registry cases, 3 tier-2 cases
+driving the real `shell` against a counterfeit scanner that replays them. Proved red by four
+mutations: empty report read as clean (1 fail), required+detect-only accepted (1 fail), gitleaks
+dropped from the default roster (1 fail), interpreter unregistered (3 fail).
+
+**Slice 2 (pending) — registry version pinning.** `npx -y impeccable install` and the unpinned pip
+installs resolve whatever is current at run time. Split off rather than bundled because pinning
+requires deciding *which* version each tool is pinned to, and this repository has verified evidence
+for exactly one of them (impeccable 4.0.4, from the committed fixtures). Inventing pins for knip,
+semgrep and schemathesis would be the documentation-over-measurement error this slice just spent its
+effort avoiding. gitleaks needs no pin: detect-only means the Driver never installs it.
+
+**Done when (remaining):** every Driver-installed registry command is version pinned against
+measured evidence and records the resolved version; no gitleaks finding becomes a monotonic security
+element until its escape is specified (§4.3).
 
 ### 30. Ecosystem intake — four measured candidates, none lands without its number — OPEN
 

@@ -1562,10 +1562,32 @@ subsequent iteration.
 
 ### 5.0 The other detectors, and why they are detectors
 
-`qualityPlugins` defaults to `["impeccable", "knip", "semgrep", "schemathesis"]`. All four are
-**deterministic CLIs with exit codes**, because Phase 3 is defined as exit codes and no LLM.
+`qualityPlugins` defaults to `["impeccable", "knip", "semgrep", "schemathesis", "gitleaks"]`. All
+five are **deterministic CLIs with exit codes**, because Phase 3 is defined as exit codes and no LLM.
 A model-based quality plugin cannot go here: the panel already supplies three opinions, and
 the thing a gate adds that an opinion cannot is that it may not be talked round.
+
+- **gitleaks** — committed secrets, and the one hole the rest of this roster left open. `npm
+  audit` judges dependencies and semgrep's ruleset is not a secrets scanner, so before this a run
+  could ship a tree with a live credential in it and every security gate would pass.
+
+  It is the registry's first **detect-only** plugin: `install: null`. gitleaks ships through
+  Homebrew, apt, scoop, Docker and a release tarball, and no single argv installs it across WSL,
+  macOS and Windows together. An installer chosen for one of them fails on the other two and reads
+  as a broken tool, so the entry declines to guess — absent, it warns and contributes no gate; a
+  gate left behind would fail on `command not found` every iteration and read to a builder as a
+  defect in its own code. A detect-only plugin may never be `required`, and `resolvePlugin`
+  refuses that combination, because a required check that cannot be provisioned lets a run reach
+  its gates having silently dropped a definition-of-done line.
+
+  Its findings are read from `--report-format json --report-path -` rather than from its exit
+  status, and **the status alone is not sufficient**: a target gitleaks cannot read exits 1 with an
+  empty report, exactly as a found secret does. So an empty report is refused rather than called
+  clean, and a status disagreeing with the report count is refused in both directions. The gate
+  passes `--redact`, and the parser never carries `Secret`, `Match`, `Author`, `Email` or
+  `Commit` off the report at all: this output becomes repair context for a builder and evidence
+  for a reviewer, and a scanner that reprints the credential it found has widened the exposure it
+  exists to report.
 
 - **knip** — dead files and unused dependencies. The builder brief forbids gold-plating
   ("no abstraction with one caller"); nothing checked it. Scoped to `--include
@@ -2759,7 +2781,7 @@ group, so an operator-kill can still leak it (`PLAN.md` item 2's residual).
 | ~~`styleModel`~~ | *removed at 0.193.0* | **retired, and accepted-but-ignored for one deprecation window (REVIEW F23 / PLAN item 78).** No child was ever selected by it: narration is the deterministic `style.mjs` render layer, and bare `/meeseeks` sends idea invention *and* PRD authoring through `prdModel`. It is no longer a default, no longer in `run.json`'s `models`, and a config that still carries it gets a startup line saying it is ignored. A later version rejects it |
 | `lessonModel` | `claude-sonnet-5` | the cold lesson extractor (§13.8); advisory, so it never needs the strongest model |
 | `effort` | see §10.2 | reasoning effort per phase (`low`…`max`), keyed by the phase names the driver uses |
-| `qualityPlugins` | `["impeccable", "knip", "semgrep", "schemathesis"]` | provisioned in Phase 1 (§5); impeccable is required, the others degrade to a warning when unavailable |
+| `qualityPlugins` | `["impeccable", "knip", "semgrep", "schemathesis", "gitleaks"]` | provisioned in Phase 1 (§5); impeccable is required, the others degrade to a warning when unavailable; gitleaks is detect-only and is never installed by the Driver |
 | `deadlineMs` | **0** | wall-clock ceiling on the whole run, milliseconds; `0` is off. A run-level time limit was considered and refused for ordinary runs — the ceiling is completion or budget. `--give-them-the-box` arms it at 30 minutes, because permitting nesting removes what the other bounds rely on: depth is capped, but nothing caps how many nested runs one iteration starts |
 | `extraGates` | `[]` | `{ name, command }` checks this project considers gating that no toolchain knows about. Run every iteration, required, listed in the brief as `operator:<name>`. Declared rather than detected, and declared *here* — `.meeseeks/` is positionally protected (§6), so a builder cannot delete a gate that constrains it |
 | `components` | `[]` | `{ name, dir, spec }` sub-runs executed as whole nested drivers in worktrees before the loop (§2, Phase 1c). The config declares *what* the components are; only `--give-them-the-box` on the command line permits them to run — configured components without the flag refuse the run before any child is paid for. `name` is kebab-case (it becomes branch and worktree names), `dir` is repo-relative with no `..` and is realpath-checked against the worktree at run time, `spec` is a PRD path relative to the dir or a quoted idea |
