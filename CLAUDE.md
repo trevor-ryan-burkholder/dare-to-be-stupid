@@ -327,12 +327,52 @@ does not rewrite them or mark them closed. After each repair, record evidence in
 `HANDOFF.md`, keep the slice separately reviewable, and continue with the next eligible item.
 **Do not stop or ask the operator to summon Codex after every repair.**
 
-Codex review becomes blocking only when the next step depends on the unverified repair and would
-compound an authority/security/publication risk, before a release or acceptance claim, when no
-independent eligible work remains, or when the operator explicitly requested review. At that
-boundary, provide one exact commit range, finding list, acceptance evidence, and validation summary.
-Codex may review a coherent batch while closing each finding individually. `DESIGN.md` remains the
-product source of truth; `REVIEW.md` reports defects against it rather than replacing it.
+### The review has a definition of done, and this section is it
+
+`DESIGN.md` §4 gives the *product's* reviewer a termination condition, on the reasoning that a loop
+whose reviewer can always say "not yet" does not terminate. For 226 versions this file gave the
+*repository's* reviewer none. The result was the one that reasoning predicts: six passes in four
+days, 44 findings, and a finish line that moved every time it was approached. A hostile reviewer
+with no stopping rule is doing exactly what it was told — the defect was in the instruction, not in
+the reviewer and not in the code it kept finding things in.
+
+**A pass is ACCEPTED when no HIGH finding is open against the reviewed baseline.** Not when the
+reviewer runs out of objections. That state does not exist for an adversarial reader, and waiting
+for it is the loop.
+
+- **HIGH blocks acceptance. MEDIUM does not.** A MEDIUM is a backlog entry: recorded, worked when
+  eligible, and never a reason to withhold acceptance or reopen a pass. Without a floor the queue
+  length measures the reviewer's disposition rather than the code's condition, and there is always
+  one more MEDIUM.
+- **A pass reviews forward from the last accepted baseline**, plus whatever earlier code the range
+  actually touches. Re-reviewing settled ground produces findings at a rate set by fresh eyes rather
+  than by defect density, which is why a whole-tree comparison never converges no matter how much
+  is repaired.
+- **A finding whose acceptance evidence cannot be obtained in this environment is DEFERRED, not
+  open.** F11 needs a real Win32 host and `PLAN.md` states WSL is not evidence for it; held open,
+  such a finding inflates the count permanently and blocks work it cannot inform. Deferred findings
+  are tracked in `PLAN.md` with the missing capability named, and they do not block acceptance. Ask
+  Codex to mark the ledger; never mark it yourself.
+
+None of this softens a finding. A HIGH is still hostile, still blocking, and still closed only by
+Codex. What it removes is the assumption that a pass ends when the reviewer is satisfied, which is
+the one condition nobody can ever meet.
+
+### When a pass happens
+
+Review is a **checkpoint between phases, never an interrupt.** The operator's phase order:
+
+1. **Build every feature that can be built here.** Anything impossible in this environment goes to
+   the deferred list rather than blocking the phase.
+2. **Testing and code fixes.**
+3. **Capstone**, added by the operator, when the operator calls the code complete.
+
+One pass at each phase boundary, plus the cases that were already blocking: before a release or
+acceptance claim, when no independent eligible work remains, or when the operator asks for one. At
+that boundary, provide one exact commit range, finding list, acceptance evidence, and validation
+summary. Codex may review a coherent batch while closing each finding individually. `DESIGN.md`
+remains the product source of truth; `REVIEW.md` reports defects against it rather than replacing
+it.
 
 ## Style of work here
 

@@ -891,6 +891,21 @@ do-not-add list.
 Experiments write their result down whichever way they land: a surprising `CLOSED` is worth
 more than a flattering `DONE`.
 
+**Phase order (operator directive, 19 Aug 2026).** Build every feature that can be built here, then
+testing and code fixes, then a capstone the operator adds when the operator calls the code complete.
+A feature or finding whose acceptance evidence cannot be obtained in this environment is **deferred**
+with the missing capability named, not held open. Deferred today: F11/item 65 (needs a real Win32
+host; WSL is explicitly not evidence), item 21 (improve mode on this repository, withdrawn by the
+operator), item 16's confinement half (unverifiable here), item 32 (needs a non-Claude provider).
+Items 31 (capstone) and 21 are withdrawn from the current traversal.
+
+**External review terminates (operator directive, 19 Aug 2026).** A pass is ACCEPTED when no HIGH
+finding is open against the reviewed baseline; MEDIUM findings are a backlog and never withhold
+acceptance; a pass reviews forward from the last accepted baseline rather than the whole tree. The
+protocol lives in `CLAUDE.md` § External review. The reasoning is recorded there: `DESIGN.md` §4
+gives the product's reviewer a termination condition and this repository's reviewer had none, which
+is why six passes in four days never returned a clean verdict. Codex still owns every closure.
+
 ### 28. Guard the guard's kill switch — **DONE (0.146.0)**, with R23 + R24 + R39 (from the 14 Aug ecosystem scan)
 
 **The finding:** the hooks system documents a `disableAllHooks` setting with layered precedence
