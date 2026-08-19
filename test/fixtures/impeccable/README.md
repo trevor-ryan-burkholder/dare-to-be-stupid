@@ -53,3 +53,33 @@ The canonical, authoritative licence text (including its copyright year) lives w
 the repository above; this notice reproduces it here because MIT asks that it travel with copies
 of the covered material. impeccable's plugin manifest (`.claude-plugin/plugin.json`) declares
 `"license": "MIT"`. No other file in this repository redistributes impeccable content.
+
+## `slop-findings-3.6.0.json` — the version the gate actually resolves
+
+The capture above came from the **Claude Code plugin** at 4.0.4, run through its internal detector
+script. The gate does not run that script: it runs `npx impeccable detect --json src/`, which
+resolves from **npm**, and npm's newest published `impeccable` is **3.6.0** — there is no 4.0.4
+there at all. A parser proved only against 4.0.4 output is therefore proved against a version no
+run will ever execute.
+
+This second capture closes that gap. Taken 19 August 2026 from the real published CLI:
+
+```
+npx -y impeccable@3.6.0 detect --json slop.html
+```
+
+Same edit as above and no other: `file` reduced from the absolute capture path to `slop.html`.
+
+Measured, not assumed:
+
+- The npm package is the same tool ("Design skills, commands, and anti-pattern detection for AI
+  coding agents", `github.com/pbakaus/impeccable`) and ships a real CLI bin.
+- `detect --json` exists at 3.6.0 and emits the same object shape: `antipattern`, `name`,
+  `description`, `severity`, `category`, `file`, `line`, `snippet`.
+- It exits **2** when primary findings exist, which is the status `designSlopEvidence` requires the
+  stream to agree with.
+- **`advisory` is omitted entirely on a primary finding** rather than emitted as `false`, and
+  `em-dash-overuse` still carries `advisory: true` alongside `severity: "warning"`. Both halves of
+  the partition rule survive the version change: strict `=== true`, and never severity.
+- npm's own `npm warn` lines go to **stderr**, so stdout is clean JSON. A gate reading the merged
+  streams would have failed to parse on any machine with a stray `.npmrc` key.

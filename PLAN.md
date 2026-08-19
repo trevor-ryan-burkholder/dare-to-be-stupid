@@ -940,7 +940,7 @@ tightened pure-reader carve-out (closed the over-allow). Verified by 24 real-gua
 beyond the suite. R39's Factorio citation landed in DESIGN §6 as external evidence for the
 positional stance. Built entirely in an isolated worktree so no live run's hot guard was touched.
 
-### 29. gitleaks as a detect-first quality plugin, and registry version pinning — **gitleaks landed (0.229.0); pinning remains**
+### 29. gitleaks as a detect-first quality plugin, and registry version pinning — **DONE (0.229.0 + 0.230.0)**
 
 From the same scan. Secrets scanning is the one hole in current security coverage (`npm audit`
 is dependencies-only, semgrep's ruleset is not a secrets scanner). gitleaks: single binary,
@@ -992,16 +992,46 @@ driving the real `shell` against a counterfeit scanner that replays them. Proved
 mutations: empty report read as clean (1 fail), required+detect-only accepted (1 fail), gitleaks
 dropped from the default roster (1 fail), interpreter unregistered (3 fail).
 
-**Slice 2 (pending) — registry version pinning.** `npx -y impeccable install` and the unpinned pip
-installs resolve whatever is current at run time. Split off rather than bundled because pinning
-requires deciding *which* version each tool is pinned to, and this repository has verified evidence
-for exactly one of them (impeccable 4.0.4, from the committed fixtures). Inventing pins for knip,
-semgrep and schemathesis would be the documentation-over-measurement error this slice just spent its
-effort avoiding. gitleaks needs no pin: detect-only means the Driver never installs it.
+**Slice 2 landed (0.230.0) — the pins, and a defect they uncovered.** `PLUGIN_VERSIONS` holds
+impeccable 3.6.0, knip 6.32.2, semgrep 1.173.0 and schemathesis 4.24.3, each resolved from the real
+registry rather than read off a page. gitleaks has no entry: detect-only means the Driver never
+installs it and has nothing to pin. A structural test refuses any future plugin that has an
+installer and no pin, because an enumeration defaults each new entry to the unsafe side.
 
-**Done when (remaining):** every Driver-installed registry command is version pinned against
-measured evidence and records the resolved version; no gitleaks finding becomes a monotonic security
-element until its escape is specified (§4.3).
+**Resolving the versions immediately found a defect in 0.228.0, one slice old.** The design-slop
+fixtures came from the **Claude Code plugin** at 4.0.4. The gate runs `npx impeccable detect --json`,
+which resolves from **npm** — and npm's newest `impeccable` is **3.6.0**. There is no 4.0.4 there at
+all. The parser was proved against a version no run would ever execute, and 0.228.0's own residual
+("owed one installed check") named exactly this without knowing it was already load-bearing.
+
+Discharged by running the real published CLI end to end:
+
+- `npx -y impeccable@3.6.0 detect --json slop.html` emits the same object shape and exits **2** on
+  primary findings, which is the contract `designSlopEvidence` requires the stream to agree with.
+- **3.6.0 omits `advisory` entirely on a primary finding** rather than emitting `false`. The strict
+  `=== true` rule reads an absent flag as primary, which is the fail-closed direction — the reason
+  it survives a version change it was never written for. `em-dash-overuse` still carries
+  `advisory: true` with `severity: "warning"`, so severity is still not the discriminator.
+- npm's own `npm warn` lines go to **stderr**, so stdout stays clean JSON. A gate reading merged
+  streams would have failed to parse on any machine with a stray `.npmrc` key — which this one has.
+
+`test/fixtures/impeccable/slop-findings-3.6.0.json` is that capture, and the parser is now proved
+against both distributions. **impeccable is pinned in its gate as well as its installer**: `install`
+puts skills into the project while the gate resolves the CLI through npx's own cache, so pinning one
+and not the other reads as reproducible while still resolving two versions.
+
+**Acceptance evidence:** 3 pin cases, 2 cross-version parser cases, tier 1 2961/2961, tier 2 249/249.
+Proved red by three mutations: an unpinned installer (1 fail), the gate pin dropped while the
+installer keeps its own (3 fail), the partition switched from the `advisory` flag to severity
+(8 fail). **A first attempt at those proofs was vacuous** — the `perl` substitution silently matched
+nothing and reported green as if the mutation had applied. Re-run through a substitution that throws
+when its anchor is absent, which is the only reason the vacuity was visible.
+
+**Remaining, and deliberately not built:** no gitleaks finding becomes a monotonic security element
+yet. §4.3 requires the escape to be designed before the enforcement, and a false secret pin is
+unremovable — it would turn a formatter run into an objective the builder cannot satisfy. Recording
+the resolved version at run time is likewise not built: the detect step already prints it, and the
+pin is what makes a run reproducible, so a recorded copy is evidence rather than control.
 
 ### 30. Ecosystem intake — four measured candidates, none lands without its number — OPEN
 

@@ -166,3 +166,31 @@ describe('designSlopEvidence turns one detect run into a gate result', () => {
     assert.match(detail, /- \.\.\. and 3 more, not shown$/);
   });
 });
+
+describe('the parser holds against the version the gate actually resolves', () => {
+  // `slop-findings.json` came from the **Claude Code plugin** at 4.0.4. The gate runs
+  // `npx impeccable@<pin> detect --json`, which resolves from **npm**, whose newest impeccable is
+  // 3.6.0 — there is no 4.0.4 there at all. A parser proved only against 4.0.4 was proved against
+  // a version no run will ever execute. This capture is the real published CLI's output.
+  const FIXTURE_360 = readFileSync(new URL('./fixtures/impeccable/slop-findings-3.6.0.json', import.meta.url), 'utf8');
+
+  it('partitions 3.6.0 output on the same rule, with advisory omitted rather than false', () => {
+    // The version difference that matters: 3.6.0 omits `advisory` entirely on a primary finding
+    // instead of emitting `false`. The strict `=== true` test treats an absent flag as primary,
+    // which is the fail-closed direction and the reason it survives the change.
+    const { primary, advisory } = parseImpeccableFindings(FIXTURE_360);
+    assert.deepEqual(primary.map((f) => f.antipattern), ['overused-font']);
+    assert.deepEqual(advisory.map((f) => f.antipattern), ['em-dash-overuse']);
+    // Still severity "warning" on the advisory one, so severity is still not the discriminator.
+    assert.equal(advisory[0].severity, 'warning');
+  });
+
+  it('renders a 3.6.0 run into the same gate verdict shape', () => {
+    // Exit 2 with primary findings is the contract `designSlopEvidence` requires the stream to
+    // agree with, and it was observed from the real 3.6.0 CLI rather than read from documentation.
+    const { ok, detail } = designSlopEvidence({ stdout: FIXTURE_360, status: 2 });
+    assert.equal(ok, false);
+    assert.match(detail, /design-slop findings that fail this gate \(1\):/);
+    assert.match(detail, /advisory findings, recorded but not gate-failing \(1\):/);
+  });
+});

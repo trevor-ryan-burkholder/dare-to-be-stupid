@@ -20,6 +20,7 @@ import {
   DETECT_TIMEOUT_MS,
   INSTALL_TIMEOUT_MS,
   KNOWN_PLUGINS,
+  PLUGIN_VERSIONS,
   PluginInstallError,
   installQualityPlugins,
   resolvePlugin,
@@ -73,7 +74,7 @@ function fakeRunner(table) {
 }
 
 const DETECT = 'npx --no-install impeccable --version';
-const INSTALL = 'npx -y impeccable install';
+const INSTALL = `npx -y impeccable@${PLUGIN_VERSIONS.impeccable} install`;
 
 describe('installQualityPlugins', () => {
   it('installs a plugin that is not present yet', async () => {
@@ -101,7 +102,7 @@ describe('installQualityPlugins', () => {
     assert.deepStrictEqual(result.gates, [
       {
         plugin: 'impeccable',
-        command: ['npx', 'impeccable', 'detect', '--json', 'src/'],
+        command: ['npx', `impeccable@${PLUGIN_VERSIONS.impeccable}`, 'detect', '--json', 'src/'],
         capability: 'web-ui',
         interpret: 'design-slop',
       },
@@ -124,7 +125,7 @@ describe('installQualityPlugins', () => {
     assert.deepStrictEqual(result.gates, [
       {
         plugin: 'impeccable',
-        command: ['npx', 'impeccable', 'detect', '--json', 'src/'],
+        command: ['npx', `impeccable@${PLUGIN_VERSIONS.impeccable}`, 'detect', '--json', 'src/'],
         capability: 'web-ui',
         interpret: 'design-slop',
       },
@@ -226,7 +227,15 @@ describe('the schemathesis plugin', () => {
   });
 
   it('installs the same way semgrep does, which is the precedent for a Python gate', () => {
-    assert.deepStrictEqual(spec.install, ['python3', '-m', 'pip', 'install', '--user', '--quiet', 'schemathesis']);
+    assert.deepStrictEqual(spec.install, [
+      'python3',
+      '-m',
+      'pip',
+      'install',
+      '--user',
+      '--quiet',
+      `schemathesis==${PLUGIN_VERSIONS.schemathesis}`,
+    ]);
   });
 });
 
@@ -425,5 +434,40 @@ describe('a detect-only plugin (PLAN item 29)', () => {
     // `detect`, not `dir`, is what a version check must not be: the subcommand gitleaks removed.
     assert.deepStrictEqual(spec.detect, ['gitleaks', 'version']);
     assert.equal(spec.gate?.includes('detect'), false);
+  });
+});
+
+describe('every installer the Driver runs is version pinned (PLAN item 29)', () => {
+  it('pins each install argv to the version the registry declares', () => {
+    // Structural, not per-plugin: a new plugin added without a pin fails this without anybody
+    // remembering to extend a list. That is the same failure mode the guard hook's positional rule
+    // exists for -- an enumeration defaults each new entry to the unsafe side.
+    for (const [name, spec] of Object.entries(KNOWN_PLUGINS)) {
+      if (spec.install === null) continue;
+      const pin = /** @type {Record<string, string>} */ (PLUGIN_VERSIONS)[name];
+      assert.equal(
+        typeof pin,
+        'string',
+        `${name} has an install command but no entry in PLUGIN_VERSIONS, so it resolves whatever is ` +
+          'newest at run time and two runs a week apart are judged by different tools.',
+      );
+      const pinned = spec.install.filter((part) => part.includes(`@${pin}`) || part.includes(`==${pin}`));
+      assert.equal(pinned.length, 1, `${name}'s install argv does not pin ${pin}: ${spec.install.join(' ')}`);
+    }
+  });
+
+  it('pins impeccable in its gate as well as its installer', () => {
+    // Pinning one and not the other is worse than pinning neither: `install` puts skills into the
+    // project while the gate resolves the CLI through npx's own cache, so an unpinned gate can run
+    // a different version from the one installed minutes earlier -- while reading as reproducible.
+    const spec = resolvePlugin('impeccable');
+    const pin = PLUGIN_VERSIONS.impeccable;
+    assert.equal(/** @type {string[]} */ (spec.gate).includes(`impeccable@${pin}`), true);
+    assert.equal(/** @type {string[]} */ (spec.install).includes(`impeccable@${pin}`), true);
+  });
+
+  it('has no pin for the detect-only plugin, because nothing installs it', () => {
+    assert.equal(resolvePlugin('gitleaks').install, null);
+    assert.equal(Object.hasOwn(PLUGIN_VERSIONS, 'gitleaks'), false);
   });
 });

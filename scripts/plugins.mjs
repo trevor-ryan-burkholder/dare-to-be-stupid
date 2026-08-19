@@ -66,6 +66,32 @@ export class PluginInstallError extends Error {
 }
 
 /**
+ * The exact versions the Driver provisions, resolved from the real registries on 19 August 2026 and
+ * recorded here rather than left to whatever is newest at run time (PLAN.md item 29).
+ *
+ * **This is the registry analog of the plugin-cache trap `CLAUDE.md` describes at length.** An
+ * unpinned `npx -y impeccable install` resolves whatever exists the moment it runs, so two runs a
+ * week apart are judged by two different rule sets while every log line reads identically. A gate
+ * that got stricter overnight fails a build that was correct, and one that got looser passes a build
+ * that was not, and neither leaves a trace anybody can find later.
+ *
+ * Each pin is a version that was actually fetched and executed, not one read off a page. impeccable
+ * 3.6.0 in particular was run end to end — `detect --json` against a crafted slop document — because
+ * npm's newest `impeccable` is 3.6.0 while this repository's original fixtures came from the
+ * **Claude Code plugin** at 4.0.4, which npm has never published. The gate resolves from npm, so
+ * 3.6.0 is the version that matters and `test/fixtures/impeccable/slop-findings-3.6.0.json` is its
+ * captured output.
+ *
+ * gitleaks has no entry: it is detect-only, so the Driver never installs it and has nothing to pin.
+ */
+export const PLUGIN_VERSIONS = {
+  impeccable: '3.6.0',
+  knip: '6.32.2',
+  semgrep: '1.173.0',
+  schemathesis: '4.24.3',
+};
+
+/**
  * Plugins this build knows how to provision. An unknown name is an error rather than a
  * best-effort `npx <name>`: guessing an install command for an arbitrary string is how a
  * run ends up executing something nobody chose.
@@ -80,13 +106,16 @@ export const KNOWN_PLUGINS = {
     // pass, so a builder deleting `index.html` deleted the gate that judged its design work.
     capability: 'web-ui',
     detect: ['npx', '--no-install', 'impeccable', '--version'],
-    install: ['npx', '-y', 'impeccable', 'install'],
+    install: ['npx', '-y', `impeccable@${PLUGIN_VERSIONS.impeccable}`, 'install'],
     // **`--json`, and an interpreter** (PLAN item 42 slice B). This read impeccable's exit code
     // and nothing else for eleven versions after the parser that could read its findings landed:
     // `scripts/design-slop.mjs` was imported by its own test and by nothing on any call path. A
     // failing design pass therefore reached the builder as a bare non-zero exit, and an advisory
     // finding on a passing run reached nobody at all, because `runGates` discards stdout on success.
-    gate: ['npx', 'impeccable', 'detect', '--json', 'src/'],
+    // Pinned here as well as in `install`, and that is the point: `install` puts skills into the
+    // project while the gate resolves the CLI through npx's own cache, so an unpinned gate can run a
+    // different version from the one that was installed minutes earlier.
+    gate: ['npx', `impeccable@${PLUGIN_VERSIONS.impeccable}`, 'detect', '--json', 'src/'],
     interpret: 'design-slop',
     note: 'frontend design-slop detector; deterministic rules, JSON output, exit codes (DESIGN.md §5.1)',
   },
@@ -118,7 +147,7 @@ export const KNOWN_PLUGINS = {
     name: 'knip',
     required: false,
     detect: ['npx', '--no-install', 'knip', '--version'],
-    install: ['npm', 'install', '--save-dev', '--no-audit', '--no-fund', 'knip'],
+    install: ['npm', 'install', '--save-dev', '--no-audit', '--no-fund', `knip@${PLUGIN_VERSIONS.knip}`],
     // Deliberately narrowed to files and dependencies. knip's unused-*exports* analysis is
     // its noisy half: on a young codebase an export with no caller yet is ordinary, and a
     // gate that fails an honest repository costs a whole iteration. An unused file or an
@@ -136,7 +165,7 @@ export const KNOWN_PLUGINS = {
     detect: ['schemathesis', '--version'],
     // Python, like semgrep, which is exactly what the plugin registry exists for: an optional
     // gate that degrades to a warning when the tool cannot be provisioned.
-    install: ['python3', '-m', 'pip', 'install', '--user', '--quiet', 'schemathesis'],
+    install: ['python3', '-m', 'pip', 'install', '--user', '--quiet', `schemathesis==${PLUGIN_VERSIONS.schemathesis}`],
     // **`--dry-run`, and that is the whole reason this can be a gate at all.** It validates the
     // schema and exercises data generation *without making a request*, so it needs no running
     // application - and a gate that needed one would have to start it, which is the deploy's
@@ -154,7 +183,7 @@ export const KNOWN_PLUGINS = {
     name: 'semgrep',
     required: false,
     detect: ['semgrep', '--version'],
-    install: ['python3', '-m', 'pip', 'install', '--user', '--quiet', 'semgrep'],
+    install: ['python3', '-m', 'pip', 'install', '--user', '--quiet', `semgrep==${PLUGIN_VERSIONS.semgrep}`],
     // `security-audit` is `npm audit`, which only ever inspects declared dependencies. It
     // has nothing to say about the code the builder wrote thirty seconds ago. This is the
     // detector half of DESIGN.md §14's open question, and a detector rather than a fourth
