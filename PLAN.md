@@ -891,6 +891,24 @@ do-not-add list.
 Experiments write their result down whichever way they land: a surprising `CLOSED` is worth
 more than a flattering `DONE`.
 
+**Definition of done (operator, 19 Aug 2026, superseding the 14 Aug bar).** **Every feature
+implemented.** Not "every feature plus a capstone" — the capstone and improve-mode are withdrawn —
+and not "every item", because an experiment is a question rather than a capability.
+
+The distinction decides what is in scope, so it is written down rather than left to judgement each
+time. **A feature is a capability the product offers**: a job type, an input format, a gate, a
+durable behaviour, a terminal output. **An experiment is a question the repository is asking
+itself**, whose deliverable is a recorded answer. Items 32 and 54 say *experiment* in their own
+titles; item 59 is a development protocol for authoring prompts rather than something a run does.
+Those three stay out. Everything else that is a capability is in.
+
+**Why the list was long, recorded because the reasons were not equal.** Items 47–51 were parked as
+"Phase-6 class" on 15 Aug to protect the capstone timeline, and that reason died with the capstone.
+Items 32, 54, 55, 58, 59 and 86 were parked under this repository's own rule that nothing lands
+without its measured number — but the measurements come from long runs, and the long runs were
+themselves deferred, so those items could not unblock themselves. That is a deadlock rather than a
+decision, and it is the larger half of the pile.
+
 **Phase order (operator directive, 19 Aug 2026).** Build every feature that can be built here, then
 testing and code fixes, then a capstone the operator adds when the operator calls the code complete.
 A feature or finding whose acceptance evidence cannot be obtained in this environment is **deferred**
@@ -1451,7 +1469,7 @@ gate is asking about.
   failures that mean "the gate never ran". Whoever resumes this starts from here rather than from
   the same four discoveries.
 
-### 34. Verified research mode — OPEN (the first instance of item 49's substrate)
+### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Done when:** each admitted language lands as its own complete slice with deterministic detection,
 fixed gates, real committed reporter fixtures, contained definition paths, current-definition
@@ -1524,7 +1542,7 @@ and unavailable required evidence fails closed with a structured reason mapped t
 existing non-`SHIPPED` terminal
 states.
 
-### 35. Continual-memory discipline, operator-side (folds R36 + R37) — OPEN
+### 35. Continual-memory discipline, operator-side (folds R36 + R37) — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN
 Adopt Prime Agent's Continual-Harness *discipline* on the DRIVER, never the builder: bound the
 lesson STORE (not just the view), add retraction/rollback with an append-only history, and a gated
 promotion so run-local candidate lessons enter the durable cross-run store only through a distinct
@@ -1590,7 +1608,7 @@ exact run without duplicating a child, gate, commit, deploy, spend charge, or te
 must reject every compatibility mismatch before side effects, and must never treat a child return
 or supervisor label as durable success evidence.
 
-### 47. Accept an ERD alongside the PRD, and gate the schema against it — OPEN (Phase-6 class, post-DoD)
+### 47. Accept an ERD alongside the PRD, and gate the schema against it — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (Phase-6 class, post-DoD)
 
 **Origin:** operator, 15 Aug 2026, after an ERD of the Ateliers capstone made its schema's two
 integrity rules checkable at a glance. The data model is where prose is most ambiguous and builder
@@ -1627,7 +1645,7 @@ live schema, fails on an omission/contradiction, and fails closed on an un-intro
 with a test and a benign neighbour; the builder brief carries the ERD; one live data-backed run
 exercises it end to end.
 
-### 48. Accept a `DOD.md` alongside the PRD and ERD — the admission mechanism, and a reusable additive done-bar — OPEN (Phase-6 class, post-DoD)
+### 48. Accept a `DOD.md` alongside the PRD and ERD — the admission mechanism, and a reusable additive done-bar — OPEN (Phase-6 class, post-DoD) — **IN SCOPE (DoD = all features, 19 Aug 2026)**
 
 **Promoted 15 Aug (operator).** This began as "extra criteria an operator may add." It is more than that:
 **a job with a DoD is a meeseeks job, because the DoD is the check** (item 49's filter). `DOD.md` is
@@ -1678,7 +1696,7 @@ unfalsifiable criterion ("feels premium") and an unobservable-here one ("80% of 
 are each refused by name at authoring, while a deterministic criterion and a panel-judgeable one both
 pass** (the benign neighbours that prove the refusal is a filter and not a wall).
 
-### 49. Artifact job-types: checks-as-tests, so the spine drives a book or a report — OPEN (Phase-6 class, post-DoD)
+### 49. Artifact job-types: checks-as-tests, so the spine drives a book or a report — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (Phase-6 class, post-DoD)
 
 **Origin:** operator, 15 Aug 2026 — *"tasks like 'write me a book about…' or 'research this and make a
 report…'"*. This is the **generalization** of which item 34 (verified research mode) is the first
@@ -1902,7 +1920,7 @@ and **fails on an unenforced one**; a staleness gate refuses a constitution that
 enforcement set (the `release-check` lesson — a discipline that keeps failing becomes a gate); and no
 reviewer prompt gains constitutional text as a side effect.
 
-### 106. Job-scoped external-resource capabilities — PARKED (post-DoD, admission-gated)
+### 106. Job-scoped external-resource capabilities — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: PARKED (post-DoD, admission-gated)
 
 **Problem solved:** item **34** deliberately starts with public HTTPS, while later research or artifact
 jobs may need one authenticated document, repository, account, or service. Supplying an ambient token,
@@ -2127,7 +2145,7 @@ reviews the result; and the measured outcome gives a credible improvement in acc
 without a new false-completion path. A failed or inconclusive probe rejects adoption without
 affecting the existing Claude-native path.
 
-### 55. Exact evidence provenance before any explicit graph — PARKED (conditional)
+### 55. Exact evidence provenance before any explicit graph — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: PARKED (conditional)
 
 **Problem it would solve:** after an assumption, requirement, or implementation artifact changes,
 the current tree can identify many stale pins by fingerprint but cannot always answer a complete
@@ -2357,7 +2375,7 @@ failure denies readiness without becoming optimization input, and an opened pack
 final evidence. Human-labelled acceptance records the rubric and whether candidate identity and the
 agent's terminal assertion were successfully blinded.
 
-### 58. Forensic lifecycle event journal before resumability — PARKED (conditional)
+### 58. Forensic lifecycle event journal before resumability — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: PARKED (conditional)
 
 **Problem it would solve:** `run.json`, briefs, archived runs, and `outcome.json` preserve important
 snapshots, but a crash can still leave no deterministic history of which major phase, child, gate, or
@@ -3642,7 +3660,7 @@ classes; the scan result is not bound to item **68**'s reviewed-tree identity as
 and the pinned paid hostile/benign reviewer-calibration canary has not been run. A scan is a
 known-pattern defense, and nothing here claims immunity to arbitrary prompt injection.
 
-### 86. Verified red-team assessment job type — PARKED (post-DoD follow-on)
+### 86. Verified red-team assessment job type — PARKED (post-DoD follow-on) — **IN SCOPE (DoD = all features, 19 Aug 2026)**
 
 **Problem solved:** the existing hostile Panel, security review, mutation/integrity gates, and
 held-out Oracle judge known requirements and evidence, but they do not authorize a bounded actor to
