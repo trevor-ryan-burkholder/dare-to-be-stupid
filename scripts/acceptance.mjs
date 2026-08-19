@@ -83,9 +83,14 @@ function isIdentity(value) {
 
 /** @param {unknown} value @returns {value is Tagged} */
 function isTagged(value) {
-  const tag = /** @type {{ observed?: unknown, unavailable?: unknown }} */ (value ?? {});
-  if (Array.isArray(tag.observed)) return tag.observed.every((name) => isIdentity(name)) && tag.observed.length > 0;
-  return isIdentity(tag.unavailable);
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const tag = /** @type {{ observed?: unknown, unavailable?: unknown }} */ (value);
+  const keys = Object.keys(tag);
+  if (keys.length !== 1) return false;
+  if (keys[0] === 'observed') {
+    return Array.isArray(tag.observed) && tag.observed.every((name) => isIdentity(name)) && tag.observed.length > 0;
+  }
+  return keys[0] === 'unavailable' && isIdentity(tag.unavailable);
 }
 
 /**
@@ -146,6 +151,11 @@ export function buildAcceptanceReceipt(input) {
       }
       if (!Number.isInteger(gate?.attempt)) missing.push(`results.gates[${index}].attempt`);
       if (!Array.isArray(gate?.reports)) missing.push(`results.gates[${index}].reports`);
+      else {
+        for (const [reportIndex, report] of gate.reports.entries()) {
+          if (!isIdentity(report)) missing.push(`results.gates[${index}].reports[${reportIndex}]`);
+        }
+      }
     }
     // **A gate absent from the roster is not a gate that failed**, and the receipt must keep the two
     // apart or "everything required passed" becomes unfalsifiable.
@@ -162,7 +172,12 @@ export function buildAcceptanceReceipt(input) {
     missing.push('results.ratchetPassing');
   }
   if (!Array.isArray(input.results?.reports)) missing.push('results.reports');
-  else if (Array.isArray(gates) && gates.every((gate) => Array.isArray(gate?.reports))) {
+  else {
+    for (const [index, report] of input.results.reports.entries()) {
+      if (!isIdentity(report)) missing.push(`results.reports[${index}]`);
+    }
+  }
+  if (Array.isArray(input.results?.reports) && Array.isArray(gates) && gates.every((gate) => Array.isArray(gate?.reports))) {
     // **The report digests have to belong to a gate** (REVIEW F22, PLAN item 126). A flat list
     // nothing else in the file references cannot be checked at all — emptying it after the write
     // rebuilt to the same emptied list and verified clean. Every digest the run read is owned by the

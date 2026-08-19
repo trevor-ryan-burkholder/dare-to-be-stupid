@@ -6,18 +6,30 @@
 
 **Reviewed executable baselines:** `be19c9c` / 0.164.0 for F1–F30; `12f2004` /
 0.179.0 for F31–F37; `d88946d` / 0.184.0 for F38–F40; `e0ede97` / 0.194.0 for
-the prior repair verification and F41; and `3debe73` / 0.211.0 for this repair verification and
-F42–F44.
-**Current comparison:** reviewer ledger `ccaa766` through committed candidate `3debe73`, with
-`main`, `origin/main`, and their merge base all at `3debe73`, plus the working tree. The only
-working-tree entry was the pre-existing untracked `.agents/` reviewer skill; it is not part of the
-committed candidate and was not modified.
-**Verdict:** **CHANGES REQUESTED** — ten high-priority defects and eleven medium-priority defects
-remain open. Twenty-three findings are closed below after exact-diff review and current validation.
+the prior repair verification and F41; `3debe73` / 0.211.0 for F42–F44; and the committed
+0.212.0-through-0.225.0 repair range plus the working-tree 0.226.0 review corrections for the current
+verification.
+**Current comparison:** `origin/main..HEAD` plus the 0.226.0 working tree. The pre-existing untracked
+`.agents/` reviewer skill is outside the candidate and was not modified.
+**Verdict:** **CHANGES REQUESTED** — nine high-priority defects and seven medium-priority defects
+remain open. Twenty-eight findings are closed below after exact-diff review and current validation.
 
-This remains a read-only review of the Claude-native implementation. Codex modified only this
-reviewer ledger; no implementation, test, template, manifest, configuration, or project-management
-file was changed.
+This pass reviewed and corrected implementation, tests, documentation, manifests and this ledger as
+authorized by the user. It did not commit, push, publish, deploy, run paid live tests, or modify the
+unrelated `.agents/` tree.
+
+## Current repair verification — 0.226.0
+
+The complete deterministic gate passed against the final 70-file shipped-byte fingerprint. The
+serial integration tier passed 242/242 in 508.5 seconds. The closures below are finding-specific.
+
+| Finding | Repair | Mechanism and acceptance evidence checked | Residual limitation |
+|---|---|---|---|
+| F10 | `9feb243` plus 0.226.0 | shared atomic terminal writer covers post-lock exits; archive refusal preserves the prior receipt; exclusive link/unlink refuses a preserved-name collision; unit and real-driver archive/outcome paths passed | external storage failure can still prevent a new receipt, which is reported without destroying the prior one |
+| F12 | `fa76659` | Panel and reality-check prompts receive the captured specification bytes and digest, never a live path; wiring, byte-preservation, drift and ordinary-document neighbours passed | same-user candidate mutability is F14, not specification delivery |
+| F13 | `db280d6` | capability gates use the monotonic resolved set; wrong-shape manifests and post-write absence refuse; detected-only `web-ui` survives marker deletion in a real run and resets on a new run | same-user state isolation remains a broader guard boundary |
+| F33 | `f47df6b` | each invocation owns its process group even after its leader exits; concurrent sibling, reversed-order, resistant-child and bystander real-process cases passed | Windows descendant cleanup remains F11 |
+| F40 | `c7fb4ea` | HANDOFF delegates mutable Git/order/count state; release-check rejects mutable commit and queue restatements; current header and neighbours passed | none |
 
 ## Current repair verification — 0.211.0
 
@@ -57,11 +69,8 @@ reported in the verification section below, `release-check` ok, and `git diff --
 | Finding | Exact remaining defect and why current tests miss it |
 |---|---|
 | F5 | `childEnvironment()` still spreads the complete operator environment into every role (`scripts/driver.mjs:1538-1561`). Tests preserve required run/configuration markers but do not prove unrelated credentials and control variables are absent; no allowlist or synthetic credential canary has landed. |
-| F10 | Archive failure still destroys the evidence it refuses to archive: `archiveOnce()` latches its one attempt before the throw (`scripts/driver.mjs:6591-6597`), `releasing()` cannot retry and unconditionally writes the new `outcome.json` (`:6617-6633`). With a prior outcome and `.meeseeks/runs` made a regular file, the prior receipt was replaced by the current archive-failure receipt. Tests cover successful archival, not this failure. |
 | F11 | POSIX termination has current real-process evidence, but `processSnapshot()` returns no ownership set on Windows (`scripts/driver.mjs:5317-5319`) and the health probe retains direct-child-only fallback paths (`scripts/health-probe.mjs:448-485`). No Windows shell→child→grandchild plus bystander fixture proves equivalent bounded cleanup. |
-| F12 | Exact PRD capture catches persistent drift, but Panel is told to read the live `PRD.md`. An A→easier-B→A substitution during review passes both specification/workspace samples while the reviewer certifies B; the terminal outcome remains bound to A. Existing specification tests keep the mutation present. |
-| F13 | `establishedCapabilities()` treats valid-JSON primitives/arrays and a missing post-initialization manifest as `[]` (`scripts/capabilities.mjs:536-555`). Current reproduction returned `[]` for `null`, `[]`, `"damaged"`, and `42`; later deletion is indistinguishable from honest first-call absence. A disappeared marker plus either shape silently drops an established detected-only gate. |
-| F14 | The seal samples the mutable worktree before and after Panel (`scripts/driver.mjs:3047-3058`, `:3122-3137`, `:3152-3165`). A background A→B→A swap can make reviewers pass B while both hashes name A, which is then committed. Existing integration mutations persist through the second hash; none restores the original bytes. |
+| F14 | Gates and Panel now use a materialized worktree, but it is a predictable same-user path (`scripts/candidate.mjs:58-70`) that a Builder-launched background process can discover and mutate. A content-addressed source tree names the intended checkout; it does not make the files read-only during judgment. |
 | F15 | Expected Oracle stdout is no longer fed back, but active surfaces still promise visibility isolation (`templates/oracle-author.md:3`, `scripts/oracle.mjs:15`, `DESIGN.md` §4.6) while admitting arbitrary Builder code can read the store. No terminal/evaluation policy discounts this non-confidential evidence, as F15 requires. |
 | F17 | Banking now applies the definition rule, but red-evidence freshness is one digest per file (`scripts/driver.mjs:4807-4823`, `:4958-4968`). After two tests share a file, observing sibling A fail under rewritten bytes refreshes old evidence for weakened B; the current reproduction left B with `stale=[]` and `withheld=[]` without B failing under those bytes. Tests cover different files, not same-file siblings. |
 | F19 | The bounded primitive and converted report/specification/evidence reads are sound, but `READ_LIMITS.record` reaches only `specification.json`. Ratchet, pins, red-evidence, capability, review, and role-supply records still use whole synchronous reads on decision/receipt paths (`scripts/ratchet.mjs:195-220`, `scripts/pins.mjs:369-397`, `scripts/driver.mjs:1871-1926`, `:4742-4778`, `scripts/capabilities.mjs:536-555`). |
@@ -71,12 +80,10 @@ reported in the verification section below, `release-check` ok, and `git diff --
 | F27 | Exact per-role `--tools` and `--strict-mcp-config` wiring is structurally present, but required document-role, inherited allow/MCP, complete-identity, and installed live evidence remains absent. Current live fixtures cover only Oracle and review. |
 | F28 | Version parsing/range enforcement landed, but roles still execute bare `claude` through mutable `PATH` (`scripts/driver.mjs:6040`). No run-sealed canonical path/fingerprint, delegated-entrypoint closure, or update control prevents a same-version/path replacement after preflight. |
 | F29 | Reviewer authority text and the final known-pattern scan are sound partial repairs. Trust-class supply reporting, a recorded scan-to-reviewed-tree binding, and paid hostile/benign calibration remain absent; the pattern scan explicitly does not prove arbitrary instruction isolation. |
-| F33 | The sibling registry stores only direct PIDs. If concurrent B's leader exits while its pipe-owning grandchild keeps B in flight, that grandchild is reparented and no longer appears beneath B's registered PID; A's later sweep kills it as A-owned (`scripts/driver.mjs:5370-5444`, `:5572-5575`). Existing F33 fixtures keep the sibling leader alive. |
-| F40 | `HANDOFF.md:3-7` calls 0.211.0 a working-tree candidate, names `b51d332` as HEAD/0.210.0, and describes 0.209.0 as the uncommitted layer. Actual `main`, `origin/main`, and merge base are committed `3debe73` / 0.211.0. `release-check` validates only the first version token, so the false state narrative passes. |
 | F41 | Finite detect/install ceilings and production propagation exist, but the finding's required tier-2 resistant detector/installer evidence is absent: no fixture proves deadline plus grace, descendants gone, lock release and durable required failure, or optional warning/proceed. Unit tests use immediate doubles/source inspection. |
-| F42 | Direct `node …/scripts/driver.mjs` is not recognized by the guard, while the Driver trusts child-mutable run/box/depth environment markers. Clearing `MEESEEKS_RUNNING` or forging box/depth therefore bypasses the flag-only nesting authority and depth cap; exact reproductions are recorded in F42. |
-| F43 | Canonical lock acquisition publishes the pathname before its owner identity is complete. A kill/crash between exclusive create and write leaves an unreadable lock with no pid/token, and every later acquisition refuses permanently. |
-| F44 | Driver-owned phase/final Git add, commit, status and tag calls omit `timeoutMs`. A repository-local clean filter, signing helper, fsmonitor or credential/pinentry path can therefore retain the run lock forever outside every run deadline. |
+| F42 | Tickets now prevent replay and, at 0.226.0, carry redeemed depth through the next issuance. They still run only when `MEESEEKS_RUNNING` survives; renamed/indirect Driver launch and arbitrary same-user state writes can bypass lexical hook inspection, so the operator-only authority boundary is not established. |
+| F43 | Complete staging bytes are now linked atomically into the canonical lock name with no replacement, and real-filesystem unit cases cover completeness/one winner/cleanup. The required killed/paused real-process publication-seam cohort has not been run, so closure evidence remains incomplete. |
+| F44 | Driver-owned Git now uses one 120-second default, noninteractive signing controls and the bounded process-group lifecycle; a real resistant clean filter is killed with descendants and source inventory finds no bypass. No full Driver fixture yet proves a timed-out final Git helper writes the terminal receipt and releases the lock. |
 
 ## Finding ledger
 
@@ -427,16 +434,13 @@ machine records, and a later preflight may refuse the repository because Meeseek
 
 ### F10 — MEDIUM: `outcome.json` is neither universal nor crash-safe
 
-**Status:** OPEN
-**Current verification at 0.211.0:** the shared atomic writer, pre-loop/crash routing and
-write-success latch are valid repairs. Archive failure remains destructive: `archiveOnce()` sets
-`archiveAttempted` before the operation that throws, so `releasing()` cannot retry and writes the
-new terminal receipt over the prior run's canonical `outcome.json`. A local reproduction put a
-prior `SHIPPED` marker in place and made `.meeseeks/runs` a regular file; the archive refusal
-replaced that marker with the current `ABORTED` receipt. An evidence-preservation refusal may not
-destroy the evidence it refused to preserve.
-**Affected:** `scripts/driver.mjs:1630-1663`, pre-loop aborts including
-`scripts/driver.mjs:5222-5235`, and the outer abort at `scripts/driver.mjs:6093-6105`
+**Status:** CLOSED — verified at 0.226.0; see the current closure matrix above.
+**Current verification:** every post-lock terminal path routes through the shared atomic writer; a
+failed archive moves the prior receipt aside before writing the current one, and 0.226.0 makes that
+move no-replace so a derived-name collision preserves both prior files and writes nothing new.
+Real-driver pre-loop, crash, archive-failure, normal archive and ordinary replacement paths passed.
+
+**Original defect:**
 
 The documented one-door terminal writer exists only inside `driveRun`. PRD/design/Oracle/component
 failures and the outer exception handler print or stamp `ABORTED` and return without calling it.
@@ -497,17 +501,14 @@ interact with F3's listener-ownership defect.
 
 ### F12 — HIGH: Builder can rewrite the specification that the Panel later judges
 
-**Status:** OPEN — reopened against `3debe73` after falsifying live-PRD delivery to Panel.
-**Current verification at 0.211.0:** the Driver captures canonical PRD bytes and catches persistent
-drift before gates and ship, but the reviewer prompt still tells Panel to read the mutable working
-copy. A background process can replace canonical A with easier B while Panel reads it and restore A
-before the next specification/workspace check. Panel certifies B; outcome and commit name A. This
-violates F12's explicit requirement to give Panel the canonical revision and its acceptance clause
-that a one-byte change cannot reach Panel in the same run. Existing cases leave the mutation or
-deletion present. Panel must consume the driver-owned immutable revision/snapshot, not a path whose
-identity is sampled only before and after use.
-**Affected:** `scripts/driver.mjs:2559-2564`, `scripts/driver.mjs:3047-3165`,
-`scripts/driver.mjs:3410-3413`, `scripts/driver.mjs:8012-8053`
+**Status:** CLOSED — verified at 0.226.0; see the current closure matrix above.
+**Current verification:** `canonicalSpecificationBlock`, `reviewerBrief` and
+`realityCheckPrompt` deliver the captured bytes and revision digest. No cold role is told to read the
+live specification, and the reviewer system prompt treats a conflicting repository copy as a
+finding rather than an amendment. Byte-for-byte, wiring, drift and ordinary-document neighbours
+passed.
+
+**Original defect:**
 
 The original Driver read `PRD.md` once to derive requirement IDs and retained only those strings.
 The partial repair now captures and repeatedly verifies exact canonical bytes. Builder still has
@@ -540,16 +541,14 @@ the finish line, after which an independent Panel faithfully certifies the wrong
 
 ### F13 — MEDIUM: a current-tree detector can silently remove a previously armed quality gate
 
-**Status:** OPEN
-**Current verification at 0.211.0:** invalid JSON now throws, but valid JSON of the wrong top-level
-type does not. `establishedCapabilities()` returned `[]` for each of `null`, `[]`, `"damaged"` and
-`42`. It also returns `[]` whenever the manifest is absent, although production writes the file on
-the first resolution and reads it repeatedly thereafter. Executed target code or a background
-process can remove the record outside the PreToolUse hook; if the current detector marker is also
-gone, either shape silently disarms a capability established earlier in the same run. The legacy
-missing-field exception is valid only for an object of the documented legacy schema, and honest
-first-call absence must be distinguishable from later loss.
-**Affected:** `scripts/driver.mjs:5655-5661`, `scripts/capabilities.mjs:342-356`
+**Status:** CLOSED — verified at 0.226.0; see the current closure matrix above.
+**Current verification:** conditional plugin gates use resolved capabilities rather than a fresh
+frontend predicate. The Driver remembers whether it wrote the manifest; later absence and every
+non-object JSON shape refuse, while the legacy object-without-field shape remains readable. A real
+multi-iteration run retains detected-only `web-ui` after its marker is deleted and a new run resolves
+afresh.
+
+**Original defect:**
 
 Declared capabilities remain unioned for the run, which correctly prevents most downgrade attacks.
 The older `frontendOnly` path bypasses that set: it filters the quality-gate roster directly through
@@ -581,34 +580,23 @@ already established was applicable.
 ### F14 — HIGH: the bytes reviewed are not bound to the bytes committed and tagged
 
 **Status:** OPEN — reopened against `3debe73` after falsifying the live-tree seal.
-**Current verification at 0.211.0:** before/after hashes detect persistent drift, not transient
-substitution. A Builder-launched background process can expose tree B while a deterministic gate or
-Panel reviewer reads it and restore tree A before the next sample. Gates have no after-run identity
-check at all; Panel's two hashes both return A. The Driver can therefore seal, commit and tag A even
-though a required gate passed B or a reviewer passed B rather than A. Evidence citation resolution
-against the restored live tree does not establish which bytes the reviewer inspected.
+**Current verification at 0.226.0:** 0.218.0 replaced live-tree sampling with a Git tree object and
+an external detached worktree, and 0.226.0 makes candidate reuse fail if `git clean -ffd` cannot
+remove non-ignored untracked content, including nested repositories. Those are correctness fixes,
+not an isolation boundary. `candidateDirFor(process.pid)` is a predictable path under `os.tmpdir()`
+(`scripts/candidate.mjs:58-70`), and the Builder has arbitrary Bash and can leave same-user
+background descendants. Such a process can learn the Driver pid from its parent, enumerate the temp
+directory, and mutate the candidate after checkout while a gate or reviewer reads it. The Git tree
+object names what was checked out; it does not make that checkout immutable.
 
-This is reachable without a hostile injected effect: Builder has arbitrary Bash and can leave a
-process that watches the visible gate/reviewer children. Existing integration cases leave their
-review-era mutations present for the second hash and gate-cache tests do not exercise A→B→A.
-**Affected:** `scripts/driver.mjs:2559-2568`, `scripts/driver.mjs:3047-3165`,
-`scripts/driver.mjs:8012-8064`, `test/integration/workspace-seal.integration.test.mjs:173-225`
+The source and normative design now state this limitation rather than claiming the Builder never had
+a path. No integration case establishes that Builder descendants cannot reach the materialized
+worktree. **Affected:** `scripts/candidate.mjs:58-70`, `scripts/candidate.mjs:186-263`,
+`scripts/driver.mjs:7990-8015`, `DESIGN.md` §6.2.
 
-Gates and Panel inspect the live working tree. The partial repair captures its identity after gates,
-rechecks it after Panel and around commit/publication, and correctly rejects persistent drift. A
-sampled mutable path is not an immutable review subject: the same identity before and after an
-operation does not prove which bytes were visible during the operation. Gates are weaker still,
-because the seal is created only after their results return.
-
-**Verified reproduction:** the reviewer read `src/a.js` as `reviewed bytes`; a concurrent write
-changed it to `changed after review` before the commit effect. `driveRun` committed the latter
-and returned `SHIPPED`.
-
-A successful Builder can leave background descendants, and ordinary operator/tooling processes can
-also write concurrently, so this is not limited to a malicious injected test double.
-
-**Impact:** a cold verdict can authorize code no reviewer or deterministic gate saw. This is a
-direct false-completion path.
+**Impact:** a same-user background process can make a required gate or cold reviewer observe bytes
+other than the tree named in the seal and acceptance evidence, preserving a direct false-completion
+path despite ordinary main-tree writes being isolated.
 
 **Required resolution:**
 
@@ -1487,16 +1475,13 @@ scoped restoration. This reopens the exact evidence-laundering class F16 was int
 
 ### F33 — MEDIUM: one timed-out Panel child can kill its concurrent reviewers
 
-**Status:** OPEN — reopened against `3debe73` after falsifying sibling ownership with a dead leader.
-**Current verification at 0.211.0:** the registry protects the live subtree of each direct sibling
-PID. It loses that ownership when the sibling leader exits: a grandchild that still owns a pipe is
-reparented, while the sibling `shell()` call remains in flight waiting for EOF. Another call's later
-timeout/overflow sees the grandchild as post-snapshot and outside every registered live subtree, so
-it kills it. A focused real-process reproduction made A reap both its own descendant and B's; B
-settled hundreds of milliseconds into work intended to last five seconds. Existing F33 evidence
-keeps B's direct leader alive and the bystander predates A's snapshot.
-**Affected:** `scripts/driver.mjs:2515-2517`, `scripts/driver.mjs:4623-4633`,
-`test/integration/shell-termination.integration.test.mjs:324-350`
+**Status:** CLOSED — verified at 0.226.0; see the current closure matrix above.
+**Current verification:** detached POSIX invocations retain their owned process-group membership
+after the direct leader exits, and cleanup excludes every active sibling group. The exact dead-leader
+reproduction, concurrent completion, reversed order, resistant descendant and bystander neighbours
+passed through real processes.
+
+**Original defect:**
 
 The Panel starts reviewers concurrently with `Promise.all`. Each `shell` call snapshots the
 process-group population before spawn and, during cleanup, sweeps group members absent from that
@@ -1693,14 +1678,13 @@ race prove legacy and current reclaimers cannot both win.
 
 ### F40 — MEDIUM: the handoff's current-order section contradicts current state
 
-**Status:** OPEN — reopened against `3debe73` after current-state narrative drifted again.
-**Current verification at 0.211.0:** `HANDOFF.md:3-7` says HEAD is `b51d332` / 0.210.0 and calls
-0.211.0 a working-tree candidate above an uncommitted 0.209.0 layer. Git says `main`, `origin/main`
-and the merge base all equal committed `3debe73` / 0.211.0; the only working-tree entry is the
-pre-existing untracked `.agents/` skill. `release-check` passes because it validates the first
-version token, not the mutable Git-state claims around it. A fresh agent is again told the wrong
-comparison base and completion state.
-**Affected:** `HANDOFF.md:1-21`, `HANDOFF.md:74-104`
+**Status:** CLOSED — verified at 0.226.0; see the current closure matrix above.
+**Current verification:** HANDOFF names only the candidate version and delegates Git identity,
+queue/order and finding status to their authoritative live sources. `release-check` rejects commit
+hashes and queue restatements in the mutable sections; the current file and negative/positive
+fixtures passed.
+
+**Original defect:**
 
 HANDOFF records F7 implemented and live-validated at 0.179.0, then says F7 is blocked because the same
 live expenditure is unauthorized. Its header also reports seventeen high and thirteen medium
@@ -1768,36 +1752,30 @@ failure a warning after the command has settled.
 ### F42 — HIGH: child-mutable environment markers authorize and reset nested runs
 
 **Status:** OPEN
-**Affected:** `scripts/driver.mjs:236-263`, `scripts/driver.mjs:6297-6303`,
-`hooks/guard.mjs:1888-1930`, `test/driver.test.mjs:6799-6859`,
-`test/guard.test.mjs:1203-1259`
+**Current verification at 0.226.0:** 0.214.0 recognizes direct and common wrapped
+`scripts/driver.mjs` commands, 0.215.0 requires a one-time nesting ticket whenever
+`MEESEEKS_RUNNING` is present, and 0.226.0 fixes a post-redemption reset that let a depth-two ticket
+paired with `MEESEEKS_RUN_DEPTH=0` issue a fresh depth-one ticket. The recognized component path now
+prevents replay and carries the ticket's depth through the next issuance.
 
-Both nesting enforcement points trust facts a Builder controls. `assertNotNested()` treats an
-absent `MEESEEKS_RUNNING` marker as top level and treats nonempty `MEESEEKS_GIVE_THEM_THE_BOX` plus
-a below-cap depth as operator authorization. `runInvocation()` preserves those ambient values when
-the argv lacks the flag. The guard recognizes `meeseeks`, `/meeseeks`, and a Claude slash-command
-argument, but not direct execution of the shipped `scripts/driver.mjs` through Node.
+The governing authority claim is still not established. `assertNotNested()` returns top-level depth
+zero when `MEESEEKS_RUNNING` is absent (`scripts/driver.mjs:254-281`), so clearing that marker avoids
+ticket redemption entirely. The guard matches tokens naming `scripts/driver.mjs`
+(`hooks/guard.mjs:1934-1976`) but explicitly cannot identify a renamed copy or arbitrary indirect
+interpreter. The ticket store is ordinary same-user filesystem state written by exported JavaScript
+(`scripts/nesting.mjs:89-122`); a hook parsing one Bash command is not proof arbitrary code cannot
+write it without spelling the protected path in that command. `DESIGN.md` §6.5 and
+`scripts/nesting.mjs:1-29` now record these limits. The direct/common attack fixtures pass, but the
+required renamed/indirect neighbours and an unbypassable authority boundary do not exist.
 
-**Verified reproductions:** with the guard evaluating a Bash call inside a run, both commands
-returned `allow`, and the environments they construct were accepted by `assertNotNested()`:
+**Affected:** `scripts/driver.mjs:254-329`, `scripts/driver.mjs:6924-6929`,
+`hooks/guard.mjs:1897-1985`, `scripts/nesting.mjs:1-122`.
 
-```text
-env -u MEESEEKS_RUNNING node /plugin/scripts/driver.mjs PRD.md --yes
-MEESEEKS_GIVE_THEM_THE_BOX=1 MEESEEKS_RUN_DEPTH=0 node /plugin/scripts/driver.mjs PRD.md --yes
-```
+**Impact:** target-controlled same-user code may still start a Driver path the guard does not
+recognize without the operator's flag or boxed deadline, multiply paid children and locks across
+repositories, and bypass the ticket/depth checks entirely.
 
-A Builder can derive the installed Driver path from the settings/argv it is given, select another
-repository so the current repository lock is irrelevant, clear the run marker, or forge/reset box
-depth at every generation. The second form does not even put `--give-them-the-box` on argv, so it
-also avoids the boxed wall-clock setup. This turns the documented explicit flag and depth-two cap
-into prompt discipline around environment variables arbitrary Bash can change.
-
-**Impact:** target-controlled work can start recursive full Driver runs without the operator's
-flag, reset the cap indefinitely, multiply paid children and locks across repositories, and keep
-doing so without the special nested-run deadline. This violates a load-bearing authority boundary
-and can turn one unattended task into unbounded process/token/cost fan-out.
-
-**Governing requirements:** `DESIGN.md` §13.6 and the CLAUDE/AGENTS no-nesting invariant say only
+**Governing requirements:** `DESIGN.md` §6.5 and the CLAUDE/AGENTS no-nesting invariant say only
 the operator-typed flag permits nesting, to depth two, with fail-closed markers and a wall-clock.
 Driver and guard are required to enforce the same fact independently.
 
@@ -1825,10 +1803,14 @@ operator-started component runs and the ordinary top-level invocation.
 ### F43 — MEDIUM: a crash during canonical lock publication permanently blocks the repository
 
 **Status:** OPEN
-**Affected:** `scripts/run-lock.mjs:127-178`, `scripts/run-lock.mjs:445-475`,
-`test/run-lock.test.mjs:301-306`
+**Current verification at 0.226.0:** implementation now writes a complete private file and atomically
+hard-links it to the canonical name without replacement. Real-filesystem unit cases establish a
+complete immediately readable record, exactly one winner and staging cleanup. The required
+real-process case that kills one contender after staging and the paused-live-creator neighbour are
+still absent, so the specified crash-seam acceptance evidence is incomplete.
+**Affected:** `scripts/run-lock.mjs:169-207`, `test/run-lock.test.mjs:606-665`
 
-`createLockExclusively()` uses one `writeFileSync(..., { flag: 'wx' })`. `O_CREAT|O_EXCL` makes
+**Original defect:** `createLockExclusively()` used one `writeFileSync(..., { flag: 'wx' })`. `O_CREAT|O_EXCL` makes
 ownership arbitration atomic, but not publication of the JSON bytes: the kernel creates the
 canonical pathname before user-space writes its pid/token body. SIGKILL, host failure or process
 death in that seam can leave a zero-length or partial `.meeseeks/lock.json`.
@@ -1869,10 +1851,15 @@ the write window. Clean private artifacts without clearing another owner's canon
 ### F44 — HIGH: Driver-owned Git effects can hang outside every deadline
 
 **Status:** OPEN
-**Affected:** `scripts/driver.mjs:6790-6835`, `scripts/driver.mjs:8155-8250`, and other
-Driver-owned Git calls made through `shell()` without `timeoutMs`
+**Current verification at 0.226.0:** `git()` applies a 120-second default to every Driver-owned Git
+call and disables interactive signing; the real resistant-filter fixture proves timeout and
+descendant cleanup, and a source inventory rejects direct `shell('git', ...)` bypasses. The required
+full-Driver fixture has not yet shown that a timed-out pre-loop/final Git helper produces the durable
+terminal receipt and releases the run lock, so lifecycle closure evidence remains incomplete.
+**Affected:** `scripts/driver.mjs:6255-6261`,
+`test/integration/git-deadline.integration.test.mjs:1-132`
 
-F2 makes `shell()` termination bounded only when a caller supplies a ceiling. Pre-loop phase
+**Original defect:** F2 makes `shell()` termination bounded only when a caller supplies a ceiling. Pre-loop phase
 staging/commit and final add, commit, status, revision and tag operations do not. These commands are
 not necessarily short, local syscalls: Git may run repository-configured clean/process filters and
 fsmonitor hooks, commit/tag signing and pinentry, or other helpers. Builder has unrestricted Bash
@@ -1925,18 +1912,18 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | Claim | Actual enforcement strength | Current qualification |
 |---|---|---|
 | ratcheted test ids never disappear | deterministic union store, atomic write, fail-closed read, contained current definitions | F17 lets one same-file sibling refresh another id's old red evidence |
-| Builder cannot write Driver state | positional PreToolUse guard plus explicit child settings | tool-mediated writes only; executed target code is outside the hook boundary, which matters to F13 |
-| Builder cannot certify Builder | separate Panel processes, process/envelope conjunction, Driver recombination | F12/F14 leave the live subject mutable during judgment; F29's complete authority proof remains open |
-| Panel is cold | fresh read-only `claude -p`, safe mode, classified supplied prompt | F27's exact availability still needs complete live evidence; F29 and F12/F14 qualify authority/subject isolation |
+| Builder cannot write Driver state | positional PreToolUse guard plus explicit child settings | tool-mediated writes only; executed target code and same-user filesystem access remain outside the hook boundary under F14/F42 |
+| Builder cannot certify Builder | separate Panel processes, process/envelope conjunction, Driver recombination | F14 leaves the candidate subject same-user mutable during judgment; F29's complete authority proof remains open |
+| Panel is cold | fresh read-only `claude -p`, safe mode, classified supplied prompt | F27's exact availability still needs complete live evidence; F29 and F14 qualify authority/subject isolation |
 | Oracle is independent | PRD-only separate author, specification-bound atomic store, deterministic execution | F15 leaves cases repository-readable and overclaimed; F27's zero-tool contract is not fully accepted |
-| budgets and deadlines are hard | child/gate/deploy timers, conserved returned usage, bounded POSIX termination helper | F11 is Windows; F33 is cross-call ownership; F41 lacks lifecycle proof; F44 leaves Driver-owned Git unbounded; host quotas are not claimed |
-| publication names gated/reviewed bytes | clean committed tree, post-deploy reseal, explicit-commit tags | F31/F38 hold the final Git subject, but F12/F14 show gates/Panel may have observed transient other bytes; F22 lacks retained proof |
-| nesting requires operator authority | flag plus run/box/depth markers at Driver and guard | F42 shows the markers are child-mutable and direct Driver execution bypasses command recognition |
+| budgets and deadlines are hard | child/gate/deploy/Git timers, conserved returned usage, bounded POSIX termination helper | F11 is Windows; F41 and F44 lack exact end-to-end lifecycle proof; host quotas are not claimed |
+| publication names gated/reviewed bytes | clean committed tree, post-deploy reseal, explicit-commit tags | F31/F38 hold the final Git subject, but F14 allows same-user mutation of the candidate observed by gates/Panel; F22 lacks retained proof |
+| nesting requires operator authority | one-use ticket issuance plus Driver/guard depth enforcement | F42 shows the running marker and same-user ticket state are child-mutable, and indirect Driver execution bypasses command recognition |
 | sandbox and model routing hold | settings/argv plus live probes | F27/F28 remain open and the current role/spawn changes require tier 3 before release |
 | external CLI feature contract | parsed admitted range plus individual live canaries | F28 still lacks sealed binary identity and update/delegated-entrypoint closure |
 | supported command requires user invocation | direct command plus loader invocation-control metadata | F25's installed pinned-CLI canary remains outstanding |
-| pre-loop provenance is bounded | Driver revalidation, contract-derived output admission, checked Git results | F26 is closed; F44 leaves the Git operations' lifetime unbounded |
-| terminal state is durable | atomic at-most-once `outcome.json` | F10 can overwrite prior evidence on archive failure; F44 can prevent any terminal transition; F22 is evidence completeness |
+| pre-loop provenance is bounded | Driver revalidation, contract-derived output admission, checked and bounded Git results | F26 is closed; F44 still lacks exact full-Driver terminal-path evidence for a Git timeout |
+| terminal state is durable | atomic at-most-once `outcome.json` with no-replace preservation of an unarchived prior receipt | F44's Git-timeout terminal path lacks exact end-to-end evidence; F22 is evidence completeness |
 | graph/provenance is complete | purpose-built ratchet, pins, review, Oracle, assumptions | no general claim graph; exact retained acceptance edges remain F22 |
 
 ### Durable artifact registry
@@ -1944,33 +1931,30 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | Artifact class | Scope and owner | Read-back authority | Failure posture / open gap |
 |---|---|---|---|
 | `config.json` | repository-scoped, operator-owned | selects run policy after validation | deliberately trackable; children cannot write it during a run |
-| `lock.json` | active run, Driver-owned | excludes concurrent drivers | exactly-one ownership and token release hold after a complete write; F43 exposes partial canonical publication; F39 is closed |
+| `lock.json` | active run, Driver-owned | excludes concurrent drivers | staged no-replace publication exposes only complete canonical records; F43 still lacks killed/paused real-process seam evidence |
 | `state.json` | cross-run, Driver-owned | monotonic test ids and reset commit | atomic/corruption fail-closed; read is unbounded under F19 and F17 concerns evidence behind current definition credit |
 | `pins.json` | cross-run, Driver-owned | security blockers and requirement carry | atomic/corruption fail-closed; read is unbounded under F19 |
 | `red-evidence.json` | cross-run, Driver-owned | determines which tests earned current credit | atomic/corruption quarantine; F17 freshness is per file rather than per observed id and F19 leaves its read unbounded |
 | `gate-skip.json` | cross-run cache, Driver-owned | carries only failures on an identical tree | atomic; corruption degrades to rerunning gates |
 | `oracle.json` | per run/specification, Driver-owned | deterministic held-out gate | lifecycle and atomicity verified; repository readability remains F15 |
-| `capabilities.json` | current run snapshot, Driver-owned | arms conditional gate roster | atomic write; F13 treats valid-JSON wrong types and post-init absence as empty; read is unbounded under F19 |
-| `specification.json` | per run, Driver-owned | binds roles/gates/ship to PRD bytes | record read is bounded and persistent drift is detected; F12 leaves Panel on the mutable live PRD |
-| `run.json`, `outcome.json` | per run, Driver-owned | startup record and terminal state | outcome writes are atomic; F10's archive failure can replace prior outcome and F44 can prevent an outcome |
+| `capabilities.json` | current run snapshot, Driver-owned | arms conditional gate roster | atomic write; wrong types and post-initialization absence refuse; read is unbounded under F19 |
+| `specification.json` | per run, Driver-owned | binds roles/gates/ship to PRD bytes | record read is bounded, persistent drift is detected, and Panel receives the captured bytes; candidate mutability remains F14 |
+| `run.json`, `outcome.json` | per run, Driver-owned | startup record and terminal state | outcome writes and prior-receipt preservation are atomic/no-replace; F44 lacks exact end-to-end Git-timeout evidence |
 | `acceptance.json` | per run, Driver-owned | claims exact accepted subject, inputs and results | atomic write, but schema/roster/edge verification and production read-back remain incomplete under F22 |
 | `review.json`, briefs, assumptions, role supply | per run, Driver-owned | Panel evidence and supplied context | archived; F19 leaves several reads unbounded and F22 still lacks complete supply/evidence linkage |
 | lessons and bloopers | cross-run, Driver-owned | advisory prompt context / human history | lesson corruption degrades loudly to none; bloopers append |
 | test/e2e reports, mutation config, browser marker | per attempt/tool invocation | ratchet and gates consume reports | attempt/path/flaky repairs verified; F17 and F19 remain |
-| `runs/NNN/` | cross-run archive, Driver-owned | human/forensic evidence | successful archival verified; F10 archive failure can overwrite the unarchived prior outcome |
+| `runs/NNN/` | cross-run archive, Driver-owned | human/forensic evidence | successful archival verified; archive failure preserves the prior outcome under an exclusive derived name or refuses without overwrite |
 
 ### Open failure-shape summary
 
-Closed defects are recorded in the 0.211.0 closure matrix. This table contains only current gaps, so a
+Closed defects are recorded in the closure matrices above. This table contains only current gaps, so a
 future reviewer does not mistake historical evidence for an active defect.
 
 | Finding | Boundary | Remaining failure shape |
 |---|---|---|
 | F5 | child environment | ambient operator credentials cross into roles |
-| F10 | terminal transition | archive failure overwrites the prior run's canonical outcome with the new refusal |
 | F11 | Windows process cleanup | shell-wrapper descendants are not equivalently reaped |
-| F12 | specification authority | transient PRD substitution lets Panel judge bytes other than the captured canonical revision |
-| F13 | gate roster | valid-JSON wrong types or post-init manifest loss can drop an established detected-only capability |
 | F14 | gated/reviewed subject | A→B→A substitution lets gates or Panel pass bytes other than the committed tree |
 | F15 | Oracle confidentiality | Builder can inspect cases while active docs overclaim visibility isolation and evidence weight |
 | F17 | ratchet evidence | one same-file test refreshes another id's stale red evidence |
@@ -1981,12 +1965,10 @@ future reviewer does not mistake historical evidence for an active defect.
 | F27 | role tools | exact source wiring lacks complete role/inherited-surface/installed live evidence |
 | F28 | CLI compatibility | admitted version range is not a sealed binary/update/entrypoint identity |
 | F29 | reviewer authority | prompt discipline and known-pattern scan do not complete trust-class/immutable-subject proof |
-| F33 | process ownership | a sibling's reparented pipe-owning descendant can be killed by another call's sweep |
-| F40 | current-state docs | HANDOFF describes an obsolete HEAD and committed/uncommitted layering |
 | F41 | provisioning lifecycle | deadline wiring lacks resistant real-process receipt/cleanup/lock evidence |
 | F42 | nesting authority | Builder can clear/forge/reset environment markers and directly invoke the Driver |
-| F43 | lock publication | crash before canonical lock identity bytes land creates permanent unrecoverable refusal |
-| F44 | Driver-owned Git lifecycle | phase/publication Git helpers have no finite command deadline |
+| F43 | lock publication | staged no-replace publication lacks the killed/paused real-process crash-seam cohort required for closure |
+| F44 | Driver-owned Git lifecycle | bounded Git helpers lack a full-Driver timeout fixture proving terminal receipt and lock release |
 
 ### Explicit negative guarantees
 
@@ -1994,8 +1976,8 @@ future reviewer does not mistake historical evidence for an active defect.
 - Oracle cases are “not supplied,” not confidential; Builder can read them (F15).
 - The guard is not a general OS sandbox and cannot govern code after it leaves Claude's tool
   boundary.
-- The captured PRD and workspace hashes are not immutable inputs to gates/Panel; transient live-tree
-  substitution remains possible (F12/F14).
+- The captured PRD is supplied directly, but the same-user candidate workspace is not OS-immutable
+  while gates and Panel consume it (F14).
 - Token/cost ceilings are not atomic reservations across concurrent children.
 - File-backed decision artifacts are not uniformly bounded before allocation (F19).
 - Source validation is not proof that the installed cache snapshot matches the release (F21).
@@ -2005,9 +1987,10 @@ future reviewer does not mistake historical evidence for an active defect.
 - An admitted `claude --version` does not seal the binary later role invocations execute (F28).
 - Reviewer prompt discipline and a known-pattern scan are not arbitrary instruction isolation (F29).
 - Nested-run operator authority and depth are not established by child-mutable environment markers (F42).
-- A canonical lock pathname is not proof its owner identity finished publishing (F43).
-- Driver-owned Git operations are not uniformly bounded even though the shared shell can enforce a
-  deadline when supplied (F44).
+- Canonical lock publication is staged and atomic, but its killed/paused process seam lacks exact
+  real-process acceptance evidence (F43).
+- Driver-owned Git operations are bounded, but the full Driver terminal receipt and lock release
+  after such a timeout lack exact acceptance evidence (F44).
 - Current sandbox and budget controls do not establish CPU, memory, process-count, disk-space, or
   workspace-growth quotas; PLAN item 84 measures that boundary.
 - A model verdict is judgment, not deterministic proof; only the Driver combines it with gates.
@@ -2023,23 +2006,23 @@ future reviewer does not mistake historical evidence for an active defect.
 
 | Review lens | Current result |
 |---|---|
-| process-lifecycle state machine | F10, F11, F33, F41, and F44 retain unsettled ownership/termination/receipt states; F2's scoped helper contract is closed |
-| success laundering | F13, F17, and F22 can turn missing/stale identity into apparently usable evidence |
-| crash fault injection | F10 and F43 remain; F39's mixed-version takeover recovery is closed |
+| process-lifecycle state machine | F11, F41, and F44 retain unverified cross-platform or end-to-end termination/receipt states; F2, F10, and F33 are closed |
+| success laundering | F17 and F22 can turn missing/stale identity into apparently usable evidence; F13 is closed |
+| crash fault injection | F43's exact process seam remains; F10 and F39 are closed |
 | evidence-citation adversary | citation and reporter containment are closed; retained provenance remains F22 |
-| authority by write site | F12, F14, F15, F22, F29, and F42 are the remaining intent/subject/authority gaps |
+| authority by write site | F14, F15, F22, F29, and F42 are the remaining subject/authority gaps; F12 is closed |
 | environment and argument taint | F5 exposes ambient values; F42 treats mutable markers as authority; prompt argv remains array-based/stdin-delivered |
 | configuration-to-effect reachability | F23 is closed; F27/F28 remain external-contract reachability gaps |
 | command-surface reachability | F24 is closed; F25 remains user-only invocation authority |
-| preflight-to-use race | F26's revalidation/admission/Git-result paths are closed; F28 leaves external binary identity mutable and F44 leaves Git lifetime unbounded |
+| preflight-to-use race | F26's revalidation/admission/Git-result paths are closed; F28 leaves external binary identity mutable and F44 lacks exact bounded-Git terminal-path evidence |
 | tool availability versus approval | F27 remains; item 77 records only classified deliberate supply and is partial |
-| monotonic escape audit | stored union is intact; F13 and F17 can silently lose current arming/credit semantics |
+| monotonic escape audit | capability union and gate arming are intact after F13; F17 can still lose current per-id credit semantics |
 | hostile cross-platform pass | F11 remains; current POSIX cleanup evidence is green |
-| budget conservation | returned role usage is conserved; resource reservation is not claimed and F41/F44 can prevent return |
+| budget conservation | returned role usage is conserved; resource reservation is not claimed and F41/F44 still lack exact lifecycle acceptance evidence |
 | resource-exhaustion boundary | F19, F41, F44, and PLAN item 84 define the remaining scope; F2's bounded caller path is closed |
-| terminal transition enumeration | F10 owns destructive archive failure; F44 can prevent transition; F22 owns evidence completeness |
+| terminal transition enumeration | F10 is closed; F44 lacks exact full-Driver timeout evidence; F22 owns evidence completeness |
 | installed-package reality | source/release validation is green; F21 remains the disposable-cache boundary |
-| decision reproducibility | F12/F14 leave the consumed subject mutable and F22 lacks one strict exact-tree acceptance receipt |
+| decision reproducibility | F14 leaves the candidate subject same-user mutable and F22 lacks one strict exact-tree acceptance receipt; F12 is closed |
 | ERD constraint audit | current explicit state remains purpose-built; no graph-store recommendation is justified |
 
 ### Temporal language and terminology audit
@@ -2048,17 +2031,17 @@ future reviewer does not mistake historical evidence for an active defect.
 |---|---|
 | authority and read order | `docs/INDEX.md` routes DESIGN → PLAN/REVIEW → HANDOFF; historical ledgers remain evidence only |
 | `CLAUDE.md` / `AGENTS.md` mirror | byte-identical after the seven-line AGENTS preamble (`cmp` exit 0) |
-| current finding counts | REVIEW alone owns ten high and eleven medium open findings; HANDOFF must not copy the queue |
-| current Git state | HANDOFF's HEAD/candidate narrative is stale under F40 even though its first version token passes release-check |
+| current finding counts | REVIEW alone owns nine high and seven medium open findings; HANDOFF does not copy the queue |
+| current Git state | live Git commands are authoritative; HANDOFF delegates mutable state and F40 is closed |
 | ratchet terminology | historical passing ids remain monotonic; F17 specifically concerns per-id evidence under current definition bytes, not deletion |
-| publication subject | F31/F38 close final Git publication; F12/F14 leave live consumed bytes mutable and F22 owns retained proof |
+| publication subject | F31/F38 close final Git publication; F14 leaves the same-user candidate mutable and F22 owns retained proof; F12 is closed |
 | Oracle terminology | run/specification lifecycle is closed under F8; “not supplied” is still not confidentiality (F15) or zero-tool enforcement (F27) |
 | model-role vocabulary | inert `styleModel` and checkpoint reachability are closed under F23/F24; Builder, Panel, Oracle, and Driver authority names are unchanged |
 | CLI/runtime vocabulary | F25, F27, and F28 distinguish invocation authority, tool availability, and version/binary compatibility |
 | current tier policy | the 0.211.0 candidate changed role/spawn/tool contracts after prior live boundaries; repository policy therefore requires current tier 3 before release |
 | conceptual ERD | remains a documentation model over purpose-built state, not an implemented graph store |
 
-## Verification performed
+## Prior verification performed — 0.211.0
 
 Current reviewer validation on committed candidate `3debe73` / 0.211.0:
 

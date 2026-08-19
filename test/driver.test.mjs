@@ -15,7 +15,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout } from 'node:timers';
@@ -77,8 +77,10 @@ import {
   assertNotNested,
   assertOwnershipCovers,
   authorizedNestingEnv,
+  acceptanceGates,
   canonicalSpecificationBlock,
   writeAcceptanceReceipt,
+  establishDenialStateDir,
   carriedReport,
   TOOL_CACHE_PATHS,
   armingNote,
@@ -1777,11 +1779,11 @@ describe('advisory findings', () => {
 
 describe('assertNotNested', () => {
   it('allows a first run', () => {
-    assert.equal(assertNotNested({}), undefined);
+    assert.equal(assertNotNested({}), 0);
   });
 
   it('allows a run when the marker is empty', () => {
-    assert.equal(assertNotNested({ MEESEEKS_RUNNING: '' }), undefined);
+    assert.equal(assertNotNested({ MEESEEKS_RUNNING: '' }), 0);
   });
 
   it('refuses a nested run', () => {
@@ -7382,7 +7384,7 @@ describe('authorizedNestingEnv: the one place nesting authority is minted (REVIE
   it('hands the child an authority directory and a nonce, and nothing else new', () => {
     const meeseeksDir = makeTempDir();
     const inherited = { PATH: '/usr/bin', [REENTRANCY_ENV]: '1' };
-    const child = authorizedNestingEnv({ meeseeksDir, parentDepth: undefined, env: inherited });
+    const child = authorizedNestingEnv({ meeseeksDir, parentDepth: 0, env: inherited });
 
     assert.equal(child[NESTING_AUTHORITY_ENV], meeseeksDir);
     assert.equal(typeof child[NESTING_TICKET_ENV], 'string');
@@ -7395,13 +7397,13 @@ describe('authorizedNestingEnv: the one place nesting authority is minted (REVIE
 
   it('issues a ticket the child can actually redeem, which is the round trip', () => {
     const meeseeksDir = makeTempDir();
-    const child = authorizedNestingEnv({ meeseeksDir, parentDepth: undefined, env: { [REENTRANCY_ENV]: '1' } });
+    const child = authorizedNestingEnv({ meeseeksDir, parentDepth: 0, env: { [REENTRANCY_ENV]: '1' } });
     assert.doesNotThrow(() => assertNotNested(child));
   });
 
   it('counts one deeper than the parent, taken from the parent and not from the child', () => {
     const meeseeksDir = makeTempDir();
-    const child = authorizedNestingEnv({ meeseeksDir, parentDepth: '1', env: {} });
+    const child = authorizedNestingEnv({ meeseeksDir, parentDepth: 1, env: {} });
     assert.equal(
       redeemNestingTicket({ authority: meeseeksDir, nonce: /** @type {string} */ (child[NESTING_TICKET_ENV]) }).depth,
       2,
@@ -7412,14 +7414,14 @@ describe('authorizedNestingEnv: the one place nesting authority is minted (REVIE
     // The operator's real path, asserted end to end: a top-level boxed run authorizes a component,
     // that component authorizes one more, and the third generation is refused before it is spawned.
     const meeseeksDir = makeTempDir();
-    const first = authorizedNestingEnv({ meeseeksDir, parentDepth: undefined, env: {} });
+    const first = authorizedNestingEnv({ meeseeksDir, parentDepth: 0, env: {} });
     assert.doesNotThrow(() => assertNotNested({ ...first, [REENTRANCY_ENV]: '1' }));
 
-    const second = authorizedNestingEnv({ meeseeksDir, parentDepth: '1', env: {} });
+    const second = authorizedNestingEnv({ meeseeksDir, parentDepth: 1, env: {} });
     assert.doesNotThrow(() => assertNotNested({ ...second, [REENTRANCY_ENV]: '1' }));
 
     assert.throws(
-      () => authorizedNestingEnv({ meeseeksDir, parentDepth: '2', env: {} }),
+      () => authorizedNestingEnv({ meeseeksDir, parentDepth: 2, env: {} }),
       (/** @type {unknown} */ error) => {
         assert.equal(error instanceof DriverError, true);
         assert.equal(/** @type {Error} */ (error).message.includes('Even the box has a bottom'), true);
@@ -7432,17 +7434,75 @@ describe('authorizedNestingEnv: the one place nesting authority is minted (REVIE
     // Refusing after writing the record would leave a nonce on disk that only the cap stops anyone
     // using — one weakened check away from being permission again.
     const meeseeksDir = makeTempDir();
-    assert.throws(() => authorizedNestingEnv({ meeseeksDir, parentDepth: '2', env: {} }), DriverError);
+    assert.throws(() => authorizedNestingEnv({ meeseeksDir, parentDepth: 2, env: {} }), DriverError);
     assert.equal(existsSync(path.join(meeseeksDir, NESTING_FILE)), false);
   });
 
-  it('refuses a malformed inherited depth rather than reading it as zero', () => {
-    // `parseRunDepth(...) ?? 0` used to sit here, which turned every unreadable marker into a fresh
-    // depth-one authorization. The cap is fail-closed on a malformed marker at *both* ends.
+  it('refuses anything other than a trusted non-negative integer depth', () => {
     const meeseeksDir = makeTempDir();
-    for (const marker of ['banana', '1garbage', '-1', '01', '9007199254740992']) {
-      assert.throws(() => authorizedNestingEnv({ meeseeksDir, parentDepth: marker, env: {} }), DriverError, marker);
+    for (const marker of [-1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+      assert.throws(() => authorizedNestingEnv({ meeseeksDir, parentDepth: marker, env: {} }), DriverError, String(marker));
     }
+  });
+
+  it('cannot reset a redeemed depth before issuing the next ticket', () => {
+    const meeseeksDir = makeTempDir();
+    const ticket = issueNestingTicket(meeseeksDir, { depth: MAX_BOX_DEPTH });
+    const trustedDepth = assertNotNested({
+      [REENTRANCY_ENV]: '1',
+      [DEPTH_ENV]: '0',
+      [NESTING_AUTHORITY_ENV]: meeseeksDir,
+      [NESTING_TICKET_ENV]: ticket.nonce,
+    });
+
+    assert.equal(trustedDepth, MAX_BOX_DEPTH);
+    assert.throws(
+      () => authorizedNestingEnv({ meeseeksDir, parentDepth: trustedDepth, env: {} }),
+      /Even the box has a bottom/,
+    );
+  });
+});
+
+describe('establishDenialStateDir', () => {
+  it('creates a private directory directly beneath real driver state', () => {
+    const root = makeTempDir();
+    mkdirSync(path.join(root, '.meeseeks'));
+
+    assert.equal(establishDenialStateDir(root), path.join(root, '.meeseeks', 'denials'));
+    assert.equal(existsSync(path.join(root, '.meeseeks', 'denials')), true);
+  });
+
+  it('refuses a pre-existing directory symlink instead of exporting a guard write target', {
+    skip: process.platform === 'win32',
+  }, () => {
+    const root = makeTempDir();
+    const victim = makeTempDir();
+    mkdirSync(path.join(root, '.meeseeks'));
+    symlinkSync(victim, path.join(root, '.meeseeks', 'denials'));
+
+    assert.throws(() => establishDenialStateDir(root), /real directories/);
+    assert.deepStrictEqual(readdirSync(victim), []);
+  });
+
+  it('refuses state another local user could replace', { skip: process.platform === 'win32' }, () => {
+    const root = makeTempDir();
+    const state = path.join(root, '.meeseeks');
+    mkdirSync(state);
+    chmodSync(state, 0o777);
+
+    assert.throws(() => establishDenialStateDir(root), /driver-owned state/);
+    chmodSync(state, 0o755);
+  });
+});
+
+describe('acceptanceGates', () => {
+  it('does not turn a missing gate status into exit status zero', () => {
+    const [gate] = acceptanceGates(
+      [/** @type {any} */ ({ name: 'lint', ok: true, detail: 'passed' })],
+      { identities: [{ name: 'lint', command: [], reports: [] }], reportDigestByName: {}, attempt: 1 },
+    );
+
+    assert.equal(Object.hasOwn(gate, 'status'), false);
   });
 });
 

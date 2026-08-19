@@ -6,7 +6,7 @@
  * the same tree anyway. Two independent drivers were then mutating one repository, each able to
  * `git reset --hard` it, rewrite `.meeseeks/` and commit over the other. Run 15's result was void.
  *
- * §13.6's re-entrancy guard does not cover this and was never meant to: it refuses a *nested*
+ * §6.5's re-entrancy guard does not cover this and was never meant to: it refuses a *nested*
  * run, a builder invoking the slash command. Two operators — or one operator twice — starting
  * independent drivers on one directory is a different failure and nothing looked for it.
  *

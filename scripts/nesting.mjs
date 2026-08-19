@@ -1,5 +1,5 @@
 /**
- * Who may start a nested run, recorded where a Builder cannot reach it (REVIEW F42).
+ * One-time evidence for the recognized nested-run path (REVIEW F42).
  *
  * **Both nesting checks trusted facts a Builder controls.** `assertNotNested` read `MEESEEKS_RUNNING`
  * to decide whether it was inside a run and `MEESEEKS_GIVE_THEM_THE_BOX` plus `MEESEEKS_RUN_DEPTH`
@@ -9,27 +9,24 @@
  * reproduced both. The documented "only the operator's typed flag, to depth two" became prompt
  * discipline around strings anyone in the process tree can rewrite.
  *
- * **So permission stops living in the environment.** A nested run is authorized by a *ticket*: a
- * record the parent Driver writes under its own `.meeseeks/`, naming one child, one depth and one
- * nonce. The environment still carries the nonce — it has to, since that is how a spawned process
- * learns anything — but the nonce alone authorizes nothing. It is a claim to be checked against the
- * record, and the record is what a Builder cannot produce.
+ * A nested run recognized by the Driver is authorized by a *ticket*: a record the parent Driver
+ * writes under its own `.meeseeks/`, naming one child, one depth and one nonce. The environment still
+ * carries the nonce — it has to, since that is how a spawned process learns anything — but the nonce
+ * alone authorizes nothing. It is checked against the record and consumed before the run proceeds.
  *
- * Four properties, and each answers one of the four verbs F42 uses:
+ * Two properties hold once `assertNotNested` is reached:
  *
- * - **Cannot mint.** The record lives under `.meeseeks/`, and the guard refuses every write to a
- *   path with a `.meeseeks` segment *at any depth, anywhere* — so a Builder can neither write a
- *   ticket into the real directory nor fabricate a directory of its own to hold one.
  * - **Cannot replay.** Redeeming a ticket consumes it. The second presentation of the same nonce
  *   finds it spent and is refused, so a Builder that reads a nonce out of its own environment —
  *   which it certainly can — gains nothing it can use twice.
- * - **Cannot reset.** Depth is read from the record, never from argv or the environment. A child
- *   cannot declare itself shallower than the ticket its parent wrote.
- * - **Cannot forge absence.** Clearing `MEESEEKS_RUNNING` no longer makes a nested run legal,
- *   because legality now requires a ticket to be *present* rather than a marker to be missing.
+ * - **Cannot reset on that path.** `assertNotNested` returns the record's depth and the caller uses
+ *   that trusted number for the next ticket, never the inherited depth marker.
  *
- * The ticket is not a secret and does not need to be: it is single-use and bound to a depth. Reading
- * one buys a Builder exactly the run its operator already authorized, once.
+ * This file is not an OS security boundary. A Driver started after clearing `MEESEEKS_RUNNING` does
+ * not attempt redemption, lexical hook inspection cannot recognize every renamed or indirect
+ * invocation, and same-user arbitrary code may bypass a hook's path parser. The ticket is not a
+ * secret and does not solve those cases. It hardens legitimate component nesting while F42 remains
+ * open for a measured authority boundary a Builder process cannot mint, clear or bypass.
  */
 
 import { createHash, randomUUID } from 'node:crypto';

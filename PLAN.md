@@ -1725,7 +1725,7 @@ capability canaries. Item numbering records chronology, not priority. Item **77*
 **76** despite its later number. The top-level build order is authoritative when physical placement
 and execution order differ.
 
-### 52. Denial dampening (R25c), done without giving the guard a write primitive — IMPLEMENTED (0.225.0)
+### 52. Denial dampening (R25c), without giving the guard a redirectable write primitive — IMPLEMENTED (0.225.0; hardened 0.226.0)
 
 **Origin:** R25c, built into item 37's first cut and **removed before landing** when the item-37 hostile
 panel (three lenses, 15 Aug) found two real defects in it. Recorded here so the good idea is not lost and
@@ -1755,8 +1755,8 @@ first ~3 denials, then a one-liner.
 - **Verbosity only, never the decision** — a dampened denial is still a deny, still carries the provenance
   prefix and the `[meeseeks:rule]` tag (the parts item 37 kept).
 
-**Done when:** the counter lives where a run process provably cannot redirect it (a test plants a symlink at
-the counter path and shows the guard refuses to follow it); dampening is per-rule (a test denies rule A
+**Done when:** the Driver refuses a pre-existing redirect and the guard refuses a symlink at the
+counter leaf; dampening is per-rule (a test denies rule A
 three times then rule B once and sees B rendered in full); an operator denial outside a run is never
 dampened; and any counter failure renders full text.
 
@@ -1788,6 +1788,15 @@ ledger where the Driver said rather than where the guard chose. The neighbour ru
 no `MEESEEKS_DENIAL_STATE` and sees one unchanging explanation, which is every operator session. The
 fixture uses the *nesting* refusal rather than `git push --force`, because the latter is one sentence
 and the shortening-must-shorten rule deliberately leaves it alone.
+
+**0.226.0 hardening.** `O_NOFOLLOW` protects only the counter leaf. The Driver previously exported
+`MEESEEKS_DENIAL_STATE` before proving the parent path was real, and `mkdirSync({recursive:true})`
+followed a pre-existing `.meeseeks/denials` directory symlink; the guard then created its ledger in
+the link target. The Driver now clears any inherited target, creates the leaf non-recursively, rejects
+links and non-directories at both path components, verifies the resolved parent/child relationship and
+ownership/permissions, and exports the target only after those checks pass. This prevents pre-existing path
+redirection. It is explicitly not same-user process isolation; a process outside the hook boundary can
+still race filesystem state, and any such stronger claim depends on F42's unresolved boundary.
 
 ### 53. Styled milestone lines: gate summary, panel convening, carry/outstanding — OPEN (micro-item, cosmetic, quota-funded)
 
@@ -5112,6 +5121,44 @@ from one `SHIPPED` receipt and resolving every required edge to a matching exact
 edges now exist in the record; walking them is a separate harness. Per-gate *tool version* remains
 deliberately unrecorded rather than invented: it is a measurement question, and the resolved
 toolchain identity is what the receipt states instead.
+
+### 127. Current-range code-review corrections — IMPLEMENTED (0.226.0)
+
+**Origin:** Codex review of `origin/main..HEAD` through 0.225.0, 19 Aug 2026. Four defects were
+reproduced against the real functions or Git behavior before repair.
+
+- A depth-two ticket could be redeemed with `MEESEEKS_RUN_DEPTH=0`, after which the same Driver read
+  that forged marker again and issued a depth-one child ticket. `assertNotNested` now returns the
+  redeemed depth, `runInvocation` normalizes the marker to it, and `authorizedNestingEnv` accepts only
+  that trusted number. The failure and the depths-one-and-two neighbour are both asserted.
+- Reusing a candidate ignored the result of `git clean -fd`, and one force flag deliberately leaves
+  an untracked nested repository behind. The function now runs `git clean -ffd`, refuses a failed
+  cleanup, and proves with real Git that ordinary untracked files, nested repositories and ignored
+  caches receive their intended treatment.
+- The acceptance model observation accepted both tagged-union branches at once and preserved extra
+  fields, while `acceptanceGates` converted a missing status into zero. A model observation now has
+  exactly one valid key, every stated report entry must be an identity, and an absent/non-integer
+  status remains absent so receipt completeness rejects it rather than recording success.
+- Denial dampening exported its path before validating directory ancestors; item 52 records the
+  activation hardening and its symlink reproduction.
+- Preserving an unarchived outcome used `rename`, which replaces an existing destination on POSIX;
+  a repeated timestamp-derived name could therefore destroy an earlier preserved receipt. The move
+  now uses an exclusive same-directory hard link followed by unlink, and a collision leaves both the
+  canonical previous receipt and the earlier preserved file untouched.
+
+**Boundaries found, not relabelled as fixed.** The materialized candidate is still writable by a
+same-user background process that discovers its external path, so F14 needs measured process or
+filesystem isolation. Tickets still depend on the run marker being present and on lexical guard
+inspection catching the launch/state write, so F42 needs an authority boundary arbitrary same-user
+code cannot bypass. `DESIGN.md`, `candidate.mjs`, and `nesting.mjs` now state those limits instead of
+claiming path separation or a hook parser provides OS isolation.
+
+**Evidence:** focused type checking and lint passed; the expanded focused run passed 1,159 unit tests
+and 47 real-process/Git integration tests. `npm run slice-check -- verify --no-integration` passed
+lint, type checking, the complete unit tier, release checks and the stable 70-file shipped-byte
+fingerprint. `npm run test:integration` passed 242 of 242 in 508.5 seconds. No paid live test was
+needed: the changed contracts are local Git/filesystem/receipt behavior and do not depend on a Claude
+CLI response.
 
 ## Observations recorded rather than repaired
 

@@ -222,7 +222,7 @@ describe('a Builder cannot start a Driver against another repository (REVIEW F42
     const victim = repo('victim');
     const parentState = path.join(scratch(), '.meeseeks');
     mkdirSync(parentState, { recursive: true });
-    const authorized = authorizedNestingEnv({ meeseeksDir: parentState, parentDepth: undefined, env: {} });
+    const authorized = authorizedNestingEnv({ meeseeksDir: parentState, parentDepth: 0, env: {} });
     const claude = counterfeitClaude();
 
     const run = launchDriver({

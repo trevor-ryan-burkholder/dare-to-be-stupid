@@ -7,7 +7,7 @@
  * repository, each able to `git reset --hard` it, rewrite `.meeseeks/` and commit over the other.
  * Run 15's result was void and nothing could be concluded from its log.
  *
- * §13.6's re-entrancy guard does not cover this. It refuses a *nested* run — a builder invoking
+ * §6.5's re-entrancy guard does not cover this. It refuses a *nested* run — a builder invoking
  * the slash command — which is a different thing entirely, and nothing looked for this one.
  *
  * **And the first lock did not lock.** Codex F1: reading the lock and writing it were separate

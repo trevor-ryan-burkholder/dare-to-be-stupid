@@ -65,9 +65,10 @@ export const INPUT_CLASSES = /** @type {const} */ ([
  * system prompt, the templates, and the brief the Driver composed from them. Everything the
  * candidate produced is material to read and reason about, and nothing more.
  *
- * `oracle-cases` is authority because the Driver holds them and the Builder never sees them; the
- * policy above still refuses them to the Panel, for a different reason — a reviewer that knows the
- * held-out cases stops being independent of them.
+ * `oracle-cases` is authority because the Driver creates the evaluation contract before the Builder;
+ * the deliberate prompt channel never supplies them to either Builder or Panel. That classification
+ * does not claim filesystem confidentiality: F15 records that arbitrary Builder code may still read
+ * the current store, and the policy above is a supply discipline rather than that missing boundary.
  *
  * **Recorded, not enforced here.** This table makes the classification machine-readable so an
  * acceptance receipt can state it and a refactor that reclassifies something has to say so. The

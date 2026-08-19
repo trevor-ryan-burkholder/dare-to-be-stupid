@@ -29,7 +29,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 /** The receipt's filename inside `.meeseeks/`. */
@@ -89,7 +89,12 @@ export function writeRunOutcome(meeseeksDir, receipt, io) {
   if (io.preserve === true && existsSync(file)) {
     const moved = `${file}.unarchived-${createHash('sha256').update(io.now()).digest('hex').slice(0, 16)}`;
     try {
-      renameSync(file, moved);
+      // `rename` replaces an existing destination on POSIX, which would destroy an earlier
+      // preserved receipt when the timestamp-derived name collides. A same-directory hard link is
+      // exclusive: `EEXIST` refuses without touching either file. Removing the canonical link only
+      // after that succeeds completes the move without a replace window.
+      linkSync(file, moved);
+      unlinkSync(file);
       io.log(
         `the previous run was not archived, so its ${OUTCOME_FILE} was moved to ${path.basename(moved)} rather than ` +
           'overwritten',

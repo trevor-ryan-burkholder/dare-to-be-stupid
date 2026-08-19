@@ -370,7 +370,7 @@ target-content write, install or commit, and released only by the owner on every
 the driver's pid, start time and an ownership token so a process that did not acquire the lock
 cannot clear it. Measured on 13 August 2026 — `ps` showed three drivers, two on the same `cwd`,
 because run 14 was sent `SIGTERM` and did not die before run 15 launched. Run 15's result is void
-and nothing may be concluded from its log. §13.6's re-entrancy guard does not cover this and never
+and nothing may be concluded from its log. §6.5's re-entrancy guard does not cover this and never
 did: it refuses a *nested* run, a builder invoking the slash command, which is a different failure.
 
 **How it is acquired, since 0.165.0.** Winning is an exclusive create — `O_CREAT | O_EXCL` on
@@ -1863,7 +1863,7 @@ excludes the read-only tools. That second test is the one that matters most here
 to the matcher would silently convert a write barrier into a blackout, and a blackout would look
 like a seal without being one.
 
-### 6.1a Denial dampening — verbosity only, and only where a run cannot reach
+### 6.1a Denial dampening — verbosity only, in validated Driver state
 
 A builder that has read the same three-sentence denial forty times is having its context spent on
 nothing (§3.9). So the first three denials **of each rule** are explained in full and later ones
@@ -1876,11 +1876,13 @@ This was built once and pulled before landing, and both reasons are worth statin
 - **The guard is the one component that survives `--dangerously-skip-permissions`, and it is not
   itself guarded.** The first cut counted denials at a predictable path in `os.tmpdir()` with a plain
   write, which turns the guard's own bookkeeping into an arbitrary-file overwrite for anyone who
-  plants a symlink there. The Driver now names the directory — inside `.meeseeks/`, which the guard
-  already denies every in-run process at any depth — creates it `0700` after the lock is won, and
-  passes it in `MEESEEKS_DENIAL_STATE`. The guard opens with `O_NOFOLLOW` and refuses a target that
-  is not a regular file, because a component that turns its bookkeeping into a write primitive has to
-  be wrong twice before it hurts.
+  plants a symlink there. The Driver now creates the directory `0700` after the lock is won, refuses
+  to export it unless both `.meeseeks` and its `denials` child are real Driver-owned directories
+  resolving in the expected parent/child relationship with safe permissions, and only then passes
+  it in `MEESEEKS_DENIAL_STATE`. The guard
+  opens the counter with `O_NOFOLLOW` and refuses a target that is not a regular file. These checks
+  prevent a pre-existing path redirect; they are not same-user process isolation, so every later
+  uncertainty still disables dampening and renders the full denial.
 - **Keyed by `(session, rule)`, never by session alone.** Per-session, three denials on rule A
   followed by the first-ever denial on rule B renders B as "denied again" though B was never
   explained — recreating the loop this exists to fix, for a rule the builder was never told about.
@@ -1911,6 +1913,15 @@ commit no branch points at, and checks that commit out into a worktree outside t
 worktree per run, re-checked-out each iteration: a fresh one would discard the gate cache and the
 installed browsers and turn an optimization into a per-iteration reinstall, and ignored files survive
 `checkout --force`, which is what makes the reuse safe.
+
+**Path separation is not same-user isolation.** The worktree name is derived from the Driver pid and
+a Builder-launched background process runs as the same user, so it can discover and mutate that path
+after the Builder call returns. The tree object still names the intended snapshot, and candidate
+reuse now fails if `git clean -ffd` cannot remove every non-ignored untracked path (including a nested
+repository), but neither fact proves what bytes a same-user process exposed while a gate or reviewer
+read the worktree. `REVIEW.md` F14 therefore remains open: closing that threat requires a measured
+filesystem/process isolation boundary or another mechanism that makes the reviewed files immutable
+to Builder descendants, not another before/after sample.
 
 **What the subject is.** Tracked files plus untracked-but-not-ignored ones — `git add -A`'s view, the
 same set the iteration's commit will contain. Ignored paths are outside it by definition: not
@@ -2004,37 +2015,37 @@ which forges the flag, resets the cap, points the new run at some other reposito
 lock is irrelevant, and never puts the flag on argv, so it skips the boxed wall clock too. Repeated
 at every generation, one unattended task becomes unbounded paid fan-out.
 
-**So permission is now a record, and the record lives where a Builder cannot write.** The Driver that
-is about to spawn a component issues a one-time ticket into the *parent's* `.meeseeks/nesting.json`
+**So the recognized nested path now requires a record.** The Driver that is about to spawn a
+component issues a one-time ticket into the *parent's* `.meeseeks/nesting.json`
 (`scripts/nesting.mjs`) and passes the nonce to the child. The child refuses to start unless that
-ticket exists unconsumed, and redeeming it marks it consumed. Three attacks close at once:
+ticket exists unconsumed, and redeeming it marks it consumed. Two properties hold on that path:
 
-- **Minting** — the store is under `.meeseeks/`, which §6's positional rule already denies to any
-  process marked `MEESEEKS_RUNNING`, at any depth, including files that do not exist yet. A Builder
-  cannot write a ticket, and a store it writes somewhere else is not the one the ticket names.
 - **Replay** — consumption is part of redemption, so a nonce read out of an inherited environment
   buys exactly the one run it was issued for.
-- **Reset** — depth is a field of the record, not of the environment. A child cannot declare itself
-  shallower than the ticket it was issued, and `MEESEEKS_RUN_DEPTH` no longer authorizes anything.
+- **Reset** — `assertNotNested` returns the depth from the redeemed record, `runInvocation` replaces
+  the inherited marker with that value, and only that trusted number may issue the next ticket. A
+  child cannot reset `MEESEEKS_RUN_DEPTH=0` between redemption and the next generation.
 
 The cap is applied at both ends: `authorizedNestingEnv` refuses to mint past `MAX_BOX_DEPTH`, so a
 run at the bottom of the box never spends a spawn to be told so and the store never accumulates
 authority nobody may use; `assertNotNested` refuses to redeem past it, so a ticket that somehow
-exists is still not permission. Both are fail-closed on a malformed inherited marker — an unreadable
-depth is refused rather than read as zero, which is what `?? 0` used to do.
+exists is still not permission. Ticket issuance accepts only the trusted non-negative integer
+returned by redemption, never an inherited string.
 
 **The environment flag still exists and still matters**, at the parent: `runInvocation` reads
 `--give-them-the-box` off argv, refuses configured components without it, and arms the boxed
 deadline. What changed is that the flag no longer *decides* anything in a child. It is the operator's
 intent; the ticket is the authority.
 
-**The guard is the second, independent half and cannot substitute for this one.** It denies direct
+**The guard is the second half and cannot substitute for an OS boundary.** It denies direct
 and wrapped execution of the shipped entrypoint — matched positionally on `scripts/driver.mjs`, so
 `env -u MEESEEKS_RUNNING node …`, `nohup`, `sudo` and `bash -c` are all caught — which is the only
 place the marker-clearing form can be stopped, because a Driver started with no run marker is reading
-its own environment correctly. A renamed copy of the whole plugin remains unrecognisable by name;
-that residual is why the Driver-side authority is the load-bearing half and the guard is defense in
-depth.
+its own environment correctly. A renamed copy of the whole plugin or an indirect interpreter can
+remain unrecognisable by lexical command inspection, and arbitrary same-user code can attempt state
+writes without spelling a protected path in the command the hook sees. Tickets therefore harden the
+ordinary component path but do not prove that a Builder cannot mint or start another Driver.
+`REVIEW.md` F42 remains open until that authority is enforced across a measured isolation boundary.
 
 ---
 

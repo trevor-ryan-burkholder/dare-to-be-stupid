@@ -13,10 +13,11 @@
  *
  * So the subject is materialized instead of sampled. After the Builder, the Driver stages the
  * working tree into a **temporary index** — never the repository's own — writes a tree object,
- * wraps it in a commit that no branch points at, and checks that commit out into a worktree the
- * Builder never had a path to. Gates run there, the Panel reads there, evidence resolves there. A
- * background writer in the main tree can do whatever it likes: it is not writing to the thing being
- * judged, and the tree object is content-addressed, so "which bytes" has an answer that is a name.
+ * wraps it in a commit that no branch points at, and checks that commit out into a separate
+ * worktree. Gates run there, the Panel reads there, evidence resolves there. This separates ordinary
+ * writes to the main tree from the subject and gives the intended bytes a content-addressed name.
+ * It does not isolate that path from a same-user background process left by the Builder; F14 remains
+ * open on that stronger threat, which needs a measured filesystem/process boundary.
  *
  * **What the subject is.** Tracked files plus untracked-but-not-ignored ones — `git add -A`'s view,
  * which is the same set `git add -A` will later commit. Ignored paths are deliberately outside it:
@@ -241,8 +242,16 @@ export async function materializeCandidate(options) {
     }
     // A gate that wrote a *new* untracked file last iteration would otherwise leave it in the
     // subject, so the tree is cleaned of everything git does not know about — except the ignored
-    // caches, which `-x` would take with it.
-    await options.run('git', ['clean', '-fd'], { cwd: options.dir, timeoutMs: options.timeoutMs });
+    // caches, which `-x` would take with it. Two force flags are required for an untracked nested
+    // repository: one leaves it behind, and then the gates would inspect bytes absent from the
+    // content-addressed tree this function returns.
+    const cleaned = await options.run('git', ['clean', '-ffd'], { cwd: options.dir, timeoutMs: options.timeoutMs });
+    if (!cleaned.ok) {
+      return {
+        ok: false,
+        detail: `the candidate worktree could not be cleaned: ${(cleaned.stderr || cleaned.stdout).trim()}`,
+      };
+    }
   }
   // **The gates write their reports into `<candidate>/.meeseeks/`, and a fresh worktree has no such
   // directory.** `.meeseeks/` is ignored, so a checkout never creates it — and a runner told

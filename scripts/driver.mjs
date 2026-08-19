@@ -21,7 +21,7 @@
  */
 
 import { execFileSync, spawn as spawnProcess } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { clearInterval, clearTimeout, setInterval, setTimeout } from 'node:timers';
 import os from 'node:os';
 import path from 'node:path';
@@ -185,7 +185,7 @@ import { CONDITIONAL_GATE_OPERATIONS, gatesFor, resolveToolchain } from './toolc
  * }} ReviewerReport
  */
 
-/** Environment marker used to refuse nested runs (DESIGN.md §13.6). */
+/** Environment marker used to refuse nested runs (DESIGN.md §6.5). */
 export const REENTRANCY_ENV = 'MEESEEKS_RUNNING';
 
 /**
@@ -244,15 +244,15 @@ export class DriverError extends Error {
 // ---------------------------------------------------------------------------
 
 /**
- * meeseeks never spawns meeseeks. Enforced here *and* in the guard hook, because either one alone
- * has a hole: the hook only sees tool calls, and the driver only sees its own children.
+ * Ordinary runs may not spawn meeseeks; boxed component runs need a redeemed ticket. Enforced here
+ * and in the guard hook, with the same-user limitations recorded in DESIGN.md §6.5.
  *
  * @param {Record<string, string | undefined>} env
- * @returns {void}
+ * @returns {number} the depth established by the redeemed ticket, or zero at top level
  * @throws {DriverError}
  */
 export function assertNotNested(env) {
-  if (env[REENTRANCY_ENV] === undefined || env[REENTRANCY_ENV] === '') return;
+  if (env[REENTRANCY_ENV] === undefined || env[REENTRANCY_ENV] === '') return 0;
 
   // `--give-them-the-box`: the operator has asked for the thing this architecture refuses, by
   // name, on a command line, in a session they are watching. Nothing else is relaxed — the guard
@@ -262,9 +262,9 @@ export function assertNotNested(env) {
   // **Permission is a ticket, not a variable** (REVIEW F42). `MEESEEKS_GIVE_THEM_THE_BOX` and
   // `MEESEEKS_RUN_DEPTH` are environment strings, and a Builder with unrestricted Bash can forge the
   // first and reset the second at every generation — both reproduced. So the flag no longer decides
-  // anything here on its own: a nested run must redeem a record its parent wrote under `.meeseeks/`,
-  // which the guard refuses to let any child create, and redeeming consumes it so a nonce read out
-  // of an inherited environment cannot be used twice.
+  // anything here on its own: a recognized nested run must redeem a record its parent wrote under
+  // `.meeseeks/`, and redemption consumes it so a nonce read out of an inherited environment cannot
+  // be used twice. This is not the same-user isolation boundary F42 still requires.
   //
   // Depth comes from that record too. A child cannot declare itself shallower than the ticket it was
   // issued, which is what made the cap resettable.
@@ -275,10 +275,10 @@ export function assertNotNested(env) {
   } catch (error) {
     throw new DriverError(
       `${/** @type {Error} */ (error).message} Nested runs are refused at the driver and at the guard hook ` +
-        '(DESIGN.md §13.6).',
+        '(DESIGN.md §6.5).',
     );
   }
-  if (authorized.depth <= MAX_BOX_DEPTH) return;
+  if (authorized.depth <= MAX_BOX_DEPTH) return authorized.depth;
   throw new DriverError(
     `--give-them-the-box permits nesting to depth ${MAX_BOX_DEPTH}, and this ticket authorizes ${authorized.depth}. ` +
       'Even the box has a bottom.',
@@ -296,22 +296,21 @@ export function assertNotNested(env) {
  * ticket exists means a run that has reached the bottom of the box never spends a spawn to be told
  * so, and the record under `.meeseeks/` never accumulates authority nobody may use.
  *
- * `parentDepth` is the raw inherited marker rather than a number, so the one place that decides how
- * deep a child is also decides what an unreadable marker means. It means refusal — the depth cap is
- * fail-closed on a malformed marker, and `?? 0` here would have laundered corrupt state into a fresh
- * generation of permission before either boundary saw it.
+ * `parentDepth` is the trusted number returned by `assertNotNested`, never the inherited marker.
+ * The ticket is the authority for a nested run's depth; consulting the environment again after
+ * redemption would let the child reset the cap before this function issued the next ticket.
  *
- * @param {{ meeseeksDir: string, parentDepth: string | undefined,
+ * @param {{ meeseeksDir: string, parentDepth: number,
  *   env: Record<string, string | undefined> }} options
  * @returns {Record<string, string | undefined>}
  * @throws {DriverError}
  */
 export function authorizedNestingEnv(options) {
-  const inherited = parseRunDepth(options.parentDepth);
-  if (inherited === null) {
+  const inherited = options.parentDepth;
+  if (!Number.isSafeInteger(inherited) || inherited < 0) {
     throw new DriverError(
       `${DEPTH_ENV} is ${JSON.stringify(options.parentDepth)}, which is not a depth. Refusing to issue nesting ` +
-        'authority from a marker nobody can read, because a malformed value is not evidence of room under the cap.',
+        'authority from a value the redeemed ticket did not establish.',
     );
   }
   const depth = inherited + 1;
@@ -327,6 +326,53 @@ export function authorizedNestingEnv(options) {
     [NESTING_AUTHORITY_ENV]: options.meeseeksDir,
     [NESTING_TICKET_ENV]: ticket.nonce,
   };
+}
+
+/**
+ * Create the only directory the guard may use for denial counters.
+ *
+ * The environment is populated only after both path components have been established as real
+ * directories and the leaf resolves directly beneath the real `.meeseeks` directory. `O_NOFOLLOW`
+ * in the guard protects the counter file; these checks protect the directory ancestors from a
+ * pre-existing symlink. They are an activation check, not same-user process isolation: a process
+ * already running outside the hook boundary can still race filesystem paths, which is why every
+ * later uncertainty in the guard remains fail-verbose.
+ *
+ * @param {string} cwd
+ * @returns {string}
+ * @throws {DriverError}
+ */
+export function establishDenialStateDir(cwd) {
+  const meeseeksDir = path.join(cwd, '.meeseeks');
+  const dir = path.join(meeseeksDir, 'denials');
+  try {
+    mkdirSync(dir, { mode: 0o700 });
+  } catch (error) {
+    if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'EEXIST') throw error;
+  }
+  const parent = lstatSync(meeseeksDir);
+  const leaf = lstatSync(dir);
+  if (parent.isSymbolicLink() || !parent.isDirectory() || leaf.isSymbolicLink() || !leaf.isDirectory()) {
+    throw new DriverError(
+      'denial dampening requires .meeseeks and .meeseeks/denials to be real directories; a link or non-directory ' +
+        'would turn guard bookkeeping into a write outside driver-owned state',
+    );
+  }
+  const realParent = realpathSync(meeseeksDir);
+  const realLeaf = realpathSync(dir);
+  if (path.dirname(realLeaf) !== realParent) {
+    throw new DriverError('denial dampening is off because its state directory resolves outside .meeseeks');
+  }
+  if (process.platform !== 'win32') {
+    const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+    if ((uid !== null && (parent.uid !== uid || leaf.uid !== uid)) || (parent.mode & 0o022) !== 0 || (leaf.mode & 0o077) !== 0) {
+      throw new DriverError(
+        'denial dampening requires driver-owned state: .meeseeks may not be group/other-writable and its denials ' +
+          'directory may have no group or other permissions',
+      );
+    }
+  }
+  return dir;
 }
 
 // ---------------------------------------------------------------------------
@@ -1983,7 +2029,9 @@ export function acceptanceGates(results, context) {
     return {
       name: result.name,
       ok: result.ok,
-      status: typeof result.status === 'number' ? result.status : 0,
+      // Missing is not success. Preserve only a stated integer so the receipt builder can refuse a
+      // result whose producer never recorded an exit status instead of laundering it into zero.
+      ...(Number.isInteger(result.status) ? { status: result.status } : {}),
       detailDigest: digest(String(result.detail ?? '')),
       // The argv, digested. `null` says this gate runs no process; an identity nobody recorded is a
       // different fact and is refused by the receipt rather than defaulted to either.
@@ -6722,16 +6770,17 @@ async function runInvocation(argv, io, crash) {
   // rather than derived by the guard, because a guard deriving a temporary path is the defect the
   // item-37 hostile panel pulled: the guard is the one component that survives
   // `--dangerously-skip-permissions` and is not itself guarded, so a predictable path is a symlink
-  // target. This one is inside `.meeseeks/`, which the guard already denies every in-run process at
-  // any depth. The directory is created after the lock is won — a run that never started writes
-  // nothing — and until it exists the guard's open fails and every denial renders in full, which is
-  // the direction every uncertainty here takes.
-  const denialStateDir = path.join(cwd, '.meeseeks', 'denials');
+  // target. This one is inside `.meeseeks/`, where the guard denies the in-run writes it recognizes.
+  // The directory is created after the lock is won — a run that never started writes nothing — and
+  // until it exists the guard's open fails and every denial renders in full, which is the direction
+  // every uncertainty here takes.
   /** @type {Record<string, string | undefined>} */
   const env = {
     ...(io.env ?? process.env),
     ...(boxed ? { [BOX_ENV]: '1' } : {}),
-    [DENIAL_STATE_ENV]: denialStateDir,
+    // Never inherit an operator- or child-chosen write target. This is populated only after the
+    // driver establishes its own directory under the run lock.
+    [DENIAL_STATE_ENV]: undefined,
   };
   const write = io.log ?? ((/** @type {string} */ line) => process.stdout.write(`${line}\n`));
   const spawn = io.spawn ?? spawnClaude;
@@ -6878,8 +6927,12 @@ async function runInvocation(argv, io, crash) {
     write(verbatim('Everything else still holds: .meeseeks/ is guarded, review is cold, nothing defaults to pass.'));
   }
 
+  let runDepth;
   try {
-    assertNotNested(env);
+    runDepth = assertNotNested(env);
+    // Downstream guards need the same depth the ticket established. Leaving a child-supplied
+    // marker in place here would reintroduce the cap reset after successful redemption.
+    if (boxed) env[DEPTH_ENV] = String(runDepth);
   } catch (error) {
     write(verbatim(/** @type {Error} */ (error).message));
     return 1;
@@ -7809,12 +7862,11 @@ async function runInvocation(argv, io, crash) {
               // **The one place a nested run is legitimately authorized** (REVIEW F42). The ticket
               // is issued here, by the Driver that is about to spawn the component, under the flag
               // the operator typed — never in response to anything a child asked for. Its depth is
-              // this run's depth plus one, read from the environment the *parent* was started with
-              // rather than from anything the child can influence, and the child cannot present a
-              // shallower one because the depth lives in the record and not in the variable.
+              // this run's redeemed depth plus one, carried as a trusted local number rather than
+              // re-read from the environment, so the child cannot reset the cap after redemption.
               env: authorizedNestingEnv({
                 meeseeksDir,
-                parentDepth: env[DEPTH_ENV],
+                parentDepth: runDepth,
                 env: childEnvironment(env),
               }),
               onLine: (line) => write(verbatim(`component:${component.name}: ${line}`)),
@@ -7959,10 +8011,10 @@ async function runInvocation(argv, io, crash) {
     }
   };
 
-  // 0700, so nothing but this user can plant anything in it. Failure is not fatal: the guard's own
-  // uncertainty path renders every denial in full, which is the behaviour this feature replaces.
+  // The target is exposed to the guard only after its ancestors are verified as real directories.
+  // Failure is not fatal: no env target means the guard renders every denial in full.
   try {
-    mkdirSync(denialStateDir, { recursive: true, mode: 0o700 });
+    env[DENIAL_STATE_ENV] = establishDenialStateDir(cwd);
   } catch (error) {
     write(verbatim(`denial dampening is off for this run: ${/** @type {Error} */ (error).message}`));
   }

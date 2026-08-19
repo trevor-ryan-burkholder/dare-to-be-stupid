@@ -24,7 +24,7 @@
  * **Where the hazard lives moved with the subject** (REVIEW F14). Gates now run in a materialized
  * candidate worktree, so the declared report paths are that worktree's and not the main tree's — and
  * the stuck path has to be created there, by something running inside a gate, because nothing else
- * can reach it. The worktree is reused across iterations and `git clean -fd` leaves ignored paths
+ * can reach it. The worktree is reused across iterations and `git clean -ffd` leaves ignored paths
  * alone, so a hazard an early iteration plants is still there for the next one's `clearReports`,
  * which is exactly the "the previous attempt left this" shape the finding describes.
  */

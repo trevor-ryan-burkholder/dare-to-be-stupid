@@ -1874,7 +1874,7 @@ function checkRecursiveRemove(segments, cwd) {
 }
 
 const NESTED_REASON =
-  'meeseeks does not spawn meeseeks. Nested runs are blocked at the driver and at the hook (CLAUDE.md invariant, DESIGN.md §13.6). ' +
+  'Nested meeseeks runs require operator-authorized --give-them-the-box and remaining depth. This invocation is blocked at the driver and at the hook (CLAUDE.md invariant, DESIGN.md §6.5). ' +
   'This is a TEXT match, not a detected invocation: the rule scans command position, including the body of any heredoc ' +
   'fed to a shell, because a heredoc can carry a script. A document written through a heredoc is data and no longer trips ' +
   'it — but if prose in command position did, reword rather than reach for the rule: it is not weakened to make ' +
@@ -1967,10 +1967,10 @@ function checkNestedRunStrict(segments) {
     // reproduced spellings were allowed, and the second did not even put `--give-them-the-box` on
     // argv, so it skipped the boxed wall clock as well.
     //
-    // Matched positionally on the entrypoint any invocation must name, so an interpreter this list
-    // has never heard of is caught too. It is defense in depth and nothing more: a renamed copy of
-    // the whole plugin cannot be recognised by name, which is why the Driver's own authorization is
-    // the load-bearing half.
+    // Matched positionally on the entrypoint an ordinary invocation names, so an interpreter this
+    // list has never heard of is caught too. It is defense in depth and nothing more: a renamed copy
+    // or indirect interpreter may not expose this token at all, which is part of F42's still-open
+    // same-user authority boundary.
     if (segment.some((token) => isDriverEntrypoint(token.value))) {
       return deny('nested-meeseeks', NESTED_REASON);
     }
@@ -2198,8 +2198,8 @@ const PROVENANCE = '[from the meeseeks guard — automated policy, not user inpu
  * item-37 hostile panel pulled it: the guard is the one component that survives
  * `--dangerously-skip-permissions`, and it is *not itself guarded*, so a symlink planted at that
  * path turns the guard's own write into an arbitrary-file overwrite. The Driver creates a directory
- * inside `.meeseeks/` — which the guard already denies every in-run process at any depth — with mode
- * 0700, and names it here.
+ * inside `.meeseeks/` with mode 0700, verifies that neither it nor its parent is a symlink, and only
+ * then names it here. The hook's own `O_NOFOLLOW` check protects the counter leaf.
  *
  * Absent means no dampening at all, which is the correct reading twice over: an operator's denials
  * outside a run are never counted, and a run whose Driver did not provide one gets full text.

@@ -224,6 +224,44 @@ describe('materializeCandidate', () => {
     assert.equal(existsSync(path.join(second.dir, 'gate-output.txt')), false);
     await removeCandidate({ cwd: root, run: shell, dir: second.dir });
   });
+
+  it('drops an untracked nested repository a previous gate left in the subject', async () => {
+    // One `-f` deliberately preserves nested repositories. They are still untracked candidate
+    // bytes, so preserving one makes the returned tree name disagree with what the gates inspect.
+    const root = repo();
+    const first = /** @type {any} */ (await materialize(root, 1));
+    temporaryDirs.push(first.dir);
+    const nested = path.join(first.dir, 'gate-left-repository');
+    mkdirSync(nested);
+    git(nested, ['init', '--quiet']);
+    writeFileSync(path.join(nested, 'result.txt'), 'not in the candidate tree\n');
+
+    const second = /** @type {any} */ (await materialize(root, 2));
+    assert.equal(existsSync(nested), false, 'git clean left a nested repository in the review subject');
+    await removeCandidate({ cwd: root, run: shell, dir: second.dir });
+  });
+
+  it('refuses the candidate when cleanup fails instead of reporting stale bytes as ready', async () => {
+    const root = repo();
+    const first = /** @type {any} */ (await materialize(root, 1));
+    temporaryDirs.push(first.dir);
+    writeFileSync(path.join(first.dir, 'gate-output.txt'), 'left behind\n');
+    const refusingClean = async (/** @type {string} */ command, /** @type {string[]} */ args, /** @type {any} */ options) =>
+      command === 'git' && args[0] === 'clean'
+        ? { ok: false, stdout: '', stderr: 'cleanup refused by fixture' }
+        : shell(command, args, options);
+
+    const second = await materializeCandidate({
+      cwd: root,
+      run: refusingClean,
+      dir: first.dir,
+      iteration: 2,
+    });
+    assert.equal(second.ok, false);
+    assert.equal(/** @type {any} */ (second).detail.includes('cleanup refused by fixture'), true);
+    assert.equal(existsSync(path.join(first.dir, 'gate-output.txt')), true, 'the refusal fixture did not leave stale bytes');
+    await removeCandidate({ cwd: root, run: shell, dir: first.dir });
+  });
 });
 
 describe('shareToolCaches', () => {

@@ -14,6 +14,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -258,6 +259,24 @@ describe('an unarchived previous receipt is not overwritten (REVIEW F10, reopene
     }
     assert.equal(receiptIn(dir).reason, 'the previous run', 'the previous run’s receipt was destroyed');
     assert.equal(receiptIn(dir).state, 'SHIPPED');
+    assert.equal(logs.some((line) => line.includes('refusing to write')), true, logs.join(' | '));
+  });
+
+  it('does not overwrite an earlier preserved receipt when the derived name collides', () => {
+    const dir = scratch();
+    writeRunOutcome(dir, { state: 'SHIPPED', reason: 'the previous run', phase: 'loop' }, io([]));
+    const suffix = createHash('sha256').update('2026-08-18T00:00:00.000Z').digest('hex').slice(0, 16);
+    const earlier = path.join(dir, `${OUTCOME_FILE}.unarchived-${suffix}`);
+    writeFileSync(earlier, 'earlier preserved receipt\n', 'utf8');
+    /** @type {string[]} */
+    const logs = [];
+
+    assert.equal(
+      writeRunOutcome(dir, { state: 'ABORTED', reason: 'this run', phase: 'archive' }, { ...io(logs), preserve: true }),
+      false,
+    );
+    assert.equal(receiptIn(dir).reason, 'the previous run');
+    assert.equal(readFileSync(earlier, 'utf8'), 'earlier preserved receipt\n');
     assert.equal(logs.some((line) => line.includes('refusing to write')), true, logs.join(' | '));
   });
 

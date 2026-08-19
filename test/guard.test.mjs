@@ -1446,11 +1446,11 @@ describe('deny reasons', () => {
     const result = evaluate(bashEvent('/meeseeks'));
     const reason = result.decision === 'deny' ? result.reason : '';
     assert.equal(
-      reason.startsWith('meeseeks does not spawn meeseeks. Nested runs are blocked at the driver and at the hook'),
+      reason.startsWith('Nested meeseeks runs require operator-authorized --give-them-the-box and remaining depth.'),
       true,
       reason,
     );
-    assert.equal(reason.includes('CLAUDE.md invariant, DESIGN.md §13.6'), true, reason);
+    assert.equal(reason.includes('CLAUDE.md invariant, DESIGN.md §6.5'), true, reason);
   });
 
   // The rule is a text match over command position, and heredoc bodies fed to a shell are
@@ -2042,7 +2042,7 @@ describe('guardDenials: the bounded channel a refusal travels on (REVIEW F36)', 
   });
 });
 
-describe('denial dampening: verbosity only, and only where a run cannot reach (PLAN item 52)', () => {
+describe('denial dampening: verbosity only, in Driver-named state (PLAN item 52)', () => {
   // **This feature was built once and pulled before landing**, by the item-37 hostile panel, for two
   // reasons that are both design telling you where the wall is. The first cut wrote its counter at a
   // predictable path in `os.tmpdir()` with a plain `writeFileSync` — and the guard is the one

@@ -173,6 +173,15 @@ describe('buildAcceptanceReceipt', () => {
     assert.equal(unit.status, 1);
   });
 
+  it('refuses an unidentifiable report entry instead of preserving an empty digest', () => {
+    const input = complete();
+    input.results.gates[1].reports = [null];
+    input.results.reports = [null];
+
+    assert.throws(() => buildAcceptanceReceipt(input), /results\.gates\[1\]\.reports\[0\]/);
+    assert.throws(() => buildAcceptanceReceipt(input), /results\.reports\[0\]/);
+  });
+
   it('records the requested model and the observed one as different facts', () => {
     // A configured alias is not evidence that the requested model answered. The receipt has to be
     // able to *show* a substitution, which means keeping both.
@@ -211,6 +220,26 @@ describe('buildAcceptanceReceipt', () => {
       () => buildAcceptanceReceipt(complete({ invocations: [{ ...base, models: { observed: [] } }] })),
       AcceptanceError,
       'an empty observation list was accepted as an observation',
+    );
+    assert.throws(
+      () =>
+        buildAcceptanceReceipt(
+          complete({
+            invocations: [
+              { ...base, models: { observed: ['claude-sonnet-5'], unavailable: 'the same observation is also absent' } },
+            ],
+          }),
+        ),
+      AcceptanceError,
+      'both variants of the tagged union were accepted at once',
+    );
+    assert.throws(
+      () =>
+        buildAcceptanceReceipt(
+          complete({ invocations: [{ ...base, models: { observed: ['claude-sonnet-5'], source: 'untyped-extra' } }] }),
+        ),
+      AcceptanceError,
+      'an extra field made an allegedly typed observation ambiguous',
     );
   });
 });
@@ -351,6 +380,14 @@ describe('a receipt that cannot survive its own verifier (REVIEW F22, reopened)'
     const verdict = verifyAcceptanceReceipt(receipt);
     assert.equal(verdict.ok, false);
     assert.equal(/** @type {any} */ (verdict).reason.includes('results.gates[0].status'), true, /** @type {any} */ (verdict).reason);
+  });
+
+  it('refuses a missing gate status instead of treating absence as success', () => {
+    const receipt = written();
+    delete receipt.results.gates[0].status;
+    const verdict = verifyAcceptanceReceipt(receipt);
+    assert.equal(verdict.ok, false);
+    assert.equal(/** @type {any} */ (verdict).reason.includes('results.gates[0].status'), true);
   });
 
   it('refuses a ratchet count replaced by a string, rather than reading it as zero', () => {
