@@ -204,3 +204,97 @@ describe('writeRunOutcome', () => {
     assert.equal(existsSync(path.join(dir, OUTCOME_FILE)), true);
   });
 });
+
+describe('an unarchived previous receipt is not overwritten (REVIEW F10, reopened)', () => {
+  // **`archivePreviousRun` refuses rather than overwriting, which is right, and the caller then
+  // overwrote anyway.** Codex's reproduction: a prior `SHIPPED` marker, a `.meeseeks/runs` that is a
+  // regular file so archiving cannot work, and this run's `ABORTED` receipt landed on top of the
+  // `SHIPPED` one. An evidence-preservation refusal may not destroy the evidence it refused to
+  // preserve.
+
+  /** @param {string} dir @returns {string[]} */
+  const preserved = (dir) => readdirSync(dir).filter((name) => name.startsWith(`${OUTCOME_FILE}.unarchived-`));
+
+  it('moves the previous receipt aside and writes this run’s beside it', () => {
+    const dir = scratch();
+    writeRunOutcome(dir, { state: 'SHIPPED', reason: 'the previous run', phase: 'loop' }, io([]));
+    /** @type {string[]} */
+    const logs = [];
+
+    assert.equal(
+      writeRunOutcome(dir, { state: 'ABORTED', reason: 'this run', phase: 'archive' }, { ...io(logs), preserve: true }),
+      true,
+    );
+
+    assert.equal(receiptIn(dir).reason, 'this run', 'the current run lost its own answer');
+    const kept = preserved(dir);
+    assert.equal(kept.length, 1, kept.join(', '));
+    assert.equal(JSON.parse(readFileSync(path.join(dir, kept[0]), 'utf8')).state, 'SHIPPED');
+    assert.equal(logs.some((line) => line.includes('rather than overwritten')), true, logs.join(' | '));
+  });
+
+  it('writes nothing at all when the previous receipt cannot be moved aside either', () => {
+    // A missing directory makes the rename fail while leaving the source readable. Refusing here is
+    // deliberate: a missing record for this run is recoverable from a transcript and an overwritten
+    // one is gone, so the ordering of harms decides it.
+    const dir = scratch();
+    writeRunOutcome(dir, { state: 'SHIPPED', reason: 'the previous run', phase: 'loop' }, io([]));
+    /** @type {string[]} */
+    const logs = [];
+    chmodSync(dir, 0o555);
+
+    const wrote = writeRunOutcome(
+      dir,
+      { state: 'ABORTED', reason: 'this run', phase: 'archive' },
+      { ...io(logs), preserve: true },
+    );
+    chmodSync(dir, 0o755);
+
+    if (wrote) {
+      // Running as root: the rename succeeds and there is nothing to prove here. Said out loud
+      // rather than skipped silently, on the same argument that arms the live tier by environment.
+      assert.equal(preserved(dir).length, 1, 'the previous receipt was destroyed even though the move succeeded');
+      return;
+    }
+    assert.equal(receiptIn(dir).reason, 'the previous run', 'the previous run’s receipt was destroyed');
+    assert.equal(receiptIn(dir).state, 'SHIPPED');
+    assert.equal(logs.some((line) => line.includes('refusing to write')), true, logs.join(' | '));
+  });
+
+  it('does not latch the run shut when it refused, so a later exit can still try', () => {
+    const dir = scratch();
+    writeRunOutcome(dir, { state: 'SHIPPED', reason: 'the previous run', phase: 'loop' }, io([]));
+    const written = { done: false };
+    chmodSync(dir, 0o555);
+    writeRunOutcome(dir, { state: 'ABORTED', reason: 'this run', phase: 'archive' }, { ...io([]), written, preserve: true });
+    chmodSync(dir, 0o755);
+    // Whether the refusal happened depends on the process's privileges; what must never happen is
+    // the flag latching on a call that wrote nothing.
+    assert.equal(written.done, existsSync(path.join(dir, `${OUTCOME_FILE}`)) && receiptIn(dir).reason === 'this run');
+  });
+
+  it('writes straight through when there is nothing to preserve', () => {
+    // The neighbour. The first run of a repository has no previous receipt, and a writer that
+    // refused there would leave every first run with no record at all.
+    const dir = scratch();
+    /** @type {string[]} */
+    const logs = [];
+    assert.equal(
+      writeRunOutcome(dir, { state: 'ABORTED', reason: 'this run', phase: 'archive' }, { ...io(logs), preserve: true }),
+      true,
+    );
+    assert.equal(receiptIn(dir).reason, 'this run');
+    assert.deepStrictEqual(preserved(dir), []);
+    assert.deepStrictEqual(logs, []);
+  });
+
+  it('overwrites as before when the archive succeeded, which is every ordinary run', () => {
+    // The other neighbour, and the one that keeps this from becoming a second archive: when the
+    // previous run *was* archived, the canonical path holds nothing that needs keeping.
+    const dir = scratch();
+    writeRunOutcome(dir, { state: 'SHIPPED', reason: 'the previous run', phase: 'loop' }, io([]));
+    assert.equal(writeRunOutcome(dir, { state: 'ABORTED', reason: 'this run', phase: 'archive' }, io([])), true);
+    assert.equal(receiptIn(dir).reason, 'this run');
+    assert.deepStrictEqual(preserved(dir), []);
+  });
+});

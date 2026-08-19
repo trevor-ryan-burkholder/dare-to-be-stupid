@@ -24,6 +24,7 @@ import { after, describe, it } from 'node:test';
 
 import { main } from '../../scripts/driver.mjs';
 import { OUTCOME_FILE } from '../../scripts/outcome.mjs';
+import { RUN_ARCHIVE_DIR } from '../../scripts/run-manifest.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -322,5 +323,69 @@ describe('an unexpected throw after the lock is still a run that ended (REVIEW F
     const written = receipt(root);
     assert.equal(written.state, 'ABORTED');
     assert.equal(written.reason, 'Error: the terminal went away');
+  });
+});
+
+describe('an archive refusal does not destroy the receipt it refused to preserve (REVIEW F10, reopened)', () => {
+  // **Codex's reproduction, driven through the real `main`.** A prior `SHIPPED` marker, a
+  // `.meeseeks/runs` that is a regular file so `archivePreviousRun` cannot work, and the run's
+  // `ABORTED` receipt landed on top of the `SHIPPED` one. The refusal exists to keep that record and
+  // the very next line destroyed it.
+
+  /** @param {string} root @param {string} state */
+  function priorRun(root, state) {
+    writeFileSync(
+      path.join(root, '.meeseeks', OUTCOME_FILE),
+      JSON.stringify({ version: 1, endedAt: '2026-08-18T00:00:00.000Z', state, reason: 'the previous run', phase: 'loop' }),
+    );
+  }
+
+  /** @param {string} root @returns {string[]} */
+  const preserved = (root) =>
+    readdirSync(path.join(root, '.meeseeks')).filter((name) => name.startsWith(`${OUTCOME_FILE}.unarchived-`));
+
+  it('keeps the previous SHIPPED receipt when the archive cannot run', async () => {
+    const root = repo();
+    priorRun(root, 'SHIPPED');
+    // A regular file where the archive directory must be: `mkdirSync` fails with ENOTDIR, which is
+    // an ordinary disk-shape fault rather than anything simulated.
+    writeFileSync(path.join(root, '.meeseeks', RUN_ARCHIVE_DIR), 'not a directory\n');
+
+    const { code, logs } = await run(root, ['PRD.md', '--yes'], cannedSpawn());
+    const all = logs.join('\n');
+
+    assert.equal(code, 1, all.slice(-600));
+    assert.equal(all.includes('could not be archived'), true, all.slice(-900));
+
+    // This run's answer is at the canonical path...
+    const written = receipt(root);
+    assert.equal(written.state, 'ABORTED');
+    assert.equal(written.reason, 'the previous run could not be archived');
+
+    // ...and the previous run's is still on disk, under a name an operator can find.
+    const kept = preserved(root);
+    assert.equal(kept.length, 1, `the SHIPPED receipt was destroyed: ${readdirSync(path.join(root, '.meeseeks')).join(', ')}`);
+    const older = JSON.parse(readFileSync(path.join(root, '.meeseeks', kept[0]), 'utf8'));
+    assert.equal(older.state, 'SHIPPED');
+    assert.equal(older.reason, 'the previous run');
+    assert.equal(all.includes('rather than overwritten'), true, all.slice(-900));
+  });
+
+  it('archives normally and preserves nothing when the directory is usable', async () => {
+    // The neighbour. An ordinary second run moves the previous receipt into `runs/`, which is the
+    // record archiving exists to keep — and must not also leave a second copy beside it.
+    const root = repo();
+    priorRun(root, 'SHIPPED');
+
+    const { logs } = await run(root, ['PRD.md', '--yes'], cannedSpawn());
+
+    assert.equal(logs.join('\n').includes('archived the previous run to'), true, logs.join('\n').slice(-600));
+    assert.deepStrictEqual(preserved(root), []);
+    const archived = readdirSync(path.join(root, '.meeseeks', RUN_ARCHIVE_DIR));
+    assert.equal(archived.length >= 1, true, archived.join(', '));
+    assert.equal(
+      JSON.parse(readFileSync(path.join(root, '.meeseeks', RUN_ARCHIVE_DIR, archived[0], OUTCOME_FILE), 'utf8')).state,
+      'SHIPPED',
+    );
   });
 });

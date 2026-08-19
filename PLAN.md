@@ -4025,7 +4025,7 @@ A test that cannot fail *legibly* is barely better than one that cannot fail.
 **Evidence.** Tier 2 156 pass / 0 fail, the new cases green on three consecutive rounds and red
 under the reverted guard. No shipped file changed, so no version moved.
 
-### 103. The last hole in F10's one door — IMPLEMENTED (0.200.0); REVIEW F10 open pending Codex
+### 103. The last hole in F10's one door — IMPLEMENTED (0.200.0); the destructive archive refusal is item 122; REVIEW F10 open pending Codex
 
 **What was still escaping.** `driveRun` has its own handler and every pre-loop *refusal* routes
 through `releasing`, but an unexpected **throw** between winning the lock and entering the loop left
@@ -4894,6 +4894,35 @@ comment.
 a finding-count mismatch. Neither is in the file any more — the header defers status and counts to
 `REVIEW.md` rather than restating them — so there is nothing left to reconcile, only a gate stopping
 them from being restated.
+
+### 122. An archive refusal may not destroy what it refused to preserve — IMPLEMENTED (0.220.0); REVIEW F10 open pending Codex
+
+**The last clause of F10, and it is the opposite defect from the rest of the finding.** Items 64 and
+103 were about receipts that were never written. This one is about a receipt written where it should
+not have been. `archivePreviousRun` refuses rather than overwriting when it cannot move the previous
+run's artifacts aside — correct — and `releasing()` then wrote this run's answer straight over the
+`outcome.json` that refusal was protecting. Codex reproduced it: a prior `SHIPPED` marker, a
+`.meeseeks/runs` that is a regular file, and the `ABORTED` receipt landed on top of the `SHIPPED` one.
+
+**Two changes, and the second is the one that matters.** `archiveOnce` marks itself attempted on
+*success* only, so a refusal is no longer permanent for the invocation — the finding names that
+ordering — and it records the refusal as a fact. `writeRunOutcome` takes `preserve`, and when it is
+set and a receipt is already at the canonical path, that receipt is moved to
+`outcome.json.unarchived-<digest>` before anything is written.
+
+**And if the move fails too, nothing is written at all.** The ordering of harms decides it: a missing
+record for this run is recoverable from a transcript, and an overwritten one is gone. The refusal
+names both paths, because the operator is the only one who can fix the directory. A component child
+never reaches this branch — the parent removes the child's `outcome.json` before spawning it — so the
+tension only exists in a repository a human reads, and there the human is the reader being protected.
+
+**Evidence.** Five tier-1 cases: the move-aside with both records asserted, the refusal when the move
+cannot happen, that a refusal does not latch the at-most-once flag, and two neighbours — a first run
+with nothing to preserve writes straight through and logs nothing, and a run whose archive *succeeded*
+overwrites exactly as before rather than leaving a second copy. Two tier-2 cases drive the real
+`main` against a real repository with a regular file where `runs/` must be: this run's `ABORTED` is at
+the canonical path, the previous run's `SHIPPED` is beside it under a findable name, and the ordinary
+second run archives into `runs/` and preserves nothing. Three go red with the preservation removed.
 
 ## Observations recorded rather than repaired
 

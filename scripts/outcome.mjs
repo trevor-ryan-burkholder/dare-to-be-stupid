@@ -28,7 +28,8 @@
  * reported loudly and the terminal state already reached stands.
  */
 
-import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 /** The receipt's filename inside `.meeseeks/`. */
@@ -59,16 +60,49 @@ export const OUTCOME_FILE = 'outcome.json';
  * exception handler can both be reached on the way out of one run, and the *first* answer is the
  * decided one. A later writer would overwrite a specific terminal state with a generic one.
  *
+ * **When the previous run's receipt was never archived** (REVIEW F10, reopened). `archivePreviousRun`
+ * refuses rather than overwriting, which is right — but the caller then wrote this run's receipt over
+ * the very file the refusal was protecting. Codex reproduced it: a prior `SHIPPED` marker, a
+ * `.meeseeks/runs` that is a regular file so archiving cannot work, and the `ABORTED` receipt landed
+ * on top of the `SHIPPED` one. *An evidence-preservation refusal may not destroy the evidence it
+ * refused to preserve.*
+ *
+ * So `preserve` moves any existing receipt aside under a findable name first. If that cannot be done
+ * either, **nothing is written**: this run ends with no receipt rather than with the previous run's
+ * destroyed, because a missing record is recoverable from a transcript and an overwritten one is
+ * gone. The refusal is logged with both paths, since the operator is the only one who can fix the
+ * directory. A component child never reaches this branch — the parent removes the child's
+ * `outcome.json` before spawning it — so the tension only exists in a repository a human reads.
+ *
  * @param {string} meeseeksDir
  * @param {TerminalReceipt} receipt
- * @param {{ now: () => string, log: (line: string) => void, written?: { done: boolean } }} io
+ * @param {{ now: () => string, log: (line: string) => void, written?: { done: boolean },
+ *   preserve?: boolean }} io
  *   `written` is the run's own at-most-once flag; omit it in a caller that owns exactly one exit.
+ *   `preserve` is set by a caller that knows the previous run was *not* archived.
  * @returns {boolean} true when this call wrote the receipt
  */
 export function writeRunOutcome(meeseeksDir, receipt, io) {
   if (io.written?.done === true) return false;
   const file = path.join(meeseeksDir, OUTCOME_FILE);
   const temporary = `${file}.tmp`;
+  if (io.preserve === true && existsSync(file)) {
+    const moved = `${file}.unarchived-${createHash('sha256').update(io.now()).digest('hex').slice(0, 16)}`;
+    try {
+      renameSync(file, moved);
+      io.log(
+        `the previous run was not archived, so its ${OUTCOME_FILE} was moved to ${path.basename(moved)} rather than ` +
+          'overwritten',
+      );
+    } catch (error) {
+      io.log(
+        `refusing to write ${OUTCOME_FILE}: the previous run was not archived and its receipt could not be moved ` +
+          `aside either (${/** @type {Error} */ (error).message}). Writing this run's answer here would destroy the ` +
+          'record the archive refusal exists to protect, so nothing was written.',
+      );
+      return false;
+    }
+  }
   try {
     mkdirSync(meeseeksDir, { recursive: true });
     writeFileSync(temporary, `${JSON.stringify({ version: 1, endedAt: io.now(), ...receipt }, null, 2)}\n`, 'utf8');

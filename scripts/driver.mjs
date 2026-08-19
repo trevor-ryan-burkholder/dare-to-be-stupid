@@ -6799,10 +6799,25 @@ async function runInvocation(argv, io, crash) {
    */
   let archivedTo = /** @type {string | null} */ (null);
   let archiveAttempted = false;
+  /**
+   * Whether the previous run's artifacts are still sitting in `.meeseeks/` un-archived.
+   *
+   * **The flag used to be set before the operation that throws** (REVIEW F10, reopened), so a
+   * refusal was permanent for the invocation *and* silent to the receipt writer, which then wrote
+   * this run's answer over the very `outcome.json` the refusal was protecting. Marked on success
+   * only, so a later exit may try again, and remembered as a fact the writer is told.
+   */
+  let archiveFailed = false;
   const archiveOnce = () => {
     if (archiveAttempted) return archivedTo;
+    try {
+      archivedTo = archivePreviousRun(meeseeksDir);
+    } catch (error) {
+      archiveFailed = true;
+      throw error;
+    }
     archiveAttempted = true;
-    archivedTo = archivePreviousRun(meeseeksDir);
+    archiveFailed = false;
     return archivedTo;
   };
 
@@ -6837,7 +6852,14 @@ async function runInvocation(argv, io, crash) {
         spentTokens: preLoop.tokens,
         costUsd: preLoop.costUsd,
       },
-      { now: () => new Date().toISOString(), log: (line) => write(verbatim(line)), written: outcomeWritten },
+      {
+        now: () => new Date().toISOString(),
+        log: (line) => write(verbatim(line)),
+        written: outcomeWritten,
+        // The archive refused, so the previous run's receipt is still at the canonical path and this
+        // one may not land on top of it (REVIEW F10, reopened).
+        preserve: archiveFailed,
+      },
     );
     releaseRunLock(meeseeksDir, runLock.lock.token);
     return code;
