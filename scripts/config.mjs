@@ -45,6 +45,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, lessonModel: string,
  *   qualityPlugins: string[], extraGates: { name: string, command: string[] }[], childEnvAllow: string[],
+ *   erd: string,
  *   components: ComponentConfig[],
  *   effort: Record<string, string>, oracle: OracleConfig,
  *   panelCarry: PanelCarryConfig, sandbox: SandboxConfig,
@@ -206,6 +207,10 @@ export function defaultConfig() {
     // It cannot name a marker the Driver owns. `childEnvironment` refuses that outright: a run whose
     // guard, depth or nesting marker could be introduced by configuration has no boundary to enforce.
     childEnvAllow: [],
+    // Where an ERD lives, when it is not the conventional `ERD.md` beside the PRD (§4, item 47).
+    // Empty means the convention, and the convention means "there is no ERD" when the file is
+    // absent — an ERD is optional, and its absence gates nothing.
+    erd: '',
     // Empty by default, and an empty list changes nothing at all: no phase runs, no flag is
     // demanded, and a pre-components repository behaves exactly as it always did. Declaring one
     // is only half a decision — components are nested runs, so a run that declares any refuses
@@ -591,6 +596,7 @@ export function validateConfig(input) {
   if ('qualityPlugins' in source) merged.qualityPlugins = requireStringArray(source.qualityPlugins, 'qualityPlugins');
   if ('extraGates' in source) merged.extraGates = requireExtraGates(source.extraGates);
   if ('childEnvAllow' in source) merged.childEnvAllow = requireStringArray(source.childEnvAllow, 'childEnvAllow');
+  if ('erd' in source) merged.erd = requireString(source.erd, 'erd');
   if ('components' in source) merged.components = requireComponents(source.components);
 
   if ('reviewers' in source) {

@@ -18,6 +18,7 @@ import {
   MINIMUM_NODE,
   checkCleanWorkingTree,
   checkDangerAcknowledged,
+  checkErdConsistency,
   checkHasCommits,
   checkNoConcurrentRun,
   checkStateNotTracked,
@@ -120,6 +121,7 @@ describe('a healthy machine passes', () => {
         'state-not-tracked',
         'sandbox',
         'agent-surface',
+        'erd',
         'danger-acknowledged',
       ],
     );
@@ -431,5 +433,78 @@ describe('checkSandboxAvailable', () => {
     const result = checkSandboxAvailable(bwrap(true), true, 'win32');
     assert.equal(result.ok, false);
     assert.equal(result.detail.includes('win32'), true, result.detail);
+  });
+});
+
+describe('the ERD preflight check (item 47, slice B)', () => {
+  const GOOD = 'erDiagram\n  CUSTOMER ||--o{ ORDER : places\n';
+  const PRD = 'Customers place orders.';
+
+  /** @param {Record<string, string>} files @returns {string} */
+  const repoWith = (files) => {
+    const dir = makeTempDir();
+    for (const [name, body] of Object.entries(files)) {
+      const file = path.join(dir, name);
+      mkdirSync(path.dirname(file), { recursive: true });
+      writeFileSync(file, body, 'utf8');
+    }
+    return dir;
+  };
+
+  it('is not applicable when no ERD is supplied, and says so rather than passing silently', () => {
+    // An ERD is optional. A check reporting nothing at all would make a misspelled `erd` path
+    // indistinguishable from a deliberate absence.
+    const result = checkErdConsistency(repoWith({}), PRD, undefined);
+    assert.equal(result.ok, true);
+    assert.equal(result.blocking, false);
+    assert.match(result.detail, /no ERD supplied/);
+  });
+
+  it('passes an ERD whose entities the specification names', () => {
+    const result = checkErdConsistency(repoWith({ 'ERD.md': GOOD }), PRD, undefined);
+    assert.equal(result.ok, true);
+    assert.match(result.detail, /2 entities, 1 relationships/);
+  });
+
+  it('refuses an ERD that declares an entity the specification never mentions', () => {
+    const result = checkErdConsistency(
+      repoWith({ 'ERD.md': 'erDiagram\n  CUSTOMER ||--o{ WAREHOUSE : stocks\n' }),
+      PRD,
+      undefined,
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.blocking, true);
+    assert.match(result.detail, /declares WAREHOUSE, which the specification never mentions/);
+    assert.match(result.fix, /inventing a requirement/);
+  });
+
+  it('refuses an ERD nobody can read, rather than proceeding without one', () => {
+    const result = checkErdConsistency(repoWith({ 'ERD.md': 'flowchart TD\n  A --> B\n' }), PRD, undefined);
+    assert.equal(result.ok, false);
+    assert.match(result.detail, /could not be read/);
+  });
+
+  it('refuses an ERD with no specification to check it against', () => {
+    // A check that cannot run is a failure, not a skip. Admitting an ERD nothing has validated is
+    // how a run ends up gated on a schema nobody asked for.
+    const result = checkErdConsistency(repoWith({ 'ERD.md': GOOD }), null, undefined);
+    assert.equal(result.ok, false);
+    assert.match(result.detail, /no specification to check it against/);
+  });
+
+  it('reads a configured path in preference to the convention', () => {
+    const dir = repoWith({ 'schema/model.md': GOOD });
+    const result = checkErdConsistency(dir, PRD, 'schema/model.md');
+    assert.equal(result.ok, true);
+    assert.match(result.detail, /schema\/model\.md/);
+  });
+
+  it('refuses a configured path that is not there, rather than falling back to the convention', () => {
+    // Falling back would make a typo in the config indistinguishable from having no ERD, and the
+    // run would proceed ungated believing it was gated.
+    const dir = repoWith({ 'ERD.md': GOOD });
+    const result = checkErdConsistency(dir, PRD, 'schema/model.md');
+    assert.equal(result.ok, false);
+    assert.match(result.detail, /could not be read/);
   });
 });

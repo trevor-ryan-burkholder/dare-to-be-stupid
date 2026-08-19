@@ -1608,13 +1608,89 @@ exact run without duplicating a child, gate, commit, deploy, spend charge, or te
 must reject every compatibility mismatch before side effects, and must never treat a child return
 or supervisor label as durable success evidence.
 
-### 47. Accept an ERD alongside the PRD, and gate the schema against it — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (Phase-6 class, post-DoD)
+### 47. Accept an ERD alongside the PRD, and gate the schema against it — **IN SCOPE; slices A+B landed 0.234.0, C/D remain**
 
 **Origin:** operator, 15 Aug 2026, after an ERD of the Ateliers capstone made its schema's two
 integrity rules checkable at a glance. The data model is where prose is most ambiguous and builder
 hallucination most expensive; an ERD is machine-parseable text (Mermaid `erDiagram`, no runtime
 deps to parse), so it enables a **new deterministic, capability-gated gate** — meeseeks' favourite
 kind of check. The schema stops being inferred and becomes *checked against*.
+
+**Slice A landed (0.234.0) — the reader.** `scripts/erd.mjs` parses a Mermaid `erDiagram` into
+entities, attributes with keys, and relationships with a cardinality on each side and an
+identifying/non-identifying relation type. No dependency, as the item required.
+
+**What was measured, and what was not — because this is another tool's format.** The cardinality
+**token names** were read out of **mermaid 11.17.0's own compiled grammar**: its packed
+`dist/chunks/mermaid.core/erDiagram-*.mjs.map` embeds `erDiagram.jison`, whose symbol table names
+`ZERO_OR_ONE`, `ZERO_OR_MORE`, `ONE_OR_MORE`, `ONLY_ONE`, `MD_PARENT`, `NON_IDENTIFYING` and
+`IDENTIFYING`. That is a measurement rather than a recollection, and it decides which relationships
+the format actually has.
+
+**End-to-end agreement with mermaid's parser was attempted and not achieved.** `mermaid.parse()`
+would be the real check; loading it standalone needs the package's full dependency tree, which this
+repository will not take on for a test. So the reader **fails closed on every token it has not
+verified** — an unrecognised cardinality raises rather than being guessed at, and **`MD_PARENT` is
+deliberately unsupported rather than approximated**, because a wrong reading of a relationship is
+worse than a refusal to read one. *Residual:* the committed fixture is believed-valid Mermaid, not
+machine-confirmed Mermaid. The cheap discharge is to render `test/fixtures/erd/orders.md` once and
+compare it by hand to what the parse reports.
+
+**Two defects its own tests found.** The notation is **not symmetric** — `}o` on the left and `o{` on
+the right are the same cardinality — so left and right have separate tables; reading one in both
+directions mirrors every many-side relationship, and a mutation proved that is exactly what happens.
+And a first draft accepted any two non-space tokens as an attribute, cheerfully reading
+`not-an-attribute-line-at-all !!` as a column named `!!` that the gate would then go hunting for in a
+real schema. Names are identifiers now; **types stay permissive on purpose**, being the target
+database's vocabulary rather than Mermaid's (`varchar(255)`, `string[]`, `numeric(10,2)`).
+
+An entity named only by a relationship is kept with an empty attribute list, because it is legal and
+the schema gate still has to know the table exists. `%%` comments are stripped before anything else:
+a reader that took one for a relationship would invent entities nobody declared, which is the
+oracle's named defect arriving through a diagram.
+
+**Acceptance evidence:** 19 unit cases against a committed diagram exercising all four cardinalities
+in both positions, both relation types, quoted labels, multi-key attributes and comments. Proved red
+four ways: one cardinality table read in both directions (1 fail), an unclassifiable line skipped
+rather than refused (2 fail), a relationship-only entity dropped (4 fail), comments parsed as content
+(1 fail).
+
+**Slices B, C and D remain:** the preflight consistency check that refuses an ERD contradicting or
+over-reaching the PRD; the capability-gated `schema-conformance` gate with per-toolchain live-schema
+introspection; and carrying the ERD in the builder's brief. The item's last Done-when clause — one
+live data-backed run end to end — belongs with slice C.
+
+
+**Slice B landed with A (0.234.0) — the ERD is checked before the run starts.** Deliberately in the
+same commit, against the usual one-slice rule and for a reason this repository has paid for three
+times today: slice A alone is a **correct parser that nothing calls**, which is exactly the shape of
+the Playwright reporter, the design-slop parser, and gitleaks-absent-from-the-roster. A reader with
+no caller is not a landed feature, it is a latent one.
+
+- `erdPath` finds the ERD by convention (`ERD.md` beside the PRD) or by the new `erd` config key. A
+  **configured path that is not there is a refusal, not a fallback** — falling back to the convention
+  would make a typo in the config indistinguishable from having no ERD, and the run would proceed
+  ungated while believing it was gated.
+- `unmentionedEntities` refuses an ERD declaring an entity the PRD never mentions. The comparison
+  **folds both sides** (`LINE_ITEM`, `line item`, `line-item` are one thing) and accepts plurals in
+  either direction. Over-matching is the chosen error, and it is the opposite polarity to most of
+  this repository: this check *refuses a run*, so a false miss blocks a correct specification at the
+  door while a false match costs nothing — the gate in slice C is what actually enforces the schema.
+- An ERD that cannot be parsed, or one supplied with **no specification to check it against**, is a
+  blocking failure rather than a skip. A check that cannot run is a failure, and admitting an input
+  nothing has validated is how a run ends up gated on a schema nobody asked for.
+
+**What is not mechanically checked, stated rather than implied.** The item asks preflight to refuse a
+*contradiction* between PRD and ERD. Only the over-reach half is deterministically decidable: nothing
+compares "orders may not be deleted once shipped" against a cardinality. That reading belongs to the
+design auditor, which sees both, and `DESIGN.md` §3.5 now says so.
+
+**Acceptance evidence:** 5 consistency cases and 7 preflight cases, with `DESIGN.md` §3.5 and the §10
+table carrying the check and the key — both bound to code by existing tests, which is how this slice
+was made to update the specification first. Proved red four ways: an over-reaching ERD admitted
+(1 fail), a missing configured path falling back to the convention (1 fail), an ERD with no
+specification skipped rather than refused (1 fail), plural folding removed (1 fail).
+
 
 **Design, with the tensions resolved (a half-specified version rots):**
 - **Input:** an optional ERD file (Mermaid `erDiagram`) alongside the PRD — a convention

@@ -70,6 +70,7 @@ describe('defaultConfig', () => {
       qualityPlugins: ['impeccable', 'knip', 'semgrep', 'schemathesis', 'gitleaks'],
       extraGates: [],
       childEnvAllow: [],
+      erd: '',
       // Empty means the component phase does not exist: no nested runs, no flag demanded, no
       // behaviour change from a pre-components build.
       components: [],

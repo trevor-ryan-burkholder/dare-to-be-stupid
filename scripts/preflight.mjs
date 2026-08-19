@@ -12,6 +12,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -23,6 +24,7 @@ import {
 } from './claude-compat.mjs';
 
 import { ConfigError, initConfig, riskyRemoteWord } from './config.mjs';
+import { parseErd, unmentionedEntities } from './erd.mjs';
 import { RUN_LOCK_FILE, pidIsAlive, readRunLock } from './run-lock.mjs';
 import { blockingFindings, formatFindings, scanAgentSurface } from './security-scan.mjs';
 
@@ -503,6 +505,97 @@ export function checkDangerAcknowledged(options) {
 }
 
 /**
+ * Where an ERD lives, if there is one.
+ *
+ * A convention (`ERD.md` beside the PRD) or a config key, in that order of cheapness: a file the
+ * operator can see beats a setting they have to remember. Returns `null` when neither exists, which
+ * is the ordinary case — an ERD is optional and its absence is not a finding.
+ *
+ * @param {string} cwd
+ * @param {string | undefined} configured the `erd` config key, if set
+ * @returns {string | null} an absolute path, or null
+ */
+export function erdPath(cwd, configured) {
+  if (typeof configured === 'string' && configured.trim() !== '') {
+    return path.isAbsolute(configured) ? configured : path.join(cwd, configured);
+  }
+  const conventional = path.join(cwd, 'ERD.md');
+  return existsSync(conventional) ? conventional : null;
+}
+
+/**
+ * Does the ERD agree with the specification it refines?
+ *
+ * **You do not build against an inconsistent specification.** An ERD that names an entity the PRD
+ * never mentions is the diagram inventing a requirement, and finding that out four iterations in
+ * costs four iterations — so it is caught at the door.
+ *
+ * Three outcomes, and the middle one is the ordinary one. No ERD: nothing to check, and the check
+ * says so rather than passing silently, because a run that quietly ignored a misspelled `erd` path
+ * would report a clean preflight and gate nothing. An unreadable ERD: blocking, because an input
+ * this run is meant to be held to must not be half-read. An over-reaching ERD: blocking, naming the
+ * entities.
+ *
+ * **What this does not check is a contradiction in *content*.** The PRD is prose and the ERD is a
+ * diagram; nothing deterministic compares "orders may not be deleted once shipped" against a
+ * cardinality. The item asks for it and the honest position is that only the over-reach half is
+ * mechanically decidable — the rest belongs to the design auditor, which reads both.
+ *
+ * @param {string} cwd
+ * @param {string | null} specificationText the PRD's text, or null when there is not one yet
+ * @param {string | undefined} configured the `erd` config key
+ * @param {{ readFile?: (file: string) => string }} [io]
+ * @returns {CheckResult}
+ */
+export function checkErdConsistency(cwd, specificationText, configured, io = {}) {
+  const read = io.readFile ?? ((file) => readFileSync(file, 'utf8'));
+  const file = erdPath(cwd, configured);
+  if (file === null) {
+    return check('erd', true, 'no ERD supplied; the schema is not gated', 'Nothing to do.', false);
+  }
+  /** @type {import('./erd.mjs').Erd} */
+  let erd;
+  try {
+    erd = parseErd(read(file));
+  } catch (error) {
+    return check(
+      'erd',
+      false,
+      `${path.relative(cwd, file)} could not be read: ${/** @type {Error} */ (error).message}`,
+      'Fix the diagram, or remove it. A schema gate cannot be built from a diagram nobody can read.',
+    );
+  }
+  if (typeof specificationText !== 'string' || specificationText.trim() === '') {
+    // A check that cannot run is a failure, not a skip. An ERD is an input this run would be gated
+    // on, and admitting one nothing has been able to validate is how a run ends up enforcing a
+    // schema nobody asked for. The remedy names both ways out, because either is legitimate.
+    return check(
+      'erd',
+      false,
+      `${path.relative(cwd, file)} was supplied, but there is no specification to check it against`,
+      'Supply the PRD this ERD refines, or remove the ERD. An ERD is a refinement of a specification, ' +
+        'and there is nothing to refine yet.',
+    );
+  }
+  const unmentioned = unmentionedEntities(erd, specificationText);
+  if (unmentioned.length > 0) {
+    return check(
+      'erd',
+      false,
+      `the ERD declares ${unmentioned.join(', ')}, which the specification never mentions`,
+      'Name them in the PRD, or remove them from the ERD. An entity that exists only in the diagram is ' +
+        'the diagram inventing a requirement, and the run would be gated on something nobody asked for.',
+    );
+  }
+  return check(
+    'erd',
+    true,
+    `${path.relative(cwd, file)}: ${erd.entities.length} entities, ${erd.relationships.length} relationships`,
+    'Nothing to do.',
+  );
+}
+
+/**
  * Run every preflight check.
  *
  * @param {{
@@ -513,6 +606,8 @@ export function checkDangerAcknowledged(options) {
  *   probe?: Probe,
  *   meeseeksDir?: string,
  *   sandbox?: boolean,
+ *   specification?: string | null,
+ *   erd?: string,
  * }} options
  * @returns {Promise<{ ok: boolean, checks: CheckResult[], failures: CheckResult[] }>}
  */
@@ -534,6 +629,7 @@ export async function runPreflight(options) {
     await checkStateNotTracked(probe),
     checkSandboxAvailable(probe, options.sandbox ?? false),
     checkAgentSurface(cwd),
+    checkErdConsistency(cwd, options.specification ?? null, options.erd),
     checkDangerAcknowledged({ yes: options.yes ?? false, interactive: options.interactive ?? false }),
   ];
 
