@@ -898,6 +898,64 @@ The manifest follows §3.8.4's rule exactly — absent fails and names the state
 it, `{"version": 1, "claims": []}` passes — with one deliberate asymmetry: a **duplicate id is
 allowed** here and refused there. Two citations under one id is a bookkeeping error; two claims
 under one id is the entire subject of this module.
+### 3.8.6 Source acquisition — the one request a model gets to aim
+
+`scripts/acquire.mjs` fetches the source a citation names and writes the package §3.8.4 reads
+back. It is the only outbound request in this system whose destination a **model** chose, made
+from the **operator's machine**, whose answer becomes **evidence**. Each of those three needs a
+different defence, and the section is organized by them.
+
+#### The model chose the URL — so the boundary is enforced, not trusted
+
+`scripts/address-policy.mjs` holds the rules, and every one is a CIDR range checked against **raw
+address bytes**. String-level checks are what get bypassed: `127.1`, `0x7f.0.0.1`, `2130706433`
+and `[::ffff:127.0.0.1]` are all loopback and not one of them contains the characters `127.0.0.1`.
+By the time an address is judged it is bytes, and bytes cannot be spelled creatively. Two wrappers
+are unwrapped before judgment — IPv4-mapped IPv6 and 6to4 — because an IPv6 address can *contain*
+an IPv4 one, and a policy reading only the outer form passes both. An address family the policy
+does not recognize is **refused**: there is no legitimate source document reachable only over
+something unrecognized, and a permissive default is how a policy silently stops being one.
+
+**The check and the connection must be the same act.** Resolving a name, approving the address,
+then handing the *name* to the socket leaves a window in which the second resolution returns
+something else. That is DNS rebinding, and it is not exotic — it is a TTL of zero and two A
+records. So the lookup runs once, every returned address is judged, and the result is supplied to
+the request as its `lookup` function. There is no second resolution to disagree with the first.
+One refused address condemns the **whole name**: filtering to the permitted subset would let a host
+publish one public address and one internal one and remain reachable, with the choice left to
+chance.
+
+**Every redirect hop is re-judged from scratch**, through the entire policy — scheme, port,
+credentials, resolution, address. A public URL that 302s to `http://169.254.169.254/` is the
+standard bypass of a first-hop-only check, and automatic redirect following is the feature that
+makes it invisible. Node does not follow redirects by itself, and this module does it manually
+rather than reaching for a client that would.
+
+#### The request originates here — so it carries nothing of the operator's
+
+No cookies, no `Authorization`, no proxy credentials. A URL carrying credentials is **refused
+rather than stripped**: fetching the anonymous version of an authenticated page captures a
+different document than the one cited and reports success. Non-default ports are refused, because
+a port is how an internal service is usually addressed. This is §6.1's supply rule arriving at the
+network.
+
+#### The answer becomes evidence — so it is bounded, inert and digested
+
+An absolute deadline covers **all hops together**; a per-hop deadline multiplies by the redirect
+limit, so five slow hops would take five times the ceiling the operator set. The body cap applies
+*while receiving*, which is REVIEW F4's finding — a server writing one byte every 50ms is never
+inactive. **A truncated capture is a failure, not a short one**: a citation resolving against the
+first two megabytes while the quotation sits at the end is a false pass, and nothing downstream
+could distinguish that from a complete capture. Markup is reduced to inert text with script,
+style, template and noscript elements removed **including their contents** — stripping only the
+tags would leave a script body in the captured text as though it were prose, and a citation could
+then resolve against a line of JavaScript. A `sha256` over the captured text closes the loop with
+§3.8.4's digest check.
+
+**Not wired to the loop yet.** The module and its policy are complete and tested; what remains is
+the Driver step that reads a citation manifest's unresolved sources, acquires them under the run's
+capability set, and writes the packages. That is deliberately a separate slice, because acquiring
+anything at all is an outbound effect and item **106** owns when a job may have one.
 ---
 
 ## 3.9 The context budget — measured before a child is spawned

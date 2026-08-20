@@ -2228,9 +2228,43 @@ fixture swapped for the green one (2 failures), the ratchet reporting no regress
 ratchet reporting every id as a regression every time (2) — the last being the benign-neighbour case
 that a deny-only suite would have missed.
 
-**Still open on this item:** the network acquisition step (public-HTTPS profile, redirect and
-address validation, deadline and body caps, and the mutable-source / non-retainable fixtures), and
-one live artifact run.
+**Source acquisition landed, 0.245.0 — `scripts/acquire.mjs` and `scripts/address-policy.mjs`
+(`DESIGN.md` §3.8.6).** The public-HTTPS profile, redirect and address validation, and the deadline
+and body caps Done-when names.
+
+**Why it needed its own address module.** This is the only outbound request in the system whose
+destination a *model* chose, made from the *operator's machine*, whose answer becomes *evidence*.
+Every rule is a CIDR range over **raw address bytes**: `127.1`, `0x7f.0.0.1`, `2130706433` and
+`[::ffff:127.0.0.1]` are all loopback and none contains the characters `127.0.0.1`. IPv4-mapped and
+6to4 are unwrapped before judgment, and an unrecognized address family is refused rather than
+defaulted through.
+
+**The check and the connection are the same act.** The lookup runs once, every returned address is
+judged, and the result is handed to the request as its `lookup` function — so there is no second
+resolution to disagree with the first. That is the DNS-rebinding window, closed, and a test asserts
+the address actually connected to rather than the one the resolver returned. One refused address
+condemns the whole name. Every redirect hop re-runs the entire policy; the absolute deadline covers
+all hops together; a **truncated capture fails** rather than being kept, because a citation
+resolving against the first two megabytes while the quotation sits at the end is a false pass
+nothing downstream could detect.
+
+**Validation:** lint and typecheck clean, `npm test` **3262 of 3262**, `release-check` passed.
+Nineteen red proofs — nine against the address policy (mapped and 6to4 not unwrapped, an
+unrecognized address defaulting to allowed, the metadata range dropped, any port accepted, URL
+credentials accepted, plain http accepted, the prefix mask ignoring partial bytes, a bare IP host
+unjudged) and ten against acquisition (later hops skipping the URL policy or resolution, one bad
+address no longer condemning the name, a truncated capture kept, an empty capture accepted, the
+absolute deadline removed, a cookie header sent, script contents surviving, an unclosed script
+surviving, and the judged address not handed to the socket).
+
+**Deliberately not wired to the loop.** Acquiring anything at all is an outbound effect and item
+**106** owns when a job may have one. The Driver step that reads unresolved sources from a citation
+manifest and writes their packages is the next slice, and it is gated on that decision rather than
+on this code.
+
+**Still open on this item:** wiring acquisition into the loop under item 106's capability
+decision, the mutable-source and non-retainable-source fixtures that depend on that wiring, and one
+live artifact run.
 - **Prose gates**, flagship first: a **citation resolver** (the quoted text actually appears in the cited
   source — deterministic, and exactly the "reporter emits pass/fail evidence" shape 34 names), plus
   link-check, style (vale), word-count floors, and machine-readable claim-consistency checks. For
