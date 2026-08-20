@@ -62,7 +62,9 @@ import { hasMeaningfulHistory, historyContext } from './history.mjs';
 import { resolveCitation } from './evidence.mjs';
 import { citationsGate } from './citations.mjs';
 import { claimsGate } from './claims.mjs';
+import { ancestorPids, depthFromAncestry, reconcileDepth } from './ancestry.mjs';
 import { sealedControls, verifySeal } from './claude-seal.mjs';
+import { deregisterRun, depthLookup, readRegistry, registerRun } from './run-registry.mjs';
 import { blankComments, integrityGate } from './integrity.mjs';
 import {
   boundStore,
@@ -7341,6 +7343,45 @@ export async function main(argv, io = {}) {
 }
 
 /**
+ * This process's nesting depth according to its ancestry (`DESIGN.md` §6.6, REVIEW F42).
+ *
+ * Reports `unknown` on any platform where the walk is unavailable and on any host where the
+ * register cannot be read. Both are truths; a zero would be a claim.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @returns {import('./ancestry.mjs').AncestryVerdict}
+ */
+function ancestryDepth(env) {
+  const home = env.HOME ?? env.USERPROFILE;
+  if (typeof home !== 'string' || home === '') return { depth: 'unknown' };
+  // `ps` is POSIX. Windows has no equivalent this build measures, and item 65 owns that gap.
+  if (process.platform === 'win32') return { depth: 'unknown' };
+
+  const view = readRegistry({
+    home,
+    alive: (pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch (error) {
+        // `EPERM` means the process exists and belongs to somebody else, which is still alive.
+        return /** @type {{ code?: string }} */ (error).code === 'EPERM';
+      }
+    },
+  });
+  if (!view.known) return { depth: 'unknown' };
+
+  const ancestors = ancestorPids(process.pid, {
+    ppidOf: (pid) => {
+      const out = execFileSync('ps', ['-o', 'ppid=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+      const parent = Number(out);
+      return Number.isInteger(parent) && parent > 0 ? parent : null;
+    },
+  });
+  return depthFromAncestry(ancestors, depthLookup(view));
+}
+
+/**
  * @param {string[]} argv
  * @param {DriverIo} io
  * @param {CrashGuard} crash published to `main` so an escaping throw can still file a receipt
@@ -7574,6 +7615,20 @@ async function runInvocation(argv, io, crash) {
     return 1;
   }
 
+  // **And the same question asked of something the child does not own** (REVIEW F42, §6.6). Every
+  // hardening above sits behind `assertNotNested`'s first line, which returns depth zero when
+  // `MEESEEKS_RUNNING` is absent — so `env -u MEESEEKS_RUNNING` skips ticket redemption entirely.
+  // A process cannot choose its ancestors, so the register answers the same question from a fact
+  // that is not the child's to set. Disagreement refuses; an unreadable register or an
+  // unmeasurable platform reports unknown and contradicts nothing, because inventing a depth here
+  // would be this check asserting the very thing it exists to verify.
+  const ancestryVerdict = ancestryDepth(env);
+  const reconciled = reconcileDepth(ancestryVerdict, runDepth);
+  if (!reconciled.ok) {
+    write(verbatim(reconciled.reason));
+    return 1;
+  }
+
   const meeseeksDir = path.join(cwd, '.meeseeks');
   /** @type {MeeseeksConfig} */
   let config;
@@ -7678,6 +7733,23 @@ async function runInvocation(argv, io, crash) {
   if (!runLock.ok) {
     write(verbatim(`${runLock.detail}\n${runLock.fix}`));
     return 1;
+  }
+
+  // **Registered after the lock is won, so the register lists runs rather than attempts** (§6.6).
+  // This is what lets a *later* Driver started from inside this one recognise itself as nested from
+  // its ancestry rather than from a marker it could clear. Best-effort by design: a home that
+  // cannot be written is an operator's problem, and refusing to start would turn a permissions
+  // quirk into an outage.
+  const registryHome = env.HOME ?? env.USERPROFILE ?? '';
+  if (registryHome !== '') {
+    registerRun({
+      home: registryHome,
+      pid: process.pid,
+      depth: runDepth,
+      startedAt: new Date(startedAtMs).toISOString(),
+      root: cwd,
+      log: (line) => write(verbatim(line)),
+    });
   }
 
   /**
@@ -7804,6 +7876,10 @@ async function runInvocation(argv, io, crash) {
     } catch (failure) {
       write(verbatim(`could not write the question artifact: ${/** @type {Error} */ (failure).message}`));
     }
+    // Deregistered beside the lock, on the same paths and for the same reason: a stale entry is
+    // pruned by liveness on the next read, but leaving one behind makes every later run do that
+    // work for no reason.
+    if (registryHome !== '') deregisterRun({ home: registryHome, pid: process.pid });
     releaseRunLock(meeseeksDir, runLock.lock.token);
     return code;
   };
@@ -9832,6 +9908,7 @@ async function runInvocation(argv, io, crash) {
     // that ended normally would refuse the next run for no reason — and unlike a lock left by a
     // killed driver, that one would not clear itself, because this pid really is alive right up
     // until the process exits.
+    if (registryHome !== '') deregisterRun({ home: registryHome, pid: process.pid });
     releaseRunLock(meeseeksDir, runLock.lock.token);
   }
 

@@ -2410,6 +2410,63 @@ ordinary component path but do not prove that a Builder cannot mint or start ano
 
 ---
 
+### 6.6 Ancestry — the one fact a child does not own
+
+§6.5 made permission to nest a **ticket** rather than a variable, and `REVIEW.md` F42's answer to it
+was exact:
+
+> `assertNotNested()` returns top-level depth zero when `MEESEEKS_RUNNING` is absent, so **clearing
+> that marker avoids ticket redemption entirely.**
+
+Every hardening on the recognized path — one-time nonces, depth carried through the record, a cap
+applied at both ends — sits behind an `if` on a string a Builder with unrestricted Bash owns.
+`env -u MEESEEKS_RUNNING node …/driver.mjs` does not defeat the ticket; it never reaches it. The
+guard denies the command *forms* it can see, and §6.5 records honestly that a renamed copy or an
+indirect interpreter stays unrecognizable to lexical inspection.
+
+**A process cannot choose its parents.** Environment, argv and working directory are all the child's
+to set; the tree above it is not. So a Driver registers its own pid when it starts, and a Driver that
+is starting walks its ancestry and asks whether any ancestor is a registered run. If one is, this run
+is nested at that ancestor's depth plus one, **whatever its environment says**. Clearing the marker
+stops skipping anything, because the marker is no longer what decides.
+
+**The register lives under `~/.meeseeks/runs/`, and both halves of that path are load-bearing.** It
+is outside every repository because F42's attack points the nested run at *another* repository, where
+the parent's lock and `.meeseeks/` are irrelevant. And it sits under a `.meeseeks` path component
+because `MEESEEKS_DIR_RE` is **positional** — any segment of that name, at any depth — so the register
+inherits the protection that already covers a repository's state directory. Verified against the real
+expression, `rm -rf ~/.meeseeks/runs` included. No new guard rule, and nothing new to remember: §6
+records that enumeration was the original defect, and a register the guard had to be told about
+separately would be that defect getting a second chance.
+
+Three refusals, and the second is the one a careless version gets wrong:
+
+- **Ancestry deeper than the environment claims** — the bypass, performed. The refusal names the run
+  it is nested inside rather than asserting nesting abstractly.
+- **The environment claiming deeper than the ancestry can account for is *permitted*, and that
+  asymmetry is the threat model rather than a compromise.** Claiming a **shallower** depth buys an
+  attacker the nesting cap and the ticket check; claiming a **deeper** one buys nothing, because
+  depth only ever restricts. The first version refused both directions on a symmetry argument, and
+  the integration suite refuted it within one run: a legitimately authorized component holds a
+  redeemed ticket for depth one while its parent may be unregistered through nobody's fault — a
+  read-only home, a host where registration is unavailable — so refusing there turns *best-effort*
+  registration into a hard dependency and breaks every boxed run on such a host.
+- **An entry that cannot be read is not a run.** One corrupt file is skipped rather than counted, and
+  an unreadable *register* reports `unknown` rather than empty. "Nothing is running" would let the
+  bypass through on any host where the register cannot be read, silently.
+
+**Unknown contradicts nothing, and that is deliberate.** On Windows the walk is unavailable (item
+65), and on a read-only home the register cannot be written. Both report `unknown`, because a `0`
+there would be this check asserting the very fact it exists to verify — and would refuse every
+legitimate boxed component on that host. Entries are pruned by **liveness rather than age**: a run
+killed with `SIGKILL` writes no farewell, and a legitimate run lasts hours, so *old* is the wrong
+question and *still there* is the right one.
+
+**This does not close F42.** That finding requires the authority to hold across a **measured
+isolation boundary** (§6.5, item 84), and same-user code can still stop this process, edit what it
+reads, or attack `ps`. What it closes is the specific bypass the finding names, using a fact the
+child does not own instead of one it does.
+
 ## 7. File layout
 
 This is the current runtime and release structure, not a substitute for `git ls-files`. Tests,

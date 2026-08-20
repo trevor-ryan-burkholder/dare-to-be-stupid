@@ -2695,6 +2695,72 @@ ownership/permissions, and exports the target only after those checks pass. This
 redirection. It is explicitly not same-user process isolation; a process outside the hook boundary can
 still race filesystem state, and any such stronger claim depends on F42's unresolved boundary.
 
+**Ancestry landed, 0.251.0 — `scripts/ancestry.mjs` and `scripts/run-registry.mjs`
+(`DESIGN.md` §6.6).** This closes the specific bypass F42 names. **It does not close F42**, which
+requires the authority to hold across a measured isolation boundary (item 84, paid).
+
+The finding's objection was exact: `assertNotNested()` returns depth zero when `MEESEEKS_RUNNING` is
+absent, so `env -u MEESEEKS_RUNNING` never reaches ticket redemption at all. Every hardening on the
+recognized path sits behind an `if` on a string a Builder owns. **A process cannot choose its
+parents**, so a Driver now registers its pid and a starting Driver reconciles the environment's
+account of nesting against its ancestry's; disagreement refuses **in one direction only**, and that asymmetry is the threat model: claiming a
+*shallower* depth buys the nesting cap and the ticket check, while claiming a *deeper* one buys
+nothing because depth only ever restricts.
+
+The register sits at `~/.meeseeks/runs/` — outside every repository, because the attack points the
+nested run at a different one, and under a `.meeseeks` path component, because the guard's rule is
+**positional** and already covers it. Verified against the real expression, `rm -rf ~/.meeseeks/runs`
+included. No new guard rule: §6 records enumeration as the original defect, and a register the guard
+had to be told about separately would be that defect's second chance.
+
+Unknown contradicts nothing — Windows (item 65), a read-only home, or an unreadable register all
+report `unknown` rather than zero, because a zero would be the check asserting the fact it exists to
+verify, and would refuse every legitimate boxed component on that host. Entries are pruned by
+**liveness rather than age**: a `SIGKILL`ed run writes no farewell and a real run lasts hours.
+
+**Validation:** lint and typecheck clean, `npm test` **3362 of 3362**, `release-check` passed.
+Twelve red proofs at tier 1 — seven against the ancestry reconciliation (a cleared marker accepted, a
+child reporting its parent's depth, the furthest ancestor winning, unknown treated as zero, an
+unguarded cycle, an unbounded walk, a vanished pid aborting the walk) and five against the register
+(an unreadable register read as empty, a dead pid counted as live, an unknown register still
+answering depths, `|| null` turning a depth of zero into unregistered, a malformed depth accepted).
+
+`npm run test:integration` **293 of 293** (exit 0, run unpiped — an earlier launch went through
+`tail -6`, so the reported exit code was the pipe`s and a real failure was hidden; that is the
+defect this repository already records about piping a gate).
+
+**Tier 2 spawns a real Driver as a child of a registered run** (`test/integration/ancestry.integration.test.mjs`),
+which is the only way the claim is reachable: what is under test is that ancestry cannot be stated by
+the child, so an in-process double would beg the question. Four cases, five mutations red.
+
+**A design error the integration suite caught, and it is the most useful thing here.** The first
+version refused **both** directions of disagreement, on the symmetry argument that two disagreeing
+authorities should never be resolved toward the convenient one. Tier 2 refuted it within one run:
+`nesting-authority.integration.test.mjs` drives a *legitimately authorized* component holding a
+redeemed ticket for depth one, whose parent is not registered — and refusing there turns
+**best-effort registration into a hard dependency**, breaking every boxed run on a host with a
+read-only home or no registration at all. The reasoning that looked principled was wrong about the
+threat: a shallower claim buys the nesting cap and the ticket check, a deeper one buys nothing,
+because depth only ever restricts.
+
+**Three fixture defects, all found by mutation and all worth recording.**
+
+1. **It spent money.** `startDriver` runs the real entrypoint as a real process, so nothing injects a
+   spawn double — the child reached its design phase and called the **real CLI**. Tier 2's definition
+   is no network, no API, no money (§11.1), and a fixture that quietly makes a paid call has broken
+   the tier's only promise. A fake `claude` now sits first on the child's PATH, the technique
+   `claude-compat.integration.test.mjs` already uses — and which
+   `nesting-authority.integration.test.mjs` was already using for exactly this reason, so the
+   pattern existed and was not followed. **Audited afterwards:** only two tier-2 fixtures spawn a
+   real process at all, and both now put a controlled bin first on the child's PATH.
+2. **A stale-pid case that could not fail.** It registered a dead pid and checked a later run still
+   started — but a dead pid can never be an ancestor of a live process, so pruning it could not have
+   affected the lookup either way. Replaced with deregistration, which is the integration-level risk:
+   a finished run that stays on the register plants a refusal for every later run.
+3. **An empty directory proving neither half.** A run that never registered leaves no entries —
+   identical from outside to one that registered and cleaned up. Both halves are asserted now, and
+   the mutation had to remove **both** deregistration sites before it went red.
+
 ### 53. Styled milestone lines: gate summary, panel convening, carry/outstanding — **DONE (0.248.0)**
 **DONE (0.248.0) — `DESIGN.md` §9.2.** All three milestones speak. Landed last, as `CLAUDE.md`
 requires: every other non-blocked feature was built first, so the style layer ate no time that
