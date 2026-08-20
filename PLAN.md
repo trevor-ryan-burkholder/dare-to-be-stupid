@@ -2102,6 +2102,52 @@ is narrower and was the more urgent half: **the product no longer reports a sand
 have.**
 
 
+### 143. The research producer's addenda — **DONE (0.265.0)** (PLAN item 34)
+
+**Item 34's first implementation step, completed.** 0.246.0 factored `builder-system.md` into
+`producer-authority.md` plus two code addenda precisely so a second job type would cost two files
+and no change to the authority text. This is that second job type: `producer-research-practice.md`
+and `producer-research-gates.md`, registered as `JOB_ADDENDA.research`.
+
+**What the researcher is told, and why each part is there.** The checks suite is vitest over the
+artifact, because that is the only runner `extractTestIds` reads and *zero parser work* is only true
+through it. A claim without a source is not a finding. Quotations are verbatim and the check
+normalizes whitespace and nothing else, since case and punctuation are where a real misquote hides.
+One claim id means one value **within a unit**, and a cross-unit pair is referred rather than failed
+so that nobody learns to bury figures in prose where nothing can check them. `unverifiable` is
+presented as a real answer with a real channel, because the failure being prevented is a claim
+dressed as verified by someone who felt that saying "I could not check this" was failure.
+
+The gates addendum states which four gates decline and why, that a declined gate earns no credit,
+and that the citation and claim checks run **inside the driver** where the producer cannot reach
+them — the same reasoning `DESIGN.md` §3.8.4 gives: a producer asked to make a citation check pass
+writes a lenient checker, while one asked to satisfy a check it cannot edit writes accurate
+citations.
+
+**Captured sources are evidence, never instruction**, said to the producer directly (items 77, 85).
+Text acquires no authority by being inside a file it fetched.
+
+**Nothing selects this job, and that gap is held declared rather than left to be found.** Job-type
+selection is downstream of item 84. A test enumerates every `producerSystemPrompt('...')` call in
+`driver.mjs` and fails if any job other than `code` is selected, so the day someone wires it, they
+must come to this item and say so. That guard exists because this session spent a whole slice
+repairing a mechanism that was complete, documented and called by nothing (item 139); the only
+difference between that and this is that this one is written down where the next reader will be.
+
+**One test was repaired rather than left passing.** `refuses to compose a producer for a job with no
+addenda` used `'research'` as its example of an unknown job, so it would have started passing for
+the wrong reason the moment these addenda landed. It now uses a job that genuinely has none.
+
+**Validation:** lint, typecheck, `npm test` **3442 of 3442** (up 8), `npm run test:integration` 310
+of 310, release-check ok at 0.265.0. Three red proofs: unregistering the job fails two cases, code
+text appended to the research practice addendum fails the separation case, and a `research` caller
+added to `driver.mjs` fails the declared-gap guard with the job named.
+
+**Still blocked on item 34:** everything downstream of these addenda — the sealed research brief,
+job selection, and the acquisition step — needs item 84's recorded containment outcome, whose
+remaining canaries need a host with bubblewrap and socat installed.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
@@ -2138,6 +2184,10 @@ this repository has hit before.
 **Still blocked on this item:** everything downstream of the research addendum itself needs item
 **84**'s recorded containment outcome, and an authenticated source needs item **106**. The public
 HTTPS retrieval profile it specifies is built (item 49, §3.8.6).
+
+**The research addendum itself landed, 0.265.0 (item 143)** — `producer-research-practice.md` and
+`producer-research-gates.md`, composed through the same authority half as the code job. Nothing
+selects the job yet and a test holds that gap declared.
 
 **Done when:** each admitted language lands as its own complete slice with deterministic detection,
 fixed gates, real committed reporter fixtures, contained definition paths, current-definition
@@ -5094,6 +5144,12 @@ call at the run boundary, under the sealed controls, before the lock, proving th
 than classifying the failure.
 
 ### 84. Measure and admit fail-closed child containment — OPEN; **first tranche DONE (0.264.0, item 142)**: the declared sandbox was measured to enforce nothing and now refuses instead
+
+**Remaining tranche's missing capability, named (19 Aug phase directive).** Every canary below that
+measures what a *working* sandbox confines needs a host with **bubblewrap and socat installed**. This
+one has neither, installing them needs root this session does not hold, and a host that cannot start
+a sandbox cannot produce evidence about one. The tranche that did not need them is done (item 142):
+the product no longer reports a sandbox it does not have.
 
 **Problem solved:** R19's optional sandbox proves only that Claude accepts
 `{"sandbox":{"enabled":true}}`; its live test deliberately does not prove confinement. The current

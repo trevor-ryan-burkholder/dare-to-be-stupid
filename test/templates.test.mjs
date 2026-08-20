@@ -977,10 +977,58 @@ describe('the producer split (item 34, DESIGN §8.5)', () => {
   it('refuses to compose a producer for a job with no addenda', () => {
     // A producer running on authority alone would be told how to behave and nothing about what it
     // is making. That is a worse failure than an error, because it would look like a prompt.
+    //
+    // The example used to be `research`, which now has addenda — so this case would have started
+    // passing for the wrong reason the moment they landed, if it had not been changed with them.
     assert.throws(
-      () => producerSystemPrompt('research', { unitLine: 'x', e2eLine: 'y' }),
+      () => producerSystemPrompt('sculpture', { unitLine: 'x', e2eLine: 'y' }),
       (error) => error instanceof Error && /cannot run on authority alone/.test(error.message),
     );
+  });
+
+  it('composes a research producer from the same authority half as the code one', () => {
+    // Item 34's first implementation step. The point of the split is that a second job type costs
+    // two addenda and no change to the authority text, so this asserts both halves arrived: the
+    // universal rules, and prose-specific practice that a code producer never sees.
+    const research = producerSystemPrompt('research', {});
+    for (const universal of ['Do not declare completion', 'Record what you had to assume', '.meeseeks/']) {
+      assert.equal(research.includes(universal), true, `the research producer lost "${universal}"`);
+    }
+    assert.equal(research.includes('citations.json'), true, 'the research producer was not told its manifest');
+    assert.equal(research.includes('claims.json'), true, 'the research producer was not told its claim manifest');
+    assert.equal(/\{\{[A-Za-z_]+\}\}/.test(research), false, 'an unsubstituted slot shipped');
+  });
+
+  it('tells a research producer nothing about building software', () => {
+    // The other direction, and the reason the split was worth doing. A researcher handed
+    // `package.json` instructions would be reading a prompt for a different job — which is exactly
+    // what would have happened before 0.246.0, when there was one builder prompt and it was
+    // code-only.
+    const research = producerSystemPrompt('research', {});
+    for (const codeOnly of ['package.json', 'tsconfig', '@ts-nocheck', 'RED before GREEN', 'Playwright']) {
+      assert.equal(research.includes(codeOnly), false, `the research producer was told about ${codeOnly}`);
+    }
+  });
+
+  it('leaves the code producer byte-identical after a second job type exists', () => {
+    // The regression a new addendum could cause without anyone noticing: editing the shared
+    // authority half to suit research would change what every builder is told, and §3.9 names a
+    // silently altered prompt as one of the two degradations this repository cannot see. The
+    // byte-identity case above already holds this, and this one states why it is load-bearing now
+    // rather than merely historical.
+    assert.equal(BUILDER, SHIPPED);
+  });
+
+  it('does not let a research producer be selected by a run yet, and says so where it is declared', () => {
+    // **A declared gap, held declared.** The addenda compose, and nothing selects them: job-type
+    // selection is downstream of item 84. This repository has just spent a slice repairing a
+    // mechanism that was complete, documented and called by nothing, and the difference between
+    // that and this is only that this one is written down where the next reader will be.
+    //
+    // If a caller appears, this case fails and whoever wired it must come here and say so.
+    const driver = readFileSync(new URL('../scripts/driver.mjs', import.meta.url), 'utf8');
+    const selections = [...driver.matchAll(/producerSystemPrompt\(\s*'([a-z-]+)'/g)].map((match) => match[1]);
+    assert.deepStrictEqual([...new Set(selections)], ['code'], `a run now selects: ${selections.join(', ')}`);
   });
 
   it('substitutes into the addenda as well as into the authority half', () => {

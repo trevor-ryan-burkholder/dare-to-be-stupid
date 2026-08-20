@@ -6118,6 +6118,12 @@ export function realityCheckPrompt(revision) {
  */
 const JOB_ADDENDA = {
   code: { JOB_PRACTICE: 'producer-code-practice.md', JOB_GATES: 'producer-code-gates.md' },
+  // **Composable, and not yet selected by anything** (PLAN item 34). No run picks this job: the
+  // job-type selection is downstream and gated on item 84's containment outcome. Stated here rather
+  // than left to be discovered, because this repository has just spent a slice on a mechanism that
+  // was complete, documented and called by nothing — the difference is that this gap is declared
+  // and a test holds it declared.
+  research: { JOB_PRACTICE: 'producer-research-practice.md', JOB_GATES: 'producer-research-gates.md' },
 };
 
 /** The job-agnostic half, named once so the tests and the composer cannot disagree. */
