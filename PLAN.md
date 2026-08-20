@@ -4561,7 +4561,33 @@ external source or effect uses item **106**'s separately sealed, job-scoped capa
 Neither a role nor an external server may convert tool availability, network reachability, or its own
 annotations into authority.
 
-### 85. Keep candidate instructions out of reviewer authority — PARTIAL (0.206.0): the authority boundary and the pre-Panel rescan landed; the supply trust-class report and the paid canary have not
+### 85. Keep candidate instructions out of reviewer authority — PARTIAL (0.206.0, supply identity 0.252.0): the authority boundary, the pre-Panel rescan and the supply trust-class report landed; the paid canary has not
+
+**Supply identity landed, 0.252.0.** This item's Done-when asks that *"item 77's supply report names
+the trust class and identity of each source"*. The trust class was already there. The **identity** was
+not: the manifest recorded a class, a trust, a digest and a byte count, so two `template` inputs with
+different digests were two anonymous blobs and a reader could not say which document had bound a
+verdict. A digest answers *did this change*; nothing maps it back to a source without already holding
+the bytes.
+
+`classify(class, identity, text)` now requires one, and refuses `undefined`, empty and blank rather
+than defaulting — an identity of `"unknown"` would be the manifest asserting what it does not know, in
+the artifact whose entire job is to say what bound a verdict. Eleven driver supply sites name what
+they actually pass: the shipped template at the plugin version, the specification file at its
+revision digest, a brief at its own digest.
+
+**The module's rule is satisfied by passing the class string twice**, which restores the exact
+ambiguity this closes — and that mutation left the whole unit suite green. So a **positional rule over
+the driver's source** additionally refuses an identity equal to, or no longer than, its class. Its
+first version sliced each entry to the next `}` and cut identities off mid-interpolation, because
+`${pluginVersion()}` contains one, reporting a real identity as absent; it scans by line now.
+
+**Validation:** lint and typecheck clean, `npm test` **3366 of 3366** and
+`npm run test:integration` **295 of 295**, both exit 0 and both unpiped. Five red proofs: an
+unidentified input accepted, identity validated then dropped, identity collapsed to the class at the
+module, one driver identity collapsed to its class, and one driver entry dropping identity entirely.
+
+**Still owed:** the pinned paid hostile/benign canary, which needs live spend.
 
 **Problem solved:** cold roles use `--safe-mode`, so current Claude Code does not automatically load
 target `CLAUDE.md`, rules, Skills, plugins, hooks, MCP servers, or memory. The reviewer template then

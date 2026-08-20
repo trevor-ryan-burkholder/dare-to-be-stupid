@@ -51,7 +51,7 @@ export const INPUT_CLASSES = /** @type {const} */ ([
 /** @typedef {'authority' | 'evidence'} Trust */
 /**
  * @typedef {{ role: string, specification: string | null,
- *   inputs: { class: InputClass, trust: Trust, digest: string, bytes: number }[],
+ *   inputs: { class: InputClass, identity: string, trust: Trust, digest: string, bytes: number }[],
  *   ambient: { disabled: string[], by: string, verified: boolean } }} RoleSupplyManifest
  */
 
@@ -166,13 +166,27 @@ export class SupplyBoundaryError extends Error {
 }
 
 /**
- * One manifest entry: what class of thing, how much of it, and a digest a verifier can recompute.
+ * One manifest entry: what class of thing, **which** thing, how much of it, and a digest a verifier
+ * can recompute.
+ *
+ * **Identity is required, and a digest is not a substitute for it** (PLAN item 85, REVIEW F29). Item
+ * 85 asks that the supply report name *"the trust class and identity of each source"*, and the
+ * report named only the class: two `template` inputs with different digests were two anonymous
+ * blobs, and a reader could not say which document had bound the verdict. A digest answers *did this
+ * change*; it cannot answer *what was this*, because nothing maps it back without already holding
+ * the bytes.
+ *
+ * The convention is `<what>@<revision>` — `templates/reviewer-system.md@0.252.0` for something the
+ * plugin ships, `PRD.md@sha256:…` for a candidate revision — but the format is not enforced, because
+ * an identity scheme invented here would be one more thing to keep in step with the callers that
+ * actually know what they are supplying. What is enforced is that somebody said something.
  *
  * @param {InputClass} inputClass
+ * @param {string} identity which source this is, not merely what kind
  * @param {string} text
- * @returns {{ class: InputClass, trust: Trust, digest: string, bytes: number }}
+ * @returns {{ class: InputClass, identity: string, trust: Trust, digest: string, bytes: number }}
  */
-export function classify(inputClass, text) {
+export function classify(inputClass, identity, text) {
   if (!INPUT_CLASSES.includes(inputClass)) {
     throw new SupplyBoundaryError(
       'unknown',
@@ -181,9 +195,19 @@ export function classify(inputClass, text) {
         'checked against any policy',
     );
   }
+  if (typeof identity !== 'string' || identity.trim() === '') {
+    throw new SupplyBoundaryError(
+      'unknown',
+      [inputClass],
+      `a ${inputClass} input was supplied without an identity. The supply report has to say *which* ` +
+        'document bound a verdict, not only what kind of thing it was; a digest records that bytes changed ' +
+        'and can never say what they were.',
+    );
+  }
   const body = typeof text === 'string' ? text : '';
   return {
     class: inputClass,
+    identity,
     // The trust class travels with the input rather than being looked up later (REVIEW F29): a
     // reader of the manifest must be able to say which of these could bind the role's verdict
     // without holding this module's table.
@@ -205,12 +229,12 @@ export function classify(inputClass, text) {
  * nobody stated.
  *
  * @param {{ role: string, specification?: string | null,
- *   supply: { class: InputClass, text: string }[] }} invocation
+ *   supply: { class: InputClass, identity: string, text: string }[] }} invocation
  * @returns {RoleSupplyManifest}
  * @throws {SupplyBoundaryError}
  */
 export function roleSupplyManifest(invocation) {
-  const inputs = invocation.supply.map((entry) => classify(entry.class, entry.text));
+  const inputs = invocation.supply.map((entry) => classify(entry.class, entry.identity, entry.text));
   const policy = ROLE_SUPPLY_POLICY[invocation.role];
   if (policy !== undefined) {
     const offered = policy.forbidden.filter((forbidden) => inputs.some((input) => input.class === forbidden));

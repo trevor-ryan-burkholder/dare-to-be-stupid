@@ -1560,7 +1560,7 @@ describe('the specification is delivered, not pointed at (REVIEW F12, reopened)'
     it('declares the delivered specification to the supply boundary', () => {
       // Independence rests on `not supplied`, and a class that crosses undeclared is invisible to
       // the record item 76's receipt is built from.
-      assert.equal(review.includes("{ class: 'specification', text: canonicalSpecification }"), true);
+      assert.equal(review.includes("class: 'specification',") && review.includes('text: canonicalSpecification'), true);
     });
   });
 
@@ -8452,8 +8452,8 @@ describe('spawnClaude enforces the supply boundary at the one door (PLAN item 77
       cwd: '/tmp',
       env: {},
       supply: [
-        { class: 'system-prompt', text: 'you are an auditor' },
-        { class: 'builder-log', text: 'the builder tried three times' },
+        { class: 'system-prompt', identity: 'reviewer-system.md@test', text: 'you are an auditor' },
+        { class: 'builder-log', identity: 'iter-001.log', text: 'the builder tried three times' },
       ],
       run: () => {
         spawned += 1;
@@ -8471,8 +8471,8 @@ describe('spawnClaude enforces the supply boundary at the one door (PLAN item 77
     const result = await spawnSupplying({
       specification: 'sha256:spec',
       supply: [
-        { class: 'system-prompt', text: 'you are an auditor' },
-        { class: 'brief', text: 'the requirements' },
+        { class: 'system-prompt', identity: 'reviewer-system.md@test', text: 'you are an auditor' },
+        { class: 'brief', identity: 'build-brief@test', text: 'the requirements' },
       ],
     });
     assert.equal(result.ok, true);

@@ -7001,7 +7001,7 @@ export function realSealIo(env = process.env) {
  * @param {{ prompt: string, model: string, systemPrompt?: string, phase: string, effort?: string, cwd: string,
  *   env: Record<string, string | undefined>, contextLimit?: number, timeoutMs?: number,
  *   maxBudgetUsd?: number, maxTurns?: number, sandbox?: boolean, envAllow?: string[],
- *   supply?: { class: import('./role-supply.mjs').InputClass, text: string }[],
+ *   supply?: { class: import('./role-supply.mjs').InputClass, identity: string, text: string }[],
  *   specification?: string | null,
  *   seal?: import('./claude-seal.mjs').Seal,
  *   sealVersion?: string,
@@ -8376,8 +8376,8 @@ async function runInvocation(argv, io, crash) {
       // spawned: cases authored from the implementation test the implementation, which is the one
       // thing a held-out gate cannot be allowed to do.
       supply: [
-        { class: 'template', text: oracleTemplate },
-        { class: 'specification', text: prd },
+        { class: 'template', identity: `templates/oracle-author.md@${pluginVersion()}`, text: oracleTemplate },
+        { class: 'specification', identity: `${specification.revision.file}@${specification.revision.digest}`, text: prd },
       ],
       specification: specification.revision.digest,
     });
@@ -9367,8 +9367,8 @@ async function runInvocation(argv, io, crash) {
           // is refused only the held-out cases and the panel's reasoning about them. A builder that
           // can read the cases can satisfy them without satisfying the requirement.
           supply: [
-            { class: 'system-prompt', text: candidateSystem },
-            { class: 'brief', text: candidateBrief },
+            { class: 'system-prompt', identity: `producer-authority.md+code@${pluginVersion()}`, text: candidateSystem },
+            { class: 'brief', identity: `candidate-brief@${digest(candidateBrief)}`, text: candidateBrief },
           ],
           specification: specification.revision.digest,
         });
@@ -9465,8 +9465,8 @@ async function runInvocation(argv, io, crash) {
           cwd,
           env,
           supply: [
-            { class: 'system-prompt', text: builderSystem },
-            { class: 'brief', text: brief },
+            { class: 'system-prompt', identity: `producer-authority.md+code@${pluginVersion()}`, text: builderSystem },
+            { class: 'brief', identity: `build-brief@${digest(brief)}`, text: brief },
           ],
           specification: specification.revision.digest,
         });
@@ -9500,7 +9500,7 @@ async function runInvocation(argv, io, crash) {
           // element; the policy refuses the builder log, iteration history, the held-out cases and a
           // panel transcript, because a scoped question answered from the whole run is not a scoped
           // question — and the alternative to asking is a hard reset on a formatter run.
-          supply: [{ class: 'candidate-evidence', text: escalation }],
+          supply: [{ class: 'candidate-evidence', identity: `security-escalation@${digest(escalation)}`, text: escalation }],
           specification: specification.revision.digest,
         });
       },
@@ -9549,9 +9549,9 @@ async function runInvocation(argv, io, crash) {
           // synthesis, a previous panel's transcript and the held-out cases *before* the child is
           // spawned — a cold role that has already read something cannot unread it.
           supply: [
-            { class: 'system-prompt', text: reviewerSystem },
-            { class: 'specification', text: canonicalSpecification },
-            { class: 'brief', text: brief },
+            { class: 'system-prompt', identity: `templates/reviewer-system.md@${pluginVersion()}`, text: reviewerSystem },
+            { class: 'specification', identity: `${specification.revision.file}@${specification.revision.digest}`, text: canonicalSpecification },
+            { class: 'brief', identity: `build-brief@${digest(brief)}`, text: brief },
           ],
           specification: specification.revision.digest,
         });
@@ -9570,7 +9570,7 @@ async function runInvocation(argv, io, crash) {
           effort: config.effort['reality-check'],
           cwd,
           env,
-          supply: [{ class: 'specification', text: prompt }],
+          supply: [{ class: 'specification', identity: `reality-check-question@${pluginVersion()}`, text: prompt }],
           specification: specification.revision.digest,
         });
       },

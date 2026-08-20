@@ -2365,6 +2365,22 @@ truncated into a different one.
 
 The held-out Oracle author has always been handed the bytes this way; the Panel now matches it.
 
+**And the report names *which* source, not only what kind** (PLAN item 85). The supply manifest
+recorded a class, a trust, a digest and a byte count — so two `template` inputs with different
+digests were two anonymous blobs, and a reader could not say which document had bound a verdict. A
+digest answers *did this change*; nothing maps it back to a source without already holding the bytes.
+Every supplied input now carries an identity, required rather than defaulted, because an identity of
+`"unknown"` would be the manifest asserting what it does not know in the artifact whose whole job is
+to say what bound a verdict.
+
+The format is a convention rather than a rule — `templates/reviewer-system.md@0.252.0` for something
+the plugin ships, `PRD.md@sha256:…` for a candidate revision — because an identity scheme invented in
+the supply module would be one more thing to keep in step with the callers that know what they are
+supplying. What is enforced is that somebody said something, and a **positional rule over the
+driver's source** additionally refuses an identity that is merely the class again: the module's own
+check is satisfied by passing the class string twice, which restores the exact ambiguity this closes.
+That mutation left the entire unit suite green, which is why the rule exists.
+
 ### 6.5 Nesting authority is a ticket, not a variable
 
 `--give-them-the-box` is the operator's permission to nest, to a depth of two. Until 0.215.0 both

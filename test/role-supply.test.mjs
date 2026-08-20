@@ -45,11 +45,67 @@ after(() => {
 const digestOf = (text) => `sha256:${createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 32)}`;
 
 describe('classify', () => {
-  it('records the class, its trust, a recomputable digest, and a byte count — and not the bytes', () => {
-    const entry = classify('brief', 'the build brief');
-    assert.deepStrictEqual(entry, { class: 'brief', trust: 'authority', digest: digestOf('the build brief'), bytes: 15 });
+  it('records the class, which source, its trust, a recomputable digest and a byte count — and not the bytes', () => {
+    const entry = classify('brief', 'build-brief@iter-001', 'the build brief');
+    assert.deepStrictEqual(entry, {
+      class: 'brief',
+      identity: 'build-brief@iter-001',
+      trust: 'authority',
+      digest: digestOf('the build brief'),
+      bytes: 15,
+    });
     // The manifest describing the prompt must not be a second copy of the prompt.
     assert.equal(Object.values(entry).some((value) => String(value).includes('the build brief')), false);
+  });
+
+  it('names which source, because a digest can say what changed and never what it was', () => {
+    // **PLAN item 85's unlanded half.** The report named only the *class*, so two `template` inputs
+    // with different digests were two anonymous blobs and a reader could not say which document had
+    // bound the verdict. Nothing maps a digest back to a source without already holding the bytes.
+    const first = classify('template', 'templates/reviewer-system.md@0.252.0', 'audit it');
+    const second = classify('template', 'templates/oracle-author.md@0.252.0', 'author cases');
+    assert.notEqual(first.identity, second.identity);
+    assert.equal(first.class, second.class, 'the class alone was already ambiguous; that is the point');
+  });
+
+it('gives every supplied input an identity that is not just its class again', () => {
+    // **The wiring, which no assertion about `classify` can reach.** The module refuses an input
+    // nobody identified; that is satisfied by a driver passing the class string twice, which would
+    // restore the exact ambiguity item 85 is about — two `template` inputs, two anonymous blobs, and
+    // no way to say which document bound the verdict. Proved necessary: a mutation collapsing
+    // identity back to the class left the whole unit suite green.
+    const source = readFileSync(new URL('../scripts/driver.mjs', import.meta.url), 'utf8');
+
+    // Scanned by **line**, not to the next `}`. The first version sliced to the next closing brace
+    // and cut identities off mid-interpolation, because `${pluginVersion()}` contains one — so it
+    // reported a real identity as absent. Supply entries are one per line.
+    const entries = source.split('\n').filter((line) => /\{ class: '[a-z-]+'/.test(line));
+    assert.equal(entries.length > 0, true, 'the driver supplies no classified inputs at all');
+
+    for (const entry of entries) {
+      const inputClass = /class: '([a-z-]+)'/.exec(entry)?.[1];
+      const identity = /identity: [`']([^`']*)[`']/.exec(entry)?.[1];
+      assert.notEqual(identity, undefined, `a supplied input carries no identity: ${entry}`);
+      assert.notEqual(identity, inputClass, `a supplied input's identity is just its class again: ${entry}`);
+      // A bare class name with nothing else is the same failure wearing a template literal.
+      assert.equal(
+        String(identity).length > String(inputClass).length,
+        true,
+        `a supplied input's identity says no more than its class: ${entry}`,
+      );
+    }
+  });
+
+  it('refuses an input nobody identified', () => {
+    // Required rather than defaulted. An identity of "unknown" would be the manifest asserting it
+    // knows the thing it does not, in the artifact whose whole job is to say what bound a verdict.
+    for (const identity of [undefined, '', '   ', null, 7]) {
+      assert.throws(
+        () => classify('brief', /** @type {any} */ (identity), 'x'),
+        (error) => error instanceof SupplyBoundaryError && /without an identity/.test(error.message),
+        `identity ${JSON.stringify(identity)} was accepted`,
+      );
+    }
   });
 
   it('carries the trust class with the input rather than leaving it to be looked up', () => {
@@ -57,19 +113,19 @@ describe('classify', () => {
     // rule has been instructed by the thing it is auditing, and every panel member reads the same
     // tree — so process independence does not diversify that attack. A reader of the manifest has to
     // be able to say which inputs could bind the verdict without holding this module's table.
-    assert.equal(classify('candidate-evidence', 'src/a.js:1').trust, 'evidence');
-    assert.equal(classify('specification', '# PRD').trust, 'authority');
-    assert.equal(classify('builder-log', 'what happened').trust, 'evidence');
+    assert.equal(classify('candidate-evidence', 'src/a.js', 'src/a.js:1').trust, 'evidence');
+    assert.equal(classify('specification', 'PRD.md@sha256:abc', '# PRD').trust, 'authority');
+    assert.equal(classify('builder-log', 'iter-001.log', 'what happened').trust, 'evidence');
   });
 
   it('counts bytes rather than characters, so a multi-byte prompt is measured honestly', () => {
-    assert.equal(classify('brief', 'café').bytes, 5);
+    assert.equal(classify('brief', 'build-brief@iter-001', 'café').bytes, 5);
   });
 
   it('refuses a class nobody declared, because an unclassified input cannot be checked', () => {
     assert.throws(
       // @ts-expect-error deliberately offering an undeclared class
-      () => classify('some-new-thing', 'x'),
+      () => classify('some-new-thing', 'whatever', 'x'),
       SupplyBoundaryError,
     );
   });
@@ -81,8 +137,8 @@ describe('roleSupplyManifest refuses what independence depends on', () => {
     roleSupplyManifest({
       role,
       supply: [
-        { class: 'system-prompt', text: 'you are an auditor' },
-        { class: /** @type {any} */ (inputClass), text: 'the forbidden thing' },
+        { class: 'system-prompt', identity: 'fixture:system-prompt', text: 'you are an auditor' },
+        { class: /** @type {any} */ (inputClass), identity: `fixture:${inputClass}`, text: 'the forbidden thing' },
       ],
     });
 
@@ -108,8 +164,8 @@ describe('roleSupplyManifest refuses what independence depends on', () => {
         roleSupplyManifest({
           role: 'review',
           supply: [
-            { class: 'builder-log', text: 'a' },
-            { class: 'oracle-cases', text: 'b' },
+            { class: 'builder-log', identity: 'fixture:builder-log', text: 'a' },
+            { class: 'oracle-cases', identity: 'fixture:oracle-cases', text: 'b' },
           ],
         }),
       (/** @type {unknown} */ error) => {
@@ -127,9 +183,9 @@ describe('the allowed classes still arrive', () => {
       role: 'review',
       specification: 'sha256:spec',
       supply: [
-        { class: 'system-prompt', text: 'you are the correctness auditor' },
-        { class: 'brief', text: 'requirements and ids' },
-        { class: 'candidate-evidence', text: 'src/a.js:1' },
+        { class: 'system-prompt', identity: 'fixture:system-prompt', text: 'you are the correctness auditor' },
+        { class: 'brief', identity: 'fixture:brief', text: 'requirements and ids' },
+        { class: 'candidate-evidence', identity: 'fixture:candidate-evidence', text: 'src/a.js:1' },
       ],
     });
     assert.deepStrictEqual(
@@ -143,7 +199,7 @@ describe('the allowed classes still arrive', () => {
   it('lets the oracle author read the specification, which is the whole of its input', () => {
     const manifest = roleSupplyManifest({
       role: 'oracle-author',
-      supply: [{ class: 'specification', text: '# PRD' }],
+      supply: [{ class: 'specification', identity: 'fixture:specification', text: '# PRD' }],
     });
     assert.deepStrictEqual(manifest.inputs.map((input) => input.class), ['specification']);
   });
@@ -154,8 +210,8 @@ describe('the allowed classes still arrive', () => {
     const manifest = roleSupplyManifest({
       role: 'builder',
       supply: [
-        { class: 'builder-log', text: 'what happened last iteration' },
-        { class: 'iteration-history', text: 'three attempts' },
+        { class: 'builder-log', identity: 'fixture:builder-log', text: 'what happened last iteration' },
+        { class: 'iteration-history', identity: 'fixture:iteration-history', text: 'three attempts' },
       ],
     });
     assert.equal(manifest.inputs.length, 2);
@@ -171,7 +227,7 @@ describe('the allowed classes still arrive', () => {
     assert.equal(ROLE_SUPPLY_POLICY['reality-check'], undefined);
     const manifest = roleSupplyManifest({
       role: 'reality-check',
-      supply: [{ class: 'builder-log', text: 'anything' }],
+      supply: [{ class: 'builder-log', identity: 'fixture:builder-log', text: 'anything' }],
     });
     assert.equal(manifest.inputs.length, 1);
   });
@@ -210,7 +266,7 @@ describe('trust classes: what may bind a verdict and what may only inform one (R
     // whether the CLI honoured it is a contract owned by another binary, and F29's own acceptance
     // asks for a paid canary to establish it. Writing this as though it were measured would be the
     // overclaim §6.1 warns about, in the artifact meant to prevent one.
-    const manifest = roleSupplyManifest({ role: 'review', supply: [{ class: 'brief', text: 'x' }] });
+    const manifest = roleSupplyManifest({ role: 'review', supply: [{ class: 'brief', identity: 'fixture:brief', text: 'x' }] });
     assert.equal(manifest.ambient.by, '--safe-mode');
     assert.equal(manifest.ambient.verified, false);
     assert.deepStrictEqual(manifest.ambient.disabled, [...AMBIENT_DISABLED]);
@@ -222,8 +278,8 @@ describe('trust classes: what may bind a verdict and what may only inform one (R
     const manifest = roleSupplyManifest({
       role: 'review',
       supply: [
-        { class: 'system-prompt', text: 'you are the auditor' },
-        { class: 'candidate-evidence', text: 'src/a.js:1' },
+        { class: 'system-prompt', identity: 'fixture:system-prompt', text: 'you are the auditor' },
+        { class: 'candidate-evidence', identity: 'fixture:candidate-evidence', text: 'src/a.js:1' },
       ],
     });
     assert.deepStrictEqual(
@@ -276,7 +332,7 @@ describe('appendSupplyRecord: the record that outlives the process (PLAN item 77
     role,
     at: '2026-08-18T00:00:00.000Z',
     iteration: null,
-    manifest: roleSupplyManifest({ role, supply: [{ class: 'brief', text: `${role}'s brief` }] }),
+    manifest: roleSupplyManifest({ role, supply: [{ class: 'brief', identity: 'fixture:brief', text: `${role}'s brief` }] }),
   });
 
   /** @returns {string} */
