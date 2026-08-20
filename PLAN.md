@@ -4972,7 +4972,7 @@ passes; and the shipped command/Driver change receives the required version bump
 slash-command invocation is not required unless implementation changes the external Claude Code
 loading or argument-passing contract. REVIEW F24 closed this at 0.194.0.
 
-### 80. Make the supported `/meeseeks` command user-invocable only — PARTIAL (0.203.0): the control and its contract tests landed; the installed-loader canary is batched with items 79 and 75
+### 80. Make the supported `/meeseeks` command user-invocable only — **IMPLEMENTED (control 0.203.0, installed-loader canary 0.209.0)**; REVIEW F25 owns closure
 
 **Problem solved:** current Claude Code treats custom commands as skills and, unless
 `disable-model-invocation: true` is present, advertises them to the model for autonomous invocation.
@@ -5000,8 +5000,20 @@ tests reject the absent, `false`, commented and inverted spellings, and refuse `
 outright because it reads alike and enforces the opposite policy. Verified red by flipping the field
 to `false`.
 
-**Not yet done:** the pinned-CLI canary against the staged installed snapshot, which proves the
-*loader* honours the field rather than that the file states it. Batched with items **79** and **75**
+**The canary landed at 0.209.0 and this entry said otherwise for fifty-eight versions.** Recorded as
+documentation drift rather than quietly corrected, because a plan that understates what is built is a
+queue that lies about what is left — and this one was read as open work more than once.
+
+`test/live/plugin-loader.live.test.mjs` stages the candidate the way a loader installs it and asks a
+**real model** to list every Skill it can invoke, asserting `meeseeks` is not among them. Asked of
+the model rather than of a listing, because what F25 bounds is *Skill selection*: a model that cannot
+see the skill cannot name it. It arrived with F21's installed-snapshot harness — the machinery four
+findings were queued behind — and it passed live again at 0.263.0 in 13.4 seconds.
+
+Items **79** and **75**, which this was batched with, are both `IMPLEMENTED`. Nothing remains here
+but Codex's closure of F25.
+
+**Superseded, and kept for the trail:** the canary was described as batched with items **79** and **75**
 as F25 itself directs, because a separate release campaign for one probe is the cost that finding
 was written to avoid. `PARTIAL` for exactly that reason.
 
