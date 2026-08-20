@@ -3430,7 +3430,7 @@ export async function driveRun(options) {
     // ones the ratchet credited (REVIEW F17). `changedDefinitions` already reads an absent or
     // unreadable digest as changed, which is the answer that keeps a store written before this
     // field existed from vouching for bytes nobody measured.
-    const staleEvidence = changedDefinitions(passing, subject(), redEvidence.definitions);
+    const staleEvidence = changedDefinitions(passing, subject(), redEvidence.definitions, { keyedBy: 'id' });
     const withheld = unprovenIds({
       previousPassing: state.passing,
       passing,
@@ -5659,8 +5659,18 @@ export function recordRedEvidence(meeseeksDir, nonPassing, passing = [], rootDir
   // predecessor earned. `previousPassing` was scoped to the definition already; `redSeen` and
   // `baseline` were not, and they are the two broader exemptions.
   //
-  // Recorded per *file*, matching the ratchet's own `definitions` map, because a defining file is
-  // what `changedDefinitions` can compare and an id is not.
+  // **Recorded per *id*, not per file** (REVIEW F17, reopened). It was per file, matching the
+  // ratchet's own map, on the reasoning that a defining file is what `changedDefinitions` can
+  // compare. The comparison is still of a file's digest — that is the only thing there is to
+  // compare — but the *stamp* has to belong to the id, because one id's fresh observation must not
+  // vouch for a sibling's stale one. Reproduced: A and B share a file, B is seen failing under the
+  // old bytes, the file is rewritten to weaken B, only A fails under the new bytes, and recording A
+  // refreshes the digest standing behind B's observation. B is then credited having never failed
+  // under the definition that ships.
+  //
+  // A store written under the old shape is keyed by file, so an id finds no stamp and reads as
+  // changed — its evidence stops vouching until the id is observed failing again. Fail-closed, and
+  // the only safe direction: nobody can say which definition a file-keyed digest was recorded for.
   //
   // **Only what was observed in *this* call is stamped**, and getting that wrong would have undone
   // the whole repair: stamping the accumulated `seenFailing` set would refresh the digest of an id
@@ -5675,7 +5685,7 @@ export function recordRedEvidence(meeseeksDir, nonPassing, passing = [], rootDir
       const file = testFilePath(id);
       if (file === '') continue;
       const digest = definitionDigest(rootDir, file);
-      if (digest !== null) definitions[file] = digest;
+      if (digest !== null) definitions[id] = digest;
     }
   }
 
@@ -9221,7 +9231,7 @@ async function runInvocation(argv, io, crash) {
             baseline: red.baseline,
             changedDefinitions: rewritten,
             // The gate reports exactly what the ratchet withholds, so it needs the same scoping.
-            staleEvidence: changedDefinitions(passing, dir, red.definitions),
+            staleEvidence: changedDefinitions(passing, dir, red.definitions, { keyedBy: 'id' }),
           };
     const results = [
       // First, because it invalidates everything after it: a reader scanning the failures needs to

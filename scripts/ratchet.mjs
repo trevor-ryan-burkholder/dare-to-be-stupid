@@ -527,10 +527,21 @@ export function definitionDigest(rootDir, file) {
  * @param {Iterable<string>} ids
  * @param {string} rootDir
  * @param {Record<string, string> | undefined} recorded digests from the state file
+ * @param {{ keyedBy?: 'file' | 'id' }} [options] which key `recorded` is stamped under
  * @returns {Set<string>}
  */
-export function changedDefinitions(ids, rootDir, recorded) {
+export function changedDefinitions(ids, rootDir, recorded, options = {}) {
   const known = recorded ?? {};
+  // **Per file or per id, and the difference is REVIEW F17.** The ratchet's own map is keyed by
+  // *file*, correctly: it answers "are the bytes this credit was banked against still the bytes on
+  // disk", which is a question about a file, and two ids in one file share the answer.
+  //
+  // Red evidence answers a different question — "was **this id** observed failing under these
+  // bytes" — and keying that by file let one id's observation vouch for another's. Reproduced:
+  // A and B share a file, B is seen failing under the old bytes, the file is rewritten to weaken B,
+  // only A fails under the new bytes, and recording A refreshes the file digest that stood behind
+  // B's stale observation. B was then credited having never failed under the definition that ships.
+  const keyedBy = options.keyedBy ?? 'file';
   /** @type {Map<string, boolean>} */
   const verdict = new Map();
   /** @type {Set<string>} */
@@ -538,14 +549,17 @@ export function changedDefinitions(ids, rootDir, recorded) {
   for (const id of ids) {
     const file = testFilePath(id);
     if (file === '') continue;
-    let differs = verdict.get(file);
+    // The digest compared is the defining file's either way — that is the only thing there is to
+    // compare. What changes is **whose stamp** is consulted.
+    const key = keyedBy === 'id' ? id : file;
+    let differs = verdict.get(key);
     if (differs === undefined) {
-      const was = known[file];
+      const was = known[key];
       const now = definitionDigest(rootDir, file);
       // Unknown or unreadable is treated as changed. Neither is evidence that the bytes that
       // earned the credit are the bytes on disk, and nothing defaults to credited.
       differs = was === undefined || now === null || now !== was;
-      verdict.set(file, differs);
+      verdict.set(key, differs);
     }
     if (differs) changed.add(id);
   }

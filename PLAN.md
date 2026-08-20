@@ -1597,6 +1597,40 @@ itself (2). `npm test` **3391 of 3391** and `npm run test:integration` **295 of 
 already built, which is the allocation the byte ceiling already governs — so the useful version is a
 streaming parser, and that is a larger change than this finding needs.
 
+### 132. Red evidence is stamped per id, not per file — **DONE (0.255.0)** (REVIEW F17, reopened)
+
+F17's reopened half gives an exact reproduction, and the code's own comment stated the reasoning
+that caused it: *"Recorded per file, matching the ratchet's own `definitions` map, because a defining
+file is what `changedDefinitions` can compare and an id is not."*
+
+**A and B share one file.** B is seen failing under the old bytes. The file is rewritten to weaken B.
+Only A fails under the new bytes — and recording A **refreshed the file digest standing behind B's
+stale observation**. B was then credited having never failed under the definition that ships, with
+`stale=[]` and `withheld=[]` reported. The finding notes the existing tests use the same id or
+different files, so none of them exercised siblings.
+
+The comparison is still of a *file's* digest — that is the only thing there is to compare — but the
+**stamp** now belongs to the id, so one id's fresh observation cannot vouch for a sibling's stale
+one. `changedDefinitions` takes an explicit `keyedBy`, and the ratchet's own map deliberately stays
+keyed by **file**: it answers *are the bytes this credit was banked against still on disk*, which is
+a question about a file, and two ids in one file genuinely share the answer. Keying that by id would
+store one digest twice and claim a distinction that does not exist — so that is its own test, as the
+neighbour of the sibling case rather than a copy of it.
+
+**Fail-closed on upgrade, and stated rather than discovered.** A store written under the old shape is
+keyed by file, so an id finds no stamp and reads as changed: its evidence stops vouching until the id
+is observed failing again. That is the only safe direction — nobody can say which definition a
+file-keyed digest was recorded for.
+
+**Validation:** lint and typecheck clean, `npm test` **3393 of 3393** and
+`npm run test:integration` **295 of 295**, both exit 0. Three red proofs:
+evidence reverted to file keying (6 failures, the sibling case among them), the comparator ignoring
+its key mode (6), and an unknown stamp reading as unchanged.
+
+**Still owed for F17:** the *"explicit path for legitimate test improvement"* its resolution asks
+for. A rewritten test currently loses its credit until it is observed failing again, which is
+correct and is also the whole cost of improving a test.
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation

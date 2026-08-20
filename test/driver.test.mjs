@@ -42,7 +42,7 @@ import {
   redeemNestingTicket,
 } from '../scripts/nesting.mjs';
 import { appendSupplyRecord } from '../scripts/role-supply.mjs';
-import { changedDefinitions } from '../scripts/ratchet.mjs';
+import { changedDefinitions, definitionDigest } from '../scripts/ratchet.mjs';
 import { READ_LIMITS } from '../scripts/bounded-read.mjs';
 import { MUTATION_CONFIG_CONTENTS } from '../scripts/toolchains/node.mjs';
 import { pinSecurityElement, quarantinePin, readPins, writePins } from '../scripts/pins.mjs';
@@ -6600,14 +6600,17 @@ describe('red-evidence', () => {
     recordRedEvidence(stateDir, [id], [], root);
     const recorded = loadRedEvidence(stateDir);
 
-    assert.equal(typeof recorded.definitions['test/a.test.js'], 'string');
-    assert.deepStrictEqual([...changedDefinitions([id], root, recorded.definitions)], [], 'fresh evidence read as stale');
+    // Stamped under the **id**, not the file it lives in (REVIEW F17, reopened). See the sibling
+    // case below for what the file-keyed version let through.
+    assert.equal(typeof recorded.definitions[id], 'string');
+    assert.equal(recorded.definitions['test/a.test.js'], undefined);
+    assert.deepStrictEqual([...changedDefinitions([id], root, recorded.definitions, { keyedBy: 'id' })], [], 'fresh evidence read as stale');
 
     // The substitution the finding is about: same id, same name, weaker assertions.
     writeFileSync(testFile, "it('works', () => expect(true).toBe(true));\n", 'utf8');
 
     assert.deepStrictEqual(
-      [...changedDefinitions([id], root, loadRedEvidence(stateDir).definitions)],
+      [...changedDefinitions([id], root, loadRedEvidence(stateDir).definitions, { keyedBy: 'id' })],
       [id],
       'evidence recorded under the old bytes still vouched for the new ones',
     );
@@ -6633,12 +6636,61 @@ describe('red-evidence', () => {
 
     const after = loadRedEvidence(stateDir);
     assert.deepStrictEqual(
-      [...changedDefinitions(['test/a.test.js::a'], root, after.definitions)],
+      [...changedDefinitions(['test/a.test.js::a'], root, after.definitions, { keyedBy: 'id' })],
       ['test/a.test.js::a'],
       'an unrelated observation refreshed a rewritten test\u2019s evidence',
     );
     // And the id that really was observed is fresh, or the rule would withhold everything forever.
-    assert.deepStrictEqual([...changedDefinitions(['test/b.test.js::b'], root, after.definitions)], []);
+    assert.deepStrictEqual([...changedDefinitions(['test/b.test.js::b'], root, after.definitions, { keyedBy: 'id' })], []);
+  });
+
+  it('does not let one id\u2019s observation vouch for a sibling in the same file (REVIEW F17)', () => {
+    // **The exact reproduction the finding gives, and the case it says is missing:** the existing
+    // tests use the same id or different files, so neither exercises two ids sharing one file.
+    //
+    // A and B live in one file. B is seen failing under the old bytes. The file is rewritten to
+    // weaken B. Only A fails under the new bytes — and under file-keyed evidence, recording A
+    // refreshed the digest standing behind B's stale observation. B was then credited having never
+    // failed under the definition that ships, with `stale=[]` reported.
+    const root = makeTempDir();
+    const stateDir = path.join(root, '.meeseeks');
+    mkdirSync(path.join(root, 'test'), { recursive: true });
+    const shared = path.join(root, 'test', 'shared.test.js');
+    const a = 'test/shared.test.js::a';
+    const b = 'test/shared.test.js::b';
+
+    writeFileSync(shared, "it('a', () => expect(x).toBe(1));\nit('b', () => expect(y).toBe(2));\n", 'utf8');
+    recordRedEvidence(stateDir, [b], [], root);
+
+    // The rewrite that weakens B, and an observation of A under the new bytes.
+    writeFileSync(shared, "it('a', () => expect(x).toBe(1));\nit('b', () => expect(true).toBe(true));\n", 'utf8');
+    recordRedEvidence(stateDir, [a], [], root);
+
+    const after = loadRedEvidence(stateDir);
+    assert.deepStrictEqual(
+      [...changedDefinitions([b], root, after.definitions, { keyedBy: 'id' })],
+      [b],
+      'a sibling\u2019s observation refreshed the digest standing behind stale evidence',
+    );
+    // And A, which really was observed under these bytes, is fresh — or the rule withholds
+    // everything in a shared file forever, which is a wall rather than a check.
+    assert.deepStrictEqual([...changedDefinitions([a], root, after.definitions, { keyedBy: 'id' })], []);
+  });
+
+  it('keeps the ratchet\u2019s own map keyed by file, because it answers a different question', () => {
+    // Not a copy of the rule above — the opposite. `state.definitions` asks "are the bytes this
+    // credit was banked against still on disk", which is a question about a *file*, and two ids in
+    // one file genuinely share the answer. Keying that by id would store the same digest twice and
+    // claim a distinction that does not exist.
+    const root = makeTempDir();
+    mkdirSync(path.join(root, 'test'), { recursive: true });
+    writeFileSync(path.join(root, 'test', 'shared.test.js'), "it('a', () => {});\nit('b', () => {});\n", 'utf8');
+    const digest = definitionDigest(root, 'test/shared.test.js');
+    assert.equal(typeof digest, 'string');
+
+    const byFile = { 'test/shared.test.js': /** @type {string} */ (digest) };
+    assert.deepStrictEqual([...changedDefinitions(['test/shared.test.js::a'], root, byFile)], []);
+    assert.deepStrictEqual([...changedDefinitions(['test/shared.test.js::b'], root, byFile)], []);
   });
 
   it('reads evidence written before digests existed as vouching for nothing', () => {
@@ -6661,7 +6713,7 @@ describe('red-evidence', () => {
 
     assert.deepStrictEqual(legacy.definitions, {});
     assert.deepStrictEqual(
-      [...changedDefinitions(['test/a.test.js::works'], root, legacy.definitions)],
+      [...changedDefinitions(['test/a.test.js::works'], root, legacy.definitions, { keyedBy: 'id' })],
       ['test/a.test.js::works'],
     );
   });
