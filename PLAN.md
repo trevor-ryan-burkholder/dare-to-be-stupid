@@ -1660,6 +1660,53 @@ this session. And the unwritable-index case first clamped `.git/worktrees` in th
 where the snapshot succeeded anyway: the index is written inside the **resolved** git directory. A
 mutation that changes nothing is not a proof, whichever direction it points.
 
+### 134. The clean-clone acceptance traversal — **DONE (0.257.0)** (REVIEW F22, PLAN items 76/126)
+
+F22's first acceptance bullet is a sentence about a **person**: *"a clean-clone auditor can start from
+one `SHIPPED` receipt and resolve every required deterministic and independent-review edge to a
+matching exact-tree artifact."* Items 125 and 126 put every edge in the record. Nothing walked them.
+
+**`PLAN.md` disagreed with itself, and the disagreement was the state of the finding.** Item 126
+called the traversal *"a separate harness"* still to be built; item 76 called the same remainder
+*"not a build task ... an acceptance judgement"*. This repository's own precedent settles it: F20
+made a claim of exactly this shape and was closed by a tier-2 clean-clone **test**, not by assertion
+— because a receipt whose edges nobody has ever resolved is indistinguishable from one whose edges do
+not resolve.
+
+`scripts/audit.mjs` resolves six edges from an archived run plus a fresh clone and nothing else: the
+receipt through its own verifier, the reviewed tree against `git rev-parse <commit>^{tree}`, the
+specification against the PRD in the clone *and* against the archived record, the panel digest
+against the archived `review.json`, the ratchet count against the archived outcome, and every
+invocation's `supplyDigest` against an archived manifest — **including orphans**, since a recorded
+supply belonging to no recorded invocation is the same ledger hole read from the other side.
+`tools/acceptance-audit.mjs` and `npm run audit-receipt` make it a command Codex can run rather
+than a claim.
+
+**Two edges are `digest-only`, and naming them is the honest part.** `detailDigest` digests gate
+output that is never persisted; `gates[].reports` digests report bytes `run-manifest.mjs`
+deliberately excludes from the archive. There is nothing to resolve them *to*. They are reported as a
+stated boundary rather than skipped — a traversal claiming complete coverage of a record it walked
+only part of is the shape §4 refuses — and they do not make the result fail, because nothing is wrong.
+
+**A real finding in the fixture, and it is about git rather than about this code.** The amended-commit
+case passed against a traversal that should have failed it: `git clone` of a *local path* hardlinks
+the whole object directory, so an amended-away commit is still resolvable. `--no-local` forces the
+transport, which transfers only what is reachable — and is what an auditor cloning a published
+repository actually gets.
+
+**Validation:** lint and typecheck clean, `npm test` **3409 of 3409** and
+`npm run test:integration` **306 of 306**, both exit 0. Nine red proofs: a
+substituted tree, a rewritten specification, a tampered specification *record* (which needed its own
+case — every rewrite case was also caught by the second of two checks, so removing the first left the
+suite green), an edited panel record, a changed passing count, an unresolvable supply manifest, an
+ignored orphan, unresolved edges not failing the result (12 failures), and a digest-only edge reported
+as resolved.
+
+**Still owed, and it is a separate local slice:** archiving the *sealed attempt's* report bytes would
+turn `gates[].reports` from digest-only into resolvable. `run-manifest.mjs` excludes them on the
+reasoning that they are captured at an arbitrary moment, which the attempt seal no longer makes true.
+Closure of F22 is Codex-owned.
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
