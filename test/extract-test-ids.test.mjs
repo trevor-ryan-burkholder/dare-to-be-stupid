@@ -381,6 +381,16 @@ describe('detectRunner', () => {
     // `typeof [] === 'object'`, so an array reaches the reporters unless it is rejected here.
     assert.equal(detectRunner([]), null);
     assert.equal(detectRunner([{ numTotalTests: 0, testResults: [] }]), null);
+
+    // **The case the guard actually exists for.** Both lines above fail every detector on their
+    // own merits — an empty array has no `testResults`, and an array *containing* a report is not
+    // one — so the `Array.isArray` rejection could be deleted and they would still pass. An array
+    // may carry the very fields a detector reads, which is legal and is what a malformed or
+    // hostile report looks like.
+    const wearingAReport = /** @type {any} */ ([]);
+    wearingAReport.testResults = [];
+    wearingAReport.numTotalTests = 0;
+    assert.equal(detectRunner(wearingAReport), null, 'an array wearing a report was accepted as one');
   });
 });
 

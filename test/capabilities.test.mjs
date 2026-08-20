@@ -265,11 +265,19 @@ describe('hasFrontend', () => {
   }
 
   it('ignores frontend files inside node_modules', () => {
-    assert.equal(hasFrontend(makeProject({ 'node_modules/react/index.js': 'x\n', 'src/a.ts': 'x\n' })), false);
+    // **The extension has to be one the walker would otherwise accept**, or the directory rule is
+    // never consulted. This used `index.js`, and `.js` is not in `FRONTEND_EXTENSIONS` — so the
+    // file was skipped for its name and `SKIP_DIRS` could be deleted without the test noticing.
+    assert.equal(hasFrontend(makeProject({ 'node_modules/react/Button.tsx': 'x\n', 'src/a.ts': 'x\n' })), false);
+    // The neighbour that makes it a *directory* rule rather than a blanket refusal: the same
+    // extension outside the skipped directory is a frontend.
+    assert.equal(hasFrontend(makeProject({ 'src/Button.tsx': 'x\n' })), true);
   });
 
   it('ignores a built bundle in dist', () => {
-    assert.equal(hasFrontend(makeProject({ 'dist/index.html': '<!doctype html>\n', 'src/a.ts': 'x\n' })), false);
+    // Same defect as the node_modules case: `.html` is not in `FRONTEND_EXTENSIONS` either, so the
+    // bundle was ignored for its extension and never reached the `dist` rule.
+    assert.equal(hasFrontend(makeProject({ 'dist/App.tsx': 'x\n', 'src/a.ts': 'x\n' })), false);
   });
 });
 
@@ -542,9 +550,21 @@ describe('the capability manifest on disk', () => {
   });
 
   it('leaves no temporary file behind, because the write is atomic', () => {
+    // **A plain `writeFileSync` to the final path satisfies "no temp file left" exactly as well**,
+    // so the original assertion could not tell an atomic write from a non-atomic one. What
+    // distinguishes them is that a temporary is *used*: seed a stale one, the way a crashed earlier
+    // write would leave it, and require the atomic path to overwrite and consume it.
     const meeseeksDir = path.join(makeProject(), '.meeseeks');
+    mkdirSync(meeseeksDir, { recursive: true });
+    writeFileSync(path.join(meeseeksDir, `${CAPABILITY_MANIFEST}.tmp`), 'half a manifest from a killed run', 'utf8');
+
     writeCapabilityManifest(meeseeksDir, resolveCapabilities({ root: makeProject(), declared: ['cli'] }));
     assert.deepEqual(readdirSync(meeseeksDir), [CAPABILITY_MANIFEST]);
+    // And the survivor is the real manifest rather than the stale bytes renamed into place.
+    assert.deepEqual(
+      JSON.parse(readFileSync(path.join(meeseeksDir, CAPABILITY_MANIFEST), 'utf8')).capabilities,
+      ['cli'],
+    );
   });
 
   /** @type {[string | null, string][]} */

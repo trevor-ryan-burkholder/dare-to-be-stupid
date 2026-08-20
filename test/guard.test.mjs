@@ -1347,7 +1347,13 @@ describe('allowed: nested-meeseeks neighbours', () => {
     ['printf "%s\\n" "usage: /meeseeks <path>"', 'the slash command inside usage text'],
     ['echo "I meeseeks you"', 'the word meeseeks in prose'],
     ['npm test -- test/meeseeks.test.mjs', 'a test file named after the plugin'],
-    ['ls /daredevil', 'a path that merely starts with /meeseeks'],
+    // **The path has to be the command**, not an argument to one. `first` is `segment[0].value` —
+    // the thing being invoked — so in `ls /meeseeks-data` it is `ls`, and the rule never sees the
+    // path at all. The original case used `/daredevil`, which shares no substring with the command
+    // and reached the rule with nothing to compare; replacing it with an argument reached the rule
+    // with the wrong token. Both passed for the same reason: neither exercised
+    // `first === '/meeseeks'`, and turning that exact match into `startsWith` killed neither.
+    ['/meeseeks-data/run.sh --once', 'a command path that merely starts with /meeseeks'],
     ['claude -p "summarize the meeseeks design"', 'a claude child that is not a meeseeks run'],
     ['git log --grep=meeseeks', 'searching history for the word'],
     ['cat docs/meeseeks-notes.md', 'a document named after the plugin'],
@@ -1910,7 +1916,11 @@ describe('allowed: guard neighbours', () => {
     ["echo 'x' > src/hooks/guard.mjs", "an application's own file that happens to share the name"],
     ["echo 'x' > docs/guard.md", 'documentation about the guard'],
     ["echo 'x' > hooks/other.mjs", 'a different file in the hooks directory'],
-    ['cat hooks/guard.mjs', 'reading the guard through the shell'],
+    // Resolved against the **real** cwd, the way the deny cases in this file already are. The
+    // fixture's cwd is `/home/user/app`, so a relative path here named a file that is not the
+    // guard at all — the allow came from the protected-path check never matching, and the read
+    // carve-out this case is named for never ran.
+    [`cat ${path.resolve('hooks/guard.mjs')}`, 'reading the guard through the shell'],
   ];
   for (const [command, label] of allowed) {
     it(`allows ${label}: ${command}`, () => {

@@ -185,8 +185,12 @@ describe('resolveCitation against a real repository', () => {
   });
 
   it('refuses when the reviewed root itself cannot be resolved, rather than passing', () => {
+    // **The reason has to be asserted**, or a refusal for any other cause satisfies this — the
+    // cited file being absent, say, which is a different rule and would leave the root check
+    // untested.
     const resolution = resolveCitation(path.join(os.tmpdir(), 'meeseeks-evidence-no-such-root'), 'src/app.ts:1');
     assert.equal(resolution.ok, false);
+    assert.match(String(resolution.reason ?? ''), /root/i);
   });
 });
 

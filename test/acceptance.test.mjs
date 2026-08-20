@@ -76,8 +76,15 @@ describe('buildAcceptanceReceipt', () => {
   it('binds one claim to one subject, and separates inputs from results', () => {
     const receipt = buildAcceptanceReceipt(complete());
 
-    assert.equal(receipt.version, ACCEPTANCE_VERSION);
-    assert.equal(receipt.claim, ACCEPTANCE_CLAIM);
+    // **Literals, not the constants the builder wrote.** `receipt.version === ACCEPTANCE_VERSION`
+    // compares the output to its own source and holds for any value either could take. These two
+    // fields are a wire contract — something in another process reads them to decide whether it
+    // understands the file — so changing them has to be a deliberate act that updates this line.
+    assert.equal(receipt.version, 2);
+    assert.equal(receipt.claim, 'meeseeks.acceptance/v2');
+    // And the exported constants agree with the wire, or a reader importing them is misled.
+    assert.equal(ACCEPTANCE_VERSION, 2);
+    assert.equal(ACCEPTANCE_CLAIM, 'meeseeks.acceptance/v2');
     assert.deepStrictEqual(receipt.subject, { tree: 'sha256:tree', commit: 'abc123def456' });
     // What the run was held to, apart from what it achieved — the distinction a reader needs to
     // tell "these were the rules" from "this is what happened".
@@ -107,7 +114,17 @@ describe('buildAcceptanceReceipt', () => {
   });
 
   it('refuses a receipt with no subject, because a claim with no subject is an opinion', () => {
-    assert.throws(() => buildAcceptanceReceipt(complete({ subject: { tree: '', commit: null } })), AcceptanceError);
+    // **A non-SHIPPED terminal, or the subject rule is never reached.** The fixture was `SHIPPED`,
+    // and the SHIPPED branch demands a commit in its own right — so this refused for that reason
+    // and the subject rule could have been deleted without the case noticing.
+    const notShipped = complete({ results: { ...complete().results, terminal: 'STALLED' } });
+    assert.throws(
+      () => buildAcceptanceReceipt({ ...notShipped, subject: { tree: '', commit: null } }),
+      (error) => error instanceof AcceptanceError && /subject/.test(error.message),
+    );
+    // The neighbour: the same non-SHIPPED receipt with a subject is accepted, so the refusal is
+    // about the subject rather than about the terminal state.
+    assert.equal(typeof buildAcceptanceReceipt(notShipped).claim, 'string');
   });
 
   it('refuses a placeholder identity, which looks like evidence at a glance', () => {

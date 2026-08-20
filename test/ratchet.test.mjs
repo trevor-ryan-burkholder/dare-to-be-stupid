@@ -460,9 +460,19 @@ describe('formatBlooperRecord', () => {
   });
 
   it('reads no clock of its own', () => {
-    const once = formatBlooperRecord({ iteration: 1, regressions: [], diffStat: '', at: 'fixed' });
-    const twice = formatBlooperRecord({ iteration: 1, regressions: [], diffStat: '', at: 'fixed' });
-    assert.deepStrictEqual(once, twice);
+    // **Two identical calls prove nothing here.** An implementation calling `Date.now()` would
+    // return the same string for both, because they land in the same second — the original case
+    // compared a function's output to itself. What proves the clock is untouched is that the
+    // *supplied* value is the one that comes out, and that it is not a value any clock would give.
+    const record = formatBlooperRecord({
+      iteration: 1,
+      regressions: [],
+      diffStat: '',
+      at: '1970-01-01T00:00:00.000Z',
+    });
+    assert.equal(record.at, '1970-01-01T00:00:00.000Z');
+    // And nothing else in the record is a timestamp, so a clock cannot have leaked in beside it.
+    assert.deepStrictEqual(Object.keys(record).sort(), ['at', 'diffStat', 'iteration', 'regressions']);
   });
 });
 

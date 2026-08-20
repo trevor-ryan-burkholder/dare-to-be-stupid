@@ -165,11 +165,17 @@ describe('verifySecurityPin', () => {
 
 describe('repinSecurityElement', () => {
   it('moves the pin to the new location and re-fingerprints it', () => {
-    const moved = repinSecurityElement(guardPin(), {
+    // **A different snippet, or the re-fingerprint half is untested.** The original passed the very
+    // snippet the pin already held, so old and new fingerprints were byte-identical and an
+    // implementation that carried the old one forward would have passed.
+    const REWRITTEN = `${GUARD}\n// moved and rewritten during the same iteration\n`;
+    const before = guardPin();
+    const moved = repinSecurityElement(before, {
       evidence: 'src/middleware/auth.ts:12',
-      snippet: GUARD,
+      snippet: REWRITTEN,
       iteration: 9,
     });
+    assert.notEqual(moved.fingerprint, before.fingerprint, 'the pin carried its old fingerprint forward');
     assert.equal(moved.id, 'DoD-2-security');
     assert.equal(moved.file, 'src/middleware/auth.ts');
     assert.equal(moved.line, 12);
@@ -432,9 +438,18 @@ describe('a pin that should never have existed', () => {
   it('keeps the record rather than deleting it', () => {
     // Protection that silently stops existing is indistinguishable from protection that was
     // never there. The entry is the only evidence the claim was made and withdrawn.
-    const store = { ...emptyPins(), security: [retractPin(pin(), 'never a control')] };
-    assert.equal(store.security.length, 1);
-    assert.equal(store.security[0].id, 'DoD-2-security');
+    // **The original asserted the literal it had just written.** `security: [retractPin(...)]` has
+    // one element because the array has one element, whatever `retractPin` returns — it could have
+    // returned `null` and the length assertion would still hold. What matters is that the pin
+    // survives *as a retracted record* rather than being dropped or blanked.
+    const retracted = retractPin(pin(), 'never a control');
+    assert.equal(retracted.id, 'DoD-2-security');
+    assert.equal(retracted.status, 'retracted');
+    assert.equal(retracted.reason, 'never a control');
+    // The evidence the claim was ever made survives the withdrawal, which is the whole point: a
+    // pin that vanished would be indistinguishable from protection that never existed.
+    assert.equal(retracted.file, pin().file);
+    assert.equal(retracted.line, pin().line);
   });
 
   it('refuses to retract without a reason', () => {

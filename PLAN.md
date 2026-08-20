@@ -1767,6 +1767,52 @@ journal not archived, no iteration settled, and each of the two phase windows un
 proof needed a **multi-iteration** run to be real — with one iteration started and none settled,
 "at least started minus one" is satisfied by settling nothing, and the mutation survived.
 
+### 136. Twelve tests that could not fail — **DONE (no version bump; tests only)**
+
+Phase 2 is *testing and code fixes*, and this is that. A mutation sweep over the eight suites
+guarding invariants — where a vacuous test is most expensive — confirmed **sixteen** tests that pass
+no matter what the code does. Twelve are repaired here; the four needing a source change follow.
+
+Every repair was then proved able to fail, which is the whole point: a test that could not fail,
+replaced by another that cannot, is worse than before because it now looks deliberate.
+
+The kinds, and they recur:
+
+- **A near miss that misses entirely.** `ls /daredevil` was labelled *"a path that merely starts
+  with /meeseeks"* and shares no substring with the command. Replaced — twice. The first replacement
+  was `ls /meeseeks-data`, still wrong: `first` is `segment[0].value`, the thing being *invoked*,
+  so in `ls /meeseeks-data` it is `ls` and the rule never sees the path. `/meeseeks-data/run.sh`
+  reaches it, and turning `first === '/meeseeks'` into `startsWith` now kills the case.
+- **A fixture that passes for the wrong reason.** Two capability cases named for `SKIP_DIRS` used
+  `index.js` and `index.html`, neither of which is in `FRONTEND_EXTENSIONS` — so the walker skipped
+  them by name and the directory rule was never consulted. A `.tsx` inside those directories is the
+  real case, paired with the same extension outside them.
+- **A value compared to itself.** `reads no clock of its own` called one function twice with
+  identical arguments; a `Date.now()` implementation returns the same string for both, because they
+  land in the same second. `binds one claim to one subject` asserted `receipt.version ===
+  ACCEPTANCE_VERSION`, the constant the builder had just written. Both now name literals.
+- **An assertion satisfied by the thing under test being absent.** `keeps the record` built
+  `security: [retractPin(...)]` and asserted the array had one element — true if `retractPin`
+  returned `null`. `does not mistake an array for a report` used arrays that fail every detector
+  anyway; the case the guard exists for is an array *carrying* `testResults` and `numTotalTests`,
+  which is legal and is what a malformed report looks like.
+- **A refusal that could have come from anywhere.** `refuses a receipt with no subject` used a
+  `SHIPPED` fixture, and the SHIPPED branch demands a commit in its own right. `refuses when the
+  reviewed root cannot be resolved` asserted only `ok === false`.
+- **A shell read judged against the wrong cwd.** `cat hooks/guard.mjs` resolved against the
+  fixture's `/home/user/app`, so the argument named a file that is not the guard; the allow came
+  from the protected-path check never matching, and the read carve-out never ran.
+- **A property no assertion distinguished.** `leaves no temporary file behind, because the write is
+  atomic` is satisfied by a plain non-atomic `writeFileSync`. It now seeds a stale temporary the
+  way a crashed write would and requires the atomic path to consume it.
+
+**Validation:** lint and typecheck clean, `npm test` **3426 of 3426** (exit 0). Twelve mutations,
+one per repair, each killing the case it belongs to and previously surviving it.
+
+**The confirming agents ran in isolated git worktrees**, because a mutation agent that shares the
+operator's tree commits a mutant. Verified afterwards: the working tree was untouched and no
+worktree was left behind.
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
