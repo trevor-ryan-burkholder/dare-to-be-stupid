@@ -5797,6 +5797,10 @@ describe('parseDriverArgs', () => {
   });
 
   it('keeps flags out of the input', () => {
+    // **This asserts a parsed field, and for `yes` that was all anyone ever asserted.** Nothing in
+    // `driver.mjs` read it, so the assertion passed whether or not the flag did anything — the
+    // shape the feature audit calls a test that cannot fail. The behaviour is held below, at the
+    // door, where a value being *acted on* is what is checked.
     assert.deepStrictEqual(parseDriverArgs(['--yes', 'an', 'idea', '--confirm-prd']), {
       input: 'an idea',
       yes: true,

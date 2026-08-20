@@ -2516,6 +2516,61 @@ The rule immediately flagged the repair's own explanatory comment, so it strips 
 rule that cannot tell an example from an instance would forbid describing the bug.
 
 
+### 150. The acknowledgement was parsed and never read — **DONE (0.270.0)** (feature audit, 20 Aug 2026)
+
+**The defect.** `parseDriverArgs` produced `yes` from `--yes`, and **no line in `driver.mjs` ever read
+it**. `main(['PRD.md'])` with no flag reached the design and builder phases and spawned children with
+`--dangerously-skip-permissions`. A test asserted `parseDriverArgs(['--yes', ...])` returns
+`yes: true` — an assertion about a parsed field, which passes whether or not anything acts on it.
+
+**Two layers of nothing.** `preflight`'s `checkDangerAcknowledged` was the only enforcement, and item
+**149** found `init.mjs` exiting 0 silently on any path containing a space — so on those hosts the
+sole check did not run *and* this one did not exist. The thing that actually spawns permission-
+bypassing children has to answer for itself, which is the same conclusion item 142 reached about the
+sandbox: preflight is a statement made once, elsewhere.
+
+**The repair.** The driver refuses without `--yes`, before any child is paid for, and says why. The
+nested driver already passes the flag explicitly (`components.mjs`), because nobody is watching a
+component's prompts either — so nothing in the product changes behaviour. Every driver `main` call in
+the suite already supplied it too; the flag had simply never been load-bearing.
+
+**Evidence.** A case in `test/components.test.mjs` drives `main([])` with a recording spawner and
+asserts exit 1, **zero children**, and a message naming the flag. Red proof: disabling the refusal
+fails it. The parse-level assertion is kept, with a comment recording that it is a statement about a
+field and not about behaviour.
+
+### 151. Thirty features measured against evidence, not against their status lines — **RECORDED (20 Aug 2026)**
+
+**Why this exists.** The operator asked how many features work. `PLAN.md` self-reports 118 of 145
+items `DONE` or `IMPLEMENTED`, and this session had already proved that number untrustworthy in both
+directions three times: components were `CODE COMPLETE` and broken (items 145–147), the sealed binary
+was documented and dead (item 139), and item **80** claimed unbuilt work that shipped fifty-eight
+versions earlier.
+
+**Method.** Features were enumerated from `DESIGN.md` — the source of truth for what the product
+*offers* — rather than from `PLAN.md`. Each was judged on two questions: is it **reached in the run
+path**, and is it **tested in the configuration it actually runs in**. Every verdict of *working* was
+then attacked by an independent agent instructed to refute it. **Five were overturned.**
+
+**Result: 4 working, 11 broken, 15 incomplete, 0 unverifiable.**
+
+Working: the design-artifact phase and its declared-output allowlist; the guard hook; the
+agent-config security scan; the run lock with nesting tickets and the ancestry register.
+
+**The recurring shape, and it is one shape.** A feature is unit-tested in the configuration where the
+hard part disappears. Components were tested at a repository root and only ever run in a
+subdirectory, so two path spellings that differ only when nested were written as equal — 2008 tests
+that were not wrong but *unable* to be wrong. `init.mjs` was tested by nothing at all. `--yes` was
+asserted as a parsed field nothing read.
+
+**This is a queue, not a verdict.** Items 149 and 150 are its first two repairs. The remaining
+findings are worked in the ordinary way: confirm the reproduction first — an agent's finding is a
+claim — then repair, then a test that would have caught it.
+
+**Not treated as an external review.** `REVIEW.md` is Codex-owned and untouched; this is a
+development measurement recorded where development work is recorded.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation

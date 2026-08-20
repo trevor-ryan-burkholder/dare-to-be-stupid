@@ -349,6 +349,36 @@ describe('components without --give-them-the-box refuse at start', () => {
     MEESEEKS_STYLE: 'plain',
   });
 
+  it('refuses to start at all without --yes, before any child is paid for', async () => {
+    // **The acknowledgement, held at the door rather than in a parsed field.** `parseDriverArgs`
+    // produced `yes` and nothing in `driver.mjs` read it, so a test asserting the field passed
+    // whether or not the flag did anything — and `main(['PRD.md'])` with no flag reached the design
+    // and builder phases. `preflight`'s `checkDangerAcknowledged` was the only enforcement, and the
+    // feature audit found `init.mjs` exiting 0 silently on any path with a space, so on those hosts
+    // there was no enforcement anywhere.
+    const root = dirWithComponents([{ name: 'parser', dir: 'packages/parser', spec: 'PRD.md' }]);
+    /** @type {string[]} */
+    const logs = [];
+    let spawned = 0;
+    const code = await main([], {
+      cwd: root,
+      env: cleanEnv(),
+      log: (line) => logs.push(line),
+      spawn: async () => {
+        spawned += 1;
+        return { ok: true, text: '', costUsd: 0, tokens: 0, raw: '{}' };
+      },
+    });
+
+    assert.equal(code, 1, logs.join('\n'));
+    assert.equal(spawned, 0, 'a child was spawned by a run nobody acknowledged');
+    assert.equal(
+      logs.some((line) => line.includes('--yes')),
+      true,
+      logs.join('\n'),
+    );
+  });
+
   it('refuses before any child is spawned, naming the flag', async () => {
     const root = dirWithComponents([{ name: 'parser', dir: 'packages/parser', spec: 'PRD.md' }]);
     /** @type {string[]} */

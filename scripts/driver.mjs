@@ -7986,7 +7986,7 @@ async function runInvocation(argv, io, crash) {
   //
   // An operator who set their own `deadlineMs` keeps it. Otherwise thirty minutes, a number
   // chosen to be embarrassing to hit rather than derived from anything.
-  /** @type {{ input: string, confirmPrd: boolean, improve: boolean, deadlineMinutes: number | null }} */
+  /** @type {{ input: string, yes: boolean, confirmPrd: boolean, improve: boolean, deadlineMinutes: number | null }} */
   let args;
   try {
     args = parseDriverArgs(argv);
@@ -7995,6 +7995,30 @@ async function runInvocation(argv, io, crash) {
     return 1;
   }
   const { input, confirmPrd, improve } = args;
+
+  // **The acknowledgement has to be checked here too, and until 0.270.0 it was checked nowhere that
+  // ran.** `parseDriverArgs` produced `yes` and no line in this file ever read it; a test asserted
+  // the field's value, which passes whether or not anything acts on it. Driving `main(['PRD.md'])`
+  // with no flag reached the design and builder phases.
+  //
+  // `preflight`'s `checkDangerAcknowledged` was the only enforcement, and the feature audit found
+  // `init.mjs` silently exiting 0 on any path containing a space — so on those hosts the sole check
+  // did not run and this one did not exist. That is two layers of nothing, and it is the same shape
+  // as the sandbox: preflight is a statement made once, elsewhere, and the thing that actually
+  // spawns `--dangerously-skip-permissions` children must answer for itself.
+  //
+  // The nested driver passes `--yes` explicitly (`components.mjs`), because nobody is watching a
+  // component's prompts either.
+  if (!args.yes) {
+    write(
+      verbatim(
+        'refusing to start without --yes. This run spawns children with --dangerously-skip-permissions ' +
+          'and nobody is watching them, so the acknowledgement is typed rather than configured. ' +
+          '`/meeseeks` supplies it; a direct `node scripts/driver.mjs` invocation must too.',
+      ),
+    );
+    return 1;
+  }
 
   // Components are nested runs, and the permission to nest is typed, never configured
   // (PLAN item 24). The config says *what* the components are; only `--give-them-the-box` on
