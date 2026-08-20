@@ -2403,7 +2403,60 @@ reviews the result; and the measured outcome gives a credible improvement in acc
 without a new false-completion path. A failed or inconclusive probe rejects adoption without
 affecting the existing Claude-native path.
 
-### 55. Exact evidence provenance before any explicit graph — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: PARKED (conditional)
+### 55. Exact evidence provenance before any explicit graph — **REJECTED by its own admission test (19 Aug 2026), with evidence**
+
+The item's Done-when offers two outcomes: *"either the admission test rejects the feature with
+recorded evidence, or the minimal metadata ships"*. The admission test was run. **It rejects.**
+
+**The trace already exists.** It is assembled across five driver-owned artifacts rather than held in
+one graph, and every edge the item asks for is present:
+
+| the item asks for | where it already is |
+|---|---|
+| requirement id → why satisfied | `review.json`: the panel entry, with `evidence: file:line` |
+| artifact path plus digest | `pins.json`: the requirement pin fingerprints the whole evidenced file |
+| gate/test provenance | `acceptance.json`: per-gate `commandDigest`, `attempt`, `reports` (item 126) |
+| observed tree identity | `acceptance.json` `subject`, sealed to the candidate tree (F14) |
+| upstream assumption ids | `assumptions.json`: **`cites` is the PRD id** — `{"cites": "PRD-2.4", ...}` |
+| reviewer provenance | `review.json` plus `supply.json`, the role-supply receipt (item 77) |
+
+The last row is the one that decided it. The item was written believing the requirement→assumption
+edge was missing; it is not. `templates/builder-system.md` requires every assumption to cite the PRD
+id it rests under, and `assumptions.mjs` refuses one that cites nothing. The edge has existed since
+the citation bar did.
+
+**Against the five admission conditions:**
+
+- **(a) explain why a requirement is satisfied** — yes, from the table above.
+- **(b) invalidate all and only descendants** — yes for the case that matters. A requirement pin
+  fingerprints its evidenced file, so changing that file invalidates *that* requirement and nothing
+  else. That is targeted invalidation; it is simply keyed by file rather than by a graph edge.
+- **(c) preserve unrelated verified progress** — yes. Pins are per-requirement and the ratchet is
+  per-test-id; neither is wholesale.
+- **(d) survive restart** — yes, all of it is on disk, and item 58's journal now covers the one thing
+  that was not.
+- **(e) make terminal-state checking more deterministic** — already done by the acceptance receipt,
+  which is the artifact item 76 exists for.
+
+**The one real difference, and why it is not waste.** A mid-run `PRD.md` edit refuses the whole run
+(`verifySpecification`) rather than invalidating only the edited requirement's descendants. A
+provenance graph would let the run continue against the untouched requirements. **That would be
+worse.** A run is started against a revision and judged against it; letting it carry on while the
+specification moves underneath is precisely the drift F12 exists to refuse. The wholesale refusal is
+a deliberate design decision, not the absence of one, so it cannot be the "waste, stale evidence, or
+unsafe completion decision" the item required a real run to demonstrate.
+
+**Verdict: keep the current ratchet/pin/fingerprint model**, exactly as the item's own fallback
+clause says. Building the graph would add a second, richer representation of edges that already
+exist — the failure mode this repository has now paid for twice in a day, most recently in item 58,
+where four of seven proposed event types were already answerable and recording them again would have
+created two authorities that can disagree.
+
+**What would reopen this:** a real run in which a requirement's evidence is invalidated and the
+existing model cannot say which *other* requirements depended on it — that is, a genuine transitive
+dependency between requirements, which nothing in the current model represents. None has been
+observed. Item 106 and item 34 do not need it; if item 49's artifact job-types produce claims that
+depend on other claims, this reopens with that evidence and not before.
 
 **Problem it would solve:** after an assumption, requirement, or implementation artifact changes,
 the current tree can identify many stale pins by fingerprint but cannot always answer a complete
