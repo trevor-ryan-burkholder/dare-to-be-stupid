@@ -1232,7 +1232,7 @@ R28 remains useful non-normative research if a future implementation introduces 
 At that point the package must name its exact base/tree and mark every truncation in-band. No runtime
 change is justified today.
 
-### 42. Design-slop gate drives impeccable's real `--json` interface (R29) — **IN PROGRESS (Slice A 0.152.0, Slice B1 0.228.0; B2 remains)**
+### 42. Design-slop gate drives impeccable's real `--json` interface (R29) — **IN PROGRESS (Slice A 0.152.0, Slice B1 0.228.0 with its installed residual discharged 0.267.0; B2 remains)**
 Read impeccable's machine-parseable finding stream (advisory/primary partition, `file://` targets,
 `--viewport`) instead of exit codes only; findings become reviewer evidence. Committed `--json`
 fixtures. Surface: the design-slop gate in `scripts/gate-policy.mjs`/`scripts/toolchains`.
@@ -1277,10 +1277,34 @@ deliberately rather than bundled: both need a real browser and a built artifact,
 is a live web run, and a slice that needs a second commit to be correct was too big. B1 changes no
 behaviour that depends on either.
 
-**Residual on B1:** the installed invocation. That `impeccable detect --json` emits this array and
-exits 2 is another binary's contract; impeccable is not a dependency of this repository, so per
-§11.1 it is owed one installed check rather than more assertions here. Cheapest discharge is the
-next live web-ui run, alongside item 128's Playwright residual.
+**Residual on B1 — discharged 20 Aug 2026 at 0.267.0, and it did not need a web run.** The gate's
+**exact** pinned command was executed: `npx impeccable@3.6.0 detect --json index.html`, the pin in
+`scripts/plugins.mjs`, against a deliberately sloppy static page. It emitted a JSON array and exited
+**2** — the contract `designSlopEvidence` requires the stream to agree with, asserted from fixtures
+until now and observed from the pinned CLI here. The capture is committed as
+`test/fixtures/impeccable/slop-findings-3.6.0-quality.json`, and the `file://` half of the residual
+still needs a browser and stays with Slice B2.
+
+**Two things the real capture taught, neither of which a hand-written fixture would have.**
+
+- **The description is per-rule boilerplate; the snippet is the finding.** Every `low-contrast` entry
+  carries the same WCAG sentence, so twenty-five of them render as twenty-five identical lines. The
+  snippet is what says *what* failed — `Primary font: inter`, `Purple/violet accent colors detected`,
+  `3.3:1 (need 4.5:1) — text #000000 on #764ba2` — and it was being dropped. It is now rendered,
+  bounded at 120 characters with visible truncation, for the same reason the finding list is bounded:
+  the text comes from another program and its length is not this repository's to assume.
+- **impeccable emits duplicates.** The capture contains a *byte-identical* `low-contrast` pair, so
+  the count says four and three are distinct. Kept rather than trimmed, in the fixture and in the
+  rendering: de-duplicating another tool's output would be this repository deciding which of its
+  findings were real, and the count the gate reports has to be the count the tool produced. Recorded
+  so a reader meeting two identical evidence lines does not go looking for what the renderer lost.
+
+The capture also carries a `quality`-category rule where every earlier fixture is `slop`, which
+pins that `category` is not the primary/advisory discriminator — `advisory` is, and its absence
+reads as primary, which is the fail-closed direction.
+
+**Validation:** lint, typecheck, `npm test` **3455 of 3455**, release-check ok at 0.267.0. Two red
+proofs: dropping the snippet fails two cases, removing its bound fails one.
 
 **Slice B original scope:** rewire the design-slop gate from `npx impeccable detect src/` (exit-code only,
 `scripts/plugins.mjs:68`) to `detect --json <target>` + `parseImpeccableFindings`, surface primary findings as

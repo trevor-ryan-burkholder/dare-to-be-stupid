@@ -136,8 +136,35 @@ const SLOP_FAIL_STATUS = 2;
 function renderFinding(finding) {
   const where = finding.line > 0 ? `${finding.file}:${finding.line}` : finding.file;
   const what = finding.description === '' ? finding.name : finding.description;
-  return `  - ${finding.antipattern} at ${where}${what === '' ? '' : `: ${what}`}`;
+  // **The snippet, bounded, because the description alone does not say what failed.** impeccable's
+  // `description` is per-rule boilerplate — every `low-contrast` finding carries the same WCAG
+  // sentence — while the snippet carries the specific observation: `Primary font: inter`,
+  // `Purple/violet accent colors detected`, `3.3:1 (need 4.5:1) — text #000000 on #764ba2`. A
+  // builder handed twenty-five identical sentences cannot tell which colour pair or which face to
+  // change. Measured against the pinned 3.6.0 CLI rather than reasoned about.
+  //
+  // **It does not make every line unique, and that is impeccable's doing rather than this
+  // renderer's.** The same capture contains two *byte-identical* `low-contrast` entries, so the
+  // count says four and two of them are the same finding twice. Recorded here so a reader meeting
+  // duplicate evidence lines does not go looking for what the rendering dropped: nothing was
+  // dropped, and de-duplicating another tool's output would be this file deciding which of its
+  // findings were real.
+  //
+  // Bounded for the same reason the finding list is: this text comes from another program and its
+  // length is not this repository's to assume.
+  const snippet = typeof finding.snippet === 'string' ? finding.snippet.trim() : '';
+  const detail = snippet === '' ? '' : ` [${snippet.slice(0, SLOP_SNIPPET_LIMIT)}${snippet.length > SLOP_SNIPPET_LIMIT ? '…' : ''}]`;
+  return `  - ${finding.antipattern} at ${where}${what === '' ? '' : `: ${what}`}${detail}`;
 }
+
+/**
+ * How much of one finding's snippet is reproduced.
+ *
+ * Long enough to carry a colour pair, a contrast ratio or a font declaration — the things that
+ * distinguish two findings of the same rule — and short enough that twenty-five of them do not
+ * bury the list they are annotating.
+ */
+export const SLOP_SNIPPET_LIMIT = 120;
 
 /**
  * @param {string} heading

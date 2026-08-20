@@ -16,6 +16,7 @@ import {
   parseImpeccableFindings,
   SLOP_OUTPUT_LIMIT,
   SLOP_RENDER_LIMIT,
+  SLOP_SNIPPET_LIMIT,
   SlopError,
 } from '../scripts/design-slop.mjs';
 
@@ -173,6 +174,7 @@ describe('the parser holds against the version the gate actually resolves', () =
   // 3.6.0 — there is no 4.0.4 there at all. A parser proved only against 4.0.4 was proved against
   // a version no run will ever execute. This capture is the real published CLI's output.
   const FIXTURE_360 = readFileSync(new URL('./fixtures/impeccable/slop-findings-3.6.0.json', import.meta.url), 'utf8');
+  const FIXTURE_QUALITY = readFileSync(new URL('./fixtures/impeccable/slop-findings-3.6.0-quality.json', import.meta.url), 'utf8');
 
   it('partitions 3.6.0 output on the same rule, with advisory omitted rather than false', () => {
     // The version difference that matters: 3.6.0 omits `advisory` entirely on a primary finding
@@ -183,6 +185,46 @@ describe('the parser holds against the version the gate actually resolves', () =
     assert.deepEqual(advisory.map((f) => f.antipattern), ['em-dash-overuse']);
     // Still severity "warning" on the advisory one, so severity is still not the discriminator.
     assert.equal(advisory[0].severity, 'warning');
+  });
+
+  it('carries the snippet, because every finding of one rule shares its description', () => {
+    // Captured from the gate's **exact** pinned command — `npx impeccable@3.6.0 detect --json` —
+    // against a deliberately sloppy page (PLAN item 42, Slice B1 residual). impeccable's
+    // `description` is per-rule boilerplate; the snippet is the only part that says *what* failed.
+    const { detail } = designSlopEvidence({ stdout: FIXTURE_QUALITY, status: 2 });
+    assert.match(detail, /\[Primary font: inter\]/);
+    assert.match(detail, /\[Purple\/violet accent colors detected\]/);
+    assert.match(detail, /\[3\.3:1 \(need 4\.5:1\) — text #000000 on #764ba2\]/);
+  });
+
+  it('bounds a snippet rather than reproducing whatever another program emitted', () => {
+    const long = JSON.stringify([{ antipattern: 'x', name: 'X', description: 'd', severity: 'warning', category: 'slop', file: 'a.html', line: 0, snippet: 'S'.repeat(400) }]);
+    const { detail } = designSlopEvidence({ stdout: long, status: 2 });
+    assert.equal(detail.includes('S'.repeat(SLOP_SNIPPET_LIMIT)), true, detail);
+    assert.equal(detail.includes('S'.repeat(SLOP_SNIPPET_LIMIT + 1)), false, 'the snippet was not bounded');
+    // Truncation is visible, for the same reason the finding list says when it stops at 25.
+    assert.match(detail, /…\]/);
+  });
+
+  it('keeps a finding impeccable reported twice, rather than deciding which one was real', () => {
+    // The capture contains a **byte-identical** `low-contrast` pair. De-duplicating another tool's
+    // output would be this repository choosing which of its findings counted, and the count the
+    // gate reports has to be the count the tool produced.
+    const { primary } = parseImpeccableFindings(FIXTURE_QUALITY);
+    assert.equal(primary.length, 4);
+    assert.deepEqual(
+      primary.map((finding) => finding.antipattern),
+      ['low-contrast', 'low-contrast', 'overused-font', 'ai-color-palette'],
+    );
+  });
+
+  it('treats a quality-category finding as primary, since category is not the discriminator', () => {
+    // Every earlier fixture is category `slop`. `low-contrast` is `quality`, and it still fails the
+    // gate — `advisory` decides, and on this capture it is absent on all four, which the strict
+    // `=== true` test reads as primary. That is the fail-closed direction.
+    const { primary, advisory } = parseImpeccableFindings(FIXTURE_QUALITY);
+    assert.equal(advisory.length, 0);
+    assert.equal(primary.some((finding) => finding.category === 'quality'), true);
   });
 
   it('renders a 3.6.0 run into the same gate verdict shape', () => {

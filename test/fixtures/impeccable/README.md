@@ -83,3 +83,21 @@ Measured, not assumed:
   the partition rule survive the version change: strict `=== true`, and never severity.
 - npm's own `npm warn` lines go to **stderr**, so stdout is clean JSON. A gate reading the merged
   streams would have failed to parse on any machine with a stray `.npmrc` key.
+
+## `slop-findings-3.6.0-quality.json` — the pinned CLI's own installed invocation
+
+Captured 20 August 2026 by running the gate's **exact** command — `npx impeccable@3.6.0 detect
+--json index.html`, the pin in `scripts/plugins.mjs` — against a deliberately sloppy static page.
+It exited **2**, which is the contract `designSlopEvidence` requires the stream to agree with, and
+that agreement had been asserted from fixtures rather than observed from the pinned CLI until here
+(PLAN item 42, Slice B1 residual).
+
+Two things it carries that the other captures do not:
+
+- a `quality`-category rule (`low-contrast`), where the earlier fixtures are all `slop`, and
+- a **byte-identical duplicate** — impeccable reported the same `low-contrast` finding twice, so the
+  count is four and three are distinct. Kept rather than trimmed: a fixture edited to look tidier is
+  no longer a record of what the tool does.
+
+The only edit is `file`, rewritten from the capture directory's absolute path to `index.html`.
+Stated here rather than done silently.
