@@ -1,6 +1,6 @@
 # START HERE — current handoff, last swept 19 August 2026
 
-**State:** working-tree candidate `0.265.0` on `main`; the manifests and the package-lock root
+**State:** working-tree candidate `0.266.0` on `main`; the manifests and the package-lock root
 metadata agree, and `npm run release-check` is the check that says so.
 
 **This paragraph names no commit, and that is a rule the gate now enforces** (`REVIEW.md` F40). It
@@ -54,6 +54,13 @@ current, and these do not stay current for one commit. The candidate's own numbe
   ceiling on a child measured at 170.7s and 178.7s, which only ever fired beside a concurrent
   fan-out. A tier that is never run is not evidence, and neither of those was a product defect —
   which is the point. Deferring the tier is what kept them invisible.
+- **What the sandbox actually enforces, measured 20 Aug 2026 on 2.1.235 with bubblewrap and socat
+  installed.** `filesystem.denyRead` and `network.deniedDomains` are enforced. `network.allowedDomains`
+  is **not a boundary** — a host absent from it is still reachable — and `allowManagedDomainsOnly` has
+  no effect from a `--settings` file, so **an egress allowlist is unavailable to this plugin**. And
+  `failIfUnavailable` checks that the dependencies *exist*, not that the sandbox *started*: on this
+  kernel `unshare(CLONE_NEWUSER)` fails and a child reported disabling the sandbox to get its result.
+  The run therefore *observes* confinement with a canary probe before trusting it (item 144).
 - **The declared sandbox enforced nothing, measured 20 Aug 2026 on 2.1.235.** `{"enabled": true}`
   — what this product shipped — let a child read a synthetic credential file outside its workspace,
   reach the network, and list `~/.ssh`, results identical to declaring no sandbox at all, because

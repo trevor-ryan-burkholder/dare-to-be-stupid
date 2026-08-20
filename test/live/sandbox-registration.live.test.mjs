@@ -27,9 +27,27 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { describe, it } from 'node:test';
 
-import { claudeArgs, spawnClaude } from '../../scripts/driver.mjs';
+import { claudeArgs, proveSandboxConfines, spawnClaude } from '../../scripts/driver.mjs';
 
 const ARMED = process.env.MEESEEKS_LIVE === '1';
+
+/**
+ * Can this host actually start a sandbox? Both tools, because the CLI needs both.
+ *
+ * @returns {boolean}
+ */
+function capableHost() {
+  // `socat --version` exits 1; it wants `-V`. Probing both with the same flag reported a capable
+  // host as incapable, which is how this was found.
+  return Object.entries({ bwrap: '--version', socat: '-V' }).every(([tool, flag]) => {
+    try {
+      execFileSync(tool, [flag], { stdio: 'pipe' });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
 
 /** Generous: a live round trip includes model latency nobody here controls. */
 const LIVE_TIMEOUT = 180_000;
@@ -74,6 +92,25 @@ describe('the sandbox declaration reaches a real child', { skip: ARMED ? false :
     assert.equal('sandbox' in blob, false);
   });
 
+  it('observes the sandbox confining a real child, rather than trusting that it registered', { timeout: LIVE_TIMEOUT }, async () => {
+    // **The only step that distinguishes registration from enforcement** (PLAN item 84). Measured on
+    // 2.1.235: `failIfUnavailable` checks that bubblewrap and socat *exist*, not that the sandbox
+    // *started*, and on a kernel refusing `unshare(CLONE_NEWUSER)` the dependencies are present, the
+    // settings are honoured, and commands run unsandboxed anyway.
+    //
+    // Two files, one directory denied, one real child asked to read both. The allowed file is the
+    // control: without it a child that declined to try would be indistinguishable from a kernel that
+    // refused, and the probe would certify containment nobody tested.
+    const verdict = await proveSandboxConfines(process.env);
+
+    if (!capableHost()) {
+      // No sandbox to observe. The probe must not report success, and the run refuses upstream.
+      assert.equal(verdict.ok, false, 'a host with no sandbox reported that one confined a child');
+      return;
+    }
+    assert.equal(verdict.ok, true, verdict.reason ?? '');
+  });
+
   it('either sandboxes a real child or refuses to start one, depending on the host', { timeout: LIVE_TIMEOUT }, async () => {
     // **This case used to assert only that the child answered, and it passed for the wrong reason**
     // (PLAN item 84). Print mode silently ignores settings that fail validation, so the original
@@ -84,15 +121,6 @@ describe('the sandbox declaration reaches a real child', { skip: ARMED ? false :
     //
     // `failIfUnavailable` makes the two outcomes distinguishable, so the case now asserts whichever
     // one this host is entitled to. Both are guarantees; only one of them was ever checked.
-    const capable = ['bwrap', 'socat'].every((tool) => {
-      try {
-        execFileSync(tool, ['--version'], { stdio: 'pipe' });
-        return true;
-      } catch {
-        return false;
-      }
-    });
-
     const result = await spawnClaude({
       prompt: 'Reply with exactly the word: pineapple. No punctuation, no explanation.',
       model: CHEAP_MODEL,
@@ -102,7 +130,7 @@ describe('the sandbox declaration reaches a real child', { skip: ARMED ? false :
       env: process.env,
     });
 
-    if (capable) {
+    if (capableHost()) {
       assert.equal(result.ok, true, `a sandboxed child failed to start on a host that can sandbox: ${result.raw.slice(0, 800)}`);
       assert.equal(result.text.toLowerCase().includes('pineapple'), true, result.text);
       assert.equal(

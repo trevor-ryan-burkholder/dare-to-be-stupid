@@ -379,8 +379,11 @@ which is the missing evidence and the only thing that changed.
 
 **Authentication is proved at the run boundary, once.** `claude --version` establishes availability
 and the measured version policy and succeeds for an unsigned-in installation, so the run makes one
-small `-p` call of its own immediately after sealing, under the sealed controls, before the lock is
-taken. It **proves the capability rather than classifying the failure**: success is the positive
+small `-p` call of its own immediately after sealing, under the sealed controls, beside launch
+revalidation and before any child. It runs **after** the run lock, not before it: `releasing` owns
+the lock and a refusal at this point releases it cleanly, where a pre-lock refusal would need a
+second exit path. A run refusing here has therefore taken the lock and archived the previous run's
+artifacts first, which is the same cost every launch-revalidation refusal has always had. It **proves the capability rather than classifying the failure**: success is the positive
 conjunction of a zero exit, a parseable envelope and a result, and anything else refuses and prints
 what the binary actually said. Nothing matches on "not logged in", because that text belongs to
 another program and would rot silently the moment it changed.
@@ -543,8 +546,8 @@ identical to a working one from inside the test suite, which is why the run now 
 after launch revalidation and hands the seal to `runChild` — the same door that supplies the context
 budget, the timeout and the environment boundary, and for the same reason.
 
-A binary whose invocation closure cannot be bounded refuses **there**, before the lock is taken and
-before anything is written. A run that supplies its own spawner is not sealed at all, because an
+A binary whose invocation closure cannot be bounded refuses **there**, beside launch revalidation
+and before any child runs. A run that supplies its own spawner is not sealed at all, because an
 injected spawner replaces the binary: there is nothing on disk that run will execute, and
 fingerprinting the host's real `claude` would measure a file no child is ever launched from.
 
@@ -3106,6 +3109,40 @@ recorded as declared, never as enforced.
 
 Preflight and the CLI now both refuse, which is not redundancy: preflight is a guess about
 dependencies made from outside the CLI, and `failIfUnavailable` is the CLI answering for itself.
+
+**Neither of them establishes that the sandbox works, so the run observes it (PLAN item 84, measured
+20 August 2026 on 2.1.235 with both dependencies installed).** `failIfUnavailable` checks that
+bubblewrap and socat *exist*. On a kernel that refuses `unshare(CLONE_NEWUSER)` they exist, the
+settings are honoured, and commands run unsandboxed anyway — a child observed itself doing exactly
+that and reported it: *"the sandboxed run failed first with `apply-seccomp: unshare(CLONE_NEWUSER):
+Invalid argument`; I disabled the sandbox to get this real result."* That is R19's recorded failure
+mode reproduced, and no settings key closes it, because nothing was misconfigured.
+
+So a run that asked for a sandbox writes two canary files, denies reading one of them, and asks one
+real child to read both (`scripts/containment.mjs`). Reading the denied file means the sandbox is not
+confining this run and the run refuses. **The allowed file is the control and it is what makes this
+evidence**: without it, a child that simply declined to try is indistinguishable from a kernel that
+refused, and the run would certify containment nobody tested. Neither file coming back is
+inconclusive, and inconclusive refuses.
+
+The three boundary probes — version, authentication, containment — run through `shell` rather than
+`execFileSync`, so their ceilings escalate to `SIGKILL` and sweep the process group (§11.1, REVIEW
+F2/F33). A probe whose purpose is to fail fast must not be the one call that can hang a run. Their
+token and dollar spend is added to the run's pre-loop total **whether or not the answer was usable**,
+because spend counted only on success understates a receipt by exactly its failures.
+
+**What the platform actually enforces, measured rather than assumed.**
+
+| control | result |
+| --- | --- |
+| `sandbox.filesystem.denyRead` | **enforced** — the path reads as *No such file or directory*, so existence is masked rather than disclosed |
+| `sandbox.network.deniedDomains` | **enforced** — a denied host fails to connect |
+| `sandbox.network.allowedDomains` | **not a boundary** — a host absent from the list is still reachable, twice measured |
+| `sandbox.network.allowManagedDomainsOnly` | **no effect from a `--settings` file** — it is honoured only from managed settings, so an exclusive egress allowlist is unavailable to this plugin |
+
+An egress *allowlist* is therefore something this design cannot offer, and saying otherwise would be
+the exact failure this section exists to prevent. A denylist is enforceable and is not a containment
+boundary: you cannot enumerate the internet.
 
 **Why the check has to be at preflight and cannot be later.** `claude --help` states that in `-p`
 mode *settings files that fail validation are silently ignored*. A sandbox declaration the CLI

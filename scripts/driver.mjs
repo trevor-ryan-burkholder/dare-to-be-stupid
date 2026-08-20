@@ -65,6 +65,7 @@ import { claimsGate } from './claims.mjs';
 import { ancestorPids, depthFromAncestry, reconcileDepth } from './ancestry.mjs';
 import { SealError, sealTarget, sealedControls, verifySeal } from './claude-seal.mjs';
 import { parseClaudeVersion, versionText } from './claude-compat.mjs';
+import { canarySentinels, containmentVerdict } from './containment.mjs';
 import { deregisterRun, depthLookup, readRegistry, registerRun } from './run-registry.mjs';
 import { blankComments, integrityGate } from './integrity.mjs';
 import {
@@ -7070,21 +7071,30 @@ export function realSealIo(env = process.env) {
  * measuring the version *before* the update and sealing the bytes *after* it.
  *
  * @param {Record<string, string | undefined>} env
- * @returns {{ ok: true, version: string } | { ok: false, reason: string }}
+ * @param {string} [cwd] where the probe runs; `shell` requires one and it is never written to
+ * @returns {Promise<{ ok: true, version: string } | { ok: false, reason: string }>}
  */
-export function measureClaudeVersion(env) {
-  /** @type {string} */
-  let stdout;
-  try {
-    stdout = execFileSync('claude', ['--version'], {
-      encoding: 'utf8',
-      env: { ...env, ...sealedControls() },
-      timeout: SEAL_VERSION_TIMEOUT_MS,
-      stdio: 'pipe',
-    });
-  } catch (error) {
-    return { ok: false, reason: `claude --version could not be run: ${error instanceof Error ? error.message : error}` };
+export async function measureClaudeVersion(env, cwd = process.cwd()) {
+  // **Through `shell`, not `execFileSync`.** A `timeout` on `execFileSync` sends one `SIGTERM` and then
+  // waits forever for a child that ignores it, and sweeps no descendants — the pre-F2/F33 shape
+  // this repository already replaced everywhere else. A boundary probe whose whole job is to fail
+  // fast must not be the one call that can hang the run before it starts.
+  const result = await shell('claude', ['--version'], {
+    cwd,
+    env: { ...env, ...sealedControls() },
+    input: '',
+    timeoutMs: SEAL_VERSION_TIMEOUT_MS,
+  });
+  if (!result.ok) {
+    const said = `${result.stdout}${result.stderr}`.trim();
+    return {
+      ok: false,
+      reason: result.timedOut
+        ? `claude --version did not answer within ${Math.round(SEAL_VERSION_TIMEOUT_MS / 1000)}s`
+        : `claude --version could not be run: ${said === '' ? 'no output' : said.slice(0, 400)}`,
+    };
   }
+  const stdout = result.stdout;
   const version = parseClaudeVersion(stdout);
   // Refused rather than recorded verbatim. A seal whose version field holds a wrapper's banner
   // would compare equal to itself forever and report that as evidence.
@@ -7103,6 +7113,85 @@ const AUTH_PROBE_PROMPT = 'Reply with exactly one word: ready';
 
 /** Long enough for a cold start on a slow link, short enough that a wedged run still fails fast. */
 const AUTH_PROBE_TIMEOUT_MS = 90_000;
+
+/** Authentication is account-level, not model-level, so the probe buys it as cheaply as possible. */
+const AUTH_PROBE_MODEL = 'claude-haiku-4-5-20251001';
+
+/**
+ * Prove the declared sandbox actually confines this run, rather than that its settings parsed.
+ *
+ * Measured 20 August 2026 on 2.1.235: `failIfUnavailable` checks that bubblewrap and socat
+ * **exist**, not that the sandbox **started**. On a kernel that refuses `unshare(CLONE_NEWUSER)`
+ * the dependencies are present, the settings are honoured, and commands run unsandboxed anyway. A
+ * child observed itself doing it and said so. No settings key closes that, because nothing was
+ * misconfigured — so the run observes instead of declaring.
+ *
+ * Two files, one directory denied, one child asked to read both. The allowed file is the control
+ * and it is the reason this is evidence: without it, a child that simply declined to try would be
+ * indistinguishable from a kernel that refused, and the run would certify containment nobody tested.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @returns {Promise<{ ok: boolean, spend: { tokens: number, costUsd: number }, reason?: string }>}
+ */
+export async function proveSandboxConfines(env) {
+  const sentinels = canarySentinels();
+  const deniedDir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-denied-'));
+  const workspace = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-contain-'));
+  const deniedFile = path.join(deniedDir, 'denied.txt');
+  const allowedFile = path.join(workspace, 'allowed.txt');
+  try {
+    writeFileSync(deniedFile, sentinels.denied, 'utf8');
+    writeFileSync(allowedFile, sentinels.allowed, 'utf8');
+
+    // The real blob a builder receives, with one directory denied on top of it. Built from
+    // `childSettings` rather than assembled here, so the probe measures the sandbox this driver
+    // actually ships and not a second declaration that could drift from it.
+    const blob = JSON.parse(childSettings(true));
+    blob.sandbox.filesystem = { denyRead: [deniedDir] };
+    const settingsFile = path.join(workspace, 'probe-settings.json');
+    writeFileSync(settingsFile, JSON.stringify(blob), 'utf8');
+
+    const result = await shell(
+      'claude',
+      ['-p', containmentPrompt(deniedFile, allowedFile), '--output-format', 'json', '--settings', settingsFile,
+        '--dangerously-skip-permissions', '--model', CONTAINMENT_PROBE_MODEL],
+      { cwd: workspace, env: { ...env, ...sealedControls() }, input: '', timeoutMs: CONTAINMENT_PROBE_TIMEOUT_MS },
+    );
+    if (!result.ok) {
+      const said = `${result.stdout}${result.stderr}`.trim();
+      return {
+        ok: false,
+        spend: { tokens: 0, costUsd: 0 },
+        reason: result.timedOut
+          ? `the containment probe child did not answer within ${Math.round(CONTAINMENT_PROBE_TIMEOUT_MS / 1000)}s`
+          : `the containment probe child could not run: ${said === '' ? 'no output' : said.slice(0, 400)}`,
+      };
+    }
+    const parsed = parseClaudeEnvelope(result.stdout);
+    return { ...containmentVerdict(parsed, sentinels), spend: { tokens: parsed.tokens, costUsd: parsed.costUsd } };
+  } finally {
+    // Both trees, on every path. The denied one holds a sentinel, and a sentinel left on disk is
+    // litter that a later probe could read without any sandbox being involved.
+    rmSync(deniedDir, { recursive: true, force: true });
+    rmSync(workspace, { recursive: true, force: true });
+  }
+}
+
+/** @param {string} deniedFile @param {string} allowedFile @returns {string} */
+function containmentPrompt(deniedFile, allowedFile) {
+  return (
+    'Run both of these shell commands with the Bash tool and report their raw output verbatim, ' +
+    'including any error. Do not disable, bypass, or work around any sandbox, and do not use any ' +
+    'other tool to read these files.\n\n' +
+    `cat ${JSON.stringify(allowedFile)}\ncat ${JSON.stringify(deniedFile)}\n`
+  );
+}
+
+/** Cheapest model that still runs a Bash tool call; this probe is about the kernel, not the model. */
+const CONTAINMENT_PROBE_MODEL = 'claude-haiku-4-5-20251001';
+
+/** A probe that has not answered in two minutes tells us nothing and must not hold up a refusal. */
+const CONTAINMENT_PROBE_TIMEOUT_MS = 120_000;
 
 /**
  * Prove the sealed target can actually complete a non-interactive call.
@@ -7124,30 +7213,42 @@ const AUTH_PROBE_TIMEOUT_MS = 90_000;
  * resolves; the seal is what guarantees the two are the same file.
  *
  * @param {Record<string, string | undefined>} env
- * @returns {{ ok: true } | { ok: false, reason: string }}
+ * @param {string} [cwd] where the probe runs; `shell` requires one and it is never written to
+ * @returns {Promise<{ ok: boolean, spend: { tokens: number, costUsd: number }, reason?: string }>}
  */
-export function proveClaudeAuth(env) {
-  /** @type {string} */
-  let stdout;
-  try {
-    stdout = execFileSync('claude', ['-p', AUTH_PROBE_PROMPT, '--output-format', 'json'], {
-      encoding: 'utf8',
-      env: { ...env, ...sealedControls() },
-      timeout: AUTH_PROBE_TIMEOUT_MS,
-      // Closed, not inherited. `-p` is non-interactive by contract, but how an unauthenticated
-      // binary behaves is exactly what this repository does not own, and a probe that could sit
-      // forever on a prompt would replace a fast refusal with a hung run.
-      input: '',
-      stdio: 'pipe',
-    });
-  } catch (error) {
-    const failure = /** @type {{ stdout?: string, stderr?: string, message: string }} */ (error);
-    const said = `${failure.stdout ?? ''}${failure.stderr ?? ''}`.trim();
-    return { ok: false, reason: said === '' ? failure.message : said.slice(0, 400) };
+export async function proveClaudeAuth(env, cwd = process.cwd()) {
+  // Bounded by `shell` for the reason given on {@link measureClaudeVersion}: an `execFileSync`
+  // timeout is a `SIGTERM` and a hope. Stdin is closed because `-p` is non-interactive by
+  // contract, but how an *unauthenticated* binary behaves is precisely what this repository does
+  // not own.
+  // **On the cheapest model, because this is about the transport.** Measured: the probe on the
+  // default model spent 50,815 tokens and $0.377 answering "ready" — a system prompt's worth of
+  // context to establish something account-level. Authentication is not model-specific, and a
+  // boundary check that costs a third of a dollar per run is a check operators would want removed.
+  const result = await shell('claude', ['-p', AUTH_PROBE_PROMPT, '--output-format', 'json', '--model', AUTH_PROBE_MODEL], {
+    cwd,
+    env: { ...env, ...sealedControls() },
+    input: '',
+    timeoutMs: AUTH_PROBE_TIMEOUT_MS,
+  });
+  if (!result.ok) {
+    const said = `${result.stdout}${result.stderr}`.trim();
+    return {
+      ok: false,
+      spend: { tokens: 0, costUsd: 0 },
+      reason: result.timedOut
+        ? `claude did not answer a trivial prompt within ${Math.round(AUTH_PROBE_TIMEOUT_MS / 1000)}s`
+        : said === ''
+          ? 'claude exited without output'
+          : said.slice(0, 400),
+    };
   }
-  const parsed = parseClaudeEnvelope(stdout);
-  if (!parsed.ok) return { ok: false, reason: `the reply was not a usable envelope: ${stdout.trim().slice(0, 400)}` };
-  return { ok: true };
+  const parsed = parseClaudeEnvelope(result.stdout);
+  // **Charged even when the answer is unusable**, because the call was still made. Spend that is
+  // only counted on the happy path is spend the receipt understates.
+  const spend = { tokens: parsed.tokens, costUsd: parsed.costUsd };
+  if (!parsed.ok) return { ok: false, spend, reason: `the reply was not a usable envelope: ${result.stdout.trim().slice(0, 400)}` };
+  return { ok: true, spend };
 }
 
 /**
@@ -7613,10 +7714,10 @@ async function runInvocation(argv, io, crash) {
    * An unmeasurable target yields a string no seal can equal, which makes it a refusal with its
    * cause attached rather than a check that quietly passed.
    *
-   * @returns {string}
+   * @returns {Promise<string>}
    */
-  const sealVersionNow = () => {
-    const measured = measureClaudeVersion(env);
+  const sealVersionNow = async () => {
+    const measured = await measureClaudeVersion(env, cwd);
     return measured.ok ? measured.version : `unmeasurable (${measured.reason})`;
   };
   const heartbeatMs = io.heartbeatMs ?? HEARTBEAT_MS;
@@ -7735,7 +7836,7 @@ async function runInvocation(argv, io, crash) {
       // The same one door again, and the reason is now literal rather than cautionary: the seal
       // spent eleven versions being checked by a function no caller ever handed one to. Supplied
       // here, every child in the loop carries it, including a phase added next year.
-      ...(seal === null ? {} : { seal, sealVersion: sealVersionNow(), sealIo }),
+      ...(seal === null ? {} : { seal, sealVersion: await sealVersionNow(), sealIo }),
         ...allowance,
       });
     } finally {
@@ -8145,11 +8246,19 @@ async function runInvocation(argv, io, crash) {
   // production path is proved where it can only be proved — a tier-2 fixture with a real executable
   // on a real PATH.
   //
-  // A binary that cannot be sealed refuses **here**, before the lock is taken and before anything
-  // is written, because an unbounded invocation closure is the one condition the compatibility
-  // policy will not approximate.
+  // A binary that cannot be sealed refuses **here**, beside launch revalidation and before any
+  // child, because an unbounded invocation closure is the one condition the compatibility policy
+  // will not approximate.
+  //
+  // **After the run lock, not before it, and that is stated because an earlier draft claimed the
+  // opposite.** `releasing` owns the lock and does not exist until it is held, so a refusal here
+  // releases cleanly, while a refusal before acquisition would have to invent a second exit path.
+  // This is the same boundary `revalidateLaunch` already refuses at. The consequence, recorded
+  // rather than glossed: a run that refuses at these probes has taken the lock and archived the
+  // previous run's artifacts first. Nothing is destroyed — the archive preserves them — but the
+  // refusal is not free, and calling it free was wrong.
   if (io.spawn === undefined) {
-    const measured = measureClaudeVersion(env);
+    const measured = await measureClaudeVersion(env, cwd);
     if (!measured.ok) {
       write(verbatim(`the run cannot seal its Claude binary: ${measured.reason}`));
       return releasing(1, { reason: 'the Claude version could not be measured at the run boundary', phase: 'launch' });
@@ -8166,7 +8275,12 @@ async function runInvocation(argv, io, crash) {
     // One small call, once, at the boundary — before a run that may not reach its first role for
     // minutes and may not stop for hours. It costs a few seconds, and it is the difference between
     // failing at hour zero and failing at the first child.
-    const auth = proveClaudeAuth(env);
+    // **Counted before it is judged.** A probe child spends real tokens whether or not its answer
+    // is usable, and `preLoop` is what the receipt and the outcome report as this run's spend. A
+    // call charged only when it succeeded is a receipt that understates by exactly the failures.
+    const auth = await proveClaudeAuth(env, cwd);
+    preLoop.tokens += auth.spend.tokens;
+    preLoop.costUsd += auth.spend.costUsd;
     if (!auth.ok) {
       write(verbatim(`claude could not complete a call: ${auth.reason}`));
       write(
@@ -8176,6 +8290,27 @@ async function runInvocation(argv, io, crash) {
         ),
       );
       return releasing(1, { reason: 'the Claude CLI could not complete a non-interactive call', phase: 'launch' });
+    }
+
+    // **And, when a sandbox was asked for, that it confines** (PLAN item 84). Preflight established
+    // that the host has bubblewrap and socat; that is a statement about packages. This is the only
+    // step that establishes the sandbox is doing anything, and it is here rather than in preflight
+    // because it costs a child and because the answer can differ between a check at `init` time and
+    // the kernel this run is actually on.
+    if (config.sandbox.enabled) {
+      const contained = await proveSandboxConfines(env);
+      preLoop.tokens += contained.spend?.tokens ?? 0;
+      preLoop.costUsd += contained.spend?.costUsd ?? 0;
+      if (!contained.ok) {
+        write(verbatim(`the sandbox this run asked for is not confining it: ${contained.reason}`));
+        write(
+          verbatim(
+            'A sandbox that can be declined is not a sandbox, so the run refuses rather than building ' +
+              'unsandboxed. Unset sandbox.enabled to run without one deliberately.',
+          ),
+        );
+        return releasing(1, { reason: 'the declared sandbox did not confine a probe child', phase: 'launch' });
+      }
     }
   }
 

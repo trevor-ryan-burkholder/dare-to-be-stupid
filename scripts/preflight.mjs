@@ -182,9 +182,11 @@ function resolvedClaudePath(probe) {
  * CLI would not honour disappears without a word — the guard's own eleven-version history, where
  * unit tests were green and the hook was reaching nobody, repeated with a different key.
  *
- * Only `bubblewrap` is probed, and only on Linux. macOS sandboxes with seatbelt, which is part
- * of the operating system and has nothing to install; Windows is not a supported host for this.
- * A missing probe answer is a failure, never a pass — an unknown sandbox is not a sandbox.
+ * **`bubblewrap` and `socat`** are probed, and only on Linux — the CLI names both when it refuses
+ * a required sandbox, and this said "only bubblewrap" for one version after it stopped being true.
+ * macOS sandboxes with seatbelt, which is part of the operating system and has nothing to install;
+ * Windows is not a supported host for this. A missing probe answer is a failure, never a pass — an
+ * unknown sandbox is not a sandbox.
  *
  * Skipped entirely when the operator has not armed it, because a host with no bubblewrap is a
  * perfectly ordinary host for a run that never asked to be sandboxed.
@@ -217,7 +219,11 @@ export function checkSandboxAvailable(probe, wanted, platform = process.platform
   //
   // Named individually in the failure, because "the sandbox is unavailable" sends an operator
   // looking at the wrong package.
-  const missing = ['bwrap', 'socat'].filter((tool) => !probe(tool, ['--version']).ok);
+  // **Each tool with the flag it actually accepts.** `socat --version` exits **1** — it wants `-V` —
+  // so probing both with `--version` reported socat missing on a host that has it and refused every
+  // sandboxed run. Measured, after the first draft of this check did exactly that.
+  const VERSION_FLAG = { bwrap: '--version', socat: '-V' };
+  const missing = Object.entries(VERSION_FLAG).filter(([tool, flag]) => !probe(tool, [flag]).ok).map(([tool]) => tool);
   return check(
     'sandbox',
     missing.length === 0,

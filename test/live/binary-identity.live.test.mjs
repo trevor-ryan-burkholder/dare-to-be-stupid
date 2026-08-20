@@ -67,7 +67,7 @@ describe('the binary under test', { skip: ARMED ? false : 'MEESEEKS_LIVE is not 
     assert.match(versionOf('claude'), /\d+\.\d+\.\d+/);
   });
 
-  it('completes a non-interactive call, which reporting a version does not establish', { timeout: 120_000 }, () => {
+  it('completes a non-interactive call, which reporting a version does not establish', { timeout: 120_000 }, async () => {
     // **The run boundary's authentication probe, against the real binary** (PLAN item 141). Its
     // whole contract — that a signed-in CLI exits zero and returns a parseable envelope for a
     // trivial `-p` prompt — is owned by another program, and §11.1 is explicit that such a thing
@@ -77,7 +77,7 @@ describe('the binary under test', { skip: ARMED ? false : 'MEESEEKS_LIVE is not 
     // It is also the case that would catch the probe becoming permanently wrong: if a future CLI
     // stopped emitting the envelope this reads, every run on earth would refuse at the boundary,
     // and the failure would arrive here first.
-    const verdict = proveClaudeAuth(process.env);
+    const verdict = await proveClaudeAuth(process.env);
     assert.equal(verdict.ok, true, JSON.stringify(verdict));
   });
 });

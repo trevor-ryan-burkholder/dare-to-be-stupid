@@ -1910,8 +1910,8 @@ its own words as *"correct code that nothing proved was ever called."*
 **The repair.** `runInvocation` seals immediately after launch revalidation and hands the seal to
 `runChild`, the one door that already supplies the context budget, the timeout and the environment
 boundary — for the identical reason, which is now literal rather than cautionary. A binary whose
-invocation closure cannot be bounded refuses there, before the lock is taken and before anything is
-written.
+invocation closure cannot be bounded refuses there, beside launch revalidation and before any child
+runs — after the run lock, which an earlier draft of this item claimed the opposite of.
 
 A run that supplies its own spawner is not sealed, and that is not a loophole: an injected spawner
 *replaces* the binary, so there is nothing on disk that run will execute and fingerprinting the
@@ -1999,7 +1999,8 @@ available moment to find out: the lock is taken, the state is scaffolded, and th
 already spent before the first child reports that it could never have authenticated at all.
 
 **The repair.** One `-p` call at the run boundary, immediately after sealing, under the sealed
-controls, before the lock. `proveClaudeAuth` **proves the capability and does not classify the
+controls, beside launch revalidation and before any child. `proveClaudeAuth` **proves the
+capability and does not classify the
 failure** — success is the positive conjunction of a zero exit, a parseable envelope and a result,
 and everything else refuses and prints what the binary actually said. Nothing matches on "not logged
 in" or any other message, because that text belongs to another program and would rot silently the
@@ -2146,6 +2147,102 @@ added to `driver.mjs` fails the declared-gap guard with the job named.
 **Still blocked on item 34:** everything downstream of these addenda — the sealed research brief,
 job selection, and the acquisition step — needs item 84's recorded containment outcome, whose
 remaining canaries need a host with bubblewrap and socat installed.
+
+
+### 144. The run observes its sandbox instead of trusting it — **DONE (0.266.0)** (PLAN item 84, second tranche)
+
+**Origin:** Phase 1, 20 Aug 2026, after the operator installed bubblewrap and socat, which made the
+measurement item 84 asks for possible for the first time.
+
+**What a working sandbox turned out to enforce.** Measured on 2.1.235, canaries under `$HOME` rather
+than `/tmp` — the first harness put its "outside" credential in the same tree as the workspace, which
+proved nothing and was a flaw in the harness, not evidence.
+
+| control | result |
+| --- | --- |
+| `sandbox.filesystem.denyRead` | **enforced**; the path reads as *No such file or directory*, masking existence rather than disclosing it |
+| `sandbox.network.deniedDomains` | **enforced**; connection fails, twice measured |
+| `sandbox.network.allowedDomains` | **not a boundary**; a host absent from the list is still reachable, twice measured |
+| `sandbox.network.allowManagedDomainsOnly` | **no effect** from a `--settings` file; managed settings only |
+| `sandbox` with nothing else | reads `$HOME` credentials and reaches the network freely |
+
+The setting names and nesting were read out of the CLI binary rather than guessed, the same way the
+`sandbox` key itself was: `sandbox.filesystem`, `sandbox.network.{allowedDomains,deniedDomains,
+allowAllUnixSockets,allowManagedDomainsOnly}`, `sandbox.credentials.{files,envVars,
+allowPlaintextInject}`, `sandbox.seccomp.bpfPath`.
+
+**An egress allowlist is not available to this plugin**, and item 84's instruction is to describe the
+narrower guarantee rather than call the child network-contained. A denylist is enforceable and is not
+a boundary: you cannot enumerate the internet.
+
+**The defect no settings key can close.** `failIfUnavailable` checks that bubblewrap and socat
+*exist*, not that the sandbox *started*. On this WSL2 kernel `unshare(CLONE_NEWUSER)` fails, and a
+child observed itself falling back: *"the sandboxed run failed first with `apply-seccomp:
+unshare(CLONE_NEWUSER): Invalid argument`; I disabled the sandbox to get this real result."* That is
+R19's recorded failure mode, reproduced, with the dependencies installed and the settings honoured.
+
+**The repair is an observation, because only an observation can answer it.** `scripts/containment.mjs`
+plus `proveSandboxConfines`: two canary files, one directory denied, one real child asked to read
+both, at the run boundary, only when a sandbox was asked for. Reading the denied file refuses the run.
+
+**The control is the load-bearing half.** A probe checking only the denied file would pass whenever
+the child declined to try — a model saying "I won't" is indistinguishable from a kernel saying "you
+may not", and the safer-looking answer is the wrong one. Requiring the *allowed* file back proves a
+read was attempted. Neither file is inconclusive, and inconclusive refuses. Sentinels are random per
+run, because a constant would live in this repository's source and a child that had merely seen it
+could satisfy the probe without reading anything.
+
+**A defect this shipped with two commits ago, found by its own live test.** `checkSandboxAvailable`
+probed both tools with `--version`; **`socat --version` exits 1** and wants `-V`, so a host with socat
+installed was reported as missing it and every sandboxed run would have refused. The unit fixtures
+answered `ok` for any argv and could not see it — a probe double that ignores its arguments cannot
+test the arguments. The fixture now models each tool's real flag and a case asserts the exact argv.
+
+**A false claim, found by an adversarial review of this session's own diff and corrected in six
+places.** The seal, auth and containment probes were described as running *"before the lock is
+taken"* in a code comment, twice in `DESIGN.md`, in three PLAN paragraphs and in a test title. They
+run **after** `acquireRunLock`, beside launch revalidation. Worse, the test asserted `lock.json` was
+absent and passed for the wrong reason: `releasing` deletes the lock on the way out, so the assertion
+discriminated *released* from *leaked*, never *never taken*, and would have stayed green with the
+probe moved anywhere. The placement is right — `releasing` owns the lock and does not exist before it
+— so the text was corrected to match the code, and the test now asserts the property it really has.
+
+**Validation:** lint, typecheck, `npm test` **3451 of 3451** (up 9), `npm run test:integration` 310 of
+310, `sandbox-registration` live **5 of 5** including the new observation case, release-check ok at
+0.266.0. Red proofs: removing the `denyRead` from the probe's own settings makes a real child read
+the denied sentinel and the verdict refuses; reverting `socat` to `--version` fails two preflight
+cases.
+
+**Four defects an adversarial review of this session's own diff found, all repaired in this slice.**
+A five-lens panel over `3cb4f84..HEAD` raised findings and refuted them adversarially; eleven
+survived, collapsing to four distinct defects. Two are recorded above (the false *before the lock*
+claim and its vacuous assertion). The other two are:
+
+- **The probes' timeouts were not bounds.** `execFileSync`'s `timeout` sends one `SIGTERM` and then
+  waits indefinitely for a child that ignores it, sweeping no descendants — the pre-F2/F33 shape
+  `shell` was built to replace everywhere else in this file. All three boundary probes now run
+  through `shell`, so the ceiling escalates to `SIGKILL` and sweeps the group. A probe whose whole
+  purpose is to fail fast must not be the one call that can hang a run before it starts.
+- **Probe children spent real money that no receipt recorded.** `parseClaudeEnvelope` returns
+  `costUsd` and `tokens` and both were discarded, so the authentication and containment children
+  bypassed the accounting every other child passes through. They now report their spend and the run
+  adds it to `preLoop`, **including when the answer was unusable** — spend counted only on the happy
+  path is a receipt that understates by exactly the failures.
+
+**And one thing the measurement itself said.** The authentication probe on the default model spent
+**50,815 tokens and $0.377** to have "ready" said back to it. Authentication is account-level, not
+model-level, so it now runs on haiku: **$0.051**, measured. A boundary check costing a third of a
+dollar per run is a check an operator would reasonably delete.
+
+**A fifth defect, in a test rather than the product.** The unbounded-launcher case asserted
+`childrenSpawned === 0`, and its fake never wrote `calls.log` at all — so the assertion was true
+because the file did not exist, and the case would have passed with the seal check deleted. The
+launcher now records every `-p` invocation. With the boundary block disabled, the suite went from
+2 failures to **4**.
+
+**Still open on item 84:** the credential `deny`/`mask` measurements (`sandbox.credentials.*`), the
+per-surface outbound inventory (WebFetch, MCP, plugins, Unix sockets), auto-mode eligibility, and the
+CPU/memory/process/disk posture. None is blocked now that the host can sandbox.
 
 
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
@@ -5140,7 +5237,7 @@ distinction between an executable and a launcher is exactly what the seal is abo
 
 **Still owed for closure (REVIEW F28):** the pinned live runs at every admitted compatibility
 boundary. The measured non-interactive authentication check landed at 0.263.0 (item 141): one `-p`
-call at the run boundary, under the sealed controls, before the lock, proving the capability rather
+call at the run boundary, under the sealed controls, before any child, proving the capability rather
 than classifying the failure.
 
 ### 84. Measure and admit fail-closed child containment — OPEN; **first tranche DONE (0.264.0, item 142)**: the declared sandbox was measured to enforce nothing and now refuses instead

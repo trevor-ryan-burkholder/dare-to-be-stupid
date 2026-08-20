@@ -77,7 +77,13 @@ function fakeClaude(shape = {}) {
     launcher,
     shape.bounded === false
       ? // No quoted `.js` anywhere, so `delegatedEntrypoint` returns null rather than guessing.
-        '#!/bin/sh\nexec node -e "process.stdout.write(String.raw`2.1.230 (Claude Code)` + String.fromCharCode(10))"\n'
+        //
+        // **It still records every `-p` invocation**, and that is not decoration. An adversarial
+        // review found that the earlier version never wrote `calls.log` at all, so the case's
+        // `childrenSpawned(calls) === 0` was true because the file did not exist rather than because
+        // no role ran — it would have passed with the seal check deleted. Now the launcher logs, so
+        // zero role calls is a measurement.
+        `#!/bin/sh\nfor a in "$@"; do [ "$a" = "--version" ] && { echo "2.1.230 (Claude Code)"; exit 0; }; done\nprintf 'p\\n' >> ${JSON.stringify(calls)}\necho '{"is_error":false,"result":"built","total_cost_usd":0,"usage":{"input_tokens":1,"output_tokens":1}}'\n`
       : `#!/bin/sh\nexec node ${JSON.stringify(impl)} "$@"\n`,
     'utf8',
   );
@@ -164,7 +170,7 @@ describe('a run seals the binary it spawns children from', () => {
     assert.equal(childrenSpawned(calls), 0, 'a child ran against a binary the run could not seal');
   });
 
-  it('refuses before the lock when the binary cannot complete a call', async () => {
+  it('refuses before any role runs when the binary cannot complete a call', async () => {
     // **The gap DESIGN.md §3.5 documented rather than closed.** `claude --version` succeeds against
     // an installation nobody has signed in to, so authentication used to surface at the first real
     // role — after the lock, after the state, and on an unattended run, after everybody had gone to
@@ -179,7 +185,18 @@ describe('a run seals the binary it spawns children from', () => {
     // than this repository's guess about which of several causes it was.
     assert.equal(logs.some((line) => line.includes('Invalid API key')), true, logs.join('\n'));
     assert.equal(childrenSpawned(calls), 0, 'a role ran against a binary that could not authenticate');
-    assert.equal(existsSync(path.join(root, '.meeseeks', 'lock.json')), false, 'the run took the lock before proving it could work');
+    // **This used to assert that `.meeseeks/lock.json` was absent, and it proved nothing.** The
+    // probe runs *after* the lock is acquired, and `releasing` deletes the lock on the way out, so
+    // an absent lock file discriminates only whether the run released what it took. It would have
+    // stayed green with the probe moved anywhere at all.
+    //
+    // What the probe actually guarantees is that no *role* ran, which the assertion above holds.
+    // The lock is checked for the property it really has: released, not leaked.
+    assert.equal(
+      existsSync(path.join(root, '.meeseeks', 'lock.json')),
+      false,
+      'the run refused and left its lock behind, so the next run would find a stale one',
+    );
   });
 
   it('runs children against a binary it could seal, so the refusal above is not a broken fake', async () => {

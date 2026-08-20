@@ -402,10 +402,13 @@ describe('checkSandboxAvailable', () => {
    *
    * @param {string[]} present @returns {import('../scripts/preflight.mjs').Probe}
    */
-  const host = (present) => (command) =>
-    present.includes(command)
-      ? { ok: true, status: 0, stdout: command === 'bwrap' ? 'bubblewrap 0.8.0' : 'socat 1.7.4', stderr: '' }
-      : { ok: false, status: 127, stdout: '', stderr: 'not found' };
+  const host = (present) => (command, args) => {
+    // Modelled on the real tools: each answers only the flag it accepts, so a check that asks the
+    // wrong one sees "missing" exactly as it would on a real host.
+    const flag = command === 'socat' ? '-V' : '--version';
+    if (!present.includes(command) || args[0] !== flag) return { ok: false, status: 127, stdout: '', stderr: 'not found' };
+    return { ok: true, status: 0, stdout: command === 'bwrap' ? 'bubblewrap 0.8.0' : 'socat 1.7.4', stderr: '' };
+  };
 
   it('passes and says nothing is in force when no sandbox was asked for', () => {
     // A host with no bubblewrap is a perfectly ordinary host for a run that never asked.
@@ -460,6 +463,38 @@ describe('checkSandboxAvailable', () => {
     const result = checkSandboxAvailable(host(['bwrap', 'socat']), true, 'linux');
     assert.equal(result.ok, true, result.detail);
     assert.equal(result.detail.includes('bubblewrap 0.8.0'), true, result.detail);
+  });
+
+  it('asks each tool for its version the way that tool accepts', () => {
+    // **The case that would have caught the defect this check shipped with.** The first draft
+    // probed both tools with `--version`; `socat --version` exits **1** and wants `-V`, so a host
+    // with socat installed was reported as missing it and every sandboxed run refused. The fixtures
+    // above answer `ok` for any argv, so none of them could see it — a probe double that ignores
+    // its arguments cannot test the arguments.
+    /** @type {string[][]} */
+    const asked = [];
+    /** @type {import('../scripts/preflight.mjs').Probe} */
+    const recording = (command, args) => {
+      asked.push([command, ...args]);
+      return { ok: true, status: 0, stdout: 'bubblewrap 0.8.0', stderr: '' };
+    };
+    checkSandboxAvailable(recording, true, 'linux');
+
+    assert.equal(
+      asked.some((call) => call[0] === 'socat' && call[1] === '-V'),
+      true,
+      `socat was never asked with -V: ${JSON.stringify(asked)}`,
+    );
+    assert.equal(
+      asked.some((call) => call[0] === 'socat' && call[1] === '--version'),
+      false,
+      `socat was asked with --version, which it answers by exiting 1: ${JSON.stringify(asked)}`,
+    );
+    assert.equal(
+      asked.some((call) => call[0] === 'bwrap' && call[1] === '--version'),
+      true,
+      `bwrap was never asked for its version: ${JSON.stringify(asked)}`,
+    );
   });
 
   it('accepts macOS without probing, because seatbelt ships with the operating system', () => {
