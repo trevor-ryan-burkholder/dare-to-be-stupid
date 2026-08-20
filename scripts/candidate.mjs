@@ -292,6 +292,51 @@ export async function workingTreeMatchesCandidate(options) {
 }
 
 /**
+ * Has the candidate itself changed since it was checked out?
+ *
+ * **The other half of {@link workingTreeMatchesCandidate}, and REVIEW F14's remaining one.** That
+ * function asks whether the *main* working tree still matches the reviewed bytes. This asks whether
+ * the **candidate** does — because the candidate is what the gates ran against and what the panel
+ * read, and `candidateDirFor` is a path a Builder descendant can reach.
+ *
+ * The Git tree object names what was checked out. It does not make that checkout immutable, and
+ * nothing short of an OS boundary can (item 84). What this does is convert an *undetectable*
+ * mutation into a detected one, which is the same standard F14 already accepts for the main tree:
+ * a divergence discards the verdict rather than being swept into the commit.
+ *
+ * Compared by re-staging the candidate into its own temporary index and writing a tree, exactly the
+ * way the snapshot was produced — so the two digests are comparable by construction rather than by
+ * two functions agreeing about what to hash.
+ *
+ * @param {{ dir: string, tree: string, run: Runner, timeoutMs?: number }} options
+ * @returns {Promise<{ ok: boolean, tree: string | null, detail: string }>}
+ */
+export async function candidateMatchesTree(options) {
+  const gitDir = await resolveGitDir({ cwd: options.dir, run: options.run });
+  if (gitDir === null) {
+    return { ok: false, tree: null, detail: 'the candidate could not be verified: no git directory' };
+  }
+  const snapshot = await writeSnapshotTree({
+    cwd: options.dir,
+    run: options.run,
+    gitDir,
+    timeoutMs: options.timeoutMs,
+  });
+  if (!snapshot.ok) return { ok: false, tree: null, detail: snapshot.detail };
+  if (snapshot.tree === options.tree) {
+    return { ok: true, tree: snapshot.tree, detail: 'the candidate is the tree it was checked out from' };
+  }
+  return {
+    ok: false,
+    tree: snapshot.tree,
+    detail:
+      `the candidate is now ${snapshot.tree} and was checked out as ${options.tree}. Something wrote to the ` +
+      'candidate while the gates or the panel were reading it, so the verdict describes bytes that are not the ' +
+      'ones that were judged. Discarding the verdict; nothing ships under a review of different bytes.',
+  };
+}
+
+/**
  * Remove the run's candidate worktree, on every path out.
  *
  * @param {{ cwd: string, run: Runner, dir: string, timeoutMs?: number }} options

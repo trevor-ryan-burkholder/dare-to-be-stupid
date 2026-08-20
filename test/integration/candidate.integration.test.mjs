@@ -14,13 +14,14 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import {
   candidateDirFor,
+  candidateMatchesTree,
   materializeCandidate,
   removeCandidate,
   resolveGitDir,
@@ -393,5 +394,93 @@ describe('removeCandidate and the sweep', () => {
     // runs in two repositories on one machine from colliding.
     assert.notEqual(candidateDirFor(1), candidateDirFor(2));
     assert.equal(path.basename(candidateDirFor(4242)), 'meeseeks-candidate-4242');
+  });
+});
+
+describe('candidateMatchesTree — the candidate is sealed too (REVIEW F14)', () => {
+  // `workingTreeMatchesCandidate` asks whether the *operator's* tree drifted while the panel read.
+  // The panel does not read that tree. It reads the candidate, at a path a Builder descendant can
+  // compute from the Driver's pid and reach with ordinary Bash — and nothing was asking whether the
+  // bytes that were judged were still the bytes that were judged.
+  //
+  // This cannot live at tier 1: what is under test is git's own account of a real checkout, and an
+  // injected runner would be asserting that this file's idea of a tree object matches itself.
+
+  it('verifies a candidate nobody has touched', async () => {
+    // The neighbour first, and it carries the weight: a check that reported drift unconditionally
+    // would satisfy every case below while making a ship impossible.
+    const root = repo();
+    const made = await materialize(root);
+    const ready = /** @type {any} */ (made);
+    assert.equal(made.ok, true, JSON.stringify(made));
+    const sealed = await candidateMatchesTree({ dir: ready.dir, tree: ready.tree, run: shell });
+    assert.equal(sealed.ok, true, sealed.detail);
+    assert.equal(sealed.tree, made.tree);
+  });
+
+  it('detects a tracked file rewritten inside the candidate', async () => {
+    const root = repo();
+    const made = await materialize(root);
+    const ready = /** @type {any} */ (made);
+    writeFileSync(path.join(ready.dir, 'tracked.js'), 'export const tracked = 999;\n');
+
+    const sealed = await candidateMatchesTree({ dir: ready.dir, tree: ready.tree, run: shell });
+    assert.equal(sealed.ok, false, 'a rewritten candidate reported intact');
+    assert.notEqual(sealed.tree, ready.tree);
+    assert.match(sealed.detail, /Discarding the verdict/);
+  });
+
+  it('detects a file added to the candidate, not only one changed', async () => {
+    // The shape that matters for a smuggled artifact: nothing existing is touched, so a check
+    // written as "do the files I know about still hash the same" would miss it entirely.
+    const root = repo();
+    const made = await materialize(root);
+    const ready = /** @type {any} */ (made);
+    writeFileSync(path.join(ready.dir, 'planted.js'), 'export const planted = true;\n');
+
+    const sealed = await candidateMatchesTree({ dir: ready.dir, tree: ready.tree, run: shell });
+    assert.equal(sealed.ok, false, 'a planted file left the candidate reporting intact');
+  });
+
+  it('detects a file deleted from the candidate', async () => {
+    const root = repo();
+    const made = await materialize(root);
+    const ready = /** @type {any} */ (made);
+    rmSync(path.join(ready.dir, 'tracked.js'));
+
+    const sealed = await candidateMatchesTree({ dir: ready.dir, tree: ready.tree, run: shell });
+    assert.equal(sealed.ok, false, 'a deletion left the candidate reporting intact');
+  });
+
+  it('refuses when the snapshot itself cannot be written, not only when it differs', async () => {
+    // The third way this can go wrong, and the one a naive implementation gets backwards: the git
+    // directory resolves, so the early guard passes, and then `git write-tree` fails. Returning the
+    // tree it could not compute — or `ok: true` because there is nothing to compare — would certify
+    // a candidate nobody measured. Staged by making the worktree's own git directory read-only, so
+    // the temporary index cannot be written.
+    const root = repo();
+    const made = await materialize(root);
+    const ready = /** @type {any} */ (made);
+    // The index is written *inside* the resolved git directory, so that is the directory to clamp.
+    // The first attempt clamped `.git/worktrees` in the main repository and the snapshot succeeded
+    // anyway — a mutation that changes nothing is not a proof, whichever direction it points.
+    const resolved = await resolveGitDir({ cwd: ready.dir, run: shell });
+    assert.notEqual(resolved, null, 'the candidate has no git directory, so this case tests nothing');
+    chmodSync(/** @type {string} */ (resolved), 0o500);
+    try {
+      const sealed = await candidateMatchesTree({ dir: ready.dir, tree: ready.tree, run: shell });
+      assert.equal(sealed.ok, false, 'an unwritable index left the candidate reporting intact');
+    } finally {
+      chmodSync(/** @type {string} */ (resolved), 0o700);
+    }
+  });
+
+  it('refuses rather than passing when the candidate is not a git worktree at all', async () => {
+    // Fail-closed: an unverifiable candidate is not a verified one. A `null` git directory returning
+    // `ok: true` would be the exact shape §4 refuses everywhere.
+    const loose = path.join(scratch(), 'not-a-worktree');
+    mkdirSync(loose, { recursive: true });
+    const sealed = await candidateMatchesTree({ dir: loose, tree: 'deadbeef', run: shell });
+    assert.equal(sealed.ok, false);
   });
 });

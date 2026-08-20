@@ -1631,6 +1631,35 @@ its key mode (6), and an unknown stamp reading as unchanged.
 for. A rewritten test currently loses its credit until it is observed failing again, which is
 correct and is also the whole cost of improving a test.
 
+### 133. The candidate is sealed, not only the main tree — **DONE (0.256.0)** (REVIEW F14)
+
+**The seal was on the wrong directory.** `workspaceIdentity` measures the operator's working tree and
+`workspaceStillMatches` asks whether *that* drifted while the panel read. The panel does not read that
+tree — it reads the **candidate**, at `candidateDirFor(process.pid)`, a path a Builder descendant can
+compute from its parent and reach with ordinary Bash. Nothing was asking whether the bytes that were
+judged were still the bytes that were judged.
+
+`candidateMatchesTree` re-stages the candidate into its own temporary index and writes a tree,
+exactly the way the snapshot was produced — so the two digests are comparable **by construction**
+rather than by two functions agreeing about what to hash. A divergence discards the verdict and
+re-gates, which is the standard F14 already accepts for the main tree.
+
+**What this is not.** It does not make the checkout immutable, and nothing short of an OS boundary
+does (item 84, paid). It converts an *undetectable* mutation into a detected one. The finding's
+remaining acceptance — *no integration case establishes that Builder descendants cannot reach the
+materialized candidate* — is about prevention, and prevention is item 84's.
+
+**Validation:** lint and typecheck clean, `npm test` **3396 of 3396** and
+`npm run test:integration` **301 of 301**, both exit 0. Six red proofs:
+the driver ignoring the seal, the seal never consulted, a mutated candidate reporting intact
+(3 tier-2 failures), an unverifiable candidate passing, and a failed snapshot passing.
+
+**Two fixture defects, both caught by mutation.** The unit cases first drove the default harness,
+which never reaches a panel — the same mistake the milestone-event cases made, and the second time
+this session. And the unwritable-index case first clamped `.git/worktrees` in the *main* repository,
+where the snapshot succeeded anyway: the index is written inside the **resolved** git directory. A
+mutation that changes nothing is not a proof, whichever direction it points.
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation

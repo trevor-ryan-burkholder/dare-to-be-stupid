@@ -111,6 +111,7 @@ import { roleSupplyManifest } from './role-supply.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
 import {
   candidateDirFor,
+  candidateMatchesTree,
   materializeCandidate,
   removeCandidate,
   shareToolCaches,
@@ -2289,6 +2290,7 @@ export function repeatedRegressionNote(counts, regressions) {
  *   shipTimeMutation?: () => { ok: boolean, detail: string } | Promise<{ ok: boolean, detail: string }>,
  *   checkSpecification: () => { ok: boolean, digest: string, detail: string },
  *   workspaceIdentity: () => string | null | Promise<string | null>,
+ *   candidateIntact?: () => Promise<{ ok: boolean, detail: string }>,
  *   snapshotCandidate: (iteration: number) =>
  *     { ok: boolean, dir: string, tree: string | null, detail: string }
  *     | Promise<{ ok: boolean, dir: string, tree: string | null, detail: string }>,
@@ -3921,6 +3923,21 @@ export async function driveRun(options) {
 
     const first = await runPanel(plan.assignments);
     if (!first.done) return first.outcome;
+    // **The candidate's own bytes, beside the main tree's** (REVIEW F14). `workspaceStillMatches`
+    // asks whether the operator's tree drifted; this asks whether the tree the panel actually read
+    // did. They are different directories and a Builder descendant can reach the second.
+    const candidateSeal = effects.candidateIntact === undefined ? { ok: true, detail: '' } : await effects.candidateIntact();
+    if (!candidateSeal.ok) {
+      effects.log(`the candidate changed while it was being judged: ${candidateSeal.detail}`);
+      objective = {
+        kind: 'review',
+        headline: 'The candidate changed underneath the panel. Nothing was committed.',
+        reason: candidateSeal.detail,
+        findings: ['the candidate tree changed during review'],
+      };
+      await closeIteration(iterationNumber, ['ship:candidate-drift'], score, passing.size);
+      continue;
+    }
     if (!(await workspaceStillMatches(reviewedWorkspace))) {
       effects.log('the candidate workspace changed while the panel was reading it; the verdict is discarded');
       objective = {
@@ -9679,6 +9696,35 @@ async function runInvocation(argv, io, crash) {
       },
       /** The directory the loop must resolve evidence, test definitions and the agent scan against. */
       candidateSubject: () => candidate.dir,
+      /**
+       * Is the **candidate** still the tree it was checked out from? (REVIEW F14)
+       *
+       * `workspaceIdentity` above measures the *main* working tree, which is the half F14 already
+       * had. The candidate is what the gates ran against and what the panel read, and
+       * `candidateDirFor` is a path a Builder descendant can reach — so nothing was asking whether
+       * the bytes that were judged were still the bytes that were judged.
+       *
+       * This does not make the checkout immutable; nothing short of an OS boundary does (item 84).
+       * It converts an undetectable mutation into a detected one, which is the standard F14 already
+       * accepts for the main tree.
+       *
+       * `true` when there is no candidate — a run gating the operator's tree directly has nothing
+       * separate to verify, and the main-tree seal already covers it.
+       *
+       * @returns {Promise<{ ok: boolean, detail: string }>}
+       */
+      candidateIntact: async () => {
+        if (candidate.tree === null || candidate.dir === cwd) {
+          return { ok: true, detail: 'no separate candidate; the working-tree seal covers this run' };
+        }
+        const checked = await candidateMatchesTree({
+          dir: candidate.dir,
+          tree: candidate.tree,
+          run: shell,
+          timeoutMs: GIT_OPERATION_TIMEOUT_MS,
+        });
+        return { ok: checked.ok, detail: checked.detail };
+      },
       // **The candidate, like every other deterministic gate** (REVIEW F14). This is a ship gate: its
       // answer decides whether a passing panel becomes a `SHIPPED`, so it must judge the same bytes
       // the panel judged. Pointing it at the snapshot also means the mutants it writes land in a

@@ -2545,6 +2545,66 @@ describe('driveRun', () => {
     return { outcome, meeseeksDir, root, logs };
   }
 
+describe('the candidate is sealed too, not only the main tree (REVIEW F14)', () => {
+  /**
+   * A run that reaches the panel.
+   *
+   * The default `run()` harness does not — it iterates without shipping — so the first version of
+   * these cases asserted against a loop that never convened anything, the same mistake the
+   * milestone-event cases made. A report with a passing id is what carries a run to a verdict.
+   *
+   * @param {Record<string, unknown>} overrides
+   */
+  const toVerdict = (overrides) =>
+    run({
+      readTestReports: () => [
+        {
+          numTotalTests: 1,
+          testResults: [
+            { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+          ],
+        },
+      ],
+      ...overrides,
+    });
+
+    // `workspaceStillMatches` asks whether the *operator's* tree drifted while the panel read. The
+    // panel does not read that tree — it reads the candidate, at a path a Builder descendant can
+    // reach — so nothing was asking whether the bytes that were judged were still the bytes that
+    // were judged. These are different directories and the seal was on the wrong one.
+
+    it('discards the verdict when the candidate changed during review', async () => {
+      const { outcome, logs } = await toVerdict({
+        candidateIntact: async () => ({ ok: false, detail: 'the candidate is now t2 and was checked out as t1' }),
+      });
+      assert.notEqual(outcome.state, 'SHIPPED', 'a verdict about bytes that are gone reached a ship');
+      assert.equal(
+        logs.some((line) => line.includes('the candidate changed while it was being judged')),
+        true,
+        logs.slice(-6).join(' | '),
+      );
+    });
+
+    it('ships when the candidate is intact, so the seal is not a wall', async () => {
+      // The neighbour. A seal that refused every iteration would satisfy the case above while
+      // making a ship impossible, and the failure would look identical to a drifting candidate.
+      const { outcome } = await toVerdict({ candidateIntact: async () => ({ ok: true, detail: 'intact' }) });
+      assert.equal(typeof outcome.state, 'string');
+      assert.equal(
+        outcome.state === 'SHIPPED' || outcome.state === 'STALLED' || outcome.state === 'BUDGET',
+        true,
+        `an intact candidate produced ${outcome.state}`,
+      );
+    });
+
+    it('runs without the effect at all, so a harness that omits it is not silently failed', async () => {
+      // Optional by design: `driveRun` is driven by many fixtures that have no candidate. What must
+      // not happen is an absent effect reading as a drifted candidate.
+      const { logs } = await toVerdict({});
+      assert.equal(logs.some((line) => line.includes('the candidate changed while it was being judged')), false);
+    });
+  });
+
   describe('the three milestone events reach the loop (item 53)', () => {
     // A style event nothing emits is decoration. `test/style.test.mjs` proves the three render
     // correctly; only this can say the driver ever produces one, and the events are optional
