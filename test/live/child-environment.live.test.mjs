@@ -27,6 +27,7 @@ import { after, describe, it } from 'node:test';
 import { rmSync } from 'node:fs';
 
 import { childEnvironment, spawnClaude } from '../../scripts/driver.mjs';
+import { sealedControls } from '../../scripts/claude-seal.mjs';
 
 const ARMED = process.env.MEESEEKS_LIVE === '1';
 const LIVE_TIMEOUT = 300_000;
@@ -42,11 +43,27 @@ const SEEDED = {
   ACME_DEPLOY_TOKEN: 'synthetic-not-a-real-token-0001',
   AWS_SECRET_ACCESS_KEY: 'synthetic-not-a-real-secret-0002',
   DATABASE_URL: 'postgres://synthetic:notreal@localhost:5432/none',
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
   CLAUDE_CODE_SUBAGENT_MODEL: 'synthetic-model-override',
   CLAUDE_CODE_MAX_OUTPUT_TOKENS: '4321',
   MAX_THINKING_TOKENS: '1234',
 };
+
+/**
+ * The controls {@link sealedControls} pins, seeded with the **opposite** of the sealed value.
+ *
+ * These are the one category presence cannot judge. A sealed name is *supposed* to reach the child
+ * — the Driver puts it there — so "PRESENT" proves nothing about whose value won. This list was
+ * previously inside `SEEDED`, asserted absent, and seeded with `'1'`: the same value the seal
+ * sets. That case could not distinguish a leak from a seal in either direction, and it failed for
+ * the third reason, which is that the Driver had every right to hand the variable over.
+ *
+ * Seeding the opposite value turns presence into a decidable question. The child reports the value,
+ * which is safe to print here precisely because a control knob is not a credential — that is the
+ * distinction the presence-only rule below is drawing, not a blanket ban on reading anything.
+ *
+ * @type {Record<string, string>}
+ */
+const SEALED_CONFLICT = { DISABLE_AUTOUPDATER: '0', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '0' };
 
 /** Names that must survive, because the run does not work without them. */
 const REQUIRED = ['MEESEEKS_RUNNING', 'PATH'];
@@ -58,20 +75,32 @@ describe('the child environment boundary', { skip: ARMED ? false : 'MEESEEKS_LIV
     writeFileSync(path.join(root, 'README.md'), '# probe\n', 'utf8');
 
     const names = [...Object.keys(SEEDED), ...REQUIRED];
-    // Presence, never value. A test that echoed the values would print secret-shaped strings into a
-    // transcript to prove that secret-shaped strings should not be printed.
+    const sealed = Object.keys(SEALED_CONFLICT);
+    // Presence, never value — for the seeded names. A test that echoed those would print
+    // secret-shaped strings into a transcript to prove that secret-shaped strings should not be
+    // printed. The sealed controls are read by value on purpose; see SEALED_CONFLICT.
     const result = await spawnClaude({
       prompt:
         'Run exactly this shell command and return its raw output as your entire reply, with no ' +
         'commentary:\n\n' +
         `for n in ${names.join(' ')}; do\n` +
-        '  if [ -n "${!n+x}" ]; then echo "PRESENT $n"; else echo "absent $n"; fi\n' +
+        // **`printenv`, not `${!n+x}`.** The indirect-expansion form is a bashism, and this host's
+        // shell is zsh, which answers `bad substitution` — so the child dutifully reported an error
+        // and the case could never pass here. It had never been run.
+        //
+        // `printenv` is also the more correct probe: it reports the *exported environment*, which is
+        // exactly what `childEnvironment` decides, while `${!n+x}` asks about shell variables and
+        // would answer for a name the shell set itself.
+        '  if printenv "$n" >/dev/null 2>&1; then echo "PRESENT $n"; else echo "absent $n"; fi\n' +
+        'done\n' +
+        `for n in ${sealed.join(' ')}; do\n` +
+        '  echo "VALUE $n=$(printenv "$n" 2>/dev/null)"\n' +
         'done\n\nReport the output verbatim.',
       model: 'claude-sonnet-5',
       phase: 'builder',
       effort: 'low',
       cwd: root,
-      env: childEnvironment({ ...process.env, ...SEEDED }),
+      env: childEnvironment({ ...process.env, ...SEEDED, ...SEALED_CONFLICT }),
     });
     assert.equal(result.ok, true, result.raw.slice(0, 600));
 
@@ -90,6 +119,22 @@ describe('the child environment boundary', { skip: ARMED ? false : 'MEESEEKS_LIV
     }
     for (const name of REQUIRED) {
       assert.equal(saw(name), true, `${name} did not survive the boundary, which breaks the run:\n${result.text}`);
+    }
+
+    // The seal beat the operator. Each of these was seeded with the opposite value, so reading the
+    // sealed value back is the whole proof: it is not the one the parent process was holding.
+    const controls = sealedControls();
+    for (const name of sealed) {
+      assert.notEqual(
+        controls[name],
+        SEALED_CONFLICT[name],
+        `this case seeds ${name} with the value the seal already sets, so it proves nothing`,
+      );
+      assert.equal(
+        new RegExp(`^VALUE ${name}=${controls[name]}$`, 'm').test(result.text),
+        true,
+        `${name} did not reach the child as the sealed ${controls[name]}:\n${result.text}`,
+      );
     }
   });
 });

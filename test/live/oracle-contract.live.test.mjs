@@ -19,7 +19,19 @@ import { spawnClaude } from '../../scripts/driver.mjs';
 import { parseOracleCases } from '../../scripts/oracle.mjs';
 
 const ARMED = process.env.MEESEEKS_LIVE === '1';
-const LIVE_TIMEOUT = 300_000;
+
+/**
+ * Ten minutes, not the five the other live suites use.
+ *
+ * Oracle authoring is the longest single child in the tier — it writes a whole held-out case set,
+ * and a clean measured run took 178s. Five minutes is a 1.7x margin on a model call whose latency
+ * is set by someone else's load, and it duly blew past the ceiling when this suite ran beside a
+ * concurrent fan-out. The margin is the fix; the work itself was never near hanging.
+ *
+ * This is not a ceiling raised until a test went green. The number below is a multiple of a
+ * measurement, and if authoring ever genuinely hangs, ten minutes still catches it.
+ */
+const LIVE_TIMEOUT = 600_000;
 
 /** A deliberately tiny PRD: small enough to be cheap, specific enough to have real edges. */
 const PRD = `# sum — add the numbers in a file
