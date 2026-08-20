@@ -2695,7 +2695,32 @@ ownership/permissions, and exports the target only after those checks pass. This
 redirection. It is explicitly not same-user process isolation; a process outside the hook boundary can
 still race filesystem state, and any such stronger claim depends on F42's unresolved boundary.
 
-### 53. Styled milestone lines: gate summary, panel convening, carry/outstanding — OPEN (micro-item, cosmetic, quota-funded)
+### 53. Styled milestone lines: gate summary, panel convening, carry/outstanding — **DONE (0.248.0)**
+**DONE (0.248.0) — `DESIGN.md` §9.2.** All three milestones speak. Landed last, as `CLAUDE.md`
+requires: every other non-blocked feature was built first, so the style layer ate no time that
+belonged to the ratchet.
+
+`gate-summary`, `panel-convening` and `carry` are new `StyleEvent` kinds, each carrying its **full
+payload** rather than a count — *"SOME GATES ARE UNHAPPY"* tells an operator nothing the run
+stopping had not already told them. Gate names and requirement ids stay verbatim and lower-case in
+both modes, because the one thing an operator does with these lines is find the finding and
+`DOD-5-DESIGN` is not greppable for `DoD-5-design`. The gate summary is emitted **immediately before**
+the verbatim gate detail, which still prints in full: a headline over failure output, never instead
+of it. The carry is emitted before the panel it narrowed, and its `outstanding` list is the previous
+iteration's — what still says no going *into* this review, not a result of it.
+
+**Two defects found while wiring, both in the tests.** The first version of the panel cases drove
+the default `run()` harness, which never reaches a panel at all — they would have passed against a
+driver that emitted nothing. Rewired through a harness that ships, they then failed on a reviewer
+owning none of the required ids, which the driver refuses before convening. Both are the same
+mistake: asserting against a loop that never got to the line under test.
+
+**Validation:** lint and typecheck clean, `npm test` **3310 of 3310**, `release-check` passed. Nine
+red proofs — three that each emission site is reached (removing any one fails), the summary naming
+every gate instead of the failures, a constant reviewer count, the styled summary dropping the gate
+names (3 failures), gate identifiers upper-cased (3), an empty outstanding list still rendering a
+clause (2), and plain mode rendering an empty accusation.
+
 
 **Origin:** operator question, 16 Aug — should the heartbeat or milestones speak Meeseeks? **Answer
 settled: milestones only, never the heartbeat, never the children.** The heartbeat is the anxious-operator

@@ -2870,6 +2870,47 @@ JSON, and `MEESEEKS_STYLE=plain` suppresses it. Final art designed at build time
 
 ---
 
+### 9.2 The three milestone lines
+
+Three real milestones printed plain until 0.248.0 (item 53). They speak now, and the boundaries
+around them are the whole design.
+
+**Milestones only — never the heartbeat, never a child.** The heartbeat is the anxious-operator
+scan channel, where repetition kills both the signal and the joke; §9's rule is that a line
+carrying no information is noise, and a heartbeat is the same line every time. Child output feeds
+parsers and archives, so style stays at the driver's render, which is also
+style-never-touches-logic restated at a new surface.
+
+| event | payload | rendered |
+|---|---|---|
+| `gate-summary` | every failing gate **by name** | `OOOH. TWO GATES ARE NOT HAPPY: unit, observability.` |
+| `panel-convening` | how many reviewers were convened | `ALL GATES GREEN! FOUR JUDGES ARE COMING. I DIDN'T PICK THEM. I CAN'T TALK TO THEM.` |
+| `carry` | what stays proved, and what still says no | `FOUR THINGS I ALREADY PROVED STAY PROVED. ONE FINDING STILL SAYS NO: DoD-5-design.` |
+
+**Each carries its full payload, not a count.** §9's mapping rule bites hardest here: *"SOME GATES
+ARE UNHAPPY"* tells an operator nothing the run stopping had not already told them, and
+*"TWO GATES ARE NOT HAPPY: unit, observability"* is the event. The gate names and requirement ids
+inside these lines are **identifiers and are never upper-cased** — that rule predates these events
+and they get no exception, because the one thing an operator does with this line is find the
+finding, and `DOD-5-DESIGN` is not greppable for `DoD-5-design`.
+
+**The gate summary is a headline over the failure output, never instead of it.** It is emitted
+immediately before the verbatim gate detail, which still prints in full. Failure output is never
+styled away.
+
+**`panel-convening` states the cold-panel invariant as canon** rather than leaving it in a
+document: *I didn't pick them. I can't talk to them.* A Meeseeks cannot judge its own work and does
+not get to meet the people who do.
+
+**The carry is emitted before the panel it narrowed**, because that is the causal order — the carry
+decides how narrow the convened panel is — and its `outstanding` list is the *previous* iteration's,
+which is the point: it is what still says no going **into** this review, not a result of it.
+
+Plain mode is a full bypass for all three, as everywhere: not quieter shouting but a different,
+literal string built from the same record. A zero case renders as a statement rather than an empty
+accusation — `all gates passed`, never `0 gate(s) failed:` — and an empty `outstanding` list drops
+its clause entirely rather than saying *zero findings say no*, which is a sentence about nothing.
+
 ## 10. Config — `.meeseeks/config.json`
 
 `scripts/config.mjs::defaultConfig()` is the machine authority. This section documents the same

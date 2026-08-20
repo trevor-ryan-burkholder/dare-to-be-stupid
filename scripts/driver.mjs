@@ -3395,6 +3395,7 @@ export async function driveRun(options) {
     // print. A diagnosis that exists but is unreachable on the path that needs it is not a
     // diagnosis.
     if (failedGates.length > 0) {
+      effects.event?.({ kind: 'gate-summary', failed: failedGates.map((result) => result.name) });
       effects.log(`gates failed: ${failedGates.map((result) => result.name).join(', ')}`);
       for (const line of formatGateFailure(failedGates)) effects.log(line);
     }
@@ -3740,6 +3741,12 @@ export async function driveRun(options) {
         ? []
         : pins.requirements.filter((pin) => verifyRequirementPin(pin, /** @type {(f: string) => string | null} */ (effects.readSource)) === 'carry');
     const plan = narrowedPanelPlan(panelPlan.assignments, carriedPins, requiredIds);
+    // The two milestones the operator has been reading out of log noise until now (item 53). The
+    // carry goes first because it is what decides how narrow the convened panel is, and
+    // `outstandingFindings` is the previous iteration's — which is the point: it is what still
+    // says no going *into* this review, not a result of it.
+    effects.event?.({ kind: 'carry', carried: carriedPins.length, outstanding: [...outstandingFindings] });
+    effects.event?.({ kind: 'panel-convening', reviewers: plan.assignments.length });
 
     /**
      * Run one panel over a set of assignments.

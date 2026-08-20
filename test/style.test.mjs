@@ -216,3 +216,103 @@ describe('the style layer decides nothing', () => {
     }
   });
 });
+
+describe('the three milestone events (item 53)', () => {
+  /** @param {import('../scripts/style.mjs').StyleEvent} event */
+  const both = (event) => ({
+    meeseeks: render(event, { mode: 'meeseeks' }),
+    plain: render(event, { mode: 'plain' }),
+  });
+
+  describe('gate-summary', () => {
+    it('names every failing gate, because a count alone is noise', () => {
+      // §9's mapping rule at its sharpest. "SOME GATES ARE UNHAPPY" tells an operator nothing they
+      // did not already know from the run stopping.
+      const { meeseeks, plain } = both({ kind: 'gate-summary', failed: ['unit', 'observability'] });
+      assert.equal(meeseeks, 'OOOH. TWO GATES ARE NOT HAPPY: unit, observability.');
+      assert.equal(plain, '2 gate(s) failed: unit, observability');
+    });
+
+    it('keeps gate names verbatim and lower-case in both modes', () => {
+      // Identifiers are never styled. A gate called `gate-integrity` is not `GATE-INTEGRITY`, and
+      // an operator grepping the log for the name has to find it.
+      const { meeseeks } = both({ kind: 'gate-summary', failed: ['gate-integrity', 'design-slop'] });
+      assert.equal(meeseeks.includes('gate-integrity'), true);
+      assert.equal(meeseeks.includes('design-slop'), true);
+      assert.equal(meeseeks.includes('GATE-INTEGRITY'), false);
+    });
+
+    it('agrees with itself on one', () => {
+      assert.equal(render({ kind: 'gate-summary', failed: ['unit'] }, { mode: 'meeseeks' }),
+        'OOOH. ONE GATE IS NOT HAPPY: unit.');
+      assert.equal(render({ kind: 'gate-summary', failed: ['unit'] }, { mode: 'plain' }),
+        '1 gate(s) failed: unit');
+    });
+
+    it('says so when nothing failed, rather than rendering an empty accusation', () => {
+      const { meeseeks, plain } = both({ kind: 'gate-summary', failed: [] });
+      assert.equal(meeseeks, 'EVERY GATE IS HAPPY! LOOK AT ME!');
+      assert.equal(plain, 'all gates passed');
+    });
+  });
+
+  describe('panel-convening', () => {
+    it('states the cold-panel invariant as canon', () => {
+      // The invariant said out loud rather than kept as a footnote: a Meeseeks cannot judge its
+      // own work and does not get to meet the people who do.
+      const { meeseeks, plain } = both({ kind: 'panel-convening', reviewers: 4 });
+      assert.equal(meeseeks, "ALL GATES GREEN! FOUR JUDGES ARE COMING. I DIDN'T PICK THEM. I CAN'T TALK TO THEM.");
+      assert.equal(plain, 'convening 4 reviewer(s)');
+    });
+
+    it('agrees with itself on one', () => {
+      assert.equal(render({ kind: 'panel-convening', reviewers: 1 }, { mode: 'meeseeks' }),
+        "ALL GATES GREEN! ONE JUDGE IS COMING. I DIDN'T PICK THEM. I CAN'T TALK TO THEM.");
+    });
+  });
+
+  describe('carry', () => {
+    it('reports what stays proved and what still says no, naming the finding', () => {
+      const { meeseeks, plain } = both({ kind: 'carry', carried: 4, outstanding: ['DoD-5-design'] });
+      assert.equal(meeseeks, 'FOUR THINGS I ALREADY PROVED STAY PROVED. ONE FINDING STILL SAYS NO: DoD-5-design.');
+      assert.equal(plain, '4 requirement(s) carried; outstanding: DoD-5-design');
+    });
+
+    it('keeps a requirement id verbatim, mixed case and all', () => {
+      // `DoD-5-design` is an identifier the reviewer JSON uses. Upper-casing it would break the
+      // one thing an operator does with this line, which is find the finding.
+      const { meeseeks } = both({ kind: 'carry', carried: 1, outstanding: ['PRD-2.3', 'DoD-5-design'] });
+      assert.equal(meeseeks.includes('DoD-5-design'), true);
+      assert.equal(meeseeks.includes('PRD-2.3'), true);
+      assert.equal(meeseeks.includes('DOD-5-DESIGN'), false);
+    });
+
+    it('drops the second clause entirely when nothing is outstanding', () => {
+      // Rather than saying "ZERO FINDINGS SAY NO", which is a sentence about nothing.
+      const { meeseeks, plain } = both({ kind: 'carry', carried: 2, outstanding: [] });
+      assert.equal(meeseeks, 'TWO THINGS I ALREADY PROVED STAY PROVED.');
+      assert.equal(plain, '2 requirement(s) carried');
+    });
+
+    it('agrees with itself on one carried thing', () => {
+      assert.equal(render({ kind: 'carry', carried: 1, outstanding: [] }, { mode: 'meeseeks' }),
+        'ONE THING I ALREADY PROVED STAYS PROVED.');
+    });
+  });
+
+  it('bypasses the style layer entirely in plain mode, for all three', () => {
+    // `MEESEEKS_STYLE=plain` is a full bypass, not quieter shouting. No fragment of the styled
+    // rendering may survive into it.
+    /** @type {import('../scripts/style.mjs').StyleEvent[]} */
+    const events = [
+      { kind: 'gate-summary', failed: ['unit'] },
+      { kind: 'panel-convening', reviewers: 3 },
+      { kind: 'carry', carried: 2, outstanding: ['DoD-1'] },
+    ];
+    for (const event of events) {
+      const plain = render(event, { mode: 'plain' });
+      assert.equal(/[A-Z]{4,}/.test(plain.replace(/DoD-\d|PRD-[\d.]+/g, '')), false, `styled text leaked into plain: ${plain}`);
+      assert.equal(plain.includes('!'), false, `styled punctuation leaked into plain: ${plain}`);
+    }
+  });
+});

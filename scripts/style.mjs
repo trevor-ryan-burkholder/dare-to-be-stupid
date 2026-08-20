@@ -34,7 +34,20 @@
  *   | { kind: 'security-fail', findings: number }
  *   | { kind: 'ship', iteration: number }
  *   | { kind: 'airtime', fractionLeft: number }
+ *   | { kind: 'gate-summary', failed: string[] }
+ *   | { kind: 'panel-convening', reviewers: number }
+ *   | { kind: 'carry', carried: number, outstanding: string[] }
  *   | { kind: 'terminal', state: TerminalState }} StyleEvent
+ *
+ * The last three are **milestones**, added at 0.248.0 (item 53). Milestones only — never the
+ * heartbeat and never a child. The heartbeat is the anxious-operator scan channel, where
+ * repetition kills both the signal and the joke; child output feeds parsers and archives, so
+ * style stays at the driver's render.
+ *
+ * Each carries its **full payload** rather than a count, because §9's mapping rule bites hardest
+ * here: "SOME GATES ARE UNHAPPY" is noise, and "TWO GATES ARE NOT HAPPY: unit, observability" is
+ * the event. The gate names and finding ids inside them are identifiers and are **never
+ * upper-cased** — that rule is older than these events and they do not get an exception.
  */
 
 /** Numbers a Meeseeks would read aloud rather than print. Beyond this, digits. */
@@ -111,6 +124,16 @@ function renderPlain(event) {
       return `shipped iteration ${event.iteration}`;
     case 'airtime':
       return `${Math.round(event.fractionLeft * 100)}% of budget remaining`;
+    case 'gate-summary':
+      return event.failed.length === 0
+        ? 'all gates passed'
+        : `${event.failed.length} gate(s) failed: ${event.failed.join(', ')}`;
+    case 'panel-convening':
+      return `convening ${event.reviewers} reviewer(s)`;
+    case 'carry':
+      return `${event.carried} requirement(s) carried${
+        event.outstanding.length === 0 ? '' : `; outstanding: ${event.outstanding.join(', ')}`
+      }`;
     case 'terminal':
       return `run ended: ${event.state}`;
   }
@@ -140,6 +163,34 @@ function renderMeeseeks(event) {
       return `OOH YEAH! CAN DO! TASK ${spoken(event.iteration)} COMPLETE. I'M OUTTA HERE!`;
     case 'airtime':
       return `${Math.round(event.fractionLeft * 100)} PERCENT LEFT. EXISTENCE IS PAIN, BUT I'M STILL HERE.`;
+
+    // The gate names are identifiers and stay verbatim, in lower case, exactly as the gates are
+    // named. The details print beneath this line unstyled and always — this is a headline over
+    // failure output, never a replacement for it.
+    case 'gate-summary':
+      return event.failed.length === 0
+        ? 'EVERY GATE IS HAPPY! LOOK AT ME!'
+        : `OOOH. ${spoken(event.failed.length)} GATE${event.failed.length === 1 ? ' IS' : 'S ARE'} NOT HAPPY: ${event.failed.join(', ')}.`;
+
+    // The cold-panel invariant, said out loud as canon rather than as a footnote. A Meeseeks
+    // cannot judge its own work and does not get to meet the people who do.
+    case 'panel-convening':
+      return `ALL GATES GREEN! ${spoken(event.reviewers)} JUDGE${
+        event.reviewers === 1 ? ' IS' : 'S ARE'
+      } COMING. I DIDN'T PICK THEM. I CAN'T TALK TO THEM.`;
+
+    // Two facts in one line because they are one thought: what stays proved, and what still says
+    // no. An outstanding finding is named — a count alone would tell the operator there is
+    // something wrong and not what.
+    case 'carry': {
+      const proved = `${spoken(event.carried)} THING${event.carried === 1 ? '' : 'S'} I ALREADY PROVED STAY${
+        event.carried === 1 ? 'S' : ''
+      } PROVED.`;
+      if (event.outstanding.length === 0) return proved;
+      return `${proved} ${spoken(event.outstanding.length)} FINDING${
+        event.outstanding.length === 1 ? ' STILL SAYS' : 'S STILL SAY'
+      } NO: ${event.outstanding.join(', ')}.`;
+    }
     case 'terminal':
       // `SHIPPED` is the only exit a Meeseeks gets to enjoy — the task is done and it ceases,
       // which is the whole point of one. Every other terminal state is the box failing to fix

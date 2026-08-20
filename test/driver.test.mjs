@@ -2544,6 +2544,130 @@ describe('driveRun', () => {
     return { outcome, meeseeksDir, root, logs };
   }
 
+  describe('the three milestone events reach the loop (item 53)', () => {
+    // A style event nothing emits is decoration. `test/style.test.mjs` proves the three render
+    // correctly; only this can say the driver ever produces one, and the events are optional
+    // (`effects.event?.`) so dropping a call site is silent by construction.
+
+    /** @param {Record<string, unknown>} overrides @returns {Promise<any[]>} */
+    async function eventsFrom(overrides) {
+      /** @type {any[]} */
+      const events = [];
+      await run({ event: (/** @type {any} */ e) => events.push(e), ...overrides });
+      return events;
+    }
+
+    it('emits a gate summary naming the gates that actually failed', async () => {
+      const events = await eventsFrom({
+        gates: () => ({
+          ok: false,
+          results: [
+            { name: 'lint', ok: true, status: 0, detail: 'passed' },
+            { name: 'unit', ok: false, status: 1, detail: '3 failing' },
+            { name: 'observability', ok: false, status: 1, detail: 'no health endpoint' },
+          ],
+          identities: [
+            { name: 'lint', command: ['npm', 'run', 'lint'], reports: [] },
+            { name: 'unit', command: ['npx', 'vitest', 'run'], reports: ['test-report.json'] },
+            { name: 'observability', command: ['internal'], reports: [] },
+          ],
+        }),
+      });
+      const summary = events.find((event) => event.kind === 'gate-summary');
+      assert.notEqual(summary, undefined, 'no gate summary was emitted on a failing iteration');
+      // The failing gates and only those. A summary that named `lint` would be worse than none.
+      assert.deepEqual(summary.failed, ['unit', 'observability']);
+    });
+
+    it('emits no gate summary on an iteration where every gate passed', async () => {
+      // The benign neighbour. The default harness is all-green, so an implementation that emitted
+      // unconditionally would pass the case above while shouting on every clean iteration.
+      const events = await eventsFrom({});
+      assert.equal(events.some((event) => event.kind === 'gate-summary'), false);
+    });
+
+    /**
+     * A run that actually reaches the panel.
+     *
+     * The default `run()` harness never does — it iterates and stops — so the two cases below drove
+     * against a loop that had not convened anything, and would have passed against a driver that
+     * emitted nothing at all. This is the shape `driveFlaky` uses, which ships.
+     *
+     * @param {string[]} reviewers
+     * @param {string[]} [requiredIds] must give every reviewer something it owns, or the driver
+     *   refuses the panel before convening it — a reviewer with nothing to judge pays for a whole
+     *   cold read of the repository on nothing.
+     * @returns {Promise<any[]>}
+     */
+    async function panelEventsFrom(reviewers, requiredIds = ['PRD-1.1']) {
+      const root = makeTempDir();
+      seedCitedSources(root);
+      /** @type {any[]} */
+      const events = [];
+      await driveRun({
+        config: { ...defaultConfig(), maxIterations: 1, stallLimit: 3, reviewers },
+        meeseeksDir: path.join(root, '.meeseeks'),
+        rootDir: root,
+        requiredIds,
+        task: 'build the thing',
+        effects: effectsWith(
+          {
+            gates: () => ({
+              ok: true,
+              results: [
+                { name: 'lint', ok: true, status: 0, detail: 'passed' },
+                { name: 'unit', ok: true, status: 0, detail: 'passed' },
+                { name: 'mutation', ok: true, status: 0, detail: 'no survivors' },
+              ],
+            }),
+            event: (/** @type {any} */ e) => events.push(e),
+            // A report with a passing id, or the run never reaches a ship condition and the panel
+            // is never convened — which is exactly how the first version of these two cases came
+            // to assert against a loop that had emitted nothing at all.
+            readTestReports: () => [
+              {
+                numTotalTests: 1,
+                testResults: [
+                  { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+                ],
+              },
+            ],
+            review: () => ({ ok: true, text: reviewerJson([GOOD_ENTRY]), costUsd: 0, tokens: 1, raw: '' }),
+          },
+          root,
+        ),
+      });
+      return events;
+    }
+
+    it('emits the panel convening with the number of reviewers actually convened', async () => {
+      const events = await panelEventsFrom(['correctness']);
+      const convening = events.find((event) => event.kind === 'panel-convening');
+      assert.notEqual(convening, undefined, 'the panel convened without saying so');
+      assert.equal(convening.reviewers, 1);
+
+      // Two reviewers, so the count is read from the plan rather than being a constant that
+      // happens to look right for one.
+      const wider = await panelEventsFrom(['correctness', 'security'], ['PRD-1.1', 'DoD-2-security']);
+      assert.equal(wider.find((event) => event.kind === 'panel-convening').reviewers, 2);
+    });
+
+    it('emits the carry alongside it, with a real count, before the panel it narrowed', async () => {
+      const events = await panelEventsFrom(['correctness']);
+      const carry = events.find((event) => event.kind === 'carry');
+      assert.notEqual(carry, undefined, 'nothing reported what stays proved');
+      assert.equal(carry.carried, 0);
+      assert.deepEqual(carry.outstanding, []);
+      // Ordering is part of the design: the carry decides how narrow the convened panel is, so it
+      // is stated before the panel it narrowed.
+      assert.equal(
+        events.findIndex((event) => event.kind === 'carry') <
+          events.findIndex((event) => event.kind === 'panel-convening'),
+        true,
+      );
+    });
+  });
+
   // -------------------------------------------------------------------------
   // The acceptance receipt (REVIEW F22)
   // -------------------------------------------------------------------------
@@ -8671,3 +8795,4 @@ describe('the child environment is a keep-list, not a copy (REVIEW F5, item 56)'
     }
   });
 });
+
