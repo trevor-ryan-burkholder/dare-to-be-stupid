@@ -852,6 +852,52 @@ both are refused before they are joined: an id must be a plain name, and a path 
 tree. Network acquisition — the public-HTTPS profile, redirect validation, and the deadline and
 body caps item 49 specifies — is **not built**; the resolver reads packages already in the tree,
 and an absent one fails closed rather than being fetched.
+### 3.8.5 Claim consistency — and the contradiction it declines to invent
+
+The second deterministic prose check (`scripts/claims.mjs`), and its value is mostly in what it
+refuses. It answers: **does this artifact assign two different values to the same claim?**
+
+Item 49 asks for *machine-readable* contradiction detection while *differently worded semantic*
+claims stay cold-panel work. That boundary is what keeps the check trustworthy. A gate deciding
+whether *"adoption roughly doubled"* contradicts *"usage rose 40%"* would be a language model
+wearing an exit code, and its verdicts would be indistinguishable from noise. So `claims.json`
+declares values under declared units, and everything else is handed to review **by name**.
+
+Three outcomes, and the middle one carries the design:
+
+| outcome | condition | effect |
+|---|---|---|
+| consistent | one id, one normalized value, one unit | nothing to say |
+| **contradicted** | one id, one unit, two different values | **fails the gate** |
+| **referred** | one id, two different *units* | reported, does **not** fail |
+
+`42 percent` and `0.42 ratio` may be the same number. Converting between arbitrary units is the
+guessing this codebase refuses everywhere, so it goes to a person. And it must not fail: a gate
+that failed on a possibly-equal pair would teach an author to flatten every unit into prose, where
+nothing can see it at all — the check would have made the artifact *less* inspectable.
+
+**A contradiction inside a unit is found even when the id also appears in another.** Deferring the
+whole id to review because one entry used different units would let a genuine conflict hide behind
+an unrelated one, so the within-unit comparison runs first and referral only applies to what is
+left.
+
+**Numbers compare numerically; text compares case-folded.** `42`, `42.0` and `+42` are one value,
+and reporting them as a contradiction would train an author to distrust the gate — a worse outcome
+than the check not existing. This is the opposite calibration from §3.8.4's quotation matching, and
+deliberately: in a quotation, case and punctuation are the meaning; in a declared value, they are
+formatting.
+
+**It does not check that the value appears in the prose.** A figure written `42%` in the manifest
+is legitimately *"forty-two percent"* in the chapter, so a presence check would either be trivially
+evaded or would fail honest writing. `statedIn` must name a **readable file in the tree**, which
+makes the manifest about this artifact; whether the prose says the number in words is review's
+question. That is one of the two places this pair of gates deliberately stops short, and it is
+recorded here rather than left for a reader to discover.
+
+The manifest follows §3.8.4's rule exactly — absent fails and names the statement that satisfies
+it, `{"version": 1, "claims": []}` passes — with one deliberate asymmetry: a **duplicate id is
+allowed** here and refused there. Two citations under one id is a bookkeeping error; two claims
+under one id is the entire subject of this module.
 ---
 
 ## 3.9 The context budget — measured before a child is spawned

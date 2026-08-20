@@ -5861,6 +5861,29 @@ it('arms the citations gate on the declared toolchain, never on the manifest bei
     assert.equal(passing?.ok, true);
   });
 
+  it('arms the claims gate on the same declaration, and on nothing else', async () => {
+    // Same rule, same reason (DESIGN §3.8.5). Kept as its own case rather than folded into the one
+    // above, because two gates arming from one condition is exactly the shape where a later edit
+    // silently drops one of them and a combined assertion still passes on the other.
+    const artifact = repoWith({ 'manuscript/01.md': `# a\n\n${PROSE}\n` });
+    assert.equal((await staticGates(artifact)).some((gate) => gate.name === 'claims'), false);
+    assert.equal(
+      (await staticGates(artifact, { toolchain: 'node' })).some((gate) => gate.name === 'claims'),
+      false,
+    );
+
+    const armed = (await staticGates(artifact, { toolchain: 'prose' })).find((gate) => gate.name === 'claims');
+    assert.equal(armed?.ok, false);
+    assert.match(String(armed?.detail), /"claims": \[\]/);
+
+    const declared = repoWith({
+      'manuscript/01.md': `# a\n\n${PROSE}\n`,
+      'claims.json': JSON.stringify({ version: 1, claims: [] }),
+    });
+    const passingClaims = (await staticGates(declared, { toolchain: 'prose' })).find((gate) => gate.name === 'claims');
+    assert.equal(passingClaims?.ok, true);
+  });
+
   it('fails gate-integrity when the repository stubs out a gate it is judged by', async () => {
     const dir = repoWith({ 'package.json': JSON.stringify({ scripts: { lint: 'true' } }) });
     const integrity = (await staticGates(dir)).find((gate) => gate.name === 'gate-integrity');

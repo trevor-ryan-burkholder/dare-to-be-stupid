@@ -2173,9 +2173,37 @@ and address validation, the deadline and body caps, and the mutable-source/non-r
 remain open; the resolver reads packages already in the tree and an absent one fails closed rather
 than being fetched.
 
+**Claim consistency landed, 0.244.0 — `scripts/claims.mjs` (`DESIGN.md` §3.8.5).** Done-when's
+contradiction clause closes: *a machine-readable contradiction fixture fails while differently worded
+semantic claims remain assigned to cold review*.
+
+Three outcomes. One id with two values **under one unit** is a contradiction and fails. One id in two
+**units** is *referred* — `42 percent` and `0.42 ratio` may be the same number, converting arbitrary
+units is guessing, and failing on a possibly-equal pair would teach an author to flatten every unit
+into prose where nothing can see it, making the artifact less inspectable rather than more. The
+within-unit comparison runs **first**, so a real conflict cannot hide behind an unrelated mixed-unit
+entry.
+
+Numbers compare numerically (`42`, `42.0`, `+42` are one value) and text case-folded — the opposite
+calibration from the citation resolver, deliberately: in a quotation case and punctuation are the
+meaning, in a declared value they are formatting. Two things it stops short of, both stated rather
+than implied: it does not check that the value appears in the prose (a figure written `42%` is
+legitimately "forty-two percent" in the chapter), and `statedIn` is only required to be a readable
+file in the tree. One asymmetry with the citation manifest: a **duplicate id is allowed** here and
+refused there, because two claims under one id is the subject of this module.
+
+**Validation:** lint and typecheck clean, `npm test` **3220 of 3220**, `release-check` passed. Eight
+red proofs: a blank value becoming zero, numbers compared as text (5 failures), a contradiction not
+reported (3), a mixed-unit id hiding a real contradiction, a referral reported as a contradiction (2),
+an unreadable `statedIn` ignored, an absent manifest defaulting to pass (2), and the gate dropped from
+the driver wiring.
+
+**The authoring-time refusal Done-when also asks for is already built** — `scripts/dod.mjs` (item 48)
+refuses an `unfalsifiable` criterion by name and by line, which is item 49's *"a job whose check
+cannot be stated is refused with that reason"*.
+
 **Still open on this item:** the checks-as-tests suite over a real artifact feeding the ratchet
-end to end, the network acquisition step, the contradiction fixture, the authoring-time refusal of
-an unfalsifiable criterion, and the live artifact run.
+end to end, the network acquisition step, and the live artifact run.
 - **Prose gates**, flagship first: a **citation resolver** (the quoted text actually appears in the cited
   source — deterministic, and exactly the "reporter emits pass/fail evidence" shape 34 names), plus
   link-check, style (vale), word-count floors, and machine-readable claim-consistency checks. For

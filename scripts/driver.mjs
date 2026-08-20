@@ -61,6 +61,7 @@ import { applicableGates, gateApplies } from './gate-policy.mjs';
 import { hasMeaningfulHistory, historyContext } from './history.mjs';
 import { resolveCitation } from './evidence.mjs';
 import { citationsGate } from './citations.mjs';
+import { claimsGate } from './claims.mjs';
 import { blankComments, integrityGate } from './integrity.mjs';
 import {
   boundStore,
@@ -5256,7 +5257,7 @@ export async function staticGates(cwd, options = {}) {
     // cited anything (§3.8.4). A Next.js application is not asked for a citation manifest because
     // nobody declared it an artifact job; a prose job is asked always, and an artifact that cites
     // nothing declares an empty manifest and passes.
-    ...(options.toolchain === 'prose' ? [citationsGate(cwd)] : []),
+    ...(options.toolchain === 'prose' ? [citationsGate(cwd), claimsGate(cwd)] : []),
   ];
 }
 

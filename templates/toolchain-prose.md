@@ -54,6 +54,21 @@ from. The Driver checks all three of these itself, on every iteration:
 **If this artifact cites nothing, say so:** `{"version": 1, "citations": []}` passes. A *missing*
 manifest fails, because "cites nothing" is a claim and an absent file is not one.
 
+**Every number you assert goes in `claims.json`, under a unit.** The Driver fails the build if one
+id carries two different values in the same unit. Two different *units* on one id — `42 percent`
+and `0.42 ratio` — is not a failure; it is referred to review, because converting between units
+is guessing and the gate will not do it.
+
+```json
+{ "version": 1, "claims": [
+  { "id": "CL1", "value": "42", "unit": "percent", "statedIn": "manuscript/03-findings.md" }
+] }
+```
+
+`42`, `42.0` and `+42` are the same value and will not be reported against you. The prose may say
+"forty-two percent" in words — nothing checks that the digits appear. If the artifact asserts no
+values, declare `{"version": 1, "claims": []}`.
+
 **A required source you cannot fetch fails closed.** Not a skip, not a pass with a note. If a
 check depends on evidence that could not be obtained, it fails, and the reason is the failure
 message. The same is true of a source package that is not in the tree: the gate will not go and
