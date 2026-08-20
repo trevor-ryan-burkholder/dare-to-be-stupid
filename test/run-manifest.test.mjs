@@ -16,11 +16,13 @@ import { fileURLToPath } from 'node:url';
 import { after, describe, it } from 'node:test';
 
 import { readAssumptions } from '../scripts/assumptions.mjs';
+import { digest } from '../scripts/acceptance.mjs';
 import {
   RUN_ARCHIVE_DIR,
   RUN_MANIFEST,
   RunManifestError,
   archivePreviousRun,
+  archiveSealedReports,
   buildRunManifest,
   configHash,
   writeRunManifest,
@@ -356,5 +358,80 @@ describe('archivePreviousRun', () => {
     const meeseeksDir = meeseeksDirWith({ 'run.json': '{"version":1}' });
     mkdirSync(path.join(meeseeksDir, RUN_ARCHIVE_DIR, '007'), { recursive: true });
     assert.equal(archivePreviousRun(meeseeksDir), path.join(meeseeksDir, RUN_ARCHIVE_DIR, '008'));
+  });
+});
+
+describe('the sealed attempt reports are archived, and only those (REVIEW F22)', () => {
+  // `results.gates[].reports` digests report bytes the archive excluded, so an auditor walking the
+  // receipt found an edge with nothing to resolve it to. The exclusion's stated reason was that a
+  // report on disk is "an arbitrary moment while implying it was the run's" — true while nothing
+  // named an attempt, and the receipt now does. So the digests are compared, and a report that does
+  // not match is still left behind. The rule is enforced rather than dropped.
+
+  /** @param {Record<string, string>} files @returns {string} */
+  function stateDir(files) {
+    const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'meeseeks-sealed-')), '.meeseeks');
+    temporaryDirs.push(path.dirname(dir));
+    mkdirSync(dir, { recursive: true });
+    for (const [name, body] of Object.entries(files)) writeFileSync(path.join(dir, name), body, 'utf8');
+    return dir;
+  }
+
+  const REPORT = '{"numTotalTests":2,"testResults":[]}';
+  const OTHER = '{"numTotalTests":9,"testResults":[]}';
+
+  /** @param {string[]} reports @returns {string} */
+  const receiptNaming = (reports) => JSON.stringify({ version: 2, results: { reports } });
+
+  it('archives a report whose bytes the receipt names', () => {
+    const dir = stateDir({
+      'acceptance.json': receiptNaming([digest(REPORT)]),
+      'test-report.json': REPORT,
+    });
+    assert.deepEqual(archiveSealedReports(dir), ['test-report.json']);
+  });
+
+  it('leaves behind a report the receipt does not name', () => {
+    // The stalled run: the file on disk is the last iteration's and the receipt names other bytes.
+    // Archiving it would preserve exactly the arbitrary moment the original exclusion refused.
+    const dir = stateDir({
+      'acceptance.json': receiptNaming([digest(REPORT)]),
+      'test-report.json': OTHER,
+    });
+    assert.deepEqual(archiveSealedReports(dir), []);
+  });
+
+  it('archives nothing when there is no receipt to name anything', () => {
+    assert.deepEqual(archiveSealedReports(stateDir({ 'test-report.json': REPORT })), []);
+  });
+
+  it('archives nothing when the receipt names no reports', () => {
+    const dir = stateDir({ 'acceptance.json': receiptNaming([]), 'test-report.json': REPORT });
+    assert.deepEqual(archiveSealedReports(dir), []);
+  });
+
+  it('never re-lists an artifact the per-run list already carries', () => {
+    // `outcome.json` is JSON in the same directory. Returning it here would rename it twice and the
+    // second rename would fail the whole archive — turning a preservation feature into an outage.
+    const dir = stateDir({
+      'acceptance.json': receiptNaming([digest(REPORT), digest('{"state":"SHIPPED"}')]),
+      'outcome.json': '{"state":"SHIPPED"}',
+      'test-report.json': REPORT,
+    });
+    assert.deepEqual(archiveSealedReports(dir), ['test-report.json']);
+  });
+
+  it('moves the sealed report into the archive beside the receipt', () => {
+    // End to end through the real archiver, because the list above is only useful if `renameSync`
+    // actually carries it across.
+    const dir = stateDir({
+      'acceptance.json': receiptNaming([digest(REPORT)]),
+      'outcome.json': '{"state":"SHIPPED"}',
+      'test-report.json': REPORT,
+    });
+    const target = archivePreviousRun(dir);
+    assert.notEqual(target, null);
+    assert.equal(existsSync(path.join(String(target), 'test-report.json')), true, 'the sealed report was not archived');
+    assert.equal(existsSync(path.join(dir, 'test-report.json')), false, 'the sealed report was left in place');
   });
 });

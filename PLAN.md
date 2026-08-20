@@ -1702,9 +1702,26 @@ suite green), an edited panel record, a changed passing count, an unresolvable s
 ignored orphan, unresolved edges not failing the result (12 failures), and a digest-only edge reported
 as resolved.
 
-**Still owed, and it is a separate local slice:** archiving the *sealed attempt's* report bytes would
-turn `gates[].reports` from digest-only into resolvable. `run-manifest.mjs` excludes them on the
-reasoning that they are captured at an arbitrary moment, which the attempt seal no longer makes true.
+**That separate slice landed too, at 0.258.0.** `archiveSealedReports` turns
+`gates[].reports` from digest-only into resolvable — **conditionally**, which is the whole design.
+A report on disk at archive time is the *last* iteration's; for a run that shipped that is the sealed
+attempt's, and for one that stalled it may not be. So the bytes are digested with the receipt's own
+`digest` and archived **only when they match what the receipt names**. An unmatched report is still
+left behind.
+
+That is not a softening of the original exclusion but its enforcement. The comment refusing to
+archive reports said they would *"preserve an arbitrary moment while implying it was the run's"* —
+true while nothing named an attempt, and the receipt now does, so there is finally a way to ask
+rather than assume. The comment says both halves now.
+
+Three red proofs: an unnamed report archived anyway, a per-run artifact listed twice (which would
+rename it twice and fail the whole archive — a preservation feature turned into an outage), and the
+archiver ignoring the sealed reports entirely. A fourth mutation removing the empty-claim
+short-circuit is **equivalent** — an empty set matches nothing in the loop either — so it is labelled
+in the source as a short-circuit rather than a guard, and it is not counted as a proof.
+
+`npm test` **3415 of 3415** and `npm run test:integration` **306 of 306**, both exit 0.
+
 Closure of F22 is Codex-owned.
 
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)

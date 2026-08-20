@@ -26,7 +26,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { ASSUMPTIONS_FILE } from './assumptions.mjs';
@@ -76,9 +76,16 @@ export const RUN_ARCHIVE_DIR = 'runs';
  *   do: iteration numbering restarts, so a second run's verdicts would append beside the first's
  *   with no way to tell them apart.
  *
- * Deliberately absent: the unit and e2e reports. Those are rewritten every *iteration*, so
- * they are already transient within a run, and archiving the last one would preserve an
- * arbitrary moment while implying it was the run's.
+ * Deliberately absent from *this* list: the unit and e2e reports. Those are rewritten every
+ * *iteration*, so they are already transient within a run, and archiving the last one would
+ * preserve an arbitrary moment while implying it was the run's.
+ *
+ * **That reasoning held while nothing named an attempt, and no longer does** (REVIEW F22). The
+ * receipt's gates now carry an `attempt` and the digests of the report bytes each one read, so
+ * there is a way to ask whether the file on disk *is* the sealed one instead of assuming it.
+ * {@link archiveSealedReports} archives it only when the digests agree — which is not a softening
+ * of the rule above but its enforcement: an unmatched report is still an arbitrary moment, and it
+ * is still left behind.
  */
 const PER_RUN_ARTIFACTS = [
   RUN_MANIFEST,
@@ -325,6 +332,62 @@ function nextArchiveSlot(archiveRoot) {
 }
 
 /**
+ * The report files whose bytes the previous run's receipt actually names (REVIEW F22).
+ *
+ * `results.gates[].reports` and `results.reports` digest report bytes, and the archive excluded
+ * those bytes — so an auditor walking the receipt found an edge with nothing to resolve it to. This
+ * closes that, and it closes it **conditionally**, which is the whole design.
+ *
+ * A report on disk at archive time is the *last* iteration's. For a run that shipped, that is the
+ * sealed attempt's, and archiving it preserves exactly what the receipt claims. For a run that
+ * stalled, it is whatever the last iteration produced, and the receipt may name different bytes —
+ * so the digests are compared and a report that does not match is **left behind**. That is the
+ * original exclusion's rule, enforced rather than assumed: an unmatched report is an arbitrary
+ * moment, and archiving it would imply it was the run's.
+ *
+ * @param {string} meeseeksDir
+ * @returns {string[]} the report filenames worth archiving beside the receipt
+ */
+export function archiveSealedReports(meeseeksDir) {
+  /** @type {unknown} */
+  let receipt;
+  try {
+    receipt = JSON.parse(readFileSync(path.join(meeseeksDir, ACCEPTANCE_FILE), 'utf8'));
+  } catch {
+    // No receipt, or an unreadable one. There is nothing naming these bytes, so there is nothing to
+    // preserve them *as* — the exclusion stands untouched.
+    return [];
+  }
+  const claimed = new Set(
+    Array.isArray(/** @type {any} */ (receipt)?.results?.reports) ? /** @type {any} */ (receipt).results.reports : [],
+  );
+  // A short-circuit, not a rule: an empty claim set matches nothing in the loop below either, so
+  // removing this changes no outcome and no test can tell. It is here to skip a directory read on
+  // a run that named no reports, and it is labelled so nobody later mistakes it for a guard.
+  if (claimed.size === 0) return [];
+
+  /** @type {string[]} */
+  const sealed = [];
+  for (const name of readdirSync(meeseeksDir)) {
+    if (!name.endsWith('.json') && !name.endsWith('.trx')) continue;
+    if (PER_RUN_ARTIFACTS.includes(name)) continue;
+    /** @type {string} */
+    let bytes;
+    try {
+      bytes = readFileSync(path.join(meeseeksDir, name), 'utf8');
+    } catch {
+      continue;
+    }
+    // The same digest the receipt was built with, or the comparison is between two different
+    // measurements of the same file and would disagree for a reason that is nobody's fault.
+    if (claimed.has(`sha256:${createHash('sha256').update(bytes, 'utf8').digest('hex').slice(0, 32)}`)) {
+      sealed.push(name);
+    }
+  }
+  return sealed;
+}
+
+/**
  * Move the previous run's artifacts into `.meeseeks/runs/NNN/` before this one starts.
  *
  * **It moves; it never reads.** The no-reader guarantee above is about a manifest's *contents*
@@ -346,7 +409,10 @@ function nextArchiveSlot(archiveRoot) {
  * @throws {RunManifestError}
  */
 export function archivePreviousRun(meeseeksDir) {
-  const present = PER_RUN_ARTIFACTS.filter((name) => existsSync(path.join(meeseeksDir, name)));
+  const present = [
+    ...PER_RUN_ARTIFACTS.filter((name) => existsSync(path.join(meeseeksDir, name))),
+    ...archiveSealedReports(meeseeksDir),
+  ];
   if (present.length === 0) return null;
 
   const archiveRoot = path.join(meeseeksDir, RUN_ARCHIVE_DIR);
