@@ -63,8 +63,10 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, linkSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 
 /** The lock's filename inside `.meeseeks/`. */
 export const RUN_LOCK_FILE = 'lock.json';
@@ -129,7 +131,7 @@ export function readRunLock(meeseeksDir) {
   if (!existsSync(file)) return null;
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync(file, 'utf8'));
+    parsed = JSON.parse(readBounded(file, READ_LIMITS.record));
   } catch (error) {
     throw new Error(
       `${lockName} exists but could not be read as JSON ` +
@@ -320,7 +322,7 @@ function readTakeoverClaim(file, shown) {
         'Delete it if none is.',
     );
   }
-  const raw = readFileSync(file, 'utf8');
+  const raw = readBounded(file, READ_LIMITS.record);
   // **Empty is a crash, not corruption, and the difference decides whether this is recoverable.**
   // The claim is created and written by one synchronous `writeFileSync`, so a zero-length claim can
   // only be a process that died between the two — a process that is therefore gone. Refusing it

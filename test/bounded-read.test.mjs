@@ -14,7 +14,7 @@
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { readdirSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -228,4 +228,43 @@ describe('the limit is a ceiling on allocation, not a check after it (REVIEW F19
     writeFileSync(file, body, 'utf8');
     assert.equal(readBounded(file, 1024 * 1024), body);
   });
+});
+
+describe('every record-owning module reads under a ceiling (REVIEW F19)', () => {
+  // **The inventory boundary the finding asks for, in the words it used**: *"Primitive tests cannot
+  // detect an unconverted caller."* A test of `readBounded` proves the primitive enforces a limit.
+  // It cannot prove that the sixteen places which read a driver-owned record actually call it — and
+  // six of them did not, silently, for as long as the primitive had existed.
+  //
+  // The rule is positional, like §6's guard rule and for the same reason: an enumerated list of
+  // converted callers defaults every *new* record reader to unbounded until somebody remembers to
+  // add it, which is exactly how this gap opened.
+
+  /** A module owns a record when it declares the filename of one. */
+  const modules = readdirSync(new URL('../scripts/', import.meta.url))
+    .filter((name) => name.endsWith('.mjs'))
+    .map((name) => ({ name, source: readFileSync(new URL(`../scripts/${name}`, import.meta.url), 'utf8') }))
+    .filter((entry) => /^export const [A-Z_]*FILE = '/m.test(entry.source));
+
+  it('finds the record-owning modules at all, so the rule is not vacuous', () => {
+    // Without this the whole describe passes on an empty list — which is what a broken glob or a
+    // renamed convention would produce, and it would look identical to full compliance.
+    assert.equal(modules.length >= 10, true, `only ${modules.length} record-owning modules were found`);
+  });
+
+  for (const { name, source } of modules) {
+    it(`${name} reads its record through readBounded, never readFileSync`, () => {
+      const raw = source
+        .split('\n')
+        .filter((line) => /\breadFileSync\s*\(/.test(line))
+        // The import itself is not a read.
+        .filter((line) => !/^import\b/.test(line.trim()));
+      assert.deepEqual(
+        raw,
+        [],
+        `${name} reads a decision-bearing record without a ceiling, so a file grown outside the ` +
+          `hook's tool-call boundary forces an unbounded allocation on the decision path:\n${raw.join('\n')}`,
+      );
+    });
+  }
 });

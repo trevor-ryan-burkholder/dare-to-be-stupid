@@ -16,8 +16,10 @@
  * it found has just written it to your terminal scrollback and your CI log.
  */
 
-import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 
 /** @typedef {'block' | 'warn'} Severity */
 /** @typedef {{ severity: Severity, rule: string, file: string, line: number, detail: string }} Finding */
@@ -274,7 +276,7 @@ export function scanAgentSurface(root) {
     /** @type {string} */
     let contents;
     try {
-      contents = readFileSync(path.join(root, relative), 'utf8');
+      contents = readBounded(path.join(root, relative), READ_LIMITS.evidence);
     } catch {
       continue;
     }
@@ -419,7 +421,7 @@ const SURFACE_SCAN_VERSION = 1;
  * @returns {string} the path written
  */
 export function recordSurfaceScan(meeseeksDir, record, io = {}) {
-  const read = io.readStore ?? ((/** @type {string} */ file) => readFileSync(file, 'utf8'));
+  const read = io.readStore ?? ((/** @type {string} */ file) => readBounded(file, READ_LIMITS.record));
   const file = path.join(meeseeksDir, SURFACE_SCAN_FILE);
   /** @type {{ version: number, scans: SurfaceScanRecord[] }} */
   let store = { version: SURFACE_SCAN_VERSION, scans: [] };

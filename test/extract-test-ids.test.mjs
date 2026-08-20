@@ -15,6 +15,7 @@ import { describe, it } from 'node:test';
 import { extractTestIds } from '../scripts/ratchet.mjs';
 import { decodeXmlEntities } from '../scripts/reporters/trx.mjs';
 import {
+  MAX_REPORT_TESTS,
   REPORTERS,
   ReportFormatError,
   collapseByWorstStatus,
@@ -23,6 +24,9 @@ import {
 } from '../scripts/reporters/index.mjs';
 
 const FIXTURE_DIR = new URL('./fixtures/reporters/', import.meta.url);
+
+/** A stable root for reports this file synthesises rather than reads from a fixture. */
+const ROOT = '/repo';
 
 /** @param {string} name */
 function readFixture(name) {
@@ -549,5 +553,58 @@ describe('TRX, against real dotnet output', () => {
     // `&amp;lt;` is the literal text "&lt;", not a less-than sign. Replacing &amp; last would
     // silently rewrite a test name that legitimately contains it.
     assert.equal(decodeXmlEntities('&amp;lt;'), '&lt;');
+  });
+});
+
+describe('a report may not amplify past what the ratchet will carry (REVIEW F19)', () => {
+  /** @param {number} count a vitest report declaring `count` passing tests */
+  const reportOf = (count) => ({
+    numTotalTests: count,
+    testResults: [
+      {
+        name: `${ROOT}/test/a.test.js`,
+        assertionResults: Array.from({ length: count }, (_, index) => ({
+          ancestorTitles: [],
+          title: `case ${index}`,
+          status: 'passed',
+        })),
+      },
+    ],
+  });
+
+  it('carries an ordinary suite without complaint', () => {
+    // The neighbour first, and it is not decoration: a ceiling set below a real suite would be
+    // discovered by a monorepo mid-run, at the moment the ratchet stopped being able to advance.
+    assert.equal(parseReport(reportOf(1_000), { rootDir: ROOT }).tests.length, 1_000);
+  });
+
+  it('refuses a report past the ceiling, and says how far past', () => {
+    // **A byte ceiling does not bound what a parser allocates from those bytes.** 32MB of
+    // `{"t":"x","s":"passed"}` is on the order of a million records, each becoming an id string, a
+    // Set entry, a line of monotonic state and a digest — all downstream of the read.
+    assert.throws(
+      () => parseReport(reportOf(MAX_REPORT_TESTS + 1), { rootDir: ROOT }),
+      (error) =>
+        error instanceof ReportFormatError &&
+        error.message.includes(String(MAX_REPORT_TESTS + 1)) &&
+        error.message.includes(String(MAX_REPORT_TESTS)),
+    );
+  });
+
+  it('refuses rather than truncating, and says why that is the choice', () => {
+    // F19 states it directly: do not silently truncate evidence. A report parsed down to its first
+    // records would advance the ratchet on a subset and record every dropped id as a regression on
+    // the next run — a hard reset caused by the size of the report rather than by the code.
+    try {
+      parseReport(reportOf(MAX_REPORT_TESTS + 1), { rootDir: ROOT });
+      assert.fail('an oversized report was accepted');
+    } catch (error) {
+      assert.match(String(/** @type {Error} */ (error).message), /Refusing rather than truncating/);
+      assert.match(String(/** @type {Error} */ (error).message), /regression on the next run/);
+    }
+  });
+
+  it('accepts exactly the ceiling, so the boundary is the number it names', () => {
+    assert.equal(parseReport(reportOf(MAX_REPORT_TESTS), { rootDir: ROOT }).tests.length, MAX_REPORT_TESTS);
   });
 });

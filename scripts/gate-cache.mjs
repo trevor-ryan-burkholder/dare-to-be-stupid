@@ -41,9 +41,9 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 
-import { hashFileStreaming, measure } from './bounded-read.mjs';
+import { READ_LIMITS, hashFileStreaming, measure, readBounded } from './bounded-read.mjs';
 import path from 'node:path';
 
 /** The driver-owned cache file, under `.meeseeks/` and therefore positionally guarded (§6). */
@@ -179,7 +179,7 @@ export function loadGateCache(meeseeksDir) {
   /** @type {unknown} */
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync(file, 'utf8'));
+    parsed = JSON.parse(readBounded(file, READ_LIMITS.record));
   } catch {
     return empty;
   }

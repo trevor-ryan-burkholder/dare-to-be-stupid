@@ -29,8 +29,10 @@
  * it positionally. The same move applies here, and the deferral no longer holds.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 
 /** @typedef {{ path: string, content: string }} OracleFile */
 /**
@@ -290,7 +292,7 @@ export function readOracle(meeseeksDir, options) {
   /** @type {unknown} */
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync(file, 'utf8'));
+    parsed = JSON.parse(readBounded(file, READ_LIMITS.record));
   } catch (error) {
     throw new OracleError(`the oracle store will not parse: ${/** @type {Error} */ (error).message}`);
   }
@@ -416,7 +418,7 @@ export function resolveArtifactCommand(root) {
   /** @type {Record<string, unknown>} */
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync(manifest, 'utf8'));
+    parsed = JSON.parse(readBounded(manifest, READ_LIMITS.record));
   } catch {
     return null;
   }

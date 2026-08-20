@@ -43,8 +43,10 @@
  * failed three iterations running, which is the signal case I never got.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 
 /**
  * @typedef {'web-ui' | 'desktop-ui' | 'cli' | 'api' | 'network-service' | 'library'
@@ -226,7 +228,7 @@ function readPackageManifest(root) {
   const file = path.join(root, 'package.json');
   if (!existsSync(file)) return null;
   try {
-    const parsed = JSON.parse(readFileSync(file, 'utf8'));
+    const parsed = JSON.parse(readBounded(file, READ_LIMITS.record));
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     return {
       manifest: parsed,
@@ -561,7 +563,7 @@ export function establishedCapabilities(meeseeksDir, options = {}) {
   /** @type {unknown} */
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync(file, 'utf8'));
+    parsed = JSON.parse(readBounded(file, READ_LIMITS.record));
   } catch (error) {
     throw new CapabilityError(
       `${file} exists but could not be read as JSON (${/** @type {Error} */ (error).message}). It records the ` +
@@ -600,7 +602,7 @@ export function readDeclaredCapabilities(meeseeksDir) {
   /** @type {string} */
   let contents;
   try {
-    contents = readFileSync(file, 'utf8');
+    contents = readBounded(file, READ_LIMITS.record);
   } catch (error) {
     throw new CapabilityError(`${file} could not be read: ${/** @type {Error} */ (error).message}`);
   }

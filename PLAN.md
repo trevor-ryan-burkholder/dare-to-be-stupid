@@ -1543,6 +1543,60 @@ recorded at all (2).
 accordingly; what is recorded here is the classification a terminal reader needs, and the read
 boundary itself remains item 84's.
 
+### 131. Every record reader is bounded, and an inventory rule says so — **DONE (0.254.0)** (REVIEW F19)
+
+F19's remaining objection was two things, and the second is the one that matters: *"the declared
+record limit is not an inventory boundary"*, and *"primitive tests cannot detect an unconverted
+caller."* `readBounded` was correct and `READ_LIMITS.record` already existed; sixteen readers across
+eleven modules simply never called them, silently, for as long as the primitive had.
+
+**Sixteen readers converted.** Ratchet state, pins, capability records, the supply ledger, the
+assumptions log, the gate-skip cache, the event journal, the nesting ticket store, the Oracle store
+and its manifest, the run lock and its takeover claim, and the security scan's store. Each is
+monotonic state, a gate input, or a field of the terminal acceptance receipt, and each could be
+overgrown by a test process, a background child or an operator **outside the hook's tool-call
+boundary** — the guard sees tool calls, not every write on the machine. The security scan reads two
+different things and now takes the limit that matches each: `evidence` for a candidate source file,
+`record` for its own store.
+
+**And the inventory rule, which is what F19 actually asked for.** A module owns a record when it
+declares one's filename; every such module is then held to reading through `readBounded` and never
+`readFileSync`. **Positional, not enumerated**, for §6's reason — a list of converted callers defaults
+every *new* record reader to unbounded until somebody remembers to add it, which is precisely how
+this gap opened. The rule carries its own vacuity guard: it asserts it found at least ten
+record-owning modules first, because a broken glob or a renamed convention would otherwise produce an
+empty list that looks identical to full compliance.
+
+Every conversion was confirmed by the linter rather than by inspection: the now-unused `readFileSync`
+import is what proves the last raw read in a module is gone.
+
+**Validation:** lint and typecheck clean, `npm test` **3372 of 3372** (exit 0). Three red proofs: one
+record reader reverted to a raw read, the journal reverted, and the rule finding no modules at all.
+
+**Report cardinality landed too (same version).** `MAX_REPORT_TESTS` is 200,000, applied to
+**every** reporter through one door — raw formats included — for the reason `spawnClaude` checks its
+budget at one door: a format added later cannot forget it. `READ_LIMITS.report` caps a report at
+32MB, and 32MB of `{"t":"x","s":"passed"}` is on the order of a million records, each becoming an id
+string, a `Set` entry, a line of monotonic state and a digest. All of that amplification is
+**downstream of the read**, so the read's limit cannot see it.
+
+**It refuses rather than truncating**, which F19 states directly: a report parsed down to its first
+records would advance the ratchet on a subset and record every dropped id as a regression on the next
+run — a hard reset caused by the size of the report rather than by the code.
+
+**The honest scope, stated in the module rather than implied:** this bounds what enters monotonic
+state, not what `JSON.parse` allocated getting here. A synchronous parse cannot be interrupted
+partway, so the byte ceiling remains the only bound on that step. Claiming otherwise would be the
+overclaim §4 refuses.
+
+Five further red proofs: the ceiling never applied (2 failures), an off-by-one boundary, the object
+reporters bypassing the bound, a ceiling set below a real suite, and the refusal ceasing to explain
+itself (2). `npm test` **3391 of 3391** and `npm run test:integration` **295 of 295**, both exit 0.
+
+**Still owed for F19:** report *depth*. Bounding it would mean traversing an object `JSON.parse` has
+already built, which is the allocation the byte ceiling already governs — so the useful version is a
+streaming parser, and that is a larger change than this finding needs.
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation

@@ -41,8 +41,10 @@
  * the middle of a history is not a history.
  */
 
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
+
+import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 
 /** Where the journal lives. Machine state: driver-owned, positionally guarded, never tracked. */
 export const JOURNAL_FILE = 'events.ndjson';
@@ -136,7 +138,7 @@ export function recordEvent(meeseeksDir, event, io) {
 export function readJournal(meeseeksDir) {
   const file = path.join(meeseeksDir, JOURNAL_FILE);
   if (!existsSync(file)) return [];
-  const lines = readFileSync(file, 'utf8').split('\n');
+  const lines = readBounded(file, READ_LIMITS.record).split('\n');
   /** @type {JournalEvent[]} */
   const events = [];
   for (const [index, line] of lines.entries()) {

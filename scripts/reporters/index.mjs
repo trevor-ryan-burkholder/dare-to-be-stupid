@@ -88,6 +88,23 @@ export const REPORTERS = [vitestReporter, playwrightReporter];
 export const RAW_REPORTERS = [trxReporter];
 
 /**
+ * How many test records one report may declare (REVIEW F19).
+ *
+ * **A byte ceiling does not bound what a parser allocates from those bytes.** `READ_LIMITS.report`
+ * caps a report at 32MB, and 32MB of `{"t":"x","s":"passed"}` is on the order of a million records
+ * — each of which becomes an id string, an entry in a `Set`, a line in monotonic ratchet state, and
+ * a digest. The amplification is downstream of the read, so the read's limit cannot see it.
+ *
+ * 200,000 is far above any real suite and far below the point where the ratchet's own state stops
+ * being a file anybody can read. A monorepo running 50,000 tests is comfortably inside it.
+ *
+ * **It refuses rather than truncating**, which F19 states directly: *do not silently truncate
+ * evidence.* A report parsed down to its first 200,000 records would advance the ratchet on a
+ * subset and record the rest as regressions on the next run.
+ */
+export const MAX_REPORT_TESTS = 200_000;
+
+/**
  * Worst-first. Used to collapse duplicate ids and to keep a failure visible.
  * @type {TestStatus[]}
  */
@@ -130,7 +147,8 @@ export function collapseByWorstStatus(tests) {
  * @param {unknown} input the report, as an object or as the raw JSON text
  * @param {{ rootDir: string }} options `rootDir` is the repo root every id is relative to
  * @returns {ParsedReport}
- * @throws {ReportFormatError} when the report cannot be understood
+ * @throws {ReportFormatError} when the report cannot be understood, or declares more records than
+ *   {@link MAX_REPORT_TESTS}
  */
 export function parseReport(input, options) {
   const rootDir = options?.rootDir;
@@ -143,7 +161,7 @@ export function parseReport(input, options) {
   // corrupt file instead of an unregistered format.
   if (typeof input === 'string') {
     const raw = rawReporterFor(input);
-    if (raw !== null) return { runner: raw.name, tests: raw.parse(input) };
+    if (raw !== null) return bounded(raw.name, raw.parse(input));
   }
 
   /** @type {unknown} */
@@ -167,7 +185,35 @@ export function parseReport(input, options) {
   }
 
   const reporter = /** @type {Reporter} */ (REPORTERS.find((entry) => entry.name === runner));
-  return { runner, tests: reporter.parse(/** @type {Record<string, any>} */ (report), rootDir) };
+  return bounded(runner, reporter.parse(/** @type {Record<string, any>} */ (report), rootDir));
+}
+
+/**
+ * Refuse a report that declares more records than the ratchet will carry.
+ *
+ * Applied to **every** reporter through one door, raw formats included, for the reason
+ * `spawnClaude` checks its budget at one door: a format added later cannot forget it.
+ *
+ * The honest scope, stated because the alternative is an overclaim: this bounds what enters
+ * monotonic state, not what `JSON.parse` allocated getting here. A synchronous parse cannot be
+ * interrupted partway, so the byte ceiling is the only bound on that step, and this is the bound on
+ * everything after it — the id set, the state file, the per-id digests, and the brief that renders
+ * them.
+ *
+ * @param {Runner} runner
+ * @param {TestRecord[]} tests
+ * @returns {ParsedReport}
+ * @throws {ReportFormatError}
+ */
+function bounded(runner, tests) {
+  if (tests.length > MAX_REPORT_TESTS) {
+    throw new ReportFormatError(
+      `the ${runner} report declares ${tests.length} test records, above the ${MAX_REPORT_TESTS} this build ` +
+        'will carry. Refusing rather than truncating: a report parsed down to its first records would advance ' +
+        'the ratchet on a subset and record every dropped id as a regression on the next run.',
+    );
+  }
+  return { runner, tests };
 }
 
 /**

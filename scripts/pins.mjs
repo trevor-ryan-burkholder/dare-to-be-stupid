@@ -72,8 +72,10 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 
 import { quarantineCorruptFile } from './quarantine.mjs';
 
@@ -372,7 +374,7 @@ export function readPins(meeseeksDir, quarantine = {}) {
   /** @type {unknown} */
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync(file, 'utf8'));
+    parsed = JSON.parse(readBounded(file, READ_LIMITS.record));
   } catch (error) {
     quarantineCorruptFile(file, { ...quarantine, keepInPlace: true });
     throw new PinsError(`${file} could not be parsed: ${/** @type {Error} */ (error).message}`);

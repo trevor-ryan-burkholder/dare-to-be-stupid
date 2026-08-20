@@ -24,8 +24,10 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 
 /**
  * The kinds of thing that can go into a role's context.
@@ -319,7 +321,7 @@ export function appendSupplyRecord(meeseeksDir, record, options = {}) {
     /** @type {unknown} */
     let parsed;
     try {
-      parsed = JSON.parse(readFileSync(file, 'utf8'));
+      parsed = JSON.parse(readBounded(file, READ_LIMITS.record));
     } catch {
       // Unreadable is handled below, identically to a schema this build does not know: both mean
       // the record is no longer continuous, and both are said out loud rather than papered over.

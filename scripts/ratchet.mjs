@@ -22,7 +22,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { READ_LIMITS, readBounded } from './bounded-read.mjs';
@@ -211,7 +211,10 @@ export function loadState(meeseeksDir, quarantine = {}) {
   /** @type {string} */
   let raw;
   try {
-    raw = readFileSync(file, 'utf8');
+    // **Bounded before allocation** (REVIEW F19). The ratchet is monotonic state on the decision
+    // path, and a file grown outside the hook's tool-call boundary — by a test process, a background
+    // child, or an operator — forces an unbounded read here before anything can judge it.
+    raw = readBounded(file, READ_LIMITS.record);
   } catch (error) {
     if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') return emptyState();
     throw new RatchetStateError(`${file} could not be read: ${/** @type {Error} */ (error).message}`);

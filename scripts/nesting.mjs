@@ -30,8 +30,10 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 
 /** Driver-owned, and protected by the `.meeseeks/**` rule with no entry of its own. */
 export const NESTING_FILE = 'nesting.json';
@@ -71,7 +73,7 @@ function readTickets(meeseeksDir) {
   /** @type {unknown} */
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync(file, 'utf8'));
+    parsed = JSON.parse(readBounded(file, READ_LIMITS.record));
   } catch {
     // **Unreadable is not permission.** A store nobody can parse cannot authorize anything, and
     // treating it as empty would be the same answer as treating it as forged.
