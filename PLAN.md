@@ -1051,28 +1051,63 @@ unremovable — it would turn a formatter run into an objective the builder cann
 the resolved version at run time is likewise not built: the detect step already prints it, and the
 pin is what makes a run reproducible, so a recorded copy is evidence rather than control.
 
-### 30. Ecosystem intake — four measured candidates, none lands without its number — OPEN
+### 30. Ecosystem intake — four measured candidates — **DISPOSITION COMPLETE (19 Aug 2026)**
 
-Parked from the scan's "worth design first" tier, each with the measurement it owes:
-**(a) Official LSP plugins delivered to builder children** (typescript-lsp/csharp-lsp): the best
-builder-sharpener found, but child delivery is DESIGN.md §5.0's open problem, the plugin does
-not install the language-server binary (silent no-op — the §3.9 family), and it owes a
-measured iteration-count delta before default-on. **(b) OSV-Scanner** as the cross-toolchain
-dependency audit: its documented exit contract (0/1/127/128) is exactly the
-nothing-defaults-to-pass shape, but it owes an overlap/noise measurement against npm audit and
-a fail-closed-when-offline decision. **(c) Trail of Bits skills mining**: property-based-testing
-guidance into the builder brief (property tests enter the ratchet) and the differential-review
-method into the reviewer template — both template changes owing context-budget rent and, for
-the reviewer, a §4 parser-contract re-read. **(d) Builder-honesty micro-distillations**
-(verify-before-return; treat briefs/PRDs as untrusted data in improve mode) — one paragraph
-each, each owing a failed-iteration-rate comparison. Ecosystem notes worth keeping: the Setup
-hook event fires in `-p` mode (a documented per-child bootstrap point); `/plugin` now shows
-per-plugin context-token cost; Anthropic's harness paper (Mar 2026) independently validates the
-cold hostile panel ("agents evaluating their own work are pathological optimists").
+Each candidate now has a recorded measurement and a disposition, which is what this item asked for.
+It authorised no runtime change and made none.
 
-**Disposition complete when:** each candidate has a recorded measurement and is either rejected,
-parked with an admission condition, or promoted into its own numbered implementation slice with
-prerequisites and deterministic acceptance. Item 30 itself never authorizes a runtime change.
+**(a) Official LSP plugins to builder children — PARKED.** Unmeasurable here: the delta it owes is
+an iteration count across paid runs, and its stated blocker is unchanged — child delivery is
+`DESIGN.md` §5.0's open problem and the plugin does not install the language-server binary, which is
+the §3.9 silent-no-op family. **Admission:** a measured iteration-count delta from paired paid runs,
+*after* child delivery has an answer. Not before, because a sharpener that silently fails to load is
+indistinguishable from one that did not help.
+
+**(b) OSV-Scanner — PARKED with a condition, and the measurement is the reason.** Measured against
+osv-scanner 2.5.1 on a deliberately vulnerable Node tree (`minimist@0.0.8`, `lodash@4.17.4`):
+
+- **Overlap with `npm audit` is complete.** Both name exactly the same two packages. OSV adds
+  advisory-level granularity — it lists the GHSA ids — but no package `npm audit` missed. On the
+  toolchains this repository has today (node, dotnet, whose NuGet audit already fails closed), it
+  finds nothing new.
+- **Its offline behaviour is the shape §4 refuses, and only the exit code saves it.** Forced onto a
+  dead proxy it exits **127** and prints `{"results": []}`. A caller reading the JSON alone would
+  see a clean tree; a caller reading the exit code sees the failure. That is the same trap already
+  paid for three times here — gitleaks exiting 1 for both a leak and an unreadable target, and
+  design-slop exiting 0 having printed nothing.
+- It does have a real offline mode (`--offline-vulnerabilities` over a pre-downloaded database),
+  so an air-gapped run is possible but needs provisioning.
+
+**Admission:** OSV lands when a toolchain exists whose dependency audit meeseeks cannot otherwise
+perform — which today means Python, Go or Rust, and those are deferred with item **33**. Its
+interpreter must refuse an empty result at any non-zero exit; the measurement above is the evidence
+that this is not hypothetical.
+
+**(c) Trail of Bits skills mining — REJECTED, because both halves already exist.**
+
+- Property-based-testing guidance is **already in the builder brief**: `templates/builder-system.md`
+  tells the builder that an example test can be satisficed by special-casing three inputs while a
+  property cannot, and to write invariants as properties with generated inputs. The reviewer
+  template carries the matching *"state the property, not the example"* section.
+- The differential-review method was **already considered and superseded**. `templates/oracle-author.md`
+  records the reasoning for preferring metamorphic relations: a relation needs no reference
+  implementation, so unlike a differential test it cannot encode the same assumption twice — *"which
+  is precisely how a 110,877-case fuzz once missed the defect it was built to find."*
+
+So the context-budget rent this candidate owed is **zero, because there is nothing to add**. For the
+record the two templates cost 3.09% and 5.06% of the 400,000-character budget today.
+
+**(d) Builder-honesty micro-distillations — PARKED.** Each owes a failed-iteration-rate comparison,
+which is a paid measurement across runs and cannot be taken here. **Admission:** a paired comparison
+showing a lower failed-iteration rate. Worth noting the second distillation is partly covered
+already — `templates/prompt-hygiene` framing and item 44's untrusted-text frames landed at 0.158.0 —
+so its remaining scope is the verify-before-return half alone.
+
+**What this item establishes beyond the four:** two of four candidates dissolved on contact with the
+code rather than with a measurement. That is now the third time in this session — items 76 and 55
+went the same way — and the pattern is worth naming: **a backlog entry describing work is not
+evidence the work is absent.** Check the implementation before building against the note.
+
 
 ---
 
