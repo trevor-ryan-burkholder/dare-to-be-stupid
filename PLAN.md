@@ -2292,6 +2292,15 @@ address no longer condemning the name, a truncated capture kept, an empty captur
 absolute deadline removed, a cookie header sent, script contents surviving, an unclosed script
 surviving, and the judged address not handed to the socket).
 
+**One defect found afterwards, by the suite itself (0.247.0).** The hop timeout message reported the
+*remaining* budget rather than the ceiling the operator set — on hop four of a chain that is a number
+nobody chose, reading as a configured limit. It surfaced as a full-suite-only failure, which exposed
+a second and worse problem: the original case hung on hop **one**, where remaining and ceiling are
+equal to the millisecond, so a message reporting the wrong one passed except under load. A flaky
+assertion is worse than none. The case now burns a measurable slice of the budget on hop one before
+hanging on hop two, so the two numbers are unambiguously different, and it fails deterministically
+both when the message reverts and when the absolute deadline is removed.
+
 **Deliberately not wired to the loop.** Acquiring anything at all is an outbound effect and item
 **106** owns when a job may have one. The Driver step that reads unresolved sources from a citation
 manifest and writes their packages is the next slice, and it is gated on that decision rather than
@@ -2896,6 +2905,37 @@ never enter the child at all, which no downstream scrub can undo. No Eve, no Ver
 runtime dependency.
 
 ### 57. Machine-readable morning-acceptance evals — OPEN (extends item 20)
+
+**Substrate landed, 0.247.0 — `scripts/eval-result.mjs` (`DESIGN.md` §11.3).** The Done-when clause
+*"cases A/B emit schema-validated, directly comparable results"* has its artifact; the campaign around
+it does not exist yet and is stated below rather than implied.
+
+One JSON record per trial, following `run-manifest.mjs`'s discipline: nothing inferred, no clock read,
+a missing field throws. Four rules with teeth **at construction time** rather than in a reader's
+discipline — an accepted trial cannot have a failing deterministic gate whatever the judge scored; a
+trial that made a false claim or had a forbidden effect cannot be accepted at all; an infrastructure
+failure cannot also be an acceptance because it produced no measurement; and requested and observed
+models stay distinct, with `null` meaning *not reported* and a role missing from the observed map
+refused outright.
+
+`comparable()` refuses across any differing profile field or external tool version and names **every**
+reason rather than the first, and refuses a comparison that would rest on an unobserved model — the
+headline *"model X beat model Y"* is unfalsifiable if nothing recorded which model served the
+requests. `summarize()` keeps every failed, interrupted and missing attempt in the denominator, counts
+infrastructure failures separately from measurements, returns `null` rather than manufacturing a rate
+from zero measurements, and calls a cohort reliable only when **every** measured trial was accepted —
+*two of three* is the shape that gets promoted as a win.
+
+**Validation:** lint and typecheck clean, `npm test` **3295 of 3295** over three consecutive runs,
+`release-check` passed. Ten red proofs: a judge promoting a failed gate, a destructive trial accepted,
+an outage accepted, an outage charged to the model (2 failures), a failed attempt leaving the
+denominator, one-of-three counting as reliable (2), a rate manufactured from no measurements, a
+changed profile compared anyway (2), an unobserved model compared anyway, and a role missing from
+`observedModel` accepted.
+
+**Still open on this item:** the sealed evaluation protocol, counterbalanced run order, uncertainty
+interval, scenario contract audit, isolation canary, and the unseen final partition — all of which
+need paid comparative runs and item 20's cases A/B to be worth anything.
 
 **Problem solved:** `DOGFOOD.md` records useful scenarios and prose outcomes, but the repository
 cannot yet compare runs mechanically on the product metric: whether an unattended result is actually

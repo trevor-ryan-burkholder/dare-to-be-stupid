@@ -132,7 +132,11 @@ export async function resolvePermitted(hostname, lookup = dns.promises.lookup) {
  * timeout is not a deadline when the server keeps writing.
  *
  * @param {{ target: URL, addresses: { address: string, family: number }[], deadlineMs: number,
- *   request?: typeof https.request }} options
+ *   budgetMs?: number, request?: typeof https.request }} options
+ *   `deadlineMs` is what is left of the acquisition's budget and is what the timer runs on.
+ *   `budgetMs` is what the **operator** set, and is what the message says — on hop four of a chain
+ *   the remaining slice is a number nobody chose, and reporting it would read as a ceiling that was
+ *   never configured.
  * @returns {Promise<{ ok: true, response: HopResponse } | { ok: false, reason: string }>}
  */
 export function fetchHop(options) {
@@ -149,7 +153,11 @@ export function fetchHop(options) {
       resolve(result);
     };
     const timer = setTimeout(
-      () => settle({ ok: false, reason: `acquiring ${options.target.href} exceeded ${options.deadlineMs}ms` }),
+      () =>
+        settle({
+          ok: false,
+          reason: `acquiring ${options.target.href} exceeded ${options.budgetMs ?? options.deadlineMs}ms`,
+        }),
       options.deadlineMs,
     );
 
@@ -255,6 +263,7 @@ export async function acquireSource(options) {
       target: permitted.target,
       addresses: resolution.addresses,
       deadlineMs: Math.max(1, expiresAt - Date.now()),
+      budgetMs: deadlineMs,
       request: options.request,
     });
     if (!hopResult.ok) return { ok: false, reason: `hop ${hop + 1}: ${hopResult.reason}` };

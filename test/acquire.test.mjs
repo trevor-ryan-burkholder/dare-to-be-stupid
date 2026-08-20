@@ -13,7 +13,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { setImmediate } from 'node:timers';
+import { setImmediate, setTimeout } from 'node:timers';
 import { describe, it } from 'node:test';
 
 import { MAX_REDIRECTS, MAX_SOURCE_BYTES, acquireSource, inertText, resolvePermitted } from '../scripts/acquire.mjs';
@@ -338,27 +338,50 @@ describe('acquireSource', () => {
     assert.deepEqual(Object.keys(sent).sort(), ['accept', 'user-agent']);
   });
 
-  it('bounds the whole acquisition rather than each hop', async () => {
-    // A per-hop deadline multiplies by the redirect limit, so five slow hops would take five times
-    // the ceiling the operator set. A hop that never answers must therefore exhaust the total.
+  it('bounds the whole acquisition rather than each hop, and names the ceiling the operator set', async () => {
+    // Two properties in one case, because they are the same mistake seen from either end. A
+    // per-hop deadline would multiply by the redirect limit, so five slow hops would take five
+    // times the ceiling. And the message must name **that ceiling** rather than whatever was left
+    // when the hanging hop started — on hop four of a chain the remainder is a number nobody chose.
+    //
+    // The first hop deliberately burns a measurable slice of the budget before redirecting, so the
+    // remainder at hop two is unambiguously **not** the ceiling. An earlier version of this case
+    // hung on hop one, where the two numbers are equal to the millisecond and a message reporting
+    // the wrong one still passed — it only failed under full-suite load, which is a flaky
+    // assertion and worse than none.
     const started = Date.now();
     const result = await acquireSource({
       id: 's',
       url: 'https://example.org/slow',
       now: NOW,
-      deadlineMs: 120,
-      lookup: resolving('93.184.216.34'),
+      deadlineMs: 400,
+      lookup: resolvingByName({ 'example.org': ['93.184.216.34'], 'hang.example.org': ['93.184.216.35'] }),
       request: /** @type {any} */ (
-        () => {
+        (/** @type {any} */ options, /** @type {(r: any) => void} */ callback) => {
           const request = new EventEmitter();
-          /** @type {any} */ (request).end = () => {};
           /** @type {any} */ (request).destroy = () => {};
+          /** @type {any} */ (request).end = () => {
+            // The hanging hop never calls back, so the acquisition's own timer is the only bound.
+            if (options.hostname !== 'example.org') return;
+            setTimeout(() => {
+              const response = new EventEmitter();
+              /** @type {any} */ (response).statusCode = 302;
+              /** @type {any} */ (response).headers = { location: 'https://hang.example.org/x' };
+              callback(response);
+              setImmediate(() => response.emit('end'));
+            }, 150);
+          };
           return request;
         }
       ),
     });
     assert.equal(result.ok, false);
-    assert.match(result.ok === false ? result.reason : '', /exceeded 120ms/);
-    assert.equal(Date.now() - started < 1_000, true, 'the deadline did not actually fire');
+    const reason = result.ok === false ? result.reason : '';
+    assert.match(reason, /hop 2: /, 'the first hop did not complete, so the remainder was never smaller');
+    assert.match(reason, /exceeded 400ms/);
+    // The remaining budget at hop two was around 250ms. Reporting it would be reporting a ceiling
+    // nobody configured, so it must not appear.
+    assert.equal(/exceeded (2\d\d|1\d\d)ms/.test(reason), false, `the message reported the remaining slice: ${reason}`);
+    assert.equal(Date.now() - started < 2_000, true, 'the deadline did not actually fire');
   });
 });

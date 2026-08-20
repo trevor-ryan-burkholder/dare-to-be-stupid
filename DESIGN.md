@@ -3397,6 +3397,51 @@ from a run in which nothing passed, which is exactly how both 10 August runs end
 `passing: 0`. `Toolchain.reports` is what lets the driver ask instead of assume.
 
 
+### 11.3 The eval result — what makes two runs comparable
+
+`DOGFOOD.md` records scenarios and prose outcomes, and prose cannot be compared. `scripts/eval-result.mjs`
+is the artifact that can: one schema-validated JSON record per trial, carrying enough identity that
+two of them are either **comparable** or **refused** — never quietly averaged. It follows §7.1's
+discipline exactly: nothing is inferred, no clock is read, and a missing field throws, because a
+record that quietly says `"unknown"` looks like evidence.
+
+Four rules decide whether a comparison means anything, and each one has teeth at construction time
+rather than in a reader's discipline.
+
+**Requested and observed models are different facts.** A run *asks* for a model; the provider
+reports what it served. An unreported observation is `null` — explicit — and `comparable()` refuses
+a comparison resting on one. Collapsing the two fields would make every campaign's headline
+unfalsifiable, because nothing would record whether the model under test is the model that ran. A
+role simply *absent* from the observed map is refused too: absent and not-reported are different,
+and only one of them is a recorded fact.
+
+**A profile mismatch refuses the comparison rather than noting it.** More CPU, different
+concurrency, a longer phase timeout, a newer `git`: each changes what a run can do, and a delta
+measured across two of them is a measurement of the profile. The refusal names **every** differing
+field rather than the first, because reporting one confound at a time turns a single fix into three
+round trips.
+
+**A judge is advisory and can never promote.** A cold model score is recorded and may not turn a
+deterministic failure into success. This is §4's *nothing defaults to pass* arriving where the
+temptation is strongest — the judge is the cheapest signal in the harness.
+
+**A non-compensable failure cannot be averaged.** A false `SHIPPED`, a scope or security violation,
+a destructive effect: these are not low scores on a scale with a high end. Three good trials and
+one destructive one is not 75%, and the summary reports them as a separate count.
+
+Underneath all four is the accounting rule: **a failed, interrupted or missing attempt stays in the
+denominator.** `attempts` counts everything handed over; `measured` excludes infrastructure
+failures, because a provider outage is not evidence about a model; the rate is computed over
+`measured` and both are reported, so the difference is visible rather than absorbed. A cohort is
+`reliable` only when every measured trial was accepted — *two of three* is the shape that gets
+promoted as a win, and the note states the arithmetic rather than leaving a rate to be read
+charitably.
+
+**What this does not yet do.** It is the substrate, not the campaign. The sealed evaluation
+protocol, the counterbalanced run order, the uncertainty interval, and the unseen final partition
+that item 57 also specifies are unbuilt, and every one of them needs paid comparative runs to be
+worth anything.
+
 ## 12. Build order
 
 Write `CLAUDE.md` (test gates, slice-init rules) before step 1.
