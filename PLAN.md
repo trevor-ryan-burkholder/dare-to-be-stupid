@@ -5261,9 +5261,31 @@ detection read as absent, a required timeout made non-fatal, the detect ceiling 
 install given the detect ceiling, the deadline reported as an ordinary failure, and every failure
 claiming to have timed out.
 
-**Still owed for closure:** F41's receipt and lock-release half is F10's, and the finding's own
-acceptance also names a durable Phase-1 receipt for a timed-out required plugin — reachable only
-through the full `main` lifecycle rather than `installQualityPlugins` alone.
+**The lifecycle half landed too** (`test/integration/provisioning-lifecycle.integration.test.mjs`),
+and it discharges the same clause for **F44**, whose current verification says in as many words that
+*"the required full-Driver fixture has not yet shown that a timed-out pre-loop Git helper produces
+the durable terminal receipt and releases the run lock."*
+
+The mechanisms were proven separately — `plugin-deadline` shows the ceiling fires and the descendants
+die, `git-deadline` shows the same for a resistant clean filter — and neither could show what happens
+**afterwards**, because both call a helper directly while the receipt and the lock belong to `main`.
+A run that bounds its hang and then exits with no receipt, still holding the repository, has turned
+an infinite hang into a silent one.
+
+So the fixture drives the real `main` over a real repository carrying F44's verified reproduction — a
+repository-local clean filter of `sleep 600`, which a Builder can install itself — and asks three
+things of the aftermath: a non-zero exit, a durable `outcome.json` with a stated reason, and no lock.
+Two neighbours make those mean something: an ordinary run leaves a receipt and no lock too, so the
+first case is about the hang rather than about `main` refusing everything; and a **second run starts
+afterwards**, which is the only check that actually catches a lock left behind, because a stale lock
+is invisible until the next run, hours later and unattended.
+
+Proved red by removing the terminal writer (2 failures) and by removing the lock release (all 3). `npm run test:integration` **289 of 289**, up from 286.
+
+**One fixture defect, found immediately.** The first version left the repository unconfigured, so
+every run refused in 25ms with *"config.json does not exist"* and wrote no receipt — passing nothing
+and proving nothing about a hang. Scaffolding one iteration and no quality plugins makes the Git
+helper the only long thing in the run.
 
 ### 102. The mixed-version takeover race — IMPLEMENTED; REVIEW F39 open pending Codex
 
