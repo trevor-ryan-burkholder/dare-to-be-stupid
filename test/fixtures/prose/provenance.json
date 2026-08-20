@@ -1,0 +1,21 @@
+{
+  "vitest-4.1.11-artifact": {
+    "runner": "vitest",
+    "version": "4.1.11",
+    "command": "npx vitest run --reporter=json --outputFile=.meeseeks/test-report.json",
+    "rootDir": "/tmp/claude-1000/-home-tburkholder-dev-meeseeks/1bb11771-5dd8-4b67-b153-70ee1b49dc50/scratchpad/artifact",
+    "sourceFiles": ["checks/structure.check.js"],
+    "subject": "manuscript/01-intro.md and manuscript/02-findings.md — a real two-chapter artifact, not a program",
+    "why": "PLAN item 49 claims an artifact's checks feed the ratchet through the existing reporter path with no parser change. That claim is only worth anything if the reporter JSON came from real checks run over a real manuscript, so it did.",
+    "green": {
+      "file": "vitest-4.1.11-artifact-green.json",
+      "contains": { "passed": 4, "failed": 0 },
+      "notes": "word floors on both chapters, a heading-shape check, and a placeholder check"
+    },
+    "regressed": {
+      "file": "vitest-4.1.11-artifact-regressed.json",
+      "contains": { "passed": 2, "failed": 2 },
+      "notes": "the same suite after chapter 2 was replaced with '# Findings\\n\\nTODO: write this up.' — the word floor and the placeholder check both fail, and the two ids they own drop out of the passing set. This is the regression the ratchet exists to catch, produced by regressing a real chapter rather than by editing a report."
+    }
+  }
+}

@@ -2202,8 +2202,35 @@ the driver wiring.
 refuses an `unfalsifiable` criterion by name and by line, which is item 49's *"a job whose check
 cannot be stated is refused with that reason"*.
 
-**Still open on this item:** the checks-as-tests suite over a real artifact feeding the ratchet
-end to end, the network acquisition step, and the live artifact run.
+**The artifact-to-ratchet claim is now evidenced, not asserted (`test/prose-ratchet.test.mjs`,
+`test/fixtures/prose/`).** Done-when's *checks-as-tests suite over a real artifact feeds the ratchet
+through the existing reporter path with no parser change* closes.
+
+**Real vitest 4.1.11 output from real checks over a real two-chapter manuscript**, committed verbatim
+as a pair. The green run is a finished artifact — word floors on both chapters, a heading-shape check,
+a placeholder check, 4 of 4 passing. The regressed run is the **same suite** after chapter 2 was
+replaced with `# Findings\n\nTODO: write this up.`, produced by regressing an actual chapter rather
+than by editing a report.
+
+Four assertions, and the second is the one that matters: extraction yields ordinary vitest ids with
+no prose-specific branch anywhere in `extractTestIds`; the regression costs **exactly** the two ids
+whose checks broke, while the two unrelated ones survive, so the loss is attributable rather than a
+suite-wide collapse that would say nothing about which chapter rotted; `diffAgainstRatchet` reports
+those two as regressions off a banked advance; and an unchanged artifact reports none, so the
+guarantee is not vacuous.
+
+**No version bump.** This slice touched `test/` only — no loader-shipped file changed, and
+`release-check` confirms it at 0.244.0. An unnecessary bump would mint a plugin cache directory for a
+build that is byte-identical.
+
+**Validation:** lint and typecheck clean, `npm test` **3224 of 3224**. Three red proofs: the regressed
+fixture swapped for the green one (2 failures), the ratchet reporting no regression at all, and the
+ratchet reporting every id as a regression every time (2) — the last being the benign-neighbour case
+that a deny-only suite would have missed.
+
+**Still open on this item:** the network acquisition step (public-HTTPS profile, redirect and
+address validation, deadline and body caps, and the mutable-source / non-retainable fixtures), and
+one live artifact run.
 - **Prose gates**, flagship first: a **citation resolver** (the quoted text actually appears in the cited
   source — deterministic, and exactly the "reporter emits pass/fail evidence" shape 34 names), plus
   link-check, style (vale), word-count floors, and machine-readable claim-consistency checks. For
