@@ -2240,9 +2240,26 @@ because the file did not exist, and the case would have passed with the seal che
 launcher now records every `-p` invocation. With the boundary block disabled, the suite went from
 2 failures to **4**.
 
+**The outbound surface inventory, measured 20 Aug 2026 — and it decides a product question.** With
+`example.com`, `google.com` and `anthropic.com` in `deniedDomains`: `curl` failed to connect (exit
+56), the CLI's own **WebFetch returned both pages**, and **WebSearch returned results**. The network
+policy is a *subprocess* boundary, not a role boundary.
+
+The builder is `availableTools: null`, so it holds both tools. Declaring a denylist would constrain
+the code a builder writes while leaving the builder itself able to fetch anything — and the run would
+then be *described* as network-contained. Item 84's own instruction is to describe the narrower
+guarantee rather than call the child network-contained, so **this design declares no network policy
+and claims no network containment for a writing role**, and `DESIGN.md` §3.5 now says so with the
+measurement attached.
+
+Removing WebFetch and WebSearch from the builder through item **82**'s tool policy is the concrete
+option that would narrow the gap, and it is **not taken here**: no network policy is armed today, so
+there is nothing to narrow, and stripping a builder capability on the strength of a measurement
+alone would be speculative. It becomes a prerequisite the moment a network policy is proposed.
+
 **Still open on item 84:** the credential `deny`/`mask` measurements (`sandbox.credentials.*`), the
-per-surface outbound inventory (WebFetch, MCP, plugins, Unix sockets), auto-mode eligibility, and the
-CPU/memory/process/disk posture. None is blocked now that the host can sandbox.
+MCP/plugin/Unix-socket surfaces, auto-mode eligibility, and the CPU/memory/process/disk posture. None
+is blocked now that the host can sandbox.
 
 
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)

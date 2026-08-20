@@ -3144,6 +3144,24 @@ An egress *allowlist* is therefore something this design cannot offer, and sayin
 the exact failure this section exists to prevent. A denylist is enforceable and is not a containment
 boundary: you cannot enumerate the internet.
 
+**And the denylist is a *subprocess* boundary, not a role boundary — measured, and it is the reason
+this design declares no network policy at all.** With `example.com`, `google.com` and
+`anthropic.com` denied, `curl` failed to connect (exit 56) and the CLI's own **WebFetch returned
+both pages** and **WebSearch returned results**. The policy governs what a command the child *spawns*
+may reach; it does not govern the tools the child already has.
+
+The builder is `availableTools: null` — unrestricted on purpose (§6.2) — so it holds both. Declaring
+`deniedDomains` would therefore constrain the code a builder writes while leaving the builder itself
+able to fetch anything, and the run would be *described* as network-contained while not being so.
+**That description is the failure, not the reachability**, so this design does not declare a network
+policy and does not claim network containment for any writing role.
+
+The narrower guarantee, stated in full: with a sandbox armed, a builder's **filesystem reads** can be
+denied and **its subprocesses' network access** can be denied. Its own fetch and search tools cannot,
+and neither can the model channel. Constraining those means removing them through §6.2's tool policy,
+which is a capability decision with its own cost and is not made here on the strength of a
+measurement alone.
+
 **Why the check has to be at preflight and cannot be later.** `claude --help` states that in `-p`
 mode *settings files that fail validation are silently ignored*. A sandbox declaration the CLI
 would not honour therefore vanishes without a word — and takes the guard hook in the same blob
