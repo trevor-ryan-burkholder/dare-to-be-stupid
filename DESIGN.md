@@ -3086,9 +3086,26 @@ acceptance of that repair.
 **The driver refuses the fallback on the builder's behalf.** R19's recorded failure mode is an
 agent on a kernel where bubblewrap failed *asking to rerun unsandboxed*, and a sandbox that can be
 declined by the thing it contains is not a sandbox. `preflight`'s `checkSandboxAvailable` probes
-the host **before the run starts** and fails it — bubblewrap missing on Linux, or a platform this
-build knows no sandbox for. An unknown sandbox is not a sandbox; nothing here defaults to
-protected.
+the host **before the run starts** and fails it — **bubblewrap or socat** missing on Linux, or a
+platform this build knows no sandbox for. An unknown sandbox is not a sandbox; nothing here defaults
+to protected.
+
+**Both dependencies, and the settings say so too (PLAN item 84, measured 20 August 2026 on 2.1.235).**
+This probed `bwrap` alone while the CLI needs two, so a host with bubblewrap and no socat passed
+preflight and then ran its children **silently unsandboxed** — measured, not reasoned: under
+`{"enabled": true}` a synthetic credential file outside the workspace was read back in full, an
+outbound request returned 200, and `~/.ssh` listed, results identical to declaring no sandbox at all.
+
+The settings blob therefore also carries `failIfUnavailable: true`, which is the key that makes the
+declaration a guarantee. The same profile with it refuses outright and names both missing
+dependencies. That attribution is measured rather than assumed: with only
+`allowUnsandboxedCommands: false` the child ran, and so did a control profile carrying an invented
+key — which is what rules out "any extra key errors". `allowUnsandboxedCommands: false` is declared
+and **unmeasured**, because it governs escape from a working sandbox and this host has none; it is
+recorded as declared, never as enforced.
+
+Preflight and the CLI now both refuse, which is not redundancy: preflight is a guess about
+dependencies made from outside the CLI, and `failIfUnavailable` is the CLI answering for itself.
 
 **Why the check has to be at preflight and cannot be later.** `claude --help` states that in `-p`
 mode *settings files that fail validation are silently ignored*. A sandbox declaration the CLI
@@ -3096,9 +3113,16 @@ would not honour therefore vanishes without a word — and takes the guard hook 
 with it. That is the guard's own eleven-version history, where unit tests were green and the hook
 was reaching nobody, repeated with a different key.
 `test/live/sandbox-registration.live.test.mjs` is the answer to it, and it is deliberate about
-what it proves: that a real child accepts the blob and still answers, **not** that the kernel
-confines anything. The second needs bubblewrap, which is absent on the machine this was built on,
-and a test green because it never ran is the failure this project refuses everywhere else.
+what it proves: that a real child accepts the blob, **not** that the kernel confines anything. The
+second needs bubblewrap, which is absent on the machine this was built on, and a test green because
+it never ran is the failure this project refuses everywhere else.
+
+**It used to assert only that the child answered, and it passed for the wrong reason.** On a host
+that could not sandbox, the CLI accepted the blob and ignored it, and a child running unsandboxed
+was indistinguishable to that assertion from a child running contained. The case now branches on
+whether the host actually has bubblewrap and socat: where it does, the child starts and answers;
+where it does not, the child must be **refused** with the sandbox named as the cause. Both are
+guarantees, and only the first was ever checked.
 
 **The API-shaped oracle's plumbing (R18).** The `docs` gate has always required
 `docs/api-contract.md` for every project shape. For an `api` capability the **machine-readable**

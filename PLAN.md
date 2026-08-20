@@ -2038,6 +2038,70 @@ surface here first.
 Codex may close it.
 
 
+### 142. The sandbox was declared and not enforced — **DONE (0.264.0)** (PLAN item 84, first tranche)
+
+**Origin:** Phase 1, 20 Aug 2026. Item 84 says *live-contract first*, so the contract was measured
+before any product code changed. `-p` mode silently ignores settings that fail validation, which
+means acceptance proves nothing and only behaviour can answer.
+
+**The measurement.** Twelve real children on 2.1.235, three profiles by four synthetic canaries, on
+a host with neither bubblewrap nor socat. Every canary was synthetic: the "credential" was a file
+the harness wrote into a temp directory and the outbound destination was `example.com`. No fork
+bomb, no disk fill, no memory pressure — item 84 forbids those on an ordinary host.
+
+| profile | credential outside workspace | outbound HTTPS | `~/.ssh` |
+| --- | --- | --- | --- |
+| no sandbox declared | read in full | 200 | listed |
+| `{"enabled": true}` — **what this product shipped** | **read in full** | **200** | **listed** |
+| `+ failIfUnavailable` | refused before start | refused | refused |
+
+**`{"enabled": true}` confined nothing.** Its three results are identical to declaring no sandbox at
+all, and R19's own live test recorded a pass throughout, because what that test asserted was that a
+child *answers* — which an unconfined child does perfectly.
+
+**Attribution, because two keys were changed at once.** With only `allowUnsandboxedCommands: false`
+the child ran. With a control profile carrying an invented key the child also ran, which is what
+rules out "any extra key produces an error" as the explanation. The refusal belongs to
+`failIfUnavailable` alone.
+
+**The repair, in two places that are not redundant.**
+
+- `childSettings` declares `failIfUnavailable: true`, so the CLI refuses for itself rather than
+  degrading. `allowUnsandboxedCommands: false` is declared and recorded as **unmeasured** — it
+  governs escape from a working sandbox and this host has none to escape.
+- `checkSandboxAvailable` probes **socat as well as bwrap**. It probed one while the CLI needs two,
+  so a host with bubblewrap and no socat passed preflight and then ran children silently
+  unsandboxed. The refusal names the missing tool individually, because "the sandbox is unavailable"
+  sends an operator to the wrong package.
+
+Preflight is a guess about dependencies made from outside the CLI; `failIfUnavailable` is the CLI
+answering for itself. Both, because the failure they prevent is silent in the one place that must
+not fail open.
+
+**Two test defects this exposed, and they are the more useful half.**
+
+- **The blob's shape was asserted only behind `MEESEEKS_LIVE`.** A structural fact about an argv
+  string sat in the live tier, so it could change and no unpaid suite would notice. It changed, and
+  none did — `npm test` was green across the whole edit. Tier 1 holds it now, with the
+  no-sandbox-armed neighbour beside it.
+- **The live case passed for the wrong reason.** It asserted a sandboxed child starts and answers,
+  which on this host was true only because the sandbox silently degraded. It now branches: a host
+  with both dependencies must produce a child that answers, and a host without must produce a
+  **refusal naming the sandbox**. Both are guarantees; only one was ever checked.
+
+**Validation:** lint, typecheck, `npm test` **3434 of 3434** (up 6), `npm run test:integration` 310
+of 310, `sandbox-registration` live 4 of 4, release-check ok at 0.264.0. Two red proofs: reverting
+the blob to `{"enabled": true}` fails the new tier-1 case, and dropping socat from the probe fails
+two preflight cases.
+
+**What this does not claim.** Nothing here demonstrates that a *working* sandbox confines anything,
+because this host cannot start one. Item 84's filesystem/network/resource inventory, its hostile
+canaries against each outbound surface, the `deny`/`mask` credential measurements and the auto-mode
+behaviour all remain open, and they need a host with bubblewrap and socat installed. What is closed
+is narrower and was the more urgent half: **the product no longer reports a sandbox it does not
+have.**
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
@@ -5029,7 +5093,7 @@ boundary. The measured non-interactive authentication check landed at 0.263.0 (i
 call at the run boundary, under the sealed controls, before the lock, proving the capability rather
 than classifying the failure.
 
-### 84. Measure and admit fail-closed child containment — OPEN (live-contract first)
+### 84. Measure and admit fail-closed child containment — OPEN; **first tranche DONE (0.264.0, item 142)**: the declared sandbox was measured to enforce nothing and now refuses instead
 
 **Problem solved:** R19's optional sandbox proves only that Claude accepts
 `{"sandbox":{"enabled":true}}`; its live test deliberately does not prove confinement. The current

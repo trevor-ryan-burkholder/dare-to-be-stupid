@@ -397,6 +397,16 @@ describe('checkSandboxAvailable', () => {
   /** @param {boolean} ok @returns {import('../scripts/preflight.mjs').Probe} */
   const bwrap = (ok) => () => ({ ok, status: ok ? 0 : 127, stdout: ok ? 'bubblewrap 0.8.0' : '', stderr: 'not found' });
 
+  /**
+   * A host where each named tool is present and every other is not.
+   *
+   * @param {string[]} present @returns {import('../scripts/preflight.mjs').Probe}
+   */
+  const host = (present) => (command) =>
+    present.includes(command)
+      ? { ok: true, status: 0, stdout: command === 'bwrap' ? 'bubblewrap 0.8.0' : 'socat 1.7.4', stderr: '' }
+      : { ok: false, status: 127, stdout: '', stderr: 'not found' };
+
   it('passes and says nothing is in force when no sandbox was asked for', () => {
     // A host with no bubblewrap is a perfectly ordinary host for a run that never asked.
     const result = checkSandboxAvailable(bwrap(false), false, 'linux');
@@ -416,6 +426,40 @@ describe('checkSandboxAvailable', () => {
     assert.equal(result.ok, false);
     assert.equal(result.detail.includes('would run unsandboxed'), true, result.detail);
     assert.equal(result.fix.includes('apt install bubblewrap'), true, result.fix);
+  });
+
+  it('FAILS when bubblewrap is there and socat is not, which used to pass and then run unsandboxed', () => {
+    // **The measured hole** (PLAN item 84). This check probed `bwrap` alone, and 2.1.235 refuses a
+    // required sandbox with "dependencies are missing: bubblewrap (bwrap) not installed, socat not
+    // installed" — two names. A host with one and not the other passed here and then ran its
+    // children silently unsandboxed, which was measured rather than argued: under
+    // `{"enabled": true}` a synthetic credential file outside the workspace came back in full.
+    const result = checkSandboxAvailable(host(['bwrap']), true, 'linux');
+    assert.equal(result.ok, false);
+    assert.equal(result.detail.includes('socat'), true, result.detail);
+    // And it does not accuse the package that is actually installed.
+    assert.equal(result.detail.includes('bubblewrap and socat'), false, result.detail);
+  });
+
+  it('FAILS when socat is there and bubblewrap is not, naming the one that is missing', () => {
+    const result = checkSandboxAvailable(host(['socat']), true, 'linux');
+    assert.equal(result.ok, false);
+    assert.equal(result.detail.includes('bwrap'), true, result.detail);
+    assert.equal(result.detail.includes('socat is not installed'), false, result.detail);
+  });
+
+  it('names both when a host has neither, rather than stopping at the first', () => {
+    const result = checkSandboxAvailable(host([]), true, 'linux');
+    assert.equal(result.ok, false);
+    assert.equal(result.detail.includes('bwrap'), true, result.detail);
+    assert.equal(result.detail.includes('socat'), true, result.detail);
+  });
+
+  it('passes when the host has both, so the refusals above are not a wall', () => {
+    // The neighbour. A check that refused every Linux host would satisfy all three cases above.
+    const result = checkSandboxAvailable(host(['bwrap', 'socat']), true, 'linux');
+    assert.equal(result.ok, true, result.detail);
+    assert.equal(result.detail.includes('bubblewrap 0.8.0'), true, result.detail);
   });
 
   it('accepts macOS without probing, because seatbelt ships with the operating system', () => {

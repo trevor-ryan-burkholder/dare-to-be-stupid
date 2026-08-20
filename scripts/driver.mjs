@@ -1698,7 +1698,28 @@ function childSettings(sandbox = false) {
     outputStyle: CHILD_OUTPUT_STYLE,
     disableAllHooks: false,
     hooks,
-    ...(sandbox ? { sandbox: { enabled: true } } : {}),
+    // **`failIfUnavailable` is the whole guarantee, and it was missing** (PLAN item 84).
+    //
+    // Measured on 2.1.235, 20 August 2026, on a host with neither bubblewrap nor socat:
+    // `{"enabled": true}` alone **silently runs the child unsandboxed**. A synthetic credential
+    // file outside the workspace was read back in full, an outbound HTTPS request returned 200, and
+    // `~/.ssh` listed — results identical to declaring no sandbox at all. Adding
+    // `failIfUnavailable` turned the same profile into a hard refusal naming both missing
+    // dependencies. Attributed to that one key: with only `allowUnsandboxedCommands: false` the
+    // child ran, and so did a control profile carrying an invented key, which is what rules out
+    // "any extra key errors" as the explanation.
+    //
+    // That is R19's own reasoning arriving one layer lower. Preflight refuses a host that cannot
+    // sandbox, but preflight is a guess about dependencies made from outside the CLI; this makes
+    // the CLI itself refuse. Both, because the failure they prevent is silent in a place that must
+    // not fail open.
+    //
+    // `allowUnsandboxedCommands: false` is declared and **unmeasured here**, stated rather than
+    // implied: it governs escape from a *working* sandbox, and this host has none to escape. It did
+    // not cause the refusal above. The control profile shows an unrecognised key is silently
+    // dropped, so declaring it costs nothing; it is not evidence of an enforced boundary and this
+    // comment is not to be read as one.
+    ...(sandbox ? { sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false } } : {}),
   });
 }
 

@@ -1181,6 +1181,28 @@ describe('available tools are a different question from approved tools (REVIEW F
     }
   });
 
+  it('declares a sandbox that refuses rather than one that degrades', () => {
+    // **Tier 1 holds this now, and that is the point of the case** (PLAN item 84). The shape was
+    // asserted only in `test/live/sandbox-registration.live.test.mjs`, behind `MEESEEKS_LIVE` — so
+    // a structural fact about an argv string could change and no unpaid suite would notice. It
+    // changed, and none did.
+    //
+    // `failIfUnavailable` is the load-bearing key, measured on 2.1.235: with `{"enabled": true}`
+    // alone on a host lacking bubblewrap and socat, a child read a synthetic credential file from
+    // outside its workspace and reached the network, identically to declaring no sandbox at all.
+    const at = claudeArgs({ model: 'm', phase: 'builder', sandbox: true }).indexOf('--settings');
+    const blob = JSON.parse(String(claudeArgs({ model: 'm', phase: 'builder', sandbox: true })[at + 1]));
+    assert.deepStrictEqual(blob.sandbox, { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false });
+  });
+
+  it('omits the sandbox entirely when none was armed, so the key is not always present', () => {
+    // The neighbour. Without it, a builder that always emitted the block would satisfy the case
+    // above while quietly sandboxing runs the operator never asked to sandbox.
+    const args = claudeArgs({ model: 'm', phase: 'builder', sandbox: false });
+    const blob = JSON.parse(String(args[args.indexOf('--settings') + 1]));
+    assert.equal('sandbox' in blob, false, JSON.stringify(blob.sandbox));
+  });
+
   it('keeps --tools before --allowedTools, because both are variadic', () => {
     // The argv defect, again. A variadic flag swallows everything until the next flag, so the one
     // that must be last is `--allowedTools` — and a `--tools` placed after it would be read as two

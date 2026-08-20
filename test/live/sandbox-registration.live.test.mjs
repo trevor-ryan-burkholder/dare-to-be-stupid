@@ -24,6 +24,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { describe, it } from 'node:test';
 
 import { claudeArgs, spawnClaude } from '../../scripts/driver.mjs';
@@ -59,7 +60,7 @@ describe('the sandbox declaration reaches a real child', { skip: ARMED ? false :
     // replaced one, and a blob that gained a sandbox and lost the hook would be a regression
     // wearing the shape of an improvement.
     const blob = settingsFor({ phase: 'builder', sandbox: true });
-    assert.deepStrictEqual(blob.sandbox, { enabled: true });
+    assert.deepStrictEqual(blob.sandbox, { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false });
     assert.notEqual(blob.hooks, undefined, 'the guard hook left the settings blob');
   });
 
@@ -73,11 +74,25 @@ describe('the sandbox declaration reaches a real child', { skip: ARMED ? false :
     assert.equal('sandbox' in blob, false);
   });
 
-  it('is accepted by a real claude, which still starts and still answers', { timeout: LIVE_TIMEOUT }, async () => {
-    // The live half, and the reason unit tests cannot replace it. Print mode silently ignores a
-    // settings file that fails validation, so an unrecognised `sandbox` key would take the whole
-    // blob down — guard included — and say nothing. A child that answers proves the CLI accepted
-    // the shape.
+  it('either sandboxes a real child or refuses to start one, depending on the host', { timeout: LIVE_TIMEOUT }, async () => {
+    // **This case used to assert only that the child answered, and it passed for the wrong reason**
+    // (PLAN item 84). Print mode silently ignores settings that fail validation, so the original
+    // reasoning was sound — a child that answers proves the CLI accepted the shape. What it could
+    // not distinguish is a CLI that accepted the shape and then *ignored it*, which is exactly what
+    // this host was doing: no bubblewrap, no socat, and a child running unsandboxed while the test
+    // recorded a pass.
+    //
+    // `failIfUnavailable` makes the two outcomes distinguishable, so the case now asserts whichever
+    // one this host is entitled to. Both are guarantees; only one of them was ever checked.
+    const capable = ['bwrap', 'socat'].every((tool) => {
+      try {
+        execFileSync(tool, ['--version'], { stdio: 'pipe' });
+        return true;
+      } catch {
+        return false;
+      }
+    });
+
     const result = await spawnClaude({
       prompt: 'Reply with exactly the word: pineapple. No punctuation, no explanation.',
       model: CHEAP_MODEL,
@@ -86,12 +101,25 @@ describe('the sandbox declaration reaches a real child', { skip: ARMED ? false :
       cwd: process.cwd(),
       env: process.env,
     });
-    assert.equal(result.ok, true, `a sandboxed child failed to start: ${result.raw.slice(0, 800)}`);
-    assert.equal(result.text.toLowerCase().includes('pineapple'), true, result.text);
+
+    if (capable) {
+      assert.equal(result.ok, true, `a sandboxed child failed to start on a host that can sandbox: ${result.raw.slice(0, 800)}`);
+      assert.equal(result.text.toLowerCase().includes('pineapple'), true, result.text);
+      assert.equal(
+        /invalid settings|failed to parse settings|unknown setting/i.test(result.raw),
+        false,
+        `the CLI complained about the settings blob: ${result.raw.slice(0, 800)}`,
+      );
+      return;
+    }
+
+    // The half that matters more, because it is the one that was silently false. A host that cannot
+    // sandbox must not get a child at all — never a child that runs anyway.
+    assert.equal(result.ok, false, `this host has no sandbox and a child ran regardless: ${result.text.slice(0, 400)}`);
     assert.equal(
-      /invalid settings|failed to parse settings|unknown setting/i.test(result.raw),
-      false,
-      `the CLI complained about the settings blob: ${result.raw.slice(0, 800)}`,
+      /sandbox required but unavailable|dependencies are missing/i.test(result.raw),
+      true,
+      `the refusal did not name the sandbox as its cause: ${result.raw.slice(0, 800)}`,
     );
   });
 });

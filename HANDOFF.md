@@ -1,6 +1,6 @@
 # START HERE — current handoff, last swept 19 August 2026
 
-**State:** working-tree candidate `0.263.0` on `main`; the manifests and the package-lock root
+**State:** working-tree candidate `0.264.0` on `main`; the manifests and the package-lock root
 metadata agree, and `npm run release-check` is the check that says so.
 
 **This paragraph names no commit, and that is a rule the gate now enforces** (`REVIEW.md` F40). It
@@ -54,6 +54,12 @@ current, and these do not stay current for one commit. The candidate's own numbe
   ceiling on a child measured at 170.7s and 178.7s, which only ever fired beside a concurrent
   fan-out. A tier that is never run is not evidence, and neither of those was a product defect —
   which is the point. Deferring the tier is what kept them invisible.
+- **The declared sandbox enforced nothing, measured 20 Aug 2026 on 2.1.235.** `{"enabled": true}`
+  — what this product shipped — let a child read a synthetic credential file outside its workspace,
+  reach the network, and list `~/.ssh`, results identical to declaring no sandbox at all, because
+  the host lacks bubblewrap and socat and the CLI degrades silently. `failIfUnavailable: true` turns
+  the same profile into a refusal; preflight now probes socat as well as bwrap. **Nothing here shows
+  that a working sandbox confines anything** — this host cannot start one. PLAN items 84 and 142.
 - **Historical warning:** a mechanism can be complete, documented and dead. At 0.249.0 the sealed
   Claude binary landed with fifteen red proofs and five real-filesystem fixtures; **nothing called
   it** until 0.261.0, because every proof handed `spawnClaude` a seal by hand and no production path

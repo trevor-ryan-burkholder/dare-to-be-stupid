@@ -209,15 +209,23 @@ export function checkSandboxAvailable(probe, wanted, platform = process.platform
       'Unset sandbox.enabled, or run on Linux or macOS. The driver will not start a child unsandboxed after being asked for one.',
     );
   }
-  const result = probe('bwrap', ['--version']);
+  // **Both, because the CLI needs both** (PLAN item 84). This probed only `bwrap`, and 2.1.235
+  // refuses a required sandbox with *"dependencies are missing: bubblewrap (bwrap) not installed,
+  // socat not installed"* — two names. A host with bubblewrap and no socat therefore passed this
+  // check and then ran its children **silently unsandboxed**, which was measured rather than
+  // reasoned: the credential canary came back in full under `{"enabled": true}`.
+  //
+  // Named individually in the failure, because "the sandbox is unavailable" sends an operator
+  // looking at the wrong package.
+  const missing = ['bwrap', 'socat'].filter((tool) => !probe(tool, ['--version']).ok);
   return check(
     'sandbox',
-    result.ok,
-    result.ok
-      ? `bubblewrap present: ${result.stdout.trim()}`
-      : 'sandbox.enabled is set and bubblewrap is not installed, so a child would run unsandboxed',
-    'Install bubblewrap (`apt install bubblewrap`), or unset sandbox.enabled. The driver refuses the ' +
-      'fallback on the builder\'s behalf: a sandbox that can be declined is not a sandbox.',
+    missing.length === 0,
+    missing.length === 0
+      ? `bubblewrap and socat present: ${probe('bwrap', ['--version']).stdout.trim()}`
+      : `sandbox.enabled is set and ${missing.join(' and ')} ${missing.length === 1 ? 'is' : 'are'} not installed, so a child would run unsandboxed`,
+    'Install bubblewrap and socat (`apt install bubblewrap socat`), or unset sandbox.enabled. The ' +
+      'driver refuses the fallback on the builder\'s behalf: a sandbox that can be declined is not a sandbox.',
   );
 }
 
