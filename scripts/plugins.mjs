@@ -212,12 +212,28 @@ export function defaultRunner(command, args, options) {
     });
     return { ok: true, status: 0, stdout, stderr: '' };
   } catch (error) {
-    const failure = /** @type {{ status?: number, stdout?: string, stderr?: string, message: string }} */ (error);
+    const failure =
+      /** @type {{ status?: number, stdout?: string, stderr?: string, message: string, code?: string, signal?: string }} */ (
+        error
+      );
+    // **A deadline that fired must say so** (REVIEW F41). `execFileSync` kills the child and throws
+    // exactly as it does for a non-zero exit, and the previous mapping flattened the two into one
+    // `{ ok: false }` with no `timedOut` — which made `installQualityPlugins`' timeout branch
+    // unreachable through this runner, and a sixty-second hang indistinguishable from "the tool is
+    // not installed". Measured on this platform: `code` is `ETIMEDOUT`, `signal` is `SIGTERM` and
+    // `status` is `null`. Both signals are read, because `code` is the documented one and `signal`
+    // with a null status is what actually distinguishes a killed child from an exit.
+    //
+    // The production call site injects the Driver's bounded `shell`, which reports this correctly
+    // already; this is the exported fallback, and an exported contract that is wrong for the one
+    // caller who does not override it is a defect waiting for its second caller.
+    const timedOut = failure.code === 'ETIMEDOUT' || (typeof failure.signal === 'string' && failure.status === null);
     return {
       ok: false,
       status: typeof failure.status === 'number' ? failure.status : 1,
       stdout: failure.stdout ?? '',
       stderr: failure.stderr ?? failure.message,
+      ...(timedOut ? { timedOut: true } : {}),
     };
   }
 }

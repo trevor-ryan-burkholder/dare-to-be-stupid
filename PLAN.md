@@ -5232,6 +5232,39 @@ runner honouring it. Verified red by removing the detect deadline.
 **It pairs with F10's other half.** 0.196.0 routed a provisioning *throw* through `releasing` so it
 files a receipt and releases the lock; this makes a provisioning *hang* become such a throw.
 
+**F41's external-process contract is now proven, 0.250.0** (`test/integration/plugin-deadline.integration.test.mjs`).
+The finding's remaining objection was exact: *"mechanism wiring does not substitute for the
+external-process contract this finding exists to test"* — the unit tests drove immediate injected
+runners, so they proved the branch shape and never that a `timedOut` arrives at all.
+
+Tier 2 now sends provisioning through the **real bounded `shell`** the driver injects, pointed at a
+script that detaches a sleeper and then hangs. Two things are substituted and neither is the
+mechanism: *which command* runs, because the registry's commands are real tools a test must not
+invoke, and the *ceiling value*, because a sixty-second test is one nobody runs — and the ceiling
+**handed over** is asserted to be the production constant, so the propagation half stays real. Five
+cases: a required detector killed inside ceiling-plus-grace with its descendant gone; the timeout
+reported as a timeout and never as an absent tool; an optional plugin warning and proceeding only
+after cleanup; the ordinary present/failing neighbours keeping their semantics; and the install step
+receiving its own longer ceiling.
+
+**And a real latent defect, found while writing it.** `defaultRunner` mapped a fired deadline into
+an ordinary `{ ok: false }` with no `timedOut`, which made `installQualityPlugins`' timeout branch
+**unreachable through it** — a sixty-second hang read as "the tool is not installed" and escalated
+into a ten-minute install attempt. Production injects the Driver's bounded `shell` and was never
+affected; an exported contract that is wrong for the one caller who does not override it is a defect
+waiting for its second caller. Measured on this platform rather than recalled: `code` is
+`ETIMEDOUT`, `signal` is `SIGTERM`, `status` is `null`.
+
+**Validation:** lint and typecheck clean, `npm test` 3337 of 3337, `npm run test:integration` **286 of
+286** with the five new cases included, up from 281. Six red proofs — a timed-out
+detection read as absent, a required timeout made non-fatal, the detect ceiling not propagated, the
+install given the detect ceiling, the deadline reported as an ordinary failure, and every failure
+claiming to have timed out.
+
+**Still owed for closure:** F41's receipt and lock-release half is F10's, and the finding's own
+acceptance also names a durable Phase-1 receipt for a timed-out required plugin — reachable only
+through the full `main` lifecycle rather than `installQualityPlugins` alone.
+
 ### 102. The mixed-version takeover race — IMPLEMENTED; REVIEW F39 open pending Codex
 
 **What F39 still wanted.** The code repair landed at 0.183.0 — only an exact token or nameless match

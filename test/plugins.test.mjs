@@ -18,6 +18,7 @@ import { after, describe, it } from 'node:test';
 import { OPENAPI_DOC } from '../scripts/driver.mjs';
 import {
   DETECT_TIMEOUT_MS,
+  defaultRunner,
   INSTALL_TIMEOUT_MS,
   KNOWN_PLUGINS,
   PLUGIN_VERSIONS,
@@ -469,5 +470,35 @@ describe('every installer the Driver runs is version pinned (PLAN item 29)', () 
   it('has no pin for the detect-only plugin, because nothing installs it', () => {
     assert.equal(resolvePlugin('gitleaks').install, null);
     assert.equal(Object.hasOwn(PLUGIN_VERSIONS, 'gitleaks'), false);
+  });
+});
+
+describe('defaultRunner reports a fired deadline as one (REVIEW F41)', () => {
+  it('distinguishes a killed command from a command that exited non-zero', () => {
+    // The exported fallback flattened both into `{ ok: false }` with no `timedOut`, which made
+    // `installQualityPlugins`' timeout branch unreachable through it — a sixty-second hang read as
+    // "the tool is not installed", then escalated into a ten-minute install attempt. Production
+    // injects the Driver's bounded `shell` and was never affected; an exported contract that is
+    // wrong for the one caller who does not override it is a defect waiting for its second caller.
+    /** `defaultRunner` is synchronous; the `Runner` type allows async, so the narrowing is stated. */
+    const sync = (/** @type {string[]} */ argv, /** @type {number} */ timeoutMs) =>
+      /** @type {import('../scripts/plugins.mjs').RunResult} */ (
+        /** @type {unknown} */ (defaultRunner('sh', argv, { cwd: process.cwd(), timeoutMs }))
+      );
+
+    const timedOut = sync(['-c', 'sleep 5'], 300);
+    assert.equal(timedOut.ok, false);
+    assert.equal(timedOut.timedOut, true);
+
+    // The neighbour, and it is the whole assertion: an ordinary failure must **not** claim to have
+    // timed out, or every failed detection would escalate as a hang.
+    const failed = sync(['-c', 'exit 3'], 30_000);
+    assert.equal(failed.ok, false);
+    assert.equal(failed.status, 3);
+    assert.equal(failed.timedOut, undefined);
+
+    const passed = sync(['-c', 'echo fine'], 30_000);
+    assert.equal(passed.ok, true);
+    assert.equal(passed.timedOut, undefined);
   });
 });
