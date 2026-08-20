@@ -269,6 +269,19 @@ export function buildAcceptanceReceipt(input) {
       // reach here, because a run with no gate results has no roster to satisfy.
       reports: [...input.results.reports].sort(),
       oracle: isIdentity(input.results.oracle) ? input.results.oracle : null,
+      // **What the Oracle's independence actually is, recorded rather than assumed** (REVIEW F15).
+      // A reader of this receipt would otherwise have to infer it, and the available inference is
+      // the wrong one: "held-out" reads as *confidential*, and the cases are not. They are
+      // **not-supplied** — never rendered into a brief, a system prompt or any feedback — while a
+      // builder running arbitrary code on the same machine can read the file they live in.
+      //
+      // The distinction decides what the Oracle's verdict is worth. Against satisficing, which is
+      // the threat model this design aims at, an artifact the builder was never handed is entirely
+      // sufficient. Against a builder that goes looking, it is worth nothing, and a receipt that
+      // said `confidential` would be certifying the second while only the first was ever true.
+      // `false` here is the same honesty `role-supply.mjs` applies to `--safe-mode`: a record of
+      // what was arranged, not a claim about what was enforced.
+      oracleGuarantee: input.results.oracle === null ? null : { kind: 'not-supplied', confidential: false },
       deploy: isIdentity(input.results.deploy) ? input.results.deploy : null,
     },
     // **Gaps in the ledger, named as gaps** — not smuggled into `invocations` wearing a placeholder

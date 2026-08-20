@@ -994,3 +994,55 @@ describe('the producer split (item 34, DESIGN §8.5)', () => {
     assert.equal(/\{\{[a-zA-Z]+\}\}/.test(composed), false);
   });
 });
+
+describe('the Oracle guarantee is stated as what it is (REVIEW F15)', () => {
+  const AUTHOR = readFileSync(new URL('../templates/oracle-author.md', import.meta.url), 'utf8');
+  const MODULE = readFileSync(new URL('../scripts/oracle.mjs', import.meta.url), 'utf8');
+  const DESIGN = readFileSync(new URL('../DESIGN.md', import.meta.url), 'utf8');
+
+  it('never tells the Oracle author that nobody can see its cases', () => {
+    // **The one that mattered most, because a model reads it as fact and reasons from it.** The
+    // shipped prompt said "Nobody who writes it will see your cases." A builder running arbitrary
+    // code on the same machine can read the file, so that sentence was false — and it was told to
+    // the role whose entire job is to write cases that survive being looked for.
+    for (const overclaim of [
+      'Nobody who writes it will see',
+      'nobody will see',
+      'cannot see your cases',
+      'will never see your cases',
+    ]) {
+      assert.equal(
+        AUTHOR.toLowerCase().includes(overclaim.toLowerCase()),
+        false,
+        `the Oracle author prompt claims confidentiality it does not have: ${overclaim}`,
+      );
+    }
+  });
+
+  it('tells the Oracle author the guarantee it actually has', () => {
+    // The other half: removing a false sentence and leaving nothing would be worse, because the
+    // role would not know what its cases are protected by and would have no reason to write them
+    // hostilely. The true guarantee is *not supplied*, and it is worth more than it sounds.
+    assert.match(AUTHOR, /never be \*\*handed\*\*/);
+    assert.match(AUTHOR, /can read the file your cases live in/);
+    assert.match(AUTHOR, /satisficing/);
+  });
+
+  it('says supplied rather than shown, in the module and the design', () => {
+    // `oracle.mjs` already carried an honest paragraph and a summary sentence that contradicted it.
+    // A file that says both things says the flattering one to anybody who reads only the summary.
+    assert.equal(MODULE.includes('never shown to the thing it judges'), false);
+    assert.match(MODULE, /never \*\*supplied\*\* to the thing it judges/);
+    // The design's sentence was correctly scoped by "Against satisficing" and still read as
+    // absolute when quoted alone, which is how it reached the finding.
+    assert.equal(DESIGN.includes('it cannot build to a test it has not been shown'), false);
+    assert.match(DESIGN, /it cannot build to a test it was never handed/);
+  });
+
+  it('keeps the honest paragraph that the summary used to contradict', () => {
+    // Without this, the two assertions above are satisfied by deleting the qualification instead of
+    // fixing the claim — which would remove the only place the limitation is stated at all.
+    assert.match(MODULE, /a builder executing arbitrary code can read the file/);
+    assert.match(DESIGN, /discipline, not a barrier/);
+  });
+});

@@ -564,3 +564,24 @@ describe('a receipt that cannot survive its own verifier (REVIEW F22, reopened)'
     assert.equal(verifyAcceptanceReceipt(written()).ok, true);
   });
 });
+
+describe('the receipt states what the Oracle guarantee is (REVIEW F15)', () => {
+  it('records not-supplied rather than leaving a reader to infer confidential', () => {
+    // "Held out" reads as *confidential*, and the cases are not: a builder running arbitrary code
+    // on the same machine can read the file they live in. A receipt that let a reader infer the
+    // stronger word would be certifying a property that was never true.
+    const receipt = buildAcceptanceReceipt(complete());
+    assert.deepStrictEqual(/** @type {any} */ (receipt).results.oracleGuarantee, {
+      kind: 'not-supplied',
+      confidential: false,
+    });
+  });
+
+  it('says nothing about a guarantee when no Oracle ran', () => {
+    // The absent case must be absent rather than defaulted. Recording `not-supplied` for a run with
+    // no Oracle would describe the independence of something that never happened.
+    const input = complete();
+    input.results.oracle = null;
+    assert.equal(/** @type {any} */ (buildAcceptanceReceipt(input)).results.oracleGuarantee, null);
+  });
+});

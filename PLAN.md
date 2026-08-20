@@ -1504,6 +1504,45 @@ gate is asking about.
   failures that mean "the gate never ran". Whoever resumes this starts from here rather than from
   the same four discoveries.
 
+### 130. The Oracle guarantee, stated as what it is — **DONE (0.253.0)** (REVIEW F15)
+
+F15 offers an explicit either/or: establish a measured read-isolation boundary for the Oracle store,
+**or** *"rename the guarantee everywhere ... and stop treating it as confidential held-out
+evidence"*. The first needs an OS boundary this environment cannot measure (item 84, paid). The
+second is entirely buildable, and it was overdue: three artifacts said three different things, and
+the flattering one was shipped to a model.
+
+**`templates/oracle-author.md` said "Nobody who writes it will see your cases."** That is false — a
+builder running arbitrary code on the same machine can read the file — and it was told to the one
+role whose whole job is writing cases that survive being looked for. It now states the guarantee it
+actually has: the cases are never **handed** to the implementer, in a brief, a system prompt or any
+feedback, while the implementer can read the file they live in. Removing the false sentence and
+leaving nothing would have been worse, because the role would have had no reason to write hostilely.
+
+**`scripts/oracle.mjs` carried an honest paragraph and a summary sentence contradicting it** —
+*never shown to the thing it judges* — and a file that says both says the flattering one to anybody
+who reads only the summary. It says **supplied** now. `DESIGN.md` was already correctly scoped by
+*"Against satisficing"* at both sites, but its sentence read as absolute when quoted alone, which is
+how it reached the finding; it says *never handed* now.
+
+**And the receipt records the guarantee rather than leaving it to be inferred**, because the
+available inference is the wrong one: *held-out* reads as *confidential*.
+`results.oracleGuarantee` is `{ kind: 'not-supplied', confidential: false }`, and `null` when no
+Oracle ran — an absent guarantee stays absent rather than describing the independence of something
+that never happened. The `false` is the same honesty `role-supply.mjs` applies to `--safe-mode`: a
+record of what was arranged, not a claim about what was enforced.
+
+**Validation:** lint and typecheck clean, `npm test` **3372 of 3372** and
+`npm run test:integration` **295 of 295**, both exit 0 and both unpiped. Eight red proofs:
+the false claim returning to the prompt (2 failures), the prompt dropping its honest half, the module
+saying *shown* again, the module dropping its honest paragraph, the design saying *shown* again, the
+receipt claiming confidentiality, a run with no Oracle still describing one, and the guarantee not
+recorded at all (2).
+
+**Does not close F15.** Its acceptance also asks that terminal policy discount the Oracle
+accordingly; what is recorded here is the classification a terminal reader needs, and the read
+boundary itself remains item 84's.
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation

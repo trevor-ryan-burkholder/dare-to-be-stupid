@@ -12,7 +12,9 @@
  * oracle. It is the same assumption, twice.** Every other check in this design is downstream of
  * the builder: the gates run what the builder wrote, the ratchet protects ids the builder named,
  * and the mutation gate mutates the builder's source against the builder's tests. This is the one
- * artifact written *before* any code exists and never shown to the thing it judges.
+ * artifact written *before* any code exists and never **supplied** to the thing it judges. Supplied,
+ * not hidden — the paragraph below says why the stronger word would be false, and this sentence used
+ * to use it (REVIEW F15).
  *
  * **Held out means not supplied, and the distinction is §6.1's.** The cases live under `.meeseeks/`,
  * so §6's positional rule makes them driver-owned — a builder may not write them. They are also

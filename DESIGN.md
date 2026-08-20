@@ -1846,7 +1846,7 @@ builder may not write it. It is never rendered into a brief, a system prompt or 
 That second half is a **discipline, not a barrier** — a builder executing arbitrary code can read
 the file, and `oracle.mjs` says so in its own header. Against satisficing, which is the threat
 model this whole document aims at, an artifact the builder was never handed is entirely
-sufficient: **it cannot build to a test it has not been shown.**
+sufficient: **it cannot build to a test it was never handed.**
 
 **A3's deferral reason no longer holds.** It was deferred because "the builder would own whether
 the gate can fail" — the same objection §4.4 faced with Stryker's threshold, and answered there by
@@ -2208,7 +2208,7 @@ examined against the code, and abandoned. Two reasons, either sufficient alone:
 **What that actually costs is smaller than it sounds, and the reason is the threat model.** Every
 defence in this document is aimed at a model taking the cheapest path to green — satisficing —
 not at an adversary. Against satisficing, an artifact the builder was never handed is entirely
-sufficient: it cannot build to a test it has not been shown. Against a builder that deliberately
+sufficient: it cannot build to a test it was never handed. Against a builder that deliberately
 dumps a file through a gate-failure `detail` and reads it back in the next iteration's brief, it
 is worth nothing — and that is a two-iteration manoeuvre, visible in the diff, that a cold
 reviewer reads.
