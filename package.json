@@ -1,6 +1,6 @@
 {
   "name": "meeseeks",
-  "version": "0.238.0",
+  "version": "0.239.0",
   "private": true,
   "type": "module",
   "description": "A Claude Code plugin: /meeseeks hands a PRD to an autonomous loop that designs, builds, gates, reviews and ships until it passes an enterprise definition of done, or the budget dies.",

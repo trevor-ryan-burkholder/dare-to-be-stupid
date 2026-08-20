@@ -95,7 +95,7 @@ import { designSlopEvidence } from './design-slop.mjs';
 import { gitleaksEvidence } from './secrets-scan.mjs';
 import { OUTCOME_FILE, writeRunOutcome } from './outcome.mjs';
 import { dodIds, parseDod } from './dod.mjs';
-import { recordEvent } from './journal.mjs';
+import { previousRunDiagnosis, readJournal, recordEvent } from './journal.mjs';
 import { parseErd } from './erd.mjs';
 import { schemaEvidence } from './schema.mjs';
 import { checkErdConsistency, dodPath, erdPath } from './preflight.mjs';
@@ -7745,6 +7745,25 @@ async function runInvocation(argv, io, crash) {
   // Before this run writes any artifact of its own, because the collision it prevents is
   // silent: iteration numbering restarts at 1 every run, so `briefs/iter-001.md` would be
   // overwritten by a replacement that looks exactly like the original (DESIGN.md §7.2).
+  // **What the previous run left, said out loud before it is archived away** (PLAN items 58, 36).
+  // Read here because this is the last moment the previous run's journal is at the canonical path;
+  // one line later `archiveOnce` moves it. Nothing is resumed and nothing touches the lock — item
+  // 36's disposition forbids a resume path, and this is diagnosis, which is what the journal was
+  // admitted for. A journal only a forensic reader with a JSON parser ever sees is the discarded
+  // sentence `question.json` exists to stop.
+  try {
+    const previousEvents = readJournal(meeseeksDir);
+    const diagnosis = previousRunDiagnosis({
+      events: previousEvents,
+      hadTerminalReceipt: existsSync(path.join(meeseeksDir, OUTCOME_FILE)),
+    });
+    if (diagnosis !== null) write(verbatim(diagnosis));
+  } catch (error) {
+    // A journal that cannot be read is worth one line and never a refusal: this run has not started
+    // yet, and refusing it over the *previous* run's forensics would be the tail wagging the dog.
+    write(verbatim(`the previous run's journal could not be read: ${/** @type {Error} */ (error).message}`));
+  }
+
   try {
     const archived = archiveOnce();
     if (archived !== null) write(verbatim(`archived the previous run to ${path.relative(cwd, archived)}`));

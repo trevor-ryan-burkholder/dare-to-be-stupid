@@ -13,7 +13,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
-import { EVENT_KINDS, JOURNAL_FILE, JournalError, readJournal, recordEvent, unsettled } from '../scripts/journal.mjs';
+import {
+  EVENT_KINDS,
+  JOURNAL_FILE,
+  JournalError,
+  previousRunDiagnosis,
+  readJournal,
+  recordEvent,
+  unsettled,
+} from '../scripts/journal.mjs';
 
 /** @type {string[]} */
 const dirs = [];
@@ -228,5 +236,60 @@ describe('unsettled answers the question no artifact could', () => {
     assert.deepStrictEqual(before.inFlight, []);
     assert.equal(after.lastPhase, 'design');
     assert.deepStrictEqual(after.inFlight, ['design']);
+  });
+});
+
+describe('what the previous run left, said to the next operator', () => {
+  /** @param {any[]} kinds @returns {any[]} */
+  const events = (kinds) => kinds.map((event, index) => ({ seq: index + 1, at: '', detail: null, iteration: null, ...event }));
+
+  const DIED_MID_ITERATION = events([
+    { kind: 'phase-entered', subject: 'loop' },
+    { kind: 'iteration-started', subject: 'loop', iteration: 3 },
+    { kind: 'child-started', subject: 'builder' },
+  ]);
+
+  it('says nothing when the previous run ended normally', () => {
+    // The discriminator is the receipt, not the journal. A run that ended cleanly may well show an
+    // unsettled iteration -- the journal's last line races the terminal write -- and that is
+    // expected rather than alarming.
+    assert.equal(previousRunDiagnosis({ events: DIED_MID_ITERATION, hadTerminalReceipt: true }), null);
+  });
+
+  it('says nothing when there was no previous run at all', () => {
+    assert.equal(previousRunDiagnosis({ events: [], hadTerminalReceipt: false }), null);
+  });
+
+  it('says nothing when a receiptless run had settled everything anyway', () => {
+    // A run killed between its last settlement and its terminal write has nothing outstanding, and
+    // announcing it would train the operator to ignore the line.
+    const settled = events([
+      { kind: 'iteration-started', subject: 'loop', iteration: 1 },
+      { kind: 'iteration-settled', subject: 'loop', iteration: 1 },
+    ]);
+    assert.equal(previousRunDiagnosis({ events: settled, hadTerminalReceipt: false }), null);
+  });
+
+  it('names the iteration and the child when a run died with work outstanding', () => {
+    const line = previousRunDiagnosis({ events: DIED_MID_ITERATION, hadTerminalReceipt: false });
+    assert.match(String(line), /left no terminal receipt/);
+    assert.match(String(line), /stopped during iteration 3/);
+    assert.match(String(line), /with builder still running/);
+  });
+
+  it('falls back to the phase when a run died before any iteration', () => {
+    const line = previousRunDiagnosis({
+      events: events([{ kind: 'phase-entered', subject: 'design' }, { kind: 'child-started', subject: 'design' }]),
+      hadTerminalReceipt: false,
+    });
+    assert.match(String(line), /stopped during the design phase/);
+    assert.match(String(line), /with design still running/);
+  });
+
+  it('says plainly that nothing is resumed, because that is the one thing it must not imply', () => {
+    // Item 36's disposition forbids a resume path. A diagnosis that read as an offer to continue
+    // would be worse than silence.
+    const line = previousRunDiagnosis({ events: DIED_MID_ITERATION, hadTerminalReceipt: false });
+    assert.match(String(line), /That work is not resumed \u2014 this is a fresh run/);
   });
 });

@@ -178,3 +178,33 @@ describe('a killed run leaves a history of its own progress', () => {
     }
   });
 });
+
+describe('the next run tells the operator what the last one left', () => {
+  it('reports a killed run, names what was outstanding, and resumes nothing', { timeout: 120_000 }, async () => {
+    // The end-to-end shape: kill a run, start another in the same repository, and read what the
+    // second one says about the first. Diagnosis only -- item 36 forbids a resume path, and the
+    // line has to say so, because a message that read as an offer to continue would be worse than
+    // silence.
+    const { root, bin } = workspace();
+    await killAt(root, bin, /builder|iteration 1/i);
+    assert.equal(readJournal(path.join(root, '.meeseeks')).length > 0, true, 'nothing was killed mid-flight');
+
+    /** @type {string[]} */
+    const logs = [];
+    await new Promise((resolve) => {
+      const child = spawn(process.execPath, [DRIVER, 'PRD.md', '--yes'], {
+        cwd: root,
+        env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, MEESEEKS_RUNNING: undefined, MEESEEKS_STYLE: 'plain' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      child.stdout.on('data', (b) => logs.push(String(b)));
+      child.stderr.on('data', (b) => logs.push(String(b)));
+      child.on('exit', resolve);
+      delay(90_000).then(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } });
+    });
+
+    const output = logs.join('');
+    assert.match(output, /the previous run left no terminal receipt/);
+    assert.match(output, /That work is not resumed/);
+  });
+});

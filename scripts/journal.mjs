@@ -197,3 +197,39 @@ export function unsettled(events) {
     lastPhase,
   };
 }
+
+/**
+ * What the previous run's journal says, for an operator starting the next one.
+ *
+ * **Diagnosis, not resumption.** Item 36's disposition is explicit — no daemon, no resume path — and
+ * nothing here replays anything or touches the run lock. What it does is stop the journal being a
+ * file only a forensic reader with a JSON parser ever sees: the run already knows the useful
+ * sentence, and `question.json` exists because discarding that sentence is a habit worth breaking.
+ *
+ * **The discriminator is the terminal receipt, not the journal.** A run that ended normally leaves
+ * `outcome.json`, and its journal may well show an unsettled iteration — the last line races the
+ * terminal write, and that is expected rather than alarming. A run with **no** receipt and unsettled
+ * work in its journal is one that died, and that is the only case worth a sentence.
+ *
+ * @param {{ events: JournalEvent[], hadTerminalReceipt: boolean }} previous
+ * @returns {string | null} a line for the operator, or null when there is nothing to say
+ */
+export function previousRunDiagnosis(previous) {
+  if (previous.hadTerminalReceipt) return null;
+  if (previous.events.length === 0) return null;
+  const state = unsettled(previous.events);
+  if (state.unsettledIteration === null && state.inFlight.length === 0) return null;
+
+  const where =
+    state.unsettledIteration === null
+      ? `during the ${state.lastPhase ?? 'unknown'} phase`
+      : `during iteration ${state.unsettledIteration}`;
+  const flight =
+    state.inFlight.length === 0
+      ? 'with no child running'
+      : `with ${state.inFlight.join(' and ')} still running`;
+  return (
+    `the previous run left no terminal receipt: it stopped ${where}, ${flight}. ` +
+    'That work is not resumed — this is a fresh run — and its journal is archived with it.'
+  );
+}

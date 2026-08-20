@@ -1557,7 +1557,7 @@ delta and refusal reason so the promoter can avoid repeating harmful edits; this
 a Builder brief. Item 59 owns the offline optimization experiment, while this item owns the durable
 store, adoption, rollback, and retraction boundary.
 
-### 36. Terminal detachment and later resumability — PARKED (evidence-gated); **promotion pending one measurement (19 Aug 2026)**
+### 36. Terminal detachment and later resumability — **diagnosis landed (0.239.0); Stage A operator-blocked, Stage B deliberately unbuilt**
 
 **A correction recorded rather than quietly dropped.** This item was set aside on the reasoning that
 it existed to survive capstone relaunches, and that when the capstone was withdrawn its justification
@@ -1569,6 +1569,44 @@ test-harness one.
 What it is still waiting on is evidence rather than an argument. The ~1.3-iteration figure comes from
 **capstone attempt 3 alone**; nothing measures an ordinary run. One long non-capstone run decides
 whether the wall exists outside the flagship build, and this stays parked until it does.
+
+**Partially landed (0.239.0) — the diagnosis, not the resume.** The item's own disposition is
+unambiguous: *"do not build a daemon or resume path from this item."* What was buildable is the half
+that needs neither.
+
+A run started in a repository where the previous one died now says so, before the archive moves the
+evidence: *"the previous run left no terminal receipt: it stopped during iteration 3, with builder
+still running. That work is not resumed — this is a fresh run — and its journal is archived with
+it."*
+
+- **The discriminator is the terminal receipt, not the journal.** A run that ended normally often
+  shows an unsettled iteration, because the journal's last line races the terminal write. Only *no
+  receipt* **and** outstanding work means a run died. Without that test the line would fire on
+  healthy runs and train the operator to ignore it, which is worse than not printing it.
+- **It states that nothing is resumed**, and that sentence is asserted by a test. A diagnosis that
+  read as an offer to continue would be worse than silence, given this item forbids exactly that.
+- **Read immediately before `archiveOnce`**, the last moment the previous journal is at the
+  canonical path.
+
+This also stops item 58 becoming the thing it was admitted to prevent — a forensic file only a reader
+with a JSON parser ever sees. Same lesson as `question.json`: the run already knew the useful
+sentence and was discarding it.
+
+**Stage A remains genuinely blocked.** It requires an operator to start `/meeseeks` through Claude
+Code's agent view, close the view and shell, and restart the supervisor. That is a human-in-the-loop
+measurement on a research-preview surface; it cannot be performed here and is not simulable.
+
+**Stage B remains deliberately unbuilt.** Its second trigger *is* now satisfied — item 58 proved
+current artifacts could not reconstruct a killed run — but Stage B asks to **specify** a resume
+primitive and to bind a compatibility fence *before any replay implementation*. There is no replay
+implementation, so a fence would be a component with no caller: the exact defect repaired four times
+in this session (the Playwright reporter, the design-slop parser, gitleaks absent from the roster,
+the ERD reader). The fence is specified in item 58's entry and stays unbuilt until something replays.
+
+**The measurement this item still waits on is unchanged:** one long non-capstone run, to establish
+whether the quota wall exists outside the flagship build. The ~1.3-iteration figure is still from
+capstone attempt 3 alone.
+
 
 **Done when:** the durable store has a measured size/age bound, append-only promotion and retraction
 history, and an explicit rollback for a false lesson; only independently sourced support can promote
