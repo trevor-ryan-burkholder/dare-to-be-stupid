@@ -95,6 +95,7 @@ import { designSlopEvidence } from './design-slop.mjs';
 import { gitleaksEvidence } from './secrets-scan.mjs';
 import { OUTCOME_FILE, writeRunOutcome } from './outcome.mjs';
 import { dodIds, parseDod } from './dod.mjs';
+import { recordEvent } from './journal.mjs';
 import { parseErd } from './erd.mjs';
 import { schemaEvidence } from './schema.mjs';
 import { checkErdConsistency, dodPath, erdPath } from './preflight.mjs';
@@ -2271,6 +2272,7 @@ export function repeatedRegressionNote(counts, regressions) {
  *   capabilities?: () => string[],
  *   toolchainGuidance?: () => { name: string, guidance: string } | undefined,
  *   erd?: () => import('./erd.mjs').Erd | null,
+ *   journal?: (kind: string, subject: string, extra?: { iteration?: number | null, detail?: string | null }) => void,
  *   dod?: () => import('./dod.mjs').DodCriterion[],
  *   changedFiles?: () => string[] | Promise<string[]>,
  *   readSource?: (file: string) => string | null,
@@ -3106,6 +3108,7 @@ export async function driveRun(options) {
     if (!permission.continue) return finish(permission.state, permission.reason);
 
     const iterationNumber = progress.iteration + 1;
+    effects.journal?.('iteration-started', 'loop', { iteration: iterationNumber });
     effects.event?.({ kind: 'iteration', number: iterationNumber, total: config.maxIterations });
     effects.event?.({ kind: 'airtime', fractionLeft: airtimeRemaining(progress, config).fractionLeft });
 
@@ -7231,6 +7234,39 @@ async function runInvocation(argv, io, crash) {
   let handedOutUsd = 0;
 
   /**
+   * The journal sequence, monotonic within a run.
+   *
+   * A counter rather than a timestamp: two events in the same millisecond are ordinary, and a
+   * forensic reader needs an order rather than a guess at one. Run-scoped, because the file is
+   * archived with the run.
+   */
+  let journalSeq = 0;
+
+  /**
+   * One journal line, or none (PLAN item 58).
+   *
+   * **Forensics, never a decision.** Nothing in this loop reads it back; the moment something did,
+   * it would be a second answer beside `outcome.json` and nobody would know which was right. It is
+   * also written on the crash path, where the filesystem is exactly what may already have failed, so
+   * `recordEvent` reports a failed write and returns rather than throwing into the run.
+   *
+   * @param {string} kind
+   * @param {string} subject
+   * @param {{ iteration?: number | null, detail?: string | null }} [extra]
+   */
+  const journal = (kind, subject, extra = {}) => {
+    recordEvent(
+      meeseeksDir,
+      { kind, subject, iteration: extra.iteration ?? null, detail: extra.detail ?? null },
+      {
+        now: () => new Date().toISOString(),
+        seq: () => (journalSeq += 1),
+        log: (line) => write(verbatim(line)),
+      },
+    );
+  };
+
+  /**
    * Run one `claude -p` child, bracketed by the only progress an operator ever gets.
    *
    * Children are awaited one at a time — the loop is still strictly sequential — but the
@@ -7270,6 +7306,10 @@ async function runInvocation(argv, io, crash) {
       }
     }
     const measured = measurePrompt({ systemPrompt: options.systemPrompt, prompt: options.prompt });
+    // Recorded **before** the line announcing it, not after. A kill landing between the two would
+    // otherwise lose the very transition the journal exists to preserve — which a test caught by
+    // killing on that exact line and finding no journal at all.
+    journal('child-started', options.phase, { detail: options.model });
     write(verbatim(childStartLine(options.phase, options.model, measured.characters, config.childTimeoutMs)));
     const startedAt = Date.now();
     const allowance = childBudget(config, handedOutUsd);
@@ -7296,6 +7336,10 @@ async function runInvocation(argv, io, crash) {
       });
     } finally {
       clearInterval(pulse);
+      // In `finally`, so a child that threw is settled rather than left in flight forever. An
+      // unsettled child is the journal's strongest claim and it must mean "was running when
+      // everything stopped", not "failed in a way nobody recorded".
+      journal('child-settled', options.phase);
     }
     // Counted here because **every** child in the loop passes through this function — the
     // authoring phases, the design phase, the builder, the panel, and each race candidate.
@@ -9281,6 +9325,7 @@ async function runInvocation(argv, io, crash) {
         }),
       race: runRace,
       capabilities: runCapabilities,
+      journal,
       /**
        * The operator done-bar this run is held to (PLAN item 48).
        *

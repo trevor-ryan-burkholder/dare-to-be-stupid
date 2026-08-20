@@ -2633,7 +2633,99 @@ failure denies readiness without becoming optimization input, and an opened pack
 final evidence. Human-labelled acceptance records the rubric and whether candidate identity and the
 agent's terminal assertion were successfully blinded.
 
-### 58. Forensic lifecycle event journal before resumability — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: PARKED (conditional)
+### 58. Forensic lifecycle event journal before resumability — **IMPLEMENTED (0.238.0), narrowed by its own experiment**
+
+**The admission experiment ran before anything was built**, which is what the item asked for: kill a
+controlled run at named boundaries, try to reconstruct the settled and unsettled work from current
+artifacts, and **reject the item if they are already sufficient**. Four boundaries, real driver
+subprocesses, `SIGKILL` to the process group, a counterfeit `claude` on `PATH` so the later
+boundaries were reachable without spending anything.
+
+| killed | `.meeseeks/` afterwards |
+|---|---|
+| after the lock, before any child | `config`, `launch`, `lock`, `specification` |
+| after the specification was captured | *identical to the above* |
+| after design, before a brief | adds `capabilities`, `supply`, `denials` |
+| mid-loop, three briefs in | adds `briefs/iter-001..003`, `gate-skip`, `red-evidence`, `run` |
+
+**What is already reconstructable, and therefore must not be rebuilt:** that the run launched and
+against which tree (`launch.json`), which specification revision it was held to
+(`specification.json`), what the design phase concluded (`capabilities.json`), what each cold role
+was handed (`supply.json`), how many iterations **started** (`briefs/`), and the ratchet's state.
+That is most of the item's proposed event list, and a journal re-recording it would be duplicate
+authority for no diagnostic gain.
+
+**What no artifact answers, which is the whole finding:**
+
+1. **Whether the last iteration settled.** Three briefs say three iterations *started*. Nothing says
+   whether iteration 3's gates ran, whether its panel returned, or whether it was killed between the
+   two. `gate-skip.json` and `red-evidence.json` are cumulative rather than per-iteration-settled.
+2. **Which child was in flight.** The log's last line named it; nothing on disk did. A forensic
+   reader working from the tree alone cannot say whether a builder, a reviewer, or nothing at all was
+   running when the process died.
+3. **The first two boundaries are indistinguishable.** A run killed before the design child started
+   and one killed after the specification was captured leave *byte-identical* directories. The
+   run had made real progress between them and left no trace of it.
+
+**Verdict: admit, and narrow to those three.** The item proposed run, phase, iteration, child, gate,
+panel and terminal events; the experiment says four of those seven are already covered by artifacts
+that exist. Building the full stream would be speculative infrastructure — the thing this repository
+refuses — so the journal records **iteration settlement, child lifecycle, and phase entry**, and
+nothing that another artifact already establishes.
+
+This also sharpens item 36. "Can this run safely resume?" is exactly question 1, and the answer is
+currently unavailable from disk, which is a concrete reason for the journal rather than an
+architectural preference.
+
+**Landed (0.238.0), scoped to exactly the three gaps the experiment found.** `scripts/journal.mjs`
+appends `.meeseeks/events.ndjson`: `phase-entered`, `child-started`, `child-settled`,
+`iteration-started`, `iteration-settled`. Five kinds, not the item's seven — the other two were
+already answerable, and a journal re-recording them would be a second authority for the same fact:
+two records that can disagree, with nothing saying which is right.
+
+**A real ordering defect the test found.** `child-started` was recorded *after* the line announcing
+it. Killing on that exact line found **no journal at all** — a kill landing between the two loses
+precisely the transition the file exists to preserve. The transition is now recorded before it is
+announced, which is also the more honest order.
+
+**It cannot end the run it exists to explain.** `recordEvent` reports a failed write through the log
+and returns; it is written on the crash path, where the filesystem is exactly what may already have
+failed. `child-settled` fires in a `finally`, so a child that threw is settled rather than left in
+flight forever — an unsettled child is this journal's strongest claim and it has to mean "was running
+when everything stopped", not "failed in a way nobody recorded".
+
+**Reading is deliberately asymmetric about corruption.** A half-written *last* line is the ordinary
+shape of a file produced by a crash, and refusing it would make the journal useless at the one moment
+it matters. A malformed line anywhere earlier is refused: a gap in the middle of a history is not a
+history.
+
+**Nothing decides on it.** The Driver never reads it back. It records transitions and identity, never
+content — `detail` carries a model name, never an exchange, bounded at 200 characters, because a
+journal accumulating what children said would be an unbounded log of untrusted text in a
+driver-owned file. `.meeseeks/events.ndjson` needed no new guard rule; the positional boundary
+covered it before the file existed.
+
+**Acceptance evidence:** 15 unit cases and 4 tier-2 cases that kill a **real driver process group**
+with `SIGKILL` and read the survivor. Proved red eight ways, and three of those reds came only after
+fixing the test rather than the code:
+
+- two integration cases looped over an **empty journal** and passed;
+- the counterfeit `claude` was written inside the repository after the commit, so the tree was dirty
+  and launch refused in 173ms — the same harness mistake that cost three done-bar cases an hour
+  earlier;
+- the `first unsettled iteration, not the highest` case had only **one** open iteration, so both
+  readings gave the same answer and a mutation survived it;
+- removing `child-settled` survived until a case existed that killed *after* a child had settled.
+
+**Item 36 is unblocked.** "Can this run safely resume?" is the experiment's question 1, and it now has
+an answer on disk. Resume itself remains a separate decision with its own idempotency and receipt
+semantics; this journal is not terminal-state authority and must not become one.
+
+
+**Still true, and unchanged by the experiment:** the Driver never reads the journal to decide
+anything; it records no model deltas, hidden reasoning, tool chatter, or ephemeral-agent telemetry;
+and any later cold-load path must verify an exact compatibility fence before resuming. This journal
+never becomes terminal-state authority by accident.
 
 **Problem it would solve:** `run.json`, briefs, archived runs, and `outcome.json` preserve important
 snapshots, but a crash can still leave no deterministic history of which major phase, child, gate, or

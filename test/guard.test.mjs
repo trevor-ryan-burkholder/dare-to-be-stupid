@@ -421,6 +421,9 @@ describe('blocked: every mutation under .meeseeks/', () => {
     // here, and needing no new rule — the positional guard covered it before it existed, which is
     // the whole reason the rule is positional rather than a list of names.
     ['.meeseeks/question.json', 'the blocked-question artifact'],
+    // The lifecycle journal (PLAN item 58). Positionally covered before the file existed, like
+    // every other driver-owned artifact here.
+    ['.meeseeks/events.ndjson', 'the lifecycle journal'],
     // A builder that could rewrite this could declare away the capability whose gate it
     // cannot pass, and the run would ship having never checked it (DESIGN.md §3.7).
     ['.meeseeks/capabilities.json', 'the capability manifest'],

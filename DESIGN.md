@@ -2170,6 +2170,7 @@ meeseeks/
 │   ├── reports.mjs               # per-attempt test-report freshness (§4)
 │   ├── preflight.mjs             # the thirteen checks run before a run starts (§3.5)
 │   ├── dod.mjs                   # DOD.md: the operator additive done-bar, refused if nobody can decide it
+│   ├── journal.mjs               # .meeseeks/events.ndjson: what a killed run leaves about its progress
 │   ├── erd.mjs                   # reads a Mermaid erDiagram into entities, keys and relationships
 │   ├── schema.mjs                # schema-conformance: the live schema against the declared one (§3.6.1)
 │   ├── question.mjs              # .meeseeks/question.json: the decision a non-SHIPPED run leaves (§8.3)
