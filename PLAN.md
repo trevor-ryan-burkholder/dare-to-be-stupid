@@ -693,6 +693,20 @@ new refusal has a deny-path test and a benign neighbour. **Outstanding for DONE:
 Done-when's live half — one boxed dogfood run shipping a one-component repository — authorized
 by the operator as measurement run 3.
 
+**Run 3 was made on 20 Aug 2026 and the feature did not work.** It had been `CODE COMPLETE` since
+0.144.0 on 1962 tier-1 and 46 tier-2 tests, and it failed on its first honest exercise in the one
+configuration it exists for. Two defects, one cause — a component sub-run's directory offset was
+computed nowhere:
+
+- its phase outputs were spelled from the repository root, so the PRD phase was refused for
+  producing exactly what it declared, and the sub-run aborted (item **145**);
+- with that repaired, its gates ran against the candidate's repository root instead of its own
+  project, so seven gates failed every iteration against a tree with no `package.json` and the run
+  stalled having never gated the code it wrote (item **146**).
+
+Both are fixed at 0.268.0. The item stays `IN PROGRESS`: shipping a component is the bar, and it has
+not shipped yet.
+
 ### 25. `configure.mjs` — the operator's config wizard — **DONE (0.145.0)**
 
 **Origin:** operator request, 14 Aug 2026 ("We should probably add a config step you can do via
@@ -2307,6 +2321,101 @@ and its subprocesses' network, and constrains nothing the builder's own toolset 
 denial behaviour (measurable now, low value — item 84 itself says the classifier is model-judged,
 cannot certify work, and cannot advance the ratchet); and the decision to remove WebFetch/WebSearch
 from the builder (needs a proposed network policy to be narrowing anything).
+
+
+### 145. A component sub-run was refused for producing exactly what it was asked to produce — **DONE (0.268.0)** (PLAN item 24)
+
+**Origin:** Phase 1, 20 Aug 2026, found by running item 24's own outstanding live half — the boxed
+one-component dogfood the operator authorized as measurement run 3. It had never been run. Item 24
+has been `CODE COMPLETE` since 0.144.0 with 1962 tier-1 and 46 tier-2 tests passing, and the feature
+**failed on its first honest exercise, in the one configuration it exists for**.
+
+**The defect.** `git status --porcelain` reports **repository-root-relative** paths wherever it is
+run. A phase declares its outputs relative to the driver's own directory — `PRD.md`, `.gitignore`.
+For a top-level run those are the same strings, so the difference is invisible and every test wrote
+them as equal. A component sub-run starts in `packages/<name>`, and the two spellings come apart:
+
+```
+the prd phase changed 2 path(s) it does not declare:
+  packages/textstats/.gitignore, packages/textstats/PRD.md.
+That phase declares PRD.md, .gitignore.
+```
+
+The sub-run aborted there, and the parent refused to build on a component that did not ship — the
+correct behaviour on both counts, for a phase that had done nothing wrong. The same mis-spelling hid
+the component's own `.meeseeks/` from `isMachineState`, so a nested run's bookkeeping also read as an
+undeclared output.
+
+**The repair.** `changedPaths` asks `git rev-parse --show-prefix` and expresses each path the way the
+phase contract expresses it. The prefix is empty at a repository root, so the correction is a no-op
+for every run that is not nested — a fix that changed top-level behaviour would be a regression
+wearing the shape of a repair, and a neighbour case pins it.
+
+A path **outside** the prefix keeps its root spelling and still refuses. That is deliberate: a
+component sub-run that changed a file outside its own directory has done something undeclared, and
+rewriting the path to look local would be the check disarming itself. An unreadable prefix throws
+rather than defaulting to `''`, because assuming the root silently restores the defect on exactly the
+runs that have a prefix.
+
+**The test doubles could not have caught this, and that is the second lesson.** `changedPaths`'
+existing runner answers every command identically, so it would hand `git rev-parse --show-prefix` a
+porcelain listing. The new cases use a command-aware double — the same failure this session already
+met in the `socat --version` probe, where a double that ignores its arguments cannot test the
+arguments.
+
+**Evidence.** Five cases in `test/launch.test.mjs`: the nested spelling, a path outside the prefix
+still refusing, a nested `.meeseeks/` correctly excluded, the empty-prefix neighbour, and an
+unreadable prefix refusing. Red proof: forcing the prefix to `''` fails four of them.
+
+**And the run itself is the acceptance.** Re-run from a clean clone, the component sub-run passed the
+phase that had aborted it — `specification: PRD.md at sha256:5026771…`, then `designing` — instead of
+being refused at its first output.
+
+**Validation:** lint, typecheck, `npm test` **3460 of 3460**.
+
+
+### 146. A component's gates ran against an empty repository root — **DONE (0.268.0)** (PLAN item 24)
+
+**Origin:** Phase 1, 20 Aug 2026, found by the same run as item 145 and one layer further in. With
+the path-spelling defect repaired, the component sub-run reached its build loop — and then failed
+**seven gates every iteration for five iterations** and stalled without one gate ever having run
+against the code it was writing.
+
+**The defect, and it is the same one wearing different clothes.** The candidate is a worktree of the
+**whole repository**. `gateTree(candidate.dir, …)` runs at that worktree's root. For a top-level run
+the root *is* the project, so the distinction has never existed — every test wrote them as equal
+because for every tested run they were. A component's project is `packages/textstats`, so the gates
+ran against a repository root with no `package.json`, no lint config and no tests:
+
+```
+npm error path /tmp/meeseeks-candidate-14477/package.json
+npm error enoent Could not read package.json
+```
+
+Identical for `build`, `lint`, `types`, `ci`, `docs`, `quality:knip` and `security-audit`, every
+iteration, until `STALLED: 4 iterations with no gate improvement`. The builder was told it was stuck
+and could do nothing about it: the gates were not looking at its work.
+
+**The repair.** `candidateProjectDir(candidateDir, prefix)` joins the run's own offset — the same
+`git rev-parse --show-prefix` item 145 added — onto the candidate. Empty at a repository root, so
+the correction is a no-op for every run that is not nested, and a neighbour case pins that.
+
+**Two defects the tests found in the repair itself, which is the point of writing them.**
+
+- `path.join` keeps the trailing separator git puts on a prefix, so one directory had two spellings.
+  Normalised at the source rather than at each reader.
+- The prefix was taken **eagerly** at the run boundary, before preflight establishes that this is a
+  git repository at all — so a run started outside one died with *"git could not say where this
+  directory sits"* instead of the refusal it had earned. Two component tests caught it within a
+  minute. It is computed on first use now; nothing needs it until a candidate is gated, and by then
+  the tree is known good.
+
+**Validation:** lint, typecheck, `npm test` **3464 of 3464**.
+
+**Item 24 is still not DONE.** Its live half asks for a boxed run that *ships* a one-component
+repository. Two defects that made shipping impossible are removed; whether the component can now
+satisfy seven gates from an empty directory inside its stall budget is the next run's question, not
+this item's claim.
 
 
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)

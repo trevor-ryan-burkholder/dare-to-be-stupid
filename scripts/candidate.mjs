@@ -71,6 +71,31 @@ export function candidateDirFor(pid) {
 }
 
 /**
+ * Where inside a candidate this run's project actually is.
+ *
+ * The candidate is a worktree of the **whole repository**. A top-level run's project is its root, so
+ * these are the same directory and the distinction has never mattered. A component sub-run's project
+ * is a subdirectory — `packages/textstats` — and gates launched at the candidate root run against a
+ * tree that has no `package.json`, no lint config and no tests.
+ *
+ * Measured on the first real boxed component run (PLAN item 24): `npm error path
+ * /tmp/meeseeks-candidate-14477/package.json`, repeated for build, lint, types, ci, docs, knip and
+ * security-audit, every iteration, until the run stalled having never run one gate against the code
+ * it was writing.
+ *
+ * @param {string} candidateDir the materialized worktree
+ * @param {string} prefix this run's offset inside its repository, from `repoPrefix`
+ * @returns {string}
+ */
+export function candidateProjectDir(candidateDir, prefix) {
+  // `git rev-parse --show-prefix` answers `packages/textstats/`, and `path.join` keeps that trailing
+  // separator. Two spellings of one directory is the kind of difference that surfaces much later as
+  // a mismatched string compare, so it is normalised here rather than at each reader.
+  const trimmed = prefix.replace(/[\\/]+$/, '');
+  return trimmed === '' ? candidateDir : path.join(candidateDir, trimmed);
+}
+
+/**
  * The temporary index a snapshot is staged into.
  *
  * **Never the repository's own index.** Staging into `.git/index` would leave the operator's

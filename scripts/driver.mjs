@@ -96,6 +96,7 @@ import {
   declaredOutputs,
   describeUnexpected,
   recordPhase,
+  repoPrefix,
   revalidateLaunch,
   writeLaunchReceipt,
 } from './launch.mjs';
@@ -113,6 +114,7 @@ import { roleSupplyManifest } from './role-supply.mjs';
 import { acquireRunLock, releaseRunLock } from './run-lock.mjs';
 import {
   candidateDirFor,
+  candidateProjectDir,
   candidateMatchesTree,
   materializeCandidate,
   removeCandidate,
@@ -7700,6 +7702,26 @@ async function runInvocation(argv, io, crash) {
    *
    * @type {import('./claude-seal.mjs').SealIo}
    */
+  /**
+   * This run's offset inside its repository, or `''` at a root — computed **on first use**.
+   *
+   * It decides where this run's gates execute: a component sub-run lives in a subdirectory of the
+   * repository its candidate worktree mirrors, and gates launched at the candidate root gate an
+   * empty tree (PLAN item 146).
+   *
+   * **Lazy, and the first draft was not.** Taken eagerly here it runs before preflight has
+   * established that this is a git repository at all, so a run started outside one died with
+   * *"git could not say where this directory sits"* instead of the refusal it had earned — two
+   * component tests caught it immediately. Nothing needs the prefix until a candidate is gated, and
+   * by then the tree is known good.
+   *
+   * @type {Promise<string> | null}
+   */
+  let runPrefixOnce = null;
+  const runPrefix = () => {
+    runPrefixOnce ??= repoPrefix((command, args) => shell(command, args, { cwd }));
+    return runPrefixOnce;
+  };
   const sealIo = io.sealIo ?? realSealIo(env);
   /**
    * What the sealed target reports **now**, measured immediately before the child that is about to
@@ -10027,7 +10049,10 @@ async function runInvocation(argv, io, crash) {
       history: (findings) => historyContext({ cwd, run: shell, findings, greenfield }),
       changedFiles,
       gates: async () => {
-        const gated = await gateTree(candidate.dir, meeseeksDir);
+        // **Where this run's project is, not where its repository starts.** Identical for a
+        // top-level run; for a component it is the difference between gating the code the builder
+        // wrote and gating an empty repository root.
+        const gated = await gateTree(candidateProjectDir(candidate.dir, await runPrefix()), meeseeksDir);
         return { ok: gated.ok, results: gated.results, identities: gated.identities };
       },
       /**

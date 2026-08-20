@@ -106,6 +106,76 @@ describe('changedPaths', () => {
     assert.deepStrictEqual(changed, ['PRD.md']);
   });
 
+  /**
+   * A double that answers **per command**, because the one above answers every command the same way
+   * and therefore hands `git rev-parse --show-prefix` a porcelain listing. That is harmless for the
+   * cases it was written for and useless for these: a probe double that ignores its arguments cannot
+   * test what the arguments were.
+   *
+   * @param {{ status: string, prefix?: string }} answers
+   */
+  const gitRunner = (answers) => async (/** @type {string} */ _command, /** @type {string[]} */ args) => {
+    if (args[0] === 'rev-parse') return { ok: true, stdout: `${answers.prefix ?? ''}\n`, stderr: '' };
+    return { ok: true, stdout: answers.status, stderr: '' };
+  };
+
+  it('reports a nested driver\'s paths the way that driver declares them (PLAN item 24)', async () => {
+    // **The defect the first real boxed component run found.** `git status --porcelain` reports
+    // repository-root-relative paths wherever it runs; a component sub-run starts in
+    // `packages/textstats` and its PRD phase declares `PRD.md`. Uncorrected, the phase was refused
+    // for producing exactly what it was asked to produce, the sub-run aborted, and the parent
+    // refused to build on a component that did not ship.
+    const changed = await changedPaths({
+      run: gitRunner({ status: '?? packages/textstats/PRD.md\0?? packages/textstats/.gitignore\0', prefix: 'packages/textstats/' }),
+      cwd: '/nowhere',
+    });
+    assert.deepStrictEqual(changed, ['.gitignore', 'PRD.md']);
+  });
+
+  it('leaves a path outside the nested directory spelled from the root, so it still refuses', async () => {
+    // Not an oversight. A component sub-run that changed a file outside its own directory has done
+    // something undeclared, and rewriting that path to look local would be the check disarming
+    // itself.
+    const changed = await changedPaths({
+      run: gitRunner({ status: '?? packages/textstats/PRD.md\0 M README.md\0', prefix: 'packages/textstats/' }),
+      cwd: '/nowhere',
+    });
+    assert.deepStrictEqual(changed, ['PRD.md', 'README.md']);
+  });
+
+  it('excludes a nested run\'s own machine state, which the root spelling used to hide', async () => {
+    // `isMachineState` matches `.meeseeks/`. Before the prefix was stripped, a component's state
+    // arrived as `packages/textstats/.meeseeks/` and matched nothing, so the run's own bookkeeping
+    // read as an undeclared phase output.
+    const changed = await changedPaths({
+      run: gitRunner({ status: '?? packages/textstats/.meeseeks/\0?? packages/textstats/PRD.md\0', prefix: 'packages/textstats/' }),
+      cwd: '/nowhere',
+    });
+    assert.deepStrictEqual(changed, ['PRD.md']);
+  });
+
+  it('changes nothing at a repository root, where the prefix is empty', async () => {
+    // The neighbour. Every run that is not nested must be unaffected, or this correction would be a
+    // regression wearing the shape of a fix.
+    const changed = await changedPaths({
+      run: gitRunner({ status: '?? PRD.md\0 M docs/design.md\0', prefix: '' }),
+      cwd: '/nowhere',
+    });
+    assert.deepStrictEqual(changed, ['PRD.md', 'docs/design.md']);
+  });
+
+  it('refuses when git cannot say where this directory sits, rather than assuming the root', async () => {
+    // Assuming `''` would silently restore the defect above on exactly the runs that have a prefix.
+    const run = async (/** @type {string} */ _c, /** @type {string[]} */ args) =>
+      args[0] === 'rev-parse'
+        ? { ok: false, stdout: '', stderr: 'not a git repository' }
+        : { ok: true, stdout: '?? PRD.md\0', stderr: '' };
+    await assert.rejects(
+      () => changedPaths({ run, cwd: '/nowhere' }),
+      (error) => error instanceof Error && /where this directory sits/.test(error.message),
+    );
+  });
+
   it('sorts and de-duplicates, so a rename reported twice is one path', async () => {
     const changed = await changedPaths({
       run: runner({ ok: true, stdout: 'R  b.md\0a.md\0 M a.md\0' }),

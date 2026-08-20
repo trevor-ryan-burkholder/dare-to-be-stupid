@@ -179,7 +179,68 @@ export async function changedPaths(options) {
         'output cannot be checked against what it declared. Refusing rather than committing an unexamined tree.',
     );
   }
-  return [...new Set(parsePorcelain(result.stdout).filter((target) => !isMachineState(target)))].sort();
+  const prefix = await repoPrefix(options.run);
+  return [
+    ...new Set(parsePorcelain(result.stdout).map((target) => relativeToCwd(target, prefix)).filter((target) => !isMachineState(target))),
+  ].sort();
+}
+
+/**
+ * Where this driver's working directory sits inside its repository, as git spells it.
+ *
+ * `git status --porcelain` reports **repository-root-relative** paths regardless of where it is
+ * run, while a phase declares its outputs relative to the driver's own directory — `PRD.md`,
+ * `.gitignore`. For a top-level run those are the same strings and the difference is invisible.
+ *
+ * **For a component sub-run they are not** (PLAN item 24). A nested driver starts in
+ * `packages/<name>`, its PRD phase writes `PRD.md`, git reports `packages/<name>/PRD.md`, and the
+ * declared-output check refuses a phase for producing exactly what it was asked to produce. Measured
+ * on the first real boxed component run: *"the prd phase changed 2 path(s) it does not declare:
+ * packages/textstats/.gitignore, packages/textstats/PRD.md. That phase declares PRD.md,
+ * .gitignore."* The sub-run aborted there, and the parent refused to build on a component that did
+ * not ship — so the feature failed on its first honest exercise, in the one configuration it exists
+ * for.
+ *
+ * Empty at a repository root, which makes the correction a no-op for every run that is not nested.
+ *
+ * Exported because the same offset decides two things: how a phase's outputs are spelled, and
+ * **where its gates run**. A component's candidate is a worktree of the whole repository, so gates
+ * launched at the candidate root look for `package.json` in the repository root while the
+ * component's project sits in its subdirectory. Measured on the same run that found the path
+ * spelling: `npm error path /tmp/meeseeks-candidate-14477/package.json`, seven gates failing every
+ * iteration, and the component stalling with no gate ever having run against its own tree.
+ *
+ * @param {Run} run
+ * @returns {Promise<string>} `''` or a slash-terminated prefix
+ */
+export async function repoPrefix(run) {
+  const result = await run('git', ['rev-parse', '--show-prefix']);
+  // An unreadable prefix is not evidence of a root. `changedPaths` has already established that
+  // git can describe this tree, so a failure here is unexpected — and treating it as "no prefix"
+  // would silently restore the defect above rather than report it.
+  if (!result.ok) {
+    throw new Error(
+      `git could not say where this directory sits in its repository (${result.stderr.trim() || 'no output'}), ` +
+        "so a phase's output cannot be compared against what it declared.",
+    );
+  }
+  return result.stdout.trim();
+}
+
+/**
+ * One git-reported path, expressed the way the phase contract expresses it.
+ *
+ * A path **outside** the prefix keeps its repository-root spelling and will not match any declared
+ * output. That is the correct answer rather than an oversight: a component sub-run that changed a
+ * file outside its own directory has done something undeclared, and rewriting the path to hide it
+ * would be the check disarming itself.
+ *
+ * @param {string} target @param {string} prefix
+ * @returns {string}
+ */
+function relativeToCwd(target, prefix) {
+  if (prefix === '' || !target.startsWith(prefix)) return target;
+  return target.slice(prefix.length);
 }
 
 /**
