@@ -708,7 +708,24 @@ describe('releaseTakeoverClaim: only the owner may clear a claim (REVIEW F34)', 
   it('says nothing when there is no claim to clear', () => {
     // This runs on the way out of a failed acquisition. A throw here would replace the real reason
     // the run ended with a complaint about housekeeping.
+    // **The whole body is one `try`/`catch {}`**, so `doesNotThrow` holds no matter what it does —
+    // including doing the wrong thing. What has to be true is that it removes only what is ours.
     const meeseeksDir = makeMeeseeksDir();
-    assert.doesNotThrow(() => releaseTakeoverClaim(takeoverLockPath(meeseeksDir, 'never-existed'), 'mine'));
+    const absent = takeoverLockPath(meeseeksDir, 'never-existed');
+    assert.doesNotThrow(() => releaseTakeoverClaim(absent, 'mine'));
+    assert.equal(existsSync(absent), false, 'clearing an absent claim created one');
+
+    // Somebody else's claim survives: this runs on the way out of a *failed* acquisition, so the
+    // claim on disk usually belongs to the contender that beat us.
+    const theirs = takeoverLockPath(meeseeksDir, 'theirs');
+    writeFileSync(theirs, `${JSON.stringify({ pid: process.pid, token: 'not-mine', startedAt: 'a' })}\n`, 'utf8');
+    releaseTakeoverClaim(theirs, 'mine');
+    assert.equal(existsSync(theirs), true, "a contender's live claim was removed by somebody else's cleanup");
+
+    // And our own is cleared, or the next run inherits litter it cannot attribute.
+    const ours = takeoverLockPath(meeseeksDir, 'ours');
+    writeFileSync(ours, `${JSON.stringify({ pid: process.pid, token: 'mine', startedAt: 'a' })}\n`, 'utf8');
+    releaseTakeoverClaim(ours, 'mine');
+    assert.equal(existsSync(ours), false, 'our own claim was left behind');
   });
 })

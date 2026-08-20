@@ -1767,6 +1767,33 @@ journal not archived, no iteration settled, and each of the two phase windows un
 proof needed a **multi-iteration** run to be real — with one iteration started and none settled,
 "at least started minus one" is satisfied by settling nothing, and the mutation survived.
 
+### 137. The last four, and two messages that were not true — **DONE (0.260.0)** (PLAN item 136 continued)
+
+The four the twelve could not include, because two of them are **source** changes rather than test
+changes.
+
+**Two shipped messages stated something false.** `verifyAcceptanceReceipt` said *"this build reads
+X"* where X is `expect.claim ?? ACCEPTANCE_CLAIM` — the *caller's* expectation. A person reading that
+sentence is deciding whether their file or their tool is out of date, and it named the wrong one
+whenever a caller supplied one. It says *"this reader expects"* now, and adds what this build writes
+when the two differ. And `acquireRunLock`'s give-up said *"each one found another abandoned takeover
+claim"*, which is one cause out of three: the loop also continues when a reclaimer has gone, and when
+a contender displaces this one's claim between creating it and confirming it.
+
+**Two tests could not fail.** `releaseTakeoverClaim`'s entire body is one `try`/`catch {}`, so
+`doesNotThrow` held whatever it did — it now requires that somebody else's live claim survives and
+our own is cleared. And the non-regular-file guard was tested with a *directory*, which throws
+`EISDIR` at `open` one line before the guard and lands in the catch-all; the injectable io reaches it.
+
+**Two repairs that first failed to prove anything, which is the lesson worth keeping.** The io stub
+initially *threw* on read and append — landing in the same catch-all the directory fixture did, so
+removing the guard still returned `'full'` and the mutation survived. Recording the calls and
+requiring none is what distinguishes the guard from the catch-all. And the corrected message had no
+assertion at all until one was written, so the wording could have reverted unnoticed.
+
+**Validation:** lint and typecheck clean, `npm test` **3428 of 3428** and
+`npm run test:integration` **306 of 306**, both exit 0. Four red proofs, one per repair.
+
 ### 136. Twelve tests that could not fail — **DONE (no version bump; tests only)**
 
 Phase 2 is *testing and code fixes*, and this is that. A mutation sweep over the eight suites

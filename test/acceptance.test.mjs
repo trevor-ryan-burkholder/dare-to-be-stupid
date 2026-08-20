@@ -323,6 +323,21 @@ describe('verifyAcceptanceReceipt', () => {
     assert.equal(/** @type {any} */ (verdict).reason.includes('establishes nothing about these ones'), true);
   });
 
+  it('does not describe a caller\u2019s expectation as what this build writes', () => {
+    // The message read "this build reads ${claim}" where `claim` is `expect.claim ?? …` — the
+    // caller's. A reader of that sentence is deciding whether their *file* or their *tool* is out
+    // of date, and it named the wrong one whenever a caller supplied an expectation.
+    const receipt = buildAcceptanceReceipt(complete());
+    const verdict = verifyAcceptanceReceipt(receipt, { claim: 'something.else/v1' });
+    assert.equal(verdict.ok, false);
+    assert.match(String(verdict.reason), /this reader expects "?something\.else\/v1"?/);
+    assert.match(String(verdict.reason), /this build writes meeseeks\.acceptance\/v2/);
+    // And with no caller expectation the two are the same thing, so the aside is not printed.
+    const plain = verifyAcceptanceReceipt({ ...receipt, claim: 'meeseeks.acceptance/v1' });
+    assert.equal(plain.ok, false);
+    assert.equal(String(plain.reason).includes('this build writes'), false);
+  });
+
   it('refuses an unknown schema version and an unknown claim type', () => {
     const receipt = buildAcceptanceReceipt(complete());
     assert.equal(verifyAcceptanceReceipt({ ...receipt, version: 99 }).ok, false);

@@ -604,10 +604,15 @@ export function acquireRunLock(meeseeksDir, options = {}) {
     }
   }
 
-  // Every pass swept an abandoned claim and found another one. Nothing here defaults to free.
+  // **Not every path here swept an abandoned claim.** The loop also continues when a reclaimer has
+  // gone, and when another contender displaced this one's claim between creating it and confirming
+  // it — so the old sentence, "each one found another abandoned takeover claim", asserted one cause
+  // out of several to a reader trying to work out what is on their machine. Nothing defaults to
+  // free; what is known is that the attempts ran out.
   return refused(
-    `gave up after ${TAKEOVER_ATTEMPTS} attempts to reclaim a stale lock; each one found another abandoned ` +
-      'takeover claim, which should not be possible unless something is creating them continuously',
+    `gave up after ${TAKEOVER_ATTEMPTS} attempts to reclaim a stale lock. Each pass either swept an abandoned ` +
+      'takeover claim and found another, lost its own claim to a contender, or found the reclaimer gone — ' +
+      'none of which should repeat this many times unless something is creating claims continuously',
     `Delete ${lockName} and any ${path.join('.meeseeks', `${RUN_LOCK_FILE}.takeover-*`)} if no driver is running.`,
   );
 }

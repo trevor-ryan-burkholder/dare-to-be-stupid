@@ -2135,7 +2135,40 @@ describe('denial dampening: verbosity only, in Driver-named state (PLAN item 52)
     assert.equal(readFileSync(elsewhere, 'utf8'), 'do not overwrite me\n', 'the guard wrote through the link');
   });
 
-  it('renders full text when the counter is not a regular file', () => {
+  it('renders full text when the counter opens but is not a regular file', () => {
+    // **A directory never reaches this branch.** `open` is called with `O_RDWR`, which throws
+    // `EISDIR` one line *before* the `isFile` guard — so the original fixture landed in the
+    // catch-all and asserted exactly what its neighbour already did. Deleting `!stats.isFile()`
+    // left the whole suite green.
+    //
+    // The injectable io is what reaches it: a descriptor that opens cleanly and reports a
+    // non-regular file, which is what a FIFO or a device node standing in for the counter would do.
+    /** @type {string[]} */
+    const touched = [];
+    const verbosity = denialVerbosity({
+      stateDir: stateDir(),
+      sessionId: 'session-with-a-fifo',
+      rule: 'protected-state',
+      io: /** @type {any} */ ({
+        open: () => 7,
+        stat: () => ({ isFile: () => false, size: 0 }),
+        close: () => {},
+        // **Recorded rather than thrown.** A throwing stub lands in the same catch-all the
+        // directory fixture did, so removing the `isFile` guard still produced `'full'` and the
+        // mutation survived. What distinguishes the guard from the catch-all is that neither of
+        // these is ever reached.
+        append: () => touched.push('append'),
+        read: () => {
+          touched.push('read');
+          return '';
+        },
+      }),
+    });
+    assert.equal(verbosity, 'full');
+    assert.deepEqual(touched, [], 'a non-regular counter was read from or written to');
+  });
+
+  it('renders full text when the counter is a directory, through the catch-all', () => {
     const dir = stateDir();
     mkdirSync(path.join(dir, `${createHash('sha256').update('session-1').digest('hex').slice(0, 32)}.denials`), {
       recursive: true,

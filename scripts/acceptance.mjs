@@ -314,7 +314,15 @@ export function verifyAcceptanceReceipt(value, expect = {}) {
   }
   const claim = expect.claim ?? ACCEPTANCE_CLAIM;
   if (receipt.claim !== claim) {
-    return { ok: false, reason: `unknown claim type ${JSON.stringify(receipt.claim)}; this build reads ${claim}` };
+    // `claim` is `expect.claim ?? ACCEPTANCE_CLAIM` — caller-supplied. Saying "this build reads"
+    // about a caller's expectation is false whenever a caller supplies one, and the reader of this
+    // message is a person deciding whether their file or their tool is out of date.
+    return {
+      ok: false,
+      reason:
+        `unknown claim type ${JSON.stringify(receipt.claim)}; this reader expects ${claim}` +
+        (claim === ACCEPTANCE_CLAIM ? '' : ` (this build writes ${ACCEPTANCE_CLAIM})`),
+    };
   }
   // Rebuilt rather than spot-checked: the same completeness rule that refused to write it refuses to
   // accept it, so a field deleted or corrupted on disk fails here exactly as it would have there.
