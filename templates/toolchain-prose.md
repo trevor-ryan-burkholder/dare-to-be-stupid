@@ -36,9 +36,28 @@ prove the claim is true — those are the cold panel's judgment, on evidence, an
 write may report otherwise. Do not name a check `citation-proves-claim`. Do not summarize a
 green suite as "verified". The honest sentence is *structurally sound and traceable*.
 
+**Citations are gated, and the gate is not yours to edit.** `citations.json` at the repository
+root declares every quotation you use; `sources/<id>.json` holds the captured source it came
+from. The Driver checks all three of these itself, on every iteration:
+
+```json
+{ "version": 1, "citations": [
+  { "id": "C1", "source": "acme-2024", "locator": "§3.2",
+    "quote": "the exact words, copied", "usedIn": "manuscript/03-findings.md" }
+] }
+```
+
+1. the source package's text matches the `sha256:…` digest it carries;
+2. the quotation appears in that captured text — **verbatim**, differing only in line breaks;
+3. the quotation also appears in the `usedIn` file, so the manifest cannot drift from the prose.
+
+**If this artifact cites nothing, say so:** `{"version": 1, "citations": []}` passes. A *missing*
+manifest fails, because "cites nothing" is a claim and an absent file is not one.
+
 **A required source you cannot fetch fails closed.** Not a skip, not a pass with a note. If a
 check depends on evidence that could not be obtained, it fails, and the reason is the failure
-message.
+message. The same is true of a source package that is not in the tree: the gate will not go and
+get it for you, and it will not wave the citation through.
 
 **Layout.** `manuscript/` for the artifact, `checks/` for the vitest files, one `package.json`
 at the root carrying vitest. Keep a check in the file whose subject it is about, so a reader

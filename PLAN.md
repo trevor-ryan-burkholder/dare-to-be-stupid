@@ -2142,9 +2142,40 @@ Six red proofs against the adapter: detect sniffing a manuscript (2 failures), `
 succeeding (3), `security-audit` wrongly declining (3), `unit` dropping the report path (1), a CI
 pattern for a declined operation (1), and `startCommand` inventing a runtime (1).
 
+**Citation resolver landed, 0.243.0 — `scripts/citations.mjs` (`DESIGN.md` §3.8.4).** Done-when's
+flagship clause closes for local sources: *passes on a resolving quote, fails on a misquote, and fails
+closed on a source it cannot fetch*.
+
+**Driver-owned and in-process**, wired into `staticGates`, because a builder asked to make a citation
+gate pass writes a lenient resolver while a builder asked to make one pass that it cannot edit writes
+accurate citations. **Armed by the declared toolchain, never by the manifest's presence** — arming on
+the file would let a job delete its citations and lose the gate in the same motion, and that loss is
+indistinguishable from a job that never cited anything. An absent manifest **fails** and names the
+statement that satisfies it; an empty one passes, because *cites nothing* is a claim and a missing file
+is not one.
+
+Three checks per citation, each failing closed: the source package matches the digest it carries (the
+only place a post-capture edit can be noticed); the quotation appears verbatim in the captured text;
+the quotation also appears in the `usedIn` manuscript file, so the manifest cannot drift from the
+prose. Normalization is whitespace-only and deliberately no more — folding case or punctuation would
+let real misquotes through, and the misquote is the whole point. The locator is **recorded, not
+verified**, and the passing message says so, because confirming a quotation sits at "§3.2" needs a
+structural model a captured text does not carry. Source ids and `usedIn` paths are manifest data
+naming files in the operator's repository, so both are refused before they are joined.
+
+**Validation:** lint and typecheck clean, `npm test` **3198 of 3198**, `release-check` passed. Eight
+red proofs: normalize folding case and punctuation (3 failures), a misquote accepted, manifest drift
+accepted, a tampered capture accepted, an absent manifest defaulting to pass (2), a duplicate id
+accepted, a source id allowed to be a path, and the gate arming on every project (2).
+
+**Not built, and stated rather than implied:** network acquisition. The public-HTTPS profile, redirect
+and address validation, the deadline and body caps, and the mutable-source/non-retainable fixtures all
+remain open; the resolver reads packages already in the tree and an absent one fails closed rather
+than being fetched.
+
 **Still open on this item:** the checks-as-tests suite over a real artifact feeding the ratchet
-end to end, the citation resolver and its fail-closed fetch, the contradiction fixture, the
-authoring-time refusal of an unfalsifiable criterion, and the live artifact run.
+end to end, the network acquisition step, the contradiction fixture, the authoring-time refusal of
+an unfalsifiable criterion, and the live artifact run.
 - **Prose gates**, flagship first: a **citation resolver** (the quoted text actually appears in the cited
   source — deterministic, and exactly the "reporter emits pass/fail evidence" shape 34 names), plus
   link-check, style (vale), word-count floors, and machine-readable claim-consistency checks. For

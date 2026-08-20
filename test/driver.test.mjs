@@ -5835,6 +5835,32 @@ describe('staticGates', () => {
     );
   });
 
+it('arms the citations gate on the declared toolchain, never on the manifest being there', async () => {
+    // The whole of the arming decision (DESIGN §3.8.4). Arming on the file's presence would let an
+    // artifact job delete its citations and lose the gate in the same motion, and the loss would be
+    // indistinguishable from a job that never cited anything.
+    const artifact = repoWith({ 'manuscript/01.md': `# a\n\n${PROSE}\n` });
+
+    const unarmed = (await staticGates(artifact)).find((gate) => gate.name === 'citations');
+    assert.equal(unarmed, undefined, 'an undeclared project was asked for a citation manifest');
+    const node = (await staticGates(artifact, { toolchain: 'node' })).find((gate) => gate.name === 'citations');
+    assert.equal(node, undefined, 'a node project was asked for a citation manifest');
+
+    // Declared prose, no manifest: the gate is present and it fails, rather than being absent.
+    const armed = (await staticGates(artifact, { toolchain: 'prose' })).find((gate) => gate.name === 'citations');
+    assert.equal(armed?.ok, false);
+    assert.match(String(armed?.detail), /"citations": \[\]/);
+
+    // And the same tree with the declaration it was missing passes, so the failure above is about
+    // the manifest rather than about prose being unsupported.
+    const declared = repoWith({
+      'manuscript/01.md': `# a\n\n${PROSE}\n`,
+      'citations.json': JSON.stringify({ version: 1, citations: [] }),
+    });
+    const passing = (await staticGates(declared, { toolchain: 'prose' })).find((gate) => gate.name === 'citations');
+    assert.equal(passing?.ok, true);
+  });
+
   it('fails gate-integrity when the repository stubs out a gate it is judged by', async () => {
     const dir = repoWith({ 'package.json': JSON.stringify({ scripts: { lint: 'true' } }) });
     const integrity = (await staticGates(dir)).find((gate) => gate.name === 'gate-integrity');

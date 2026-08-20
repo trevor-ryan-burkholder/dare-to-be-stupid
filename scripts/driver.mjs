@@ -60,6 +60,7 @@ import {
 import { applicableGates, gateApplies } from './gate-policy.mjs';
 import { hasMeaningfulHistory, historyContext } from './history.mjs';
 import { resolveCitation } from './evidence.mjs';
+import { citationsGate } from './citations.mjs';
 import { blankComments, integrityGate } from './integrity.mjs';
 import {
   boundStore,
@@ -5249,6 +5250,13 @@ export async function staticGates(cwd, options = {}) {
     ...(options.oracle === true && options.meeseeksDir !== undefined
       ? [await oracleGate(cwd, options.meeseeksDir, options)]
       : []),
+    // Armed by the **declared** toolchain rather than by the manifest's presence, which is the
+    // whole of the decision. Arming on the file would let an artifact job delete its citations and
+    // lose the gate in the same motion, and the loss would look identical to a job that never
+    // cited anything (§3.8.4). A Next.js application is not asked for a citation manifest because
+    // nobody declared it an artifact job; a prose job is asked always, and an artifact that cites
+    // nothing declares an empty manifest and passes.
+    ...(options.toolchain === 'prose' ? [citationsGate(cwd)] : []),
   ];
 }
 

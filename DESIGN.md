@@ -796,6 +796,62 @@ claim is therefore **provably structurally sound and traceable, plus cold factua
 judgments**, not *provably correct*. `templates/toolchain-prose.md` says this to the builder in
 those terms, with the instruction not to name a check `citation-proves-claim` and not to summarize
 a green suite as "verified", because the run must never dress the second claim as the first.
+### 3.8.4 The citation resolver — traceability, and the overclaim it refuses
+
+Item 49's flagship prose gate (`scripts/citations.mjs`), and the thing that makes an artifact job
+*checkable* rather than merely produced. It answers one question deterministically: **does the
+quoted text really appear in the source it names, and in the manuscript that claims to use it?**
+
+It does **not** answer whether the source supports the claim, whether the claim is true, or
+whether the source is credible. Those are cold-panel judgments on evidence, and no result from
+this gate may be rendered as though it settled them. The honest sentence — the one the gate emits
+— is *the quotation is faithful and traceable*, followed by *this is traceability, not support*.
+That is §3.8.3's weakened guarantee arriving concretely.
+
+**It is driver-owned and in-process, and that is the reason it works.** A builder asked to make a
+citation gate pass writes a lenient resolver. A builder asked to make a citation gate pass **that
+it cannot edit** writes accurate citations. The gate lives in the plugin, runs in the Driver, and
+never becomes a command the tree can redefine.
+
+**Armed by the declared toolchain, never by the manifest being there.** Arming on the file's
+presence would let an artifact job delete its citations and lose the gate in the same motion, and
+the loss would be indistinguishable from a job that never cited anything. So a `prose` declaration
+arms it always, and an application is never asked for a manifest because nobody declared it an
+artifact job.
+
+**An absent manifest fails; an empty one passes.** An artifact that cites nothing is perfectly
+legitimate — fiction, a plan, a design document — but *"this artifact cites nothing"* is a claim
+somebody makes, not a fact inferable from a missing file, and the two are identical from outside.
+So the gate refuses the silence and names the statement that satisfies it:
+`{"version": 1, "citations": []}`. Declared, not detected, exactly as §3.8.2 has it.
+
+**The shape.** `citations.json` binds each quotation to a source id, a locator, and the manuscript
+file that uses it; `sources/<id>.json` is the captured package — origin, retrieval time, content
+digest, inert text. Three deterministic checks per citation, each failing closed:
+
+1. the source package loads and **its bytes match the digest it carries** — a text that no longer
+   does was edited after capture or was never captured correctly, and this is the only place that
+   can notice;
+2. the normalized quotation appears in the source's captured text — a misquote, not a locator
+   disagreement, is what a failure here means;
+3. the normalized quotation also appears in the manuscript file that claims to use it — without
+   this an author could delete a paragraph and leave its passing citation behind.
+
+**Normalization is whitespace-only, and the restraint is the feature.** Prose wraps, so a
+quotation spanning three lines in the manuscript and one in the source is the same quotation.
+Folding case, punctuation, or quotation marks would start letting real misquotes through, and a
+misquote is the entire failure this gate exists to catch.
+
+**The locator is recorded, not verified**, and the gate says so in its own passing message.
+Confirming that a quotation sits at "§3.2" needs a structural model of the source that a captured
+text does not carry. Requiring the locator to be *stated* while claiming to have *checked* it
+would be the same overclaim this section opens by refusing.
+
+Source ids and `usedIn` paths are manifest data naming files inside the operator's repository, so
+both are refused before they are joined: an id must be a plain name, and a path may not escape the
+tree. Network acquisition — the public-HTTPS profile, redirect validation, and the deadline and
+body caps item 49 specifies — is **not built**; the resolver reads packages already in the tree,
+and an absent one fails closed rather than being fetched.
 ---
 
 ## 3.9 The context budget — measured before a child is spawned
