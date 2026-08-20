@@ -501,6 +501,59 @@ saying it can resume. A stalled allowance is not a failed build and must never b
 
 ---
 
+### 3.5.1 The sealed Claude binary
+
+Preflight's version check answers *"is the CLI on PATH compatible?"* once. It does not answer the
+question a four-hour unattended run depends on: **is the binary this role is about to spawn the same
+binary preflight measured?** Those come apart in five ways, and **none of them changes the version
+string** — which is precisely why a version check cannot see any of them:
+
+1. a PATH shadow inserted after preflight, so a later role resolves a different file;
+2. an atomic byte replacement that still reports the same version;
+3. a symlink retargeted to a different executable;
+4. a background auto-update — the CLI's own documentation says an update takes effect on the **next
+   launch**, and a run launches many separate children;
+5. a launcher whose own bytes never change while the entrypoint it delegates to does.
+
+So the run resolves one canonical target, fingerprints it (`scripts/claude-seal.mjs`), and
+`spawnClaude` **re-verifies immediately before every child** — at the same door the context budget
+(§3.9) and the supply boundary (§6.1) use, and for the identical reason: every child in the loop
+passes through it, so a phase added later cannot forget the check. A refusal happens before argv is
+built, so it costs no money and no wall clock, and the test asserts the child *never ran* rather
+than asserting a failure code, because a refusal after the spawn would report the same code.
+
+**Re-resolution is part of the check, not an optimization skipped.** Going straight to the sealed
+path would leave failure 1 invisible — the seal intact while a different binary is being run — so
+`verifySeal` performs the PATH lookup again and compares.
+
+**Identity is install-form-specific.** A native executable is one artifact. A symlink binds its
+resolved target, since retargeting changes what runs while the link's bytes never move. A script
+launcher binds **both itself and what it delegates to**, which is why the seal is a *list* of
+fingerprints rather than one: failure 5 is a launcher that is byte-for-byte identical.
+
+**An unbounded closure is refused, not approximated.** The delegation parser reads the one shape
+npm-installed CLIs use — a quoted `.js`/`.mjs`/`.cjs` path within the first forty lines — and returns
+nothing for anything else. A cleverer parser would be guessing about a shell program, and a wrong
+guess seals the wrong file while reporting success. Item 83's own wording is that inventing
+precision would be no better than the absent check, so the compatibility policy refuses that install
+form. The quote characters are load-bearing: an unquoted path may contain a space, so reading one
+means picking an arbitrary end for it.
+
+**And the controls are what make the seal a guarantee rather than an alarm.** Every Driver-owned
+invocation carries `DISABLE_AUTOUPDATER`, merged **last** so an operator value cannot override it —
+a run whose binary changes underneath it is not a preference. Without it, failure 4 happens on its
+own and `verifySeal` correctly refuses, turning a silent contract change into a hard stop mid-run.
+Suppressing the update is what stops that being the normal case.
+
+All five swaps are staged against a real filesystem in tier 2 — real files, real symlinks, real
+`PATH` resolution — because the resolver, `realpath` and the digest of an atomically replaced file
+are somebody else's implementation and no assertion about this module reaches them.
+
+**What is still owed** (item 83, REVIEW F28): the paid pinned live runs at every admitted
+compatibility boundary, and a measured non-interactive authentication check — `claude --version`
+succeeds without proving auth. The mechanism is built and proven at tiers 1 and 2; the paid half is
+not.
+
 ## 3.6 Agent-config security scan (borrowed from ECC's AgentShield)
 
 The guard hook (§6) is *runtime* safety. This is the *static, pre-run* half. meeseeks runs

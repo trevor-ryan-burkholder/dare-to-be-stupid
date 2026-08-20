@@ -62,6 +62,7 @@ import { hasMeaningfulHistory, historyContext } from './history.mjs';
 import { resolveCitation } from './evidence.mjs';
 import { citationsGate } from './citations.mjs';
 import { claimsGate } from './claims.mjs';
+import { sealedControls, verifySeal } from './claude-seal.mjs';
 import { blankComments, integrityGate } from './integrity.mjs';
 import {
   boundStore,
@@ -6959,6 +6960,36 @@ export async function shipTimeMutation(cwd, meeseeksDir, declared, startCommit, 
 }
 
 /**
+ * The real filesystem, for {@link verifySeal}.
+ *
+ * A function rather than a constant so nothing captures a stale binding, and separate from the
+ * module's other IO because the seal's whole job is to read what is on disk **now**.
+ *
+ * @param {NodeJS.ProcessEnv} [env] the environment the PATH lookup runs under. Threaded rather than
+ *   read from `process.env`, so a tier-2 fixture can stage a real shadow on a real PATH — which is
+ *   the only way the resolution half of this is reachable from a test at all.
+ * @returns {import('./claude-seal.mjs').SealIo}
+ */
+export function realSealIo(env = process.env) {
+  return {
+    read: (file) => readFileSync(file),
+    realpath: (file) => realpathSync(file),
+    // `command -v` through a shell, the same way `preflight.mjs` resolves it, so the two agree
+    // about which `claude` the host would actually run. `execFileSync` rather than the async
+    // `shell`, because a seal check that returned a promise would have to be awaited at a door
+    // whose whole purpose is to refuse before anything else happens.
+    resolve: (command) => {
+      try {
+        const found = execFileSync('sh', ['-c', `command -v ${command}`], { encoding: 'utf8', env }).trim();
+        return found === '' ? null : found;
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
+/**
  * Spawn one `claude -p` child and read its envelope.
  *
  * The runner is injectable so that the two properties that matter about a child — the
@@ -6970,6 +7001,9 @@ export async function shipTimeMutation(cwd, meeseeksDir, declared, startCommit, 
  *   maxBudgetUsd?: number, maxTurns?: number, sandbox?: boolean, envAllow?: string[],
  *   supply?: { class: import('./role-supply.mjs').InputClass, text: string }[],
  *   specification?: string | null,
+ *   seal?: import('./claude-seal.mjs').Seal,
+ *   sealVersion?: string,
+ *   sealIo?: import('./claude-seal.mjs').SealIo,
  *   run?: (command: string, args: string[],
  *     options: { cwd: string, env?: Record<string, string | undefined>, input?: string, timeoutMs?: number }) =>
  *     ShellResult | Promise<ShellResult> }} options
@@ -7013,6 +7047,31 @@ export async function spawnClaude(options) {
     }
   }
 
+  // **The sealed binary, re-verified before this child and not once at preflight** (PLAN item 83).
+  // The window this closes is the interval between two children, and the loop opens one after every
+  // iteration: a PATH shadow, a same-version byte replacement, a retargeted symlink, a background
+  // auto-update, or a launcher whose delegated entrypoint moved. None of those changes the version
+  // string, which is why the preflight check cannot see any of them.
+  //
+  // Checked at the same door as the context budget and the supply boundary, for the identical
+  // reason — every child passes through here, so a phase added later cannot forget it — and before
+  // argv is built, so a refusal costs nothing.
+  if (options.seal !== undefined) {
+    const verdict = verifySeal(options.seal, options.sealVersion ?? options.seal.version, options.sealIo ?? realSealIo());
+    if (!verdict.ok) {
+      return {
+        ok: false,
+        text: '',
+        costUsd: 0,
+        tokens: 0,
+        raw:
+          `the sealed Claude binary changed before the ${options.phase} role: ${verdict.reason}. A child that can ` +
+          'redirect later roles into a different contract has escaped the compatibility policy, so the run refuses ' +
+          'rather than spawning against an unmeasured target.',
+      };
+    }
+  }
+
   const args = claudeArgs(options);
   const run = options.run ?? shell;
   // Every Claude child carries the re-entrancy marker. This is the half of the no-nesting
@@ -7020,7 +7079,10 @@ export async function spawnClaude(options) {
   // The prompt goes on stdin rather than in argv; see `claudeArgs` for the bug that cost.
   const result = await run('claude', args, {
     cwd: options.cwd,
-    env: childEnvironment(options.env, options.envAllow ?? []),
+    // **The controls are merged last and an operator cannot override them** (item 83). A run whose
+    // binary changes underneath it is not a preference, and background auto-update is the one way
+    // that happens without anybody doing anything.
+    env: { ...childEnvironment(options.env, options.envAllow ?? []), ...sealedControls() },
     input: options.prompt,
     // Absent unless the caller supplies one, so a test double that omits it keeps the
     // unbounded wait every child had before 0.80.0. `main` always supplies it.

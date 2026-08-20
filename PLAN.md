@@ -4360,6 +4360,66 @@ measured. `checkClaudeCli` also runs only `claude --version`, which succeeds wit
 non-interactive authentication; closure must add a measured fail-fast auth capability check or narrow
 the preflight guarantee explicitly. `PARTIAL` for those reasons.
 
+**The sealed-identity mechanism landed, 0.249.0 — `scripts/claude-seal.mjs` (`DESIGN.md` §3.5.1).**
+The half this item named as *"not yet done, and named rather than implied"* is built and unit-proven.
+The paid live half is not, and the status stays `PARTIAL` for that reason alone.
+
+**Five ways the binary a role spawns stops being the binary preflight measured, and none of them
+changes the version string** — which is exactly why the version check cannot see any of them: a PATH
+shadow inserted after preflight; an atomic byte replacement reporting the same version; a retargeted
+symlink; a background auto-update, which the CLI applies on the *next launch* while a run launches a
+child per role per iteration; and a launcher whose own bytes are identical while its delegated
+entrypoint moved.
+
+`spawnClaude` re-verifies **before every child**, at the same door the context budget and the supply
+boundary use and for the identical reason — every child passes through it, so a phase added later
+cannot forget the check — and before argv is built, so a refusal costs nothing. The test asserts the
+child *never ran* rather than asserting a failure code, because a refusal after the spawn would
+report the same code. Re-resolution is part of the check: going straight to the sealed path would
+leave the PATH shadow invisible, which is the state an attacker wants.
+
+Identity is install-form-specific — an executable is one artifact, a symlink binds its resolved
+target, a script launcher binds **both itself and what it delegates to**, which is why the closure is
+a list. **An unbounded closure is refused rather than approximated**: the delegation parser reads the
+one quoted shape npm-installed CLIs use and returns nothing for anything else, because a wrong guess
+seals the wrong file while reporting success. `DISABLE_AUTOUPDATER` travels with every Driver-owned
+invocation, **merged last so an operator cannot override it** — a run whose binary changes underneath
+it is not a preference, and suppressing the update is what makes the seal a guarantee rather than an
+alarm.
+
+**Validation:** lint and typecheck clean, `npm test` **3336 of 3336**, `release-check` passed. Fifteen
+red proofs — eleven against the module (PATH shadow accepted, no fingerprint rechecked, only the
+launcher rechecked and not its entrypoint, retargeted symlink accepted, version change accepted, an
+unbounded launcher approximately sealed, the parser guessing at unquoted text, an unbounded read
+window, auto-update not suppressed, a shared controls object) and four against the wiring (the driver
+never consulting the seal, the verdict computed and discarded, an operator overriding the controls,
+the controls never reaching a child).
+
+**One gap the suite found in itself.** The first "returns null rather than guessing" case listed three
+scripts that contained no `.js` at all, so removing the quote requirement from the parser changed
+nothing and the mutation survived. Cases with an unquoted `.js` delegation and a delegation buried
+past the read window were added, and both mutations then failed.
+
+**The five fixtures landed with it** (`test/integration/claude-seal.integration.test.mjs`, tier 2).
+Real files, real symlinks, real `PATH` resolution, no money: a hostile shadow inserted after sealing,
+an atomic `rename` replacement whose version is unchanged, a retargeted symlink, a launcher whose own
+bytes and version are stable while its delegated entrypoint moved, plus an unreadable delegation and
+a deleted target. The neighbour — an untouched target verifying — is the case that proves the
+resolver finds anything at all; without it every refusal would pass against a resolver that always
+returned null. Five further red proofs against the real filesystem, including one that fails **all
+seven** when the resolver ignores its supplied environment.
+
+`npm run test:integration` **281 of 281** with the new fixtures included, up from 274.
+
+**One fixture defect, and it was the module being right.** The first draft built its "native" binary
+as a `#!/bin/sh` script — which this mechanism correctly classifies as a *script launcher* with an
+unreadable delegation and refuses. The fixtures now copy a real system binary, because the
+distinction between an executable and a launcher is exactly what the seal is about.
+
+**Still owed for closure (REVIEW F28):** the paid pinned live runs at every admitted compatibility
+boundary, and a measured non-interactive authentication check — `claude --version` succeeds without
+proving auth.
+
 ### 84. Measure and admit fail-closed child containment — OPEN (live-contract first)
 
 **Problem solved:** R19's optional sandbox proves only that Claude accepts

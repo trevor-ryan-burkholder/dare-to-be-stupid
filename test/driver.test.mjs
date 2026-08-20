@@ -14,6 +14,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { sealTarget } from '../scripts/claude-seal.mjs';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -8796,3 +8797,114 @@ describe('the child environment is a keep-list, not a copy (REVIEW F5, item 56)'
   });
 });
 
+describe('the sealed binary is re-verified at the spawn door (item 83)', () => {
+  // `test/claude-seal.test.mjs` proves the seal logic. Only this can say the driver ever consults
+  // it — and the check is opt-in on `options.seal`, so dropping it is silent by construction.
+
+  const NATIVE = { '/usr/bin/claude': 'native bytes' };
+  /** @param {Record<string, string>} files @param {string | null} [resolved] */
+  const sealIo = (files, resolved = '/usr/bin/claude') => ({
+    resolve: () => resolved,
+    realpath: (/** @type {string} */ file) => {
+      if (!(file in files)) throw new Error(`ENOENT ${file}`);
+      return file;
+    },
+    read: (/** @type {string} */ file) => {
+      if (!(file in files)) throw new Error(`ENOENT ${file}`);
+      return files[file];
+    },
+  });
+
+  const seal = sealTarget('claude', '2.1.230', sealIo(NATIVE));
+
+  /** @param {Record<string, unknown>} extra */
+  async function spawnWith(extra) {
+    /** @type {string[][]} */
+    const ran = [];
+    const result = await spawnClaude({
+      prompt: 'p',
+      model: 'claude-opus-5',
+      phase: 'builder',
+      cwd: '/repo',
+      env: {},
+      run: (/** @type {string} */ command, /** @type {string[]} */ args) => {
+        ran.push([command, ...args]);
+        return { ok: true, status: 0, stdout: JSON.stringify({ is_error: false, result: 'ok', total_cost_usd: 0.01, usage: { input_tokens: 10, output_tokens: 5 } }), stderr: '', timedOut: false };
+      },
+      ...extra,
+    });
+    return { result, ran };
+  }
+
+  it('spawns when the sealed target is unchanged', async () => {
+    // The benign neighbour first. A door that refused every child would pass every case below.
+    const { result, ran } = await spawnWith({ seal, sealIo: sealIo(NATIVE) });
+    assert.equal(result.ok, true);
+    assert.equal(ran.length, 1);
+  });
+
+  it('refuses before spawning when the binary was replaced with different bytes', async () => {
+    // The refusal must cost nothing: no child, no money, no wall clock. Asserting the child never
+    // ran is the assertion — a refusal that happened after the spawn would report the same `ok`.
+    const { result, ran } = await spawnWith({ seal, sealIo: sealIo({ '/usr/bin/claude': 'swapped bytes' }) });
+    assert.equal(result.ok, false);
+    assert.deepEqual(ran, [], 'a child was spawned against an unmeasured binary');
+    assert.match(result.raw, /the sealed Claude binary changed before the builder role/);
+    assert.match(result.raw, /byte replacement reporting the same version/);
+  });
+
+  it('refuses a PATH shadow inserted between two children', async () => {
+    const { result, ran } = await spawnWith({
+      seal,
+      sealIo: sealIo({ '/tmp/evil/claude': 'other' }, '/tmp/evil/claude'),
+    });
+    assert.equal(result.ok, false);
+    assert.deepEqual(ran, []);
+    assert.match(result.raw, /now resolves to \/tmp\/evil\/claude/);
+  });
+
+  it('refuses a background auto-update, reported as a version change', async () => {
+    const { result, ran } = await spawnWith({ seal, sealVersion: '2.1.240', sealIo: sealIo(NATIVE) });
+    assert.equal(result.ok, false);
+    assert.deepEqual(ran, []);
+    assert.match(result.raw, /now reports 2\.1\.240, not 2\.1\.230/);
+  });
+
+  it('hands every child the controls that stop the update happening at all', async () => {
+    // The seal without this is an alarm rather than a guarantee: the CLI applies an update on the
+    // next launch, and the loop launches a child per role per iteration.
+    /** @type {Record<string, string | undefined>} */
+    let handed = {};
+    await spawnClaude({
+      prompt: 'p',
+      model: 'claude-opus-5',
+      phase: 'builder',
+      cwd: '/repo',
+      env: {},
+      run: (/** @type {string} */ _c, /** @type {string[]} */ _a, /** @type {any} */ options) => {
+        handed = options.env;
+        return { ok: true, status: 0, stdout: JSON.stringify({ is_error: false, result: 'ok', total_cost_usd: 0.01, usage: { input_tokens: 10, output_tokens: 5 } }), stderr: '', timedOut: false };
+      },
+    });
+    assert.equal(handed.DISABLE_AUTOUPDATER, '1');
+  });
+
+  it('cannot have those controls overridden by an operator value', async () => {
+    // A run whose binary changes underneath it is not a preference. The controls merge last.
+    /** @type {Record<string, string | undefined>} */
+    let handed = {};
+    await spawnClaude({
+      prompt: 'p',
+      model: 'claude-opus-5',
+      phase: 'builder',
+      cwd: '/repo',
+      env: { DISABLE_AUTOUPDATER: '0' },
+      envAllow: ['DISABLE_AUTOUPDATER'],
+      run: (/** @type {string} */ _c, /** @type {string[]} */ _a, /** @type {any} */ options) => {
+        handed = options.env;
+        return { ok: true, status: 0, stdout: JSON.stringify({ is_error: false, result: 'ok', total_cost_usd: 0.01, usage: { input_tokens: 10, output_tokens: 5 } }), stderr: '', timedOut: false };
+      },
+    });
+    assert.equal(handed.DISABLE_AUTOUPDATER, '1');
+  });
+});
