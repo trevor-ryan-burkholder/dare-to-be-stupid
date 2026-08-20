@@ -19,6 +19,7 @@
 
 import assert from 'node:assert/strict';
 import { execFile, execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -731,4 +732,78 @@ describe('a mixed-version cohort cannot reclaim one stale lock twice (REVIEW F39
     const results = await race({ script: writeContender(), meeseeksDir, count: 3 });
     assert.equal(results.filter((entry) => entry.ok).length, 1, JSON.stringify(results));
   });
+});
+
+describe('a crash in the publication seam leaves the repository recoverable (REVIEW F43)', () => {
+  /**
+   * The seam is two steps: write a complete record to a private name, then `link` it to the
+   * canonical one. A `SIGKILL` between them leaves the **staging file** behind and no canonical
+   * lock — which is the whole point of the repair, because the old single `writeFileSync(…, 'wx')`
+   * left a zero-length *canonical* file that every later contender refused forever.
+   *
+   * Reproducing that state exactly is what these cases do. Killing a real process precisely between
+   * two adjacent syscalls is not something a test can time, and an env-var pause hook would be
+   * production code that exists only for a test. What can be reproduced faithfully is the **state a
+   * crash leaves**, which is what every later contender actually sees.
+   */
+
+  /** @param {string} meeseeksDir @param {string} token @returns {string} the staging path */
+  function stagingFileFor(meeseeksDir, token) {
+    return path.join(
+      meeseeksDir,
+      `${RUN_LOCK_FILE}.staging-${createHash('sha256').update(token).digest('hex').slice(0, 16)}`,
+    );
+  }
+
+  it('recovers with exactly one winner and no manual deletion', async () => {
+    const script = writeContender();
+    for (let round = 0; round < 3; round += 1) {
+      const meeseeksDir = path.join(makeTempDir('meeseeks-seam-'), '.meeseeks');
+      mkdirSync(meeseeksDir, { recursive: true });
+
+      // A contender that died after staging and before linking, complete record and all.
+      const orphaned = stagingFileFor(meeseeksDir, 'token-of-a-process-that-died');
+      writeFileSync(
+        orphaned,
+        `${JSON.stringify({ pid: await deadPid(), token: 'token-of-a-process-that-died', startedAt: new Date(0).toISOString() }, null, 2)}\n`,
+        'utf8',
+      );
+      assert.equal(existsSync(path.join(meeseeksDir, RUN_LOCK_FILE)), false, 'the seam left a canonical lock');
+
+      const results = await race({ script, meeseeksDir, count: 6 });
+      const winners = results.filter((result) => result.ok);
+      assert.equal(winners.length, 1, `round ${round}: ${winners.length} contenders won after a seam crash`);
+      assert.equal(readRunLock(meeseeksDir)?.token, winners[0].token);
+    }
+  });
+
+  it('is not blocked by a live creator staging in the same seam', async () => {
+    // The neighbour the finding names. A staging file whose creator is **alive** must also not
+    // block, and must not be mistaken for something to clear: it is named for that contender's own
+    // token, so nobody else reads it or collides with it. A repair that tried to tidy staging
+    // litter belonging to somebody else would delete a live creator's record mid-publication.
+    const script = writeContender();
+    const meeseeksDir = path.join(makeTempDir('meeseeks-seam-live-'), '.meeseeks');
+    mkdirSync(meeseeksDir, { recursive: true });
+    const live = stagingFileFor(meeseeksDir, 'token-of-a-living-process');
+    writeFileSync(
+      live,
+      `${JSON.stringify({ pid: process.pid, token: 'token-of-a-living-process', startedAt: new Date().toISOString() }, null, 2)}\n`,
+      'utf8',
+    );
+
+    const results = await race({ script, meeseeksDir, count: 4 });
+    assert.equal(results.filter((result) => result.ok).length, 1);
+    // Untouched: the winner published its own record and left the stranger's staging file alone.
+    assert.equal(existsSync(live), true, "a contender deleted another creator's staging file");
+  });
+
+  // **No "a held lock still refuses" case here, and its absence is deliberate.** A first draft added
+  // one on the reasoning that the two cases above would otherwise be satisfied by a lock that let
+  // everybody in. They would not: both assert *exactly one* winner out of six and four, and a lock
+  // that admitted everybody would produce six and four. The draft was also simply wrong — it raced
+  // one contender, which **exits** on success, so its lock is a dead owner's and the stale-recovery
+  // path correctly hands the repository on. That property already has a home: 'leaves a live owner
+  // untouched when a real second process is refused', above, with a holder that is still running.
+  // A redundant case encoding a wrong assumption is worse than no case.
 });

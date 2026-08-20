@@ -5208,6 +5208,42 @@ this contender's to destroy.
 read/rename window through the `isAlive` seam and proves the directory survives, the lock is
 untaken, and the current contender refuses. Verified red against the pre-F39 logic.
 
+**F43's crash-seam evidence landed** (`test/integration/run-lock.integration.test.mjs`). The repair
+was already in — a complete private record hard-linked to the canonical name without replacement —
+and the finding's remaining objection was that *"the required real-process case that kills one
+contender after staging and the paused-live-creator neighbour are still absent."*
+
+**What a test can and cannot reproduce, decided rather than fudged.** Killing a real process
+precisely between two adjacent syscalls is not something a test can time, and an env-var pause hook
+would be production code existing only for a test. What *can* be reproduced faithfully is **the state
+a crash leaves** — a staging file and no canonical lock — which is exactly what every later contender
+sees. That is the reproduction, and the comment says which of the two it is.
+
+Two cases. A crashed contender's staging litter plus six real racing processes, three rounds, gives
+**exactly one winner and needs no manual deletion** — the whole point of the repair, since the old
+single `writeFileSync(…, 'wx')` left a zero-length *canonical* file that every later contender
+refused forever. A staging file whose creator is **alive** does not block either, and is left
+untouched: it is named for that contender's own token, and a repair that tidied somebody else's
+litter would delete a live creator's record mid-publication.
+
+`npm test` 3363 of 3363 and `npm run test:integration` **295 of 295**, both exit 0 and both run
+unpiped.
+
+**A third case was written and then deleted, which is the useful part.** It asserted that a held lock
+still refuses, on the reasoning that the other two would otherwise be satisfied by a lock admitting
+everybody. They are not — both assert **exactly one** winner out of six and four, and a lock admitting
+everybody yields six and four. The draft was also wrong: it raced a single contender, which *exits*
+on success, so its lock is a dead owner's and the stale-recovery path correctly hands the repository
+on. That property already had a home in `leaves a live owner untouched when a real second process is
+refused`, with a holder still running. A redundant case encoding a wrong assumption is worse than none.
+
+**Red proof, and it took three attempts to make an honest one.** Restoring the pre-repair
+publication fails an *existing* case rather than either new one — correctly, since litter does not
+block that path either. Two mutations that silently failed to apply reported green and were caught
+by verifying the file changed before running. The mutation that works is the naive reading F43 is
+actually about: a contender that treats another's staging litter as *somebody is mid-publication,
+back off*. It fails **exactly the two new cases and nothing else**.
+
 ### 98. Stop restating the queue in HANDOFF — IMPLEMENTED (0.185.0); REVIEW F40 CLOSED at 0.194.0 and reopened against `3debe73`; the gate that makes it stick is item 121
 
 **Problem solved:** `HANDOFF.md` restated the implementation order and the review counts, and both
