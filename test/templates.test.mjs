@@ -18,7 +18,7 @@ import { RELATION_KINDS, parseRelation } from '../scripts/oracle.mjs';
 import { GATE_POLICY } from '../scripts/gate-policy.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 
-import { renderTemplate, requiredIdsFor } from '../scripts/driver.mjs';
+import { producerSystemPrompt, renderTemplate, requiredIdsFor } from '../scripts/driver.mjs';
 import { describe, it } from 'node:test';
 
 import { parseAssumptions } from '../scripts/assumptions.mjs';
@@ -35,7 +35,16 @@ function readTemplate(name) {
 }
 
 const REVIEWER = readTemplate('reviewer-system.md');
-const BUILDER = readTemplate('builder-system.md');
+// **The composed prompt, not one fragment.** `builder-system.md` was split into a job-agnostic
+// authority template and two code addenda (item 34, DESIGN §8.5), and every assertion below is
+// about what a builder is actually told. Reading only the authority half would silently stop
+// checking the practice half the moment the split landed, which is the failure this file exists
+// to prevent in the prompts themselves.
+const AUTHORITY = readTemplate('producer-authority.md');
+const BUILDER = AUTHORITY.split('{{JOB_PRACTICE}}')
+  .join(readTemplate('producer-code-practice.md'))
+  .split('{{JOB_GATES}}')
+  .join(readTemplate('producer-code-gates.md'));
 const PRD_AUTHOR = readTemplate('prd-author.md');
 const ARCHITECT = readTemplate('architect.md');
 const LESSON_EXTRACTOR = readTemplate('lesson-extractor.md');
@@ -592,7 +601,7 @@ describe('every template', () => {
   /** @type {[string, string][]} */
   const all = [
     ['reviewer-system.md', REVIEWER],
-    ['builder-system.md', BUILDER],
+    ['the composed code producer prompt', BUILDER],
     ['prd-author.md', PRD_AUTHOR],
     ['architect.md', ARCHITECT],
     ['lesson-extractor.md', LESSON_EXTRACTOR],
@@ -918,5 +927,70 @@ describe('the undetected-toolchain guidance', () => {
     for (const tell of ['## Building this with Node', 'npm run build', 'npx vitest', 'npx playwright']) {
       assert.equal(UNDETECTED.includes(tell), false, `leaked a node instruction: ${tell}`);
     }
+  });
+});
+
+describe('the producer split (item 34, DESIGN §8.5)', () => {
+  const SHIPPED = readFileSync(new URL('./fixtures/prompts/builder-system-0.245.0.md', import.meta.url), 'utf8');
+
+  it('composes the code prompt byte-identically to the bytes 0.245.0 shipped', () => {
+    // **The whole safety argument for this refactor.** A tidier split would gather all the
+    // authority first and all the job practice after it, and reordering a prompt is *changing* a
+    // prompt — §3.9 names silent prompt degradation as one of the two things this repository is
+    // worst at seeing, and it would report nothing. So the slots were cut exactly where the
+    // sections already were, and this holds the result to the byte.
+    //
+    // The fixture is the **shipped** file rather than a re-concatenation of the new ones, which is
+    // the only version of this assertion worth having: comparing the new files to each other would
+    // pass no matter what they said.
+    assert.equal(BUILDER, SHIPPED);
+  });
+
+  it('keeps the authority half free of anything only a code job could satisfy', () => {
+    // The point of the split. If these leak back into the authority template, a research producer
+    // inherits instructions about `package.json` and the separation has quietly undone itself.
+    for (const codeOnly of ['package.json', 'tsconfig', '@ts-nocheck', 'vitest', 'Playwright', 'eslint']) {
+      assert.equal(
+        AUTHORITY.includes(codeOnly),
+        false,
+        `producer-authority.md mentions ${codeOnly}, which is code-specific and belongs in an addendum`,
+      );
+    }
+  });
+
+  it('keeps the authority half carrying every rule that is true of any producer', () => {
+    // The other direction, and the one a careless split breaks. Moving these into the code
+    // addendum would leave a future research producer with no completion rule, no assumption rule,
+    // and no `.meeseeks/` boundary — and nothing would fail.
+    for (const universal of [
+      'Do not declare completion',
+      'Record what you had to assume',
+      'Regressions outrank everything',
+      'Scope discipline',
+      'What you may not touch',
+      '.meeseeks/',
+    ]) {
+      assert.equal(AUTHORITY.includes(universal), true, `producer-authority.md lost "${universal}"`);
+    }
+  });
+
+  it('refuses to compose a producer for a job with no addenda', () => {
+    // A producer running on authority alone would be told how to behave and nothing about what it
+    // is making. That is a worse failure than an error, because it would look like a prompt.
+    assert.throws(
+      () => producerSystemPrompt('research', { unitLine: 'x', e2eLine: 'y' }),
+      (error) => error instanceof Error && /cannot run on authority alone/.test(error.message),
+    );
+  });
+
+  it('substitutes into the addenda as well as into the authority half', () => {
+    // The slot mechanism must not swallow the substitutions the addenda themselves need. The
+    // runner sentence lives in the *practice* addendum, so an implementation that rendered the
+    // authority template only would leave `{{unitLine}}` in the prompt — and `renderTemplate`
+    // would throw rather than ship it, which is the behaviour being pinned here.
+    const composed = producerSystemPrompt('code', { unitLine: 'RUNNER-SENTINEL', e2eLine: 'E2E-SENTINEL' });
+    assert.equal(composed.includes('RUNNER-SENTINEL'), true);
+    assert.equal(composed.includes('E2E-SENTINEL'), true);
+    assert.equal(/\{\{[a-zA-Z]+\}\}/.test(composed), false);
   });
 });

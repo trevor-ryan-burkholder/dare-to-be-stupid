@@ -1506,6 +1506,41 @@ gate is asking about.
 
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
+**Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
+step — *"factors common producer authority rules from job-specific code/research addenda, all
+Driver-owned and versioned"*, with the explicit instruction that *"it must not literally reuse the
+current code-only `builder-system.md` contract"* — is done.
+
+`templates/builder-system.md` is now `producer-authority.md` with two slots, filled for the code job
+by `producer-code-practice.md` and `producer-code-gates.md`, composed by `producerSystemPrompt(job,
+values)`. Authority is what is true of any producer: do not declare completion, record what you had
+to assume, regressions outrank everything, the scope dial, the `.meeseeks/` boundary. Practice is
+what is true of code: RED before GREEN, tests assert values, the `package.json` scripts as a loaded
+gun.
+
+**The addenda sit in the middle of the authority text on purpose.** A tidier split would put all the
+authority first — and reordering a prompt *is* changing a prompt, which §3.9 names as one of the two
+degradations this repo cannot see. The slots were cut exactly where the sections already were, and
+`test/templates.test.mjs` holds the composed code prompt **byte-identical** to
+`test/fixtures/prompts/builder-system-0.245.0.md`, the bytes actually shipped rather than a
+re-concatenation of the new files, which would pass whatever they said. Three further rules are
+held: no code-only term may appear in the authority half, every universal rule must remain in it,
+and a job with no addenda is refused rather than composed on authority alone.
+
+**Validation:** lint and typecheck clean, `npm test` **3273 of 3273**, `npm run test:integration` clean
+(exit 0, 0 failures), and **tier 3 run: `MEESEEKS_LIVE=1 npm run test:live` passed 39 of 39** — the
+tier that can say whether a real model still behaves the same way when handed a prompt assembled
+from three files instead of read from one. `release-check` passed. Six red
+proofs: a reordered split, one edited word of authority, a dropped practice section, code-only text
+leaking into authority, an unknown job composing authority alone, and the addendum going
+unsubstituted. The fifth mutation initially reported green and the anchor turned out never to have
+matched — re-run against the real indentation it failed as intended, which is the vacuous-proof trap
+this repository has hit before.
+
+**Still blocked on this item:** everything downstream of the research addendum itself needs item
+**84**'s recorded containment outcome, and an authenticated source needs item **106**. The public
+HTTPS retrieval profile it specifies is built (item 49, §3.8.6).
+
 **Done when:** each admitted language lands as its own complete slice with deterministic detection,
 fixed gates, real committed reporter fixtures, contained definition paths, current-definition
 ratchet credit, and fail-closed missing/malformed/crashed-report behavior. A clean-clone integration

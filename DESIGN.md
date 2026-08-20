@@ -2427,7 +2427,9 @@ meeseeks/
 │   ├── prd-author.md             # idea → PRD           (Phase 0)
 │   ├── improve-author.md         # repository → PRD     (Phase 0, --improve)
 │   ├── architect.md              # PRD → design docs     (Phase 1)
-│   ├── builder-system.md         # Phase 2
+│   ├── producer-authority.md     # Phase 2, job-agnostic (§8.5)
+│   ├── producer-code-practice.md # Phase 2, the code job
+│   ├── producer-code-gates.md    # Phase 2, the code job
 │   ├── reviewer-system.md        # Phase 5 (the actual product)
 │   ├── oracle-author.md          # PRD-only held-out acceptance author
 │   ├── security-escalation.md    # scoped cold adjudication of security pins
@@ -2766,6 +2768,47 @@ registered toolchain, so the gap is a decision somebody makes rather than one th
 This item was blocked behind §3.8's second adapter — not by effort, but because a one-entry
 table is not a seam.
 
+
+### 8.5 Producer authority and job practice — the split, and the seam that did not move
+
+`templates/builder-system.md` was one file, and item 34 needs two things out of it: a research
+producer that is **not** handed the code-only contract, and a guarantee that a code builder is
+told exactly what it was told before. Those pull in opposite directions, which is why the split
+is shaped the way it is.
+
+**A producer's authority is not job-specific; its practice is.** *Do not declare completion*,
+*record what you had to assume*, *regressions outrank everything*, the three-level scope dial, and
+the `.meeseeks/` boundary are true of anything this loop spawns to make something — a program, a
+report, a book. *RED before GREEN*, *tests assert values*, and *the `package.json` scripts are a
+loaded gun pointed at the run* are true of code and meaningless for a manuscript. So
+`producer-authority.md` holds the first set and carries two slots; `producer-code-practice.md` and
+`producer-code-gates.md` fill them.
+
+**The addenda sit in the middle of the authority text, and that is deliberate.** A tidier refactor
+would gather all the authority first and all the job practice after it — and **reordering a prompt
+is changing a prompt.** §3.9 names silent prompt degradation as one of the two things this
+repository is worst at seeing, and a reorder would report nothing at all. So the slots were cut
+exactly where the section boundaries already were, and `test/templates.test.mjs` holds the composed
+code prompt **byte-identical** to `test/fixtures/prompts/builder-system-0.245.0.md` — the bytes
+that were actually shipped, not a re-concatenation of the new files, which would pass no matter
+what they said. The seam moved; the prompt did not.
+
+Three further rules, each with its own case:
+
+- **The authority half may not mention anything only a code job could satisfy.** `package.json`,
+  `tsconfig`, `vitest`, `Playwright`: if any of these leaks back, a research producer silently
+  inherits it and the separation has undone itself.
+- **The authority half must keep every rule that is true of any producer.** The opposite failure,
+  and the one a careless split causes: move the completion rule into the code addendum and a future
+  research producer has no completion rule, with nothing failing to say so.
+- **A job with no addenda is refused, not composed.** A producer running on authority alone would
+  be told how to behave and nothing about what it is making — which is worse than an error, because
+  it would still look like a prompt.
+
+Substitution reaches the addenda as well as the authority half. The runner sentence (§8.4) lives in
+the *practice* addendum, so an implementation that rendered only the outer template would leave
+`{{unitLine}}` in the prompt — and `renderTemplate` throws rather than ship that, which is the
+behaviour the last case pins.
 
 ## 9. Meeseeks output style (cosmetic only)
 

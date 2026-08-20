@@ -6025,6 +6025,54 @@ export function realityCheckPrompt(revision) {
 }
 
 /**
+ * The job addenda that fill {@link PRODUCER_AUTHORITY}'s two slots.
+ *
+ * **A producer's authority is not job-specific; its practice is.** *Do not declare completion*,
+ * *record what you had to assume*, *regressions outrank everything*, the scope dial, and the
+ * `.meeseeks/` boundary are true of anything this loop spawns to make something. *RED before
+ * GREEN* and *the `package.json` scripts are a loaded gun* are true of code and meaningless for a
+ * manuscript. Item 34 requires that separation before a research producer can exist, with the
+ * explicit instruction that the code-only contract must not be reused literally for prose.
+ * The split is recorded in `DESIGN.md` §8.5.
+ *
+ * **The addendum sits in the middle, and that is deliberate.** A tidier refactor would put all the
+ * authority first and all the job practice after it — and reordering a prompt is *changing* a
+ * prompt. §3.9 names silent prompt degradation as one of the two things this repository is worst
+ * at seeing, so the slots were cut exactly where the sections already were, and
+ * `test/templates.test.mjs` holds the composed code prompt byte-identical to the bytes 0.245.0
+ * shipped. The seam moved; the prompt did not.
+ *
+ * @type {Record<string, { JOB_PRACTICE: string, JOB_GATES: string }>}
+ */
+const JOB_ADDENDA = {
+  code: { JOB_PRACTICE: 'producer-code-practice.md', JOB_GATES: 'producer-code-gates.md' },
+};
+
+/** The job-agnostic half, named once so the tests and the composer cannot disagree. */
+export const PRODUCER_AUTHORITY = 'producer-authority.md';
+
+/**
+ * Compose a producer's system prompt from the common authority and one job's addenda.
+ *
+ * @param {string} job a key of {@link JOB_ADDENDA}
+ * @param {Record<string, string>} values the substitutions the addenda themselves need
+ * @returns {string}
+ * @throws {DriverError} on a job with no addenda, because a producer running on authority alone
+ *   would be told how to behave and nothing about what it is making
+ */
+export function producerSystemPrompt(job, values) {
+  const addenda = JOB_ADDENDA[job];
+  if (addenda === undefined) {
+    throw new DriverError(`no producer addenda for the ${JSON.stringify(job)} job; a producer cannot run on authority alone`);
+  }
+  return renderTemplate(PRODUCER_AUTHORITY, {
+    ...values,
+    JOB_PRACTICE: renderTemplate(addenda.JOB_PRACTICE, values),
+    JOB_GATES: renderTemplate(addenda.JOB_GATES, values),
+  });
+}
+
+/**
  * The builder's system prompt, plus visual direction when there is a UI to direct.
  *
  * Two things make this a function rather than a string. The condition is re-asked every
@@ -6051,7 +6099,7 @@ export function builderSystemPrompt(cwd, declared = undefined) {
   // Every greenfield failure this project has recorded is this sentence (§8, run 6's 978
   // seconds and 14M tokens on a `node --test` suite the gate collected nothing from), so it is
   // now stated once, from `gateSummary`, and rendered.
-  const base = renderTemplate('builder-system.md', runnerLines(cwd, declared));
+  const base = producerSystemPrompt('code', runnerLines(cwd, declared));
   if (!hasFrontend(cwd)) return base;
   return `${base}\n\n---\n\n${template('frontend-direction.md')}`;
 }

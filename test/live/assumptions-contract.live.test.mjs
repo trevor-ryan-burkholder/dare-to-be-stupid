@@ -4,8 +4,11 @@
  * `parseAssumptions` is unit-tested against strings this repository wrote, which is exactly the
  * position `claudeArgs` was in before the argv defect: correct about the thing it controls, and
  * silent about the thing it does not. What this file checks is the half no assertion about the
- * parser can reach — **whether a real builder, handed `templates/builder-system.md`, actually
- * emits a block the parser accepts, and refrains from emitting one when nothing is ambiguous.**
+ * parser can reach — **whether a real builder, handed the prompt `builderSystemPrompt` composes,
+ * actually emits a block the parser accepts, and refrains from emitting one when nothing is
+ * ambiguous.** Since 0.246.0 that prompt is assembled from `producer-authority.md` and two code
+ * addenda (§8.5) rather than read from one file; the bytes are held identical by tier 1, and this
+ * is the tier that can say whether a model still behaves the same way when handed them.
  *
  * Three things can go wrong here and none is visible from tier 1:
  *
