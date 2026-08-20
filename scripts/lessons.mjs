@@ -21,6 +21,7 @@
  * lessons and says so out loud. Nothing that decides pass or fail reads this file.
  */
 
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -30,7 +31,12 @@ import path from 'node:path';
  *   evidence: { introduced: number, resolved: number, tests: string[] }, uses: number
  * }} Lesson
  */
-/** @typedef {{ version: 1, lessons: Lesson[] }} LessonStore */
+/**
+ * @typedef {{
+ *   version: 1, lessons: Lesson[],
+ *   retracted?: Retraction[], candidates?: LessonCandidate[], rejected?: RejectedCandidate[]
+ * }} LessonStore
+ */
 
 const STORE_VERSION = 1;
 const STORE_FILE = 'lessons.json';
@@ -45,7 +51,7 @@ const MAX_SCOPES = 5;
  * @returns {LessonStore} the store of a run that has learned nothing yet
  */
 export function emptyStore() {
-  return { version: STORE_VERSION, lessons: [] };
+  return { version: STORE_VERSION, lessons: [], retracted: [], candidates: [], rejected: [] };
 }
 
 /**
@@ -169,8 +175,47 @@ export function readLessons(meeseeksDir) {
   }
   lessons.sort((a, b) => a.id.localeCompare(b.id));
 
+  // The ledger round-trips with the same tolerance the lessons get: an entry that is not a record
+  // is dropped rather than poisoning the read, because a corrupt retraction must not cost the store
+  // that survived beside it.
+  const retracted = Array.isArray(record.retracted)
+    ? record.retracted.filter(
+        (entry) =>
+          entry !== null &&
+          typeof entry === 'object' &&
+          typeof entry.id === 'string' &&
+          typeof entry.lesson === 'string' &&
+          typeof entry.reason === 'string',
+      )
+    : [];
+
+  // Candidates and the refusal ledger round-trip with the same tolerance, and for the same reason
+  // the retraction ledger does: a store that forgets what it staged loses the support already
+  // gathered, and one that forgets what it refused will accept the harmful edit next time. A first
+  // draft persisted these on write and dropped them on read, which is the worst of both — the file
+  // grows and nothing ever uses it.
+  const candidates = Array.isArray(record.candidates)
+    ? record.candidates.filter(
+        (entry) =>
+          entry !== null &&
+          typeof entry === 'object' &&
+          typeof entry.digest === 'string' &&
+          typeof entry.lesson === 'string' &&
+          Array.isArray(entry.support),
+      )
+    : [];
+  const rejected = Array.isArray(record.rejected)
+    ? record.rejected.filter(
+        (entry) =>
+          entry !== null &&
+          typeof entry === 'object' &&
+          typeof entry.digest === 'string' &&
+          typeof entry.reason === 'string',
+      )
+    : [];
+
   return {
-    store: { version: STORE_VERSION, lessons },
+    store: { version: STORE_VERSION, lessons, retracted, candidates, rejected },
     problem: dropped === 0 ? null : `${file}: ${dropped} malformed lesson(s) were dropped.`,
   };
 }
@@ -189,6 +234,16 @@ export function saveLessons(meeseeksDir, store) {
   const payload = {
     version: STORE_VERSION,
     lessons: [...store.lessons].sort((a, b) => a.id.localeCompare(b.id)),
+    // **Append-only, and persisted or the retraction never happened.** A first draft wrote only
+    // `lessons`, so a retraction survived exactly until the next save and the store would then
+    // re-learn what it had just thrown out. Kept in retirement order rather than sorted, because the
+    // sequence is the history: which lesson was given up on first is a fact about the run, and
+    // sorting it away would leave a list with no story in it.
+    retracted: [...(store.retracted ?? [])],
+    // Staged candidates and the refusal ledger persist beside the durable list, and never join it.
+    // `selectLessons` reads `lessons` alone, so what is written here cannot reach a builder brief.
+    candidates: [...(store.candidates ?? [])],
+    rejected: [...(store.rejected ?? [])],
   };
   writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
   renameSync(temporary, file);
@@ -468,4 +523,274 @@ export function findResolvedStruggles(history) {
 
   struggles.sort((a, b) => a.resolved - b.resolved || a.key.localeCompare(b.key));
   return struggles;
+}
+
+/**
+ * How many lessons the durable store may hold (PLAN.md item 35, R36/R37).
+ *
+ * **The store, not the view.** `selectLessons` already caps what any one brief sees, and that hid
+ * the real growth: the file itself had no bound at all, so a store accumulated across every run of
+ * a repository forever. A view-only cap makes an unbounded store *look* bounded, which is the worse
+ * of the two failures — nobody notices the file, and the ones nobody notices are the ones that are
+ * still growing a year later.
+ *
+ * The number is a judgement and it is written down as one. Sixty is roughly what a reader can hold,
+ * and well past what any single brief will show; a store that needs more than sixty durable lessons
+ * is telling you something about the lessons rather than about the limit.
+ */
+export const MAX_STORE_LESSONS = 60;
+
+/**
+ * @typedef {{ id: string, lesson: string, reason: string, retiredAt: number, uses: number }} Retraction
+ */
+
+/**
+ * Retract a lesson, keeping why.
+ *
+ * **The escape designed before the enforcement**, which §4.3 requires of anything monotonic and
+ * which applies here for the same reason: a false lesson is injected into every later brief, so
+ * there has to be a way out that is not "edit the JSON and hope". The retraction is append-only and
+ * keeps the text, because a store that forgets what it retracted will re-learn it — and the whole
+ * point of a rejected-candidate record is that the promoter can avoid repeating a harmful edit.
+ *
+ * Retracting a lesson that is not there is not an error. Two runs retracting the same false lesson
+ * is an ordinary race, and the second one failing would turn a correction into an incident.
+ *
+ * @param {LessonStore} store
+ * @param {string} id
+ * @param {{ reason: string, at: number }} why
+ * @returns {{ store: LessonStore, retracted: Retraction | null }}
+ */
+export function retractLesson(store, id, why) {
+  const found = store.lessons.find((lesson) => lesson.id === id);
+  if (found === undefined) return { store, retracted: null };
+  const reason = typeof why.reason === 'string' && why.reason.trim() !== '' ? why.reason.trim() : 'no reason given';
+  /** @type {Retraction} */
+  const retraction = {
+    id: found.id,
+    lesson: found.lesson,
+    reason: reason.slice(0, MAX_LESSON_LENGTH),
+    retiredAt: why.at,
+    uses: found.uses,
+  };
+  return {
+    store: {
+      version: STORE_VERSION,
+      lessons: store.lessons.filter((lesson) => lesson.id !== id),
+      retracted: [...(store.retracted ?? []), retraction],
+    },
+    retracted: retraction,
+  };
+}
+
+/**
+ * Bring the store back under its bound, retracting what it evicts.
+ *
+ * **Eviction is a retraction, not a deletion**, and that is the whole design. A store that silently
+ * dropped its oldest lesson would lose the record of having learned it, and the next run would learn
+ * it again — a loop that looks like progress and is not.
+ *
+ * The order is least-used first, then oldest. Use count is the only evidence the store has that a
+ * lesson ever helped, and a lesson selected into briefs repeatedly has earned its place over one
+ * that has sat unread since the run that wrote it. Ties break on id, which is monotonic, so the
+ * result is deterministic — a store that evicted differently on two machines would make the same
+ * repository behave differently for two people.
+ *
+ * @param {LessonStore} store
+ * @param {{ at: number, limit?: number }} options
+ * @returns {{ store: LessonStore, evicted: Retraction[] }}
+ */
+export function boundStore(store, options) {
+  const limit = typeof options.limit === 'number' ? options.limit : MAX_STORE_LESSONS;
+  if (store.lessons.length <= limit) return { store, evicted: [] };
+
+  const ranked = [...store.lessons].sort(
+    (a, b) => a.uses - b.uses || Number(a.id.slice(7)) - Number(b.id.slice(7)),
+  );
+  const doomed = ranked.slice(0, store.lessons.length - limit);
+  /** @type {LessonStore} */
+  let next = store;
+  /** @type {Retraction[]} */
+  const evicted = [];
+  for (const lesson of doomed) {
+    const result = retractLesson(next, lesson.id, {
+      reason: `evicted to keep the store under ${limit} lessons; used ${lesson.uses} time(s)`,
+      at: options.at,
+    });
+    next = result.store;
+    if (result.retracted !== null) evicted.push(result.retracted);
+  }
+  return { store: next, evicted };
+}
+
+/**
+ * How many **independent runs** must produce a candidate before it becomes durable.
+ *
+ * **Two, and the word "independent" is the whole gate.** SkillOpt's harvest is that support from
+ * several iterations of one run is not support: the same run failing the same way four times is one
+ * observation repeated, and a store promoted on that basis learns a lesson about one afternoon and
+ * teaches it forever. A second *run* — different objective, different tree state, different builder
+ * — is the cheapest thing that is genuinely a second opinion.
+ *
+ * Deliberately not three. The cost of a false positive here is bounded (the lesson is retractable
+ * and evictable, and `boundStore` will retire it if nothing uses it), while the cost of never
+ * promoting is that the store learns nothing at all.
+ */
+export const MIN_INDEPENDENT_SUPPORT = 2;
+
+/**
+ * @typedef {{
+ *   digest: string, lesson: string, trigger: string[], scope: string[],
+ *   evidence: { introduced: number, resolved: number, tests: string[] },
+ *   support: string[], stagedAt: number
+ * }} LessonCandidate
+ */
+
+/**
+ * @typedef {{ digest: string, lesson: string, reason: string, delta: string, rejectedAt: number }} RejectedCandidate
+ */
+
+/**
+ * A candidate's identity: its normalised text.
+ *
+ * Text rather than an id, because two runs will never agree on an id and the thing being counted is
+ * "did a second run reach the same conclusion". Case and whitespace are folded so a rephrasing of
+ * the same sentence does not read as independent support for it — the failure this gate exists to
+ * prevent, arriving through the back door.
+ *
+ * @param {string} lesson
+ * @returns {string}
+ */
+function candidateDigest(lesson) {
+  return createHash('sha256').update(lesson.toLowerCase().replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 16);
+}
+
+/**
+ * Stage a run-local candidate, or add this run's support to one already staged.
+ *
+ * **Nothing here reaches a builder.** Candidates and rejections live beside the durable store and
+ * `selectLessons` reads only `store.lessons`, so an unpromoted candidate cannot be taught to
+ * anybody. That is the point of staging rather than storing: a lesson one run believed is not yet a
+ * lesson, and the difference must be visible in what gets handed out.
+ *
+ * A run supporting the same candidate twice counts once. Two iterations of one run reaching the same
+ * conclusion is the exact non-independence this gate refuses, and de-duplicating by run key is how
+ * it refuses it rather than by trusting the caller not to ask twice.
+ *
+ * @param {LessonStore} store
+ * @param {unknown} candidate
+ * @param {{ runKey: string, at: number, gateNames?: string[] | null }} context
+ * @returns {{ store: LessonStore, staged: LessonCandidate | null, reason: string }}
+ */
+export function stageCandidate(store, candidate, context) {
+  const validated = validateLesson(candidate);
+  if (validated === null) {
+    return { store, staged: null, reason: 'the candidate was not a well-formed lesson and was discarded' };
+  }
+  const ungrounded = ungroundedGateClaim(validated.lesson, context.gateNames ?? null);
+  if (ungrounded !== null) {
+    return {
+      store,
+      staged: null,
+      reason: `the candidate calls \`${ungrounded}\` a gate, and this run has no such gate`,
+    };
+  }
+  const runKey = typeof context.runKey === 'string' && context.runKey.trim() !== '' ? context.runKey.trim() : '';
+  if (runKey === '') {
+    // Fail closed. A candidate with no run identity cannot be counted as independent support for
+    // anything, and admitting one would let a single run promote by supporting itself.
+    return { store, staged: null, reason: 'the candidate carries no run identity, so its support cannot be counted' };
+  }
+
+  const digest = candidateDigest(validated.lesson);
+  if (store.lessons.some((lesson) => candidateDigest(lesson.lesson) === digest)) {
+    return { store, staged: null, reason: 'an equivalent lesson is already durable' };
+  }
+  if ((store.rejected ?? []).some((entry) => entry.digest === digest)) {
+    // The ledger's whole purpose: a promoter that forgets what it refused will refuse it again, or
+    // worse, accept it next time and repeat the harmful edit.
+    return { store, staged: null, reason: 'an equivalent candidate was rejected before' };
+  }
+
+  const candidates = [...(store.candidates ?? [])];
+  const existing = candidates.findIndex((entry) => entry.digest === digest);
+  if (existing >= 0) {
+    const previous = candidates[existing];
+    if (previous.support.includes(runKey)) {
+      return { store, staged: previous, reason: `this run already supports ${digest}` };
+    }
+    const updated = { ...previous, support: [...previous.support, runKey] };
+    candidates[existing] = updated;
+    return { store: { ...store, candidates }, staged: updated, reason: `support ${updated.support.length} for ${digest}` };
+  }
+
+  /** @type {LessonCandidate} */
+  const staged = { digest, ...validated, support: [runKey], stagedAt: context.at };
+  candidates.push(staged);
+  return { store: { ...store, candidates }, staged, reason: `staged ${digest} with support 1` };
+}
+
+/**
+ * Promote every candidate with enough independent support.
+ *
+ * @param {LessonStore} store
+ * @param {{ minSupport?: number }} [options]
+ * @returns {{ store: LessonStore, promoted: Lesson[] }}
+ */
+export function promoteCandidates(store, options = {}) {
+  const minSupport = typeof options.minSupport === 'number' ? options.minSupport : MIN_INDEPENDENT_SUPPORT;
+  const candidates = [...(store.candidates ?? [])];
+  const ready = candidates.filter((entry) => entry.support.length >= minSupport);
+  if (ready.length === 0) return { store, promoted: [] };
+
+  /** @type {Lesson[]} */
+  const promoted = [];
+  let next = { ...store, candidates: candidates.filter((entry) => entry.support.length < minSupport) };
+  for (const entry of ready) {
+    // Destructured to *drop* the staging fields: a promoted lesson is a lesson, and carrying its
+    // digest and support list into the durable store would leave two records of the same thing that
+    // can drift. The rest is exactly the validated shape `addLesson` would have produced.
+    const lesson = {
+      trigger: entry.trigger,
+      scope: entry.scope,
+      lesson: entry.lesson,
+      evidence: entry.evidence,
+    };
+    /** @type {Lesson} */
+    const durable = { id: nextLessonId(next), ...lesson, uses: 0 };
+    next = { ...next, lessons: [...next.lessons, durable] };
+    promoted.push(durable);
+  }
+  return { store: next, promoted };
+}
+
+/**
+ * Refuse a candidate, keeping why and what it would have changed.
+ *
+ * `delta` is the validation difference the refusal rests on — what got worse, in the caller's own
+ * words. Without it the ledger records a verdict and no evidence, which is the shape this repository
+ * refuses everywhere else.
+ *
+ * @param {LessonStore} store
+ * @param {string} digest
+ * @param {{ reason: string, delta: string, at: number }} why
+ * @returns {{ store: LessonStore, rejected: RejectedCandidate | null }}
+ */
+export function rejectCandidate(store, digest, why) {
+  const candidates = [...(store.candidates ?? [])];
+  const index = candidates.findIndex((entry) => entry.digest === digest);
+  if (index < 0) return { store, rejected: null };
+  const [entry] = candidates.splice(index, 1);
+  /** @type {RejectedCandidate} */
+  const rejected = {
+    digest: entry.digest,
+    lesson: entry.lesson,
+    reason: (why.reason || 'no reason given').slice(0, MAX_LESSON_LENGTH),
+    delta: (why.delta || 'no validation delta recorded').slice(0, MAX_LESSON_LENGTH),
+    rejectedAt: why.at,
+  };
+  return {
+    store: { ...store, candidates, rejected: [...(store.rejected ?? []), rejected] },
+    rejected,
+  };
 }

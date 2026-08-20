@@ -62,7 +62,9 @@ import { hasMeaningfulHistory, historyContext } from './history.mjs';
 import { resolveCitation } from './evidence.mjs';
 import { blankComments, integrityGate } from './integrity.mjs';
 import {
-  addLesson,
+  boundStore,
+  promoteCandidates,
+  stageCandidate,
   findResolvedStruggles,
   markLessonsUsed,
   parseLessonExtraction,
@@ -2529,6 +2531,7 @@ export function recordedInvocations(meeseeksDir) {
  *   task: string,
  *   unitCommand?: string | null,
  *   gateNames?: string[],
+ *   runKey?: string,
  *   gateRoster?: string[],
  *   alreadySpent?: { tokens: number, costUsd: number },
  *   receipt?: { done: boolean },
@@ -3016,7 +3019,7 @@ export async function driveRun(options) {
       if (problem !== null) effects.log(problem);
       // The evidence is the driver's, not the extractor's. It saw those iteration numbers
       // because they were handed to it, and it has no way to know them independently.
-      const outcome = addLesson(
+      const outcome = stageCandidate(
         store,
         {
           ...candidate,
@@ -3024,12 +3027,28 @@ export async function driveRun(options) {
         },
         // Grounding: a lesson may say anything about the project it watched, but it may not
         // invent a gate of this loop's. Run 6 stored one that did, and it was false throughout.
-        { gateNames: options.gateNames },
+        { gateNames: options.gateNames, runKey: options.runKey ?? '', at: progress.iteration },
       );
-      if (outcome.added === null && outcome.reason.includes('calls')) effects.log(`lesson discarded: ${outcome.reason}`);
-      if (outcome.added === null) return;
-      saveLessons(meeseeksDir, outcome.store);
-      effects.log(`lesson ${outcome.added.id} recorded: ${outcome.added.lesson}`);
+      if (outcome.staged === null) {
+        if (outcome.reason.includes('calls')) effects.log(`lesson discarded: ${outcome.reason}`);
+        return;
+      }
+      // **Staged, not stored** (PLAN item 35). A lesson one run believed is not yet a lesson, and
+      // the difference has to be visible in what gets handed out — `selectLessons` reads only the
+      // durable list, so a candidate cannot be taught to anybody until a second, independent run
+      // reaches the same conclusion.
+      const grown = promoteCandidates(outcome.store);
+      for (const durable of grown.promoted) {
+        effects.log(`lesson ${durable.id} promoted on independent support: ${durable.lesson}`);
+      }
+      // Bounded at the one place the durable store grows, which is now promotion rather than
+      // extraction. Eviction is a retraction, so the store keeps the record of what it gave up.
+      const bounded = boundStore(grown.store, { at: progress.iteration });
+      for (const gone of bounded.evicted) effects.log(`lesson ${gone.id} retired: ${gone.reason}`);
+      saveLessons(meeseeksDir, bounded.store);
+      if (grown.promoted.length === 0) {
+        effects.log(`lesson candidate ${outcome.staged.digest}: ${outcome.reason}`);
+      }
     } catch (error) {
       effects.log(`lesson extraction was skipped: ${/** @type {Error} */ (error).message}`);
     }
@@ -8610,10 +8629,12 @@ async function runInvocation(argv, io, crash) {
   // the ship-time mutation scope. Asking git twice would invite the two to disagree after the
   // first commit of the run, which is exactly when the scope stops being empty.
   const runStartCommit = (await git(['rev-parse', 'HEAD'], { cwd })).stdout.trim();
+  // Captured once, so the manifest and the lesson-store run key name the same instant.
+  const runStartedAt = new Date().toISOString();
   writeRunManifest(
     meeseeksDir,
     buildRunManifest({
-      startedAt: new Date().toISOString(),
+      startedAt: runStartedAt,
       startCommit: runStartCommit,
       pluginName: 'meeseeks',
       pluginVersion: pluginVersion(),
@@ -9194,6 +9215,11 @@ async function runInvocation(argv, io, crash) {
     meeseeksDir,
     rootDir: cwd,
     requiredIds,
+    // **What makes support independent** (PLAN item 35). A lesson candidate is promoted only when a
+    // second *run* reaches the same conclusion, so a run needs an identity the store can count. The
+    // start commit alone is not one — two runs against the same tree are two runs — so it is paired
+    // with the moment this one began.
+    runKey: `${runStartedAt}:${runStartCommit}`,
     gateNames,
     alreadySpent: preLoop,
     // **The four facts the loop cannot observe** (REVIEW F22). Each is already established here, at

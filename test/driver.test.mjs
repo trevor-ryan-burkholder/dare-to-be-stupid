@@ -30,6 +30,7 @@ import {
 } from '../scripts/acceptance.mjs';
 import { ACCEPTANCE_FILE } from '../scripts/acceptance-file.mjs';
 import { readAssumptions } from '../scripts/assumptions.mjs';
+import { MAX_STORE_LESSONS, emptyStore, readLessons, saveLessons, stageCandidate } from '../scripts/lessons.mjs';
 import { parseErd } from '../scripts/erd.mjs';
 import { DENIAL_STATE_ENV } from '../hooks/guard.mjs';
 import {
@@ -2478,7 +2479,7 @@ describe('driveRun', () => {
    * @param {string[]} [seedPassing]
    * @param {string[]} [requiredIds]
    */
-  async function run(overrides, configOverrides = {}, seedPassing = [], requiredIds = ['PRD-1.1'], unitCommand = 'npx vitest run --reporter=json', /** @type {string[]} */ seedRed = []) {
+  async function run(overrides, configOverrides = {}, seedPassing = [], requiredIds = ['PRD-1.1'], unitCommand = 'npx vitest run --reporter=json', /** @type {string[]} */ seedRed = [], /** @type {any[]} */ seedLessons = [], /** @type {any[]} */ seedCandidates = []) {
     const root = makeTempDir();
     seedCitedSources(root);
     const meeseeksDir = path.join(root, '.meeseeks');
@@ -2491,6 +2492,16 @@ describe('driveRun', () => {
     // evidence without a tree is modelling evidence from nowhere, so it hands over `root` exactly
     // as `gateTree` hands over the candidate directory.
     if (seedRed.length > 0) recordRedEvidence(meeseeksDir, [], seedRed, root);
+    // A durable store the run inherits, for the cases about what happens as it grows.
+    if (seedLessons.length > 0 || seedCandidates.length > 0) {
+      saveLessons(meeseeksDir, {
+        version: 1,
+        lessons: seedLessons,
+        retracted: [],
+        candidates: seedCandidates,
+        rejected: [],
+      });
+    }
     if (seedPassing.length > 0) {
       // A seeded ratchet means a reset is reachable, and the reset really shells out to
       // git — so the root has to be a real repository with a real commit to return to.
@@ -2524,6 +2535,9 @@ describe('driveRun', () => {
       requiredIds,
       task: 'build the thing',
       unitCommand,
+      // A run identity, so lesson candidates can be counted as independent support (item 35).
+      // Overridable, because the cases about promotion need two different runs.
+      runKey: configOverrides.runKey ?? 'run-under-test',
       effects: effectsWith({ log: (/** @type {string} */ line) => logs.push(line), ...overrides }, root),
     });
     return { outcome, meeseeksDir, root, logs };
@@ -4869,6 +4883,130 @@ describe('driveRun', () => {
     ]);
   });
 
+  it('does not promote a candidate two iterations of one run agree on (item 35)', async () => {
+    // **The independence claim, driven through the loop.** A mutation replacing `options.runKey`
+    // with a constant survived every other case, because they all use one run — so nothing proved
+    // the key varies. This one proves the opposite direction, which is the one that matters: the
+    // same run reaching the same conclusion repeatedly must never reach the threshold.
+    let iteration = 0;
+    const { meeseeksDir } = await run(
+      {
+        readTestReports: () => [ONE_PASSING],
+        gates: () => {
+          iteration += 1;
+          // Red, then red again on a different file, then red once more: two separate
+          // resisted-then-resolved shapes inside a single run.
+          return iteration % 3 === 0
+            ? { ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }] }
+            : { ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'still red' }] };
+        },
+        changedFiles: () => [`src/attempt-${iteration}.ts`],
+        review: () => ({
+          ok: true,
+          costUsd: 0,
+          tokens: 1,
+          raw: '',
+          text: reviewerJson([{ id: 'PRD-1.1', status: 'fail', evidence: null, detail: 'missing' }]),
+        }),
+        extractLesson: () => ({
+          ok: true,
+          costUsd: 0,
+          tokens: 5,
+          raw: '',
+          text: JSON.stringify({
+            lesson: 'The very same conclusion, reached again by the very same run entirely.',
+            trigger: ['lint'],
+            scope: ['src'],
+            evidence: { introduced: 1, resolved: 3, tests: [] },
+          }),
+        }),
+      },
+      { maxIterations: 8, stallLimit: 12 },
+    );
+    const { store } = readLessons(meeseeksDir);
+    assert.deepStrictEqual(store.lessons, [], 'one run promoted its own candidate');
+    // Staged once, with exactly one supporter however many times it was reached.
+    assert.equal(store.candidates?.length, 1);
+    assert.deepStrictEqual(store.candidates?.[0].support, ['run-under-test']);
+  });
+
+  it('keeps the durable store under its bound when a run adds a lesson (item 35)', async () => {
+    // **The wiring, not the arithmetic.** `boundStore` has its own cases; this one exists because a
+    // bound with no caller is the defect this session repaired four times. Driven through the real
+    // extraction path: a store already at its limit, plus one new lesson, must not grow.
+    let iteration = 0;
+    const { meeseeksDir } = await run(
+      {
+        readTestReports: () => [ONE_PASSING],
+        gates: () => {
+          iteration += 1;
+          return iteration <= 2
+            ? { ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'still red' }] }
+            : { ok: true, results: [{ name: 'lint', ok: true, status: 0, detail: 'passed' }] };
+        },
+        changedFiles: () => [`src/attempt-${iteration}.ts`],
+        review: () => ({
+          ok: true,
+          costUsd: 0,
+          tokens: 1,
+          raw: '',
+          text: reviewerJson([{ id: 'PRD-1.1', status: 'fail', evidence: null, detail: 'missing' }]),
+        }),
+        extractLesson: () => ({
+          ok: true,
+          costUsd: 0,
+          tokens: 5,
+          raw: '',
+          text: JSON.stringify({
+            lesson: 'A brand new lesson, long enough to clear the length bar comfortably.',
+            trigger: ['lint'],
+            scope: ['src'],
+            evidence: { introduced: 1, resolved: 3, tests: [] },
+          }),
+        }),
+      },
+      { maxIterations: 4, stallLimit: 9 },
+      [],
+      ['PRD-1.1'],
+      'npx vitest run --reporter=json',
+      [],
+      // A store already at the bound, plus a candidate one *other* run already supported. This
+      // run's extraction is the second, independent support, so the candidate promotes and the
+      // store would reach 61 without the bound. Growth happens at promotion now, not extraction,
+      // and the test has to exercise the growth point that actually exists.
+      Array.from({ length: MAX_STORE_LESSONS }, (_unused, index) => ({
+        id: `lesson-${String(index + 1).padStart(4, '0')}`,
+        trigger: ['seeded'],
+        scope: ['src'],
+        lesson: `A seeded lesson, number ${index + 1}, long enough to clear the length bar.`,
+        evidence: { introduced: 1, resolved: 2, tests: [] },
+        uses: index,
+      })),
+      // Already supported by one other run, so this run is the second and independent one. Built
+      // through `stageCandidate` rather than hand-written: the candidate identity is a digest of the
+      // normalised text, and a hand-made one silently fails to match, staging a second candidate
+      // instead of adding support — which is exactly what a first draft of this did.
+      stageCandidate(
+        emptyStore(),
+        {
+          trigger: ['lint'],
+          scope: ['src'],
+          lesson: 'A brand new lesson, long enough to clear the length bar comfortably.',
+          evidence: { introduced: 1, resolved: 3, tests: [] },
+        },
+        { runKey: 'an-earlier-run', at: 0 },
+      ).store.candidates ?? [],
+    );
+    const { store } = readLessons(meeseeksDir);
+    assert.equal(store.lessons.length, MAX_STORE_LESSONS, `the store grew to ${store.lessons.length}`);
+    assert.equal(store.candidates?.length, 0, 'the promoted candidate was left staged as well as stored');
+    // The evicted one is retracted rather than deleted, so the next run does not learn it again.
+    assert.equal(store.retracted?.length, 1);
+    assert.match(String(store.retracted?.[0].reason), /evicted to keep the store under 60 lessons/);
+    // And it was the least used, which is `lesson-0001` with uses 0.
+    assert.equal(store.retracted?.[0].id, 'lesson-0001');
+  });
+
   it('extracts a lesson only after a failure resisted one repair and fell to another', async () => {
     // The evidence pattern from DESIGN.md §13.8, driven through the real loop: lint fails,
     // a repair does not fix it, a different repair does. Nothing asks the builder what it
@@ -4920,17 +5058,26 @@ describe('driveRun', () => {
 
     const stored = JSON.parse(readFileSync(path.join(meeseeksDir, 'lessons.json'), 'utf8'));
     assert.equal(stored.version, 1);
-    assert.deepStrictEqual(
-      stored.lessons.map((/** @type {{ id: string }} */ lesson) => lesson.id),
-      ['lesson-0001'],
-    );
+    // **Staged, not stored** (item 35). One run reaching a conclusion is one observation; it becomes
+    // durable only when a second, independent run reaches the same one. This assertion changed with
+    // that gate, and the change is the feature: before it, a single afternoon's failure was taught
+    // to every later builder forever.
+    assert.deepStrictEqual(stored.lessons, []);
+    assert.equal(stored.candidates.length, 1);
+    assert.equal(stored.candidates[0].support.length, 1);
     // The evidence is the driver's, not the extractor's.
-    assert.deepStrictEqual(stored.lessons[0].evidence.introduced, 1);
-    assert.deepStrictEqual(stored.lessons[0].evidence.resolved, 3);
+    assert.deepStrictEqual(stored.candidates[0].evidence.introduced, 1);
+    assert.deepStrictEqual(stored.candidates[0].evidence.resolved, 3);
 
-    // And it reaches a later brief, because its trigger matches that objective.
+    // **And it reaches no brief, which is the point of staging** (item 35). This assertion used to
+    // read the other way, and inverting it is the feature: one run's conclusion is not yet a lesson,
+    // so it must not be taught to the next builder. `selectLessons` reads the durable list alone.
     const later = readFileSync(path.join(meeseeksDir, 'briefs', 'iter-004.md'), 'utf8');
-    assert.equal(later.includes('Read the playwright config'), true, 'the stored lesson never reached a brief');
+    assert.equal(
+      later.includes('Read the playwright config'),
+      false,
+      'an unpromoted candidate was taught to a builder',
+    );
   });
 
   it('does not let a broken lesson extractor end an otherwise healthy run', async () => {

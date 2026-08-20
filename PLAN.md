@@ -1542,13 +1542,94 @@ and unavailable required evidence fails closed with a structured reason mapped t
 existing non-`SHIPPED` terminal
 states.
 
-### 35. Continual-memory discipline, operator-side (folds R36 + R37) — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN
+### 35. Continual-memory discipline, operator-side (folds R36 + R37) — **DONE (0.240.0)**
 Adopt Prime Agent's Continual-Harness *discipline* on the DRIVER, never the builder: bound the
 lesson STORE (not just the view), add retraction/rollback with an append-only history, and a gated
 promotion so run-local candidate lessons enter the durable cross-run store only through a distinct
 gate (cold-reviewed or usage-thresholded). **Invariant:** driver-owned, never builder-editable
 (§13.8); design the escape before the enforcement; the builder stays starved. The Factorio study
 (R39) is the warning label: self-modifiable state under the builder's reach becomes the exploit.
+
+**Store bound and retraction landed (0.240.0); the promotion gate remains.**
+
+**The defect was real and it was hiding behind a cap that looked like one.** `addLesson` appended
+with no limit on store size, so the durable store grew across every run of a repository forever.
+`selectLessons` already capped what any one brief sees, and that is precisely what concealed it: a
+view-only cap makes an unbounded store *look* bounded, which is the worse of the two failures because
+nobody goes and looks at the file.
+
+- `MAX_STORE_LESSONS` is 60, and the number is written down as a judgement rather than a
+  calculation. A store needing more than sixty durable lessons is saying something about the lessons.
+- **Eviction is a retraction, not a deletion.** A silent drop loses the record of having learned the
+  lesson and the next run learns it again — a loop that looks like progress. The ledger keeps the
+  text and the reason, which is what lets a later promoter avoid repeating a harmful edit.
+- **Least used first, ties broken on id.** Use count is the only evidence the store holds that a
+  lesson ever helped. The tie-break matters more than it looks: a store evicting differently on two
+  machines makes one repository behave differently for two people.
+- **Retracting an absent lesson is not an error.** Two runs retracting the same false lesson is an
+  ordinary race, and failing the second would turn a correction into an incident.
+- Bounded at the **one place the store grows**, not at read time. A store trimmed on the way in never
+  reaches a size nobody noticed.
+
+**A defect in the slice, found by writing the round-trip test rather than by reading:**
+`saveLessons` wrote only `version` and `lessons`, so a retraction survived exactly until the next
+save — and the store would then re-learn what it had just thrown out. The ledger now round-trips, and
+a malformed entry in it is dropped without costing the lessons beside it.
+
+**Acceptance evidence:** 11 unit cases and 1 driver case seeding a store at the bound and driving a
+real extraction through the loop. Proved red six ways: the store never bounded (4 fail), eviction
+deleting rather than retracting (1), least-used ordering abandoned (3), the ledger not persisted (1),
+retraction of an absent lesson throwing (1), and the driver not calling the bound (1).
+
+**Remaining: the staged promotion gate.** Run-local candidates entering the durable store only
+through independent-run support, each staged with source evidence, support count, digest and
+proposed atomic edit, plus the append-only rejected-candidate ledger carrying the validation delta
+and refusal reason — which never enters a Builder brief. The retraction ledger this slice added is
+the half that store needs; the promotion side is a second slice.
+
+
+**Promotion gate landed with the bound (0.240.0). Item 35 is complete.**
+
+Both halves shipped together rather than split, because the promotion gate **moves the growth point**
+from extraction to promotion — landing the bound alone would have committed a test the next commit
+had to rewrite.
+
+**Independence is structural, not advisory.** Support is counted per distinct run key, and a run
+supporting the same candidate twice counts once. That is SkillOpt's harvest made mechanical: the same
+run failing the same way four times is one observation repeated, and a store promoted on that learns
+a lesson about one afternoon and teaches it forever. `MIN_INDEPENDENT_SUPPORT` is two — a second
+*run*, with a different objective and tree state, is the cheapest thing that is genuinely a second
+opinion.
+
+- **Candidate identity is normalised text**, not an id. Two runs never agree on an id, and the
+  question is whether a second run reached the *same conclusion*; folding case and whitespace stops a
+  rephrasing counting as independent support for itself.
+- **A candidate with no run identity is refused**, or a single run could promote by supporting itself.
+- **The rejected ledger gates staging.** A promoter that forgets what it refused will refuse it
+  again, or worse accept it next time and repeat the harmful edit — which is the ledger's whole
+  stated purpose.
+- **Candidates and rejections cannot reach a builder.** `selectLessons` reads `store.lessons` alone,
+  and the pre-existing case asserting a lesson *does* reach a later brief now asserts it **does
+  not**. Inverting that assertion is the feature: one run's conclusion is not yet a lesson.
+- The run key is `startedAt:startCommit`, captured once so the manifest and the store name the same
+  instant. The commit alone is not an identity — two runs against one tree are two runs.
+
+**Two defects in the slice, both found by tests rather than by reading:**
+
+- `readLessons` persisted candidates and the refusal ledger on write and **dropped them on read** —
+  the worst of both, since the file grows and nothing ever uses it. The identical gap had already
+  been fixed once in this item for the retraction ledger, which is the argument for round-tripping
+  every list the store gains rather than each one when someone notices.
+- The bound test seeded a **hand-written digest** that silently failed to match, so the run staged a
+  second candidate instead of adding support. The seed is now built through `stageCandidate` itself
+  and cannot drift from the identity rule.
+
+**Acceptance evidence:** 59 unit cases and 3 driver cases through the real loop. Proved red nine
+ways across both halves. One mutation — replacing `options.runKey` with a constant — **survived
+every case** until a test existed that drove two resisted-then-resolved shapes through a *single*
+run and asserted it never promotes itself; every other case used one run, so nothing proved the key
+varied at all.
+
 
 **SkillOpt harvest:** promotion support must come from independent runs/objectives, not merely
 several iterations of one run. Stage each candidate with its source evidence, support count, digest,
