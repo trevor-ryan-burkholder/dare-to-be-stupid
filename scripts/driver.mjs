@@ -3081,6 +3081,12 @@ export async function driveRun(options) {
    * @returns {Promise<void>}
    */
   const closeIteration = async (iteration, failures, score, passingCount) => {
+    // **The event `unsettled` reads and nothing wrote** (PLAN item 58). `EVENT_KINDS` declared
+    // `iteration-settled` and `unsettled()` handled it; the driver never emitted one. So every
+    // diagnosis named the *first started* iteration as unsettled — a run that finished iterations
+    // one through three and died in four reported "stopped during iteration 1". The reader was not
+    // wrong; it was reading for a fact nobody recorded.
+    effects.journal?.('iteration-settled', 'loop', { iteration });
     iterationHistory.push({ iteration, failures, changed: (await effects.changedFiles?.()) ?? [] });
     await maybeExtractLesson();
     progress = recordProgress(progress, { gateScore: score, gateTotal: lastGateTotal, passingCount });
@@ -3285,6 +3291,12 @@ export async function driveRun(options) {
     const candidateTree = snapshot.tree;
 
     // ---- Phase 3: gates -------------------------------------------------
+    // **The other event `unsettled` read and nothing wrote** (PLAN item 58). `lastPhase` comes only
+    // from `phase-entered`, and no code emitted one — so *every* diagnosis said "the unknown phase",
+    // including for a kill in the longest unattended window there is. A child-spawning phase is
+    // already recoverable from `child-started`; the gate pass spawns no child and runs under a
+    // forty-five-minute ceiling, which is exactly where a killed run is most likely to be found.
+    effects.journal?.('phase-entered', 'gates', { iteration: iterationNumber });
     const commandGateOutcome = await effects.gates();
 
     // ---- Phase 3b: the reports, read once (REVIEW F16, F20, F30) --------
@@ -3921,6 +3933,7 @@ export async function driveRun(options) {
       continue;
     }
 
+    effects.journal?.('phase-entered', 'review', { iteration: iterationNumber });
     const first = await runPanel(plan.assignments);
     if (!first.done) return first.outcome;
     // **The candidate's own bytes, beside the main tree's** (REVIEW F14). `workspaceStillMatches`

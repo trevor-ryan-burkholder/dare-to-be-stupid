@@ -1724,6 +1724,49 @@ in the source as a short-circuit rather than a guard, and it is not counted as a
 
 Closure of F22 is Codex-owned.
 
+### 135. The journal records what it is read for, and belongs to one run — **DONE (0.259.0)** (PLAN item 58)
+
+Two defects, found by sweeping the plan rather than by anything failing.
+
+**The journal was never archived, and three shipped statements said it was:** item 58's own
+candidate, the driver comment at the read site (*"one line later `archiveOnce` moves it"*), and the
+sentence `previousRunDiagnosis` prints to the operator (*"...and its journal is archived with it"*).
+`JOURNAL_FILE` was simply absent from `PER_RUN_ARTIFACTS`. Nothing resets the file and `journalSeq`
+restarts at zero every run, so one file held two runs' events with colliding sequence numbers.
+
+**And two of five declared event kinds were never emitted.** `EVENT_KINDS` declares
+`phase-entered` and `iteration-settled`, `unsettled()` handles both, and the driver wrote neither.
+The reader was reading for facts the writer never recorded, with two visible consequences: every
+diagnosis said *"the unknown phase"*, and every one named the **first started** iteration as
+unsettled — so a run that finished iterations one through three and died in four reported *"stopped
+during iteration 1"*. Emitted now at the gate pass and the review pass, which are the long windows
+that spawn no child, and at the close of each iteration.
+
+**Emitting is right; deleting them would have preserved the wrong answer.** The alternative on offer
+was to drop both kinds from `EVENT_KINDS` so the reader stopped claiming what the writer never
+wrote. That removes the false claim and keeps the false diagnosis.
+
+**The two halves need each other, in the order that is easy to get backwards.** Before this slice the
+masking scenario was *unreachable*: with no `iteration-settled` anywhere, a merged journal could not
+settle anything. Emitting the event is what makes the archive necessary rather than merely tidy — an
+earlier run's settle now cancels a later run's start, and `unsettled` reports `null` for a run that
+died mid-iteration. Both are pinned.
+
+**Three corrections found by the tests themselves.** A first masking case put the runs the wrong way
+round and found no masking — the *later* run's settle covers the earlier run's iteration too, so the
+damaging order is a completed run followed by a died one. A claimed symmetry does not hold: an
+earlier run's `child-settled` can **never** cancel a later `child-started`, because appended events
+always precede, and that is pinned so a reader does not hunt for a bug that is not there. And the
+terminal iteration is legitimately unsettled — `previousRunDiagnosis` returns `null` the moment a
+terminal receipt exists, so what must settle is every iteration the loop *moved past*; asserting
+exact equality failed on the shipping run, which was the code being right.
+
+**Validation:** lint and typecheck clean, `npm test` **3426 of 3426** and
+`npm run test:integration` **306 of 306**, both exit 0. Four red proofs: the
+journal not archived, no iteration settled, and each of the two phase windows unrecorded. The settle
+proof needed a **multi-iteration** run to be real — with one iteration started and none settled,
+"at least started minus one" is satisfied by settling nothing, and the mutation survived.
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation

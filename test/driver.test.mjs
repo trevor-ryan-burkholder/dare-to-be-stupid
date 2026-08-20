@@ -43,6 +43,7 @@ import {
 } from '../scripts/nesting.mjs';
 import { appendSupplyRecord } from '../scripts/role-supply.mjs';
 import { changedDefinitions, definitionDigest } from '../scripts/ratchet.mjs';
+import { EVENT_KINDS } from '../scripts/journal.mjs';
 import { READ_LIMITS } from '../scripts/bounded-read.mjs';
 import { MUTATION_CONFIG_CONTENTS } from '../scripts/toolchains/node.mjs';
 import { pinSecurityElement, quarantinePin, readPins, writePins } from '../scripts/pins.mjs';
@@ -2544,6 +2545,111 @@ describe('driveRun', () => {
     });
     return { outcome, meeseeksDir, root, logs };
   }
+
+describe('the loop records the lifecycle events the journal reader looks for (PLAN item 58)', () => {
+  // `EVENT_KINDS` declared five kinds and `unsettled()` handled five; the driver emitted three.
+  // The reader was reading for facts the writer never recorded — so every diagnosis named the first
+  // started iteration as unsettled and said "the unknown phase". `test/journal.test.mjs` proves the
+  // reader; only this can prove the writer, and removing either emission left that suite green.
+
+  /** @param {Record<string, unknown>} [overrides] @returns {Promise<{kind: string, subject: string, iteration: number | null}[]>} */
+  async function journalFrom(overrides = {}) {
+    /** @type {{ kind: string, subject: string, iteration: number | null }[]} */
+    const events = [];
+    await run({
+      journal: (/** @type {string} */ kind, /** @type {string} */ subject, /** @type {any} */ extra = {}) =>
+        events.push({ kind, subject, iteration: extra.iteration ?? null }),
+      readTestReports: () => [
+        {
+          numTotalTests: 1,
+          testResults: [
+            { name: 'test/a.test.js', assertionResults: [{ ancestorTitles: [], title: 'works', status: 'passed' }] },
+          ],
+        },
+      ],
+      ...overrides,
+    });
+    return events;
+  }
+
+  it('settles every iteration the loop moved past', () => {
+    // Without this the diagnosis always names iteration 1: a run that finished one through three
+    // and died in four reports "stopped during iteration 1".
+    //
+    // **The terminal iteration is exempt, and that is correct rather than a gap.** A run that ends
+    // by shipping leaves its last iteration unsettled, and `previousRunDiagnosis` never sees it —
+    // it returns `null` the moment a terminal receipt exists (`journal.mjs`, first line). The
+    // journal is read for runs that left *no* receipt, so what has to be settled is every iteration
+    // the loop moved past. A first draft asserted exact equality and failed on the shipping run,
+    // which is the code being right.
+    return journalFrom().then((events) => {
+      const started = events.filter((event) => event.kind === 'iteration-started').map((event) => event.iteration);
+      const settled = events.filter((event) => event.kind === 'iteration-settled').map((event) => event.iteration);
+      assert.equal(started.length > 0, true, 'the harness never reached an iteration, so this proves nothing');
+      assert.deepEqual(settled, started.slice(0, settled.length), 'a settled iteration was never started');
+      assert.equal(
+        settled.length >= started.length - 1,
+        true,
+        `${started.length} iterations started and only ${settled.length} settled`,
+      );
+    });
+  });
+
+  it('settles an iteration the loop actually moved past, not just the terminal one', async () => {
+    // **Necessary, and proved so.** With a single-iteration run, "settled >= started - 1" is
+    // satisfied by settling nothing at all, and removing the emission left the suite green. A run
+    // that fails its gates once and passes the second time moves *past* iteration 1, so that one
+    // has to be settled.
+    let call = 0;
+    const events = await journalFrom({
+      gates: () => {
+        call += 1;
+        return call === 1
+          ? { ok: false, results: [{ name: 'lint', ok: false, status: 1, detail: 'no' }] }
+          : {
+              ok: true,
+              results: [
+                { name: 'lint', ok: true, status: 0, detail: 'passed' },
+                { name: 'unit', ok: true, status: 0, detail: 'passed' },
+                { name: 'mutation', ok: true, status: 0, detail: 'no survivors' },
+              ],
+            };
+      },
+    });
+    const started = events.filter((event) => event.kind === 'iteration-started').map((event) => event.iteration);
+    const settled = events.filter((event) => event.kind === 'iteration-settled').map((event) => event.iteration);
+    assert.equal(started.length >= 2, true, `the run did not take a second iteration: ${started.join(',')}`);
+    assert.equal(settled.includes(1), true, 'iteration 1 was moved past and never settled');
+  });
+
+  it('records entering the gate pass, which is the longest window that spawns no child', () => {
+    // `lastPhase` comes only from `phase-entered`. A kill inside the forty-five-minute gate ceiling
+    // recorded nothing at all, and the operator was told "the unknown phase".
+    return journalFrom().then((events) => {
+      assert.equal(
+        events.some((event) => event.kind === 'phase-entered' && event.subject === 'gates'),
+        true,
+        `no gate phase was recorded: ${events.map((event) => `${event.kind}:${event.subject}`).join(' ')}`,
+      );
+    });
+  });
+
+  it('records entering review, so a kill between the gates and a verdict is placeable', () => {
+    return journalFrom().then((events) => {
+      assert.equal(events.some((event) => event.kind === 'phase-entered' && event.subject === 'review'), true);
+    });
+  });
+
+  it('emits only kinds the journal declares', () => {
+    // The other direction: a kind the writer invents is one `recordEvent` refuses, which would lose
+    // the event silently at the point it mattered most.
+    return journalFrom().then((events) => {
+      for (const event of events) {
+        assert.equal(EVENT_KINDS.includes(event.kind), true, `the loop emitted an undeclared kind: ${event.kind}`);
+      }
+    });
+  });
+});
 
 describe('the candidate is sealed too, not only the main tree (REVIEW F14)', () => {
   /**
@@ -9020,3 +9126,4 @@ describe('the sealed binary is re-verified at the spawn door (item 83)', () => {
     assert.equal(handed.DISABLE_AUTOUPDATER, '1');
   });
 });
+

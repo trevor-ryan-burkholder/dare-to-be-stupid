@@ -293,3 +293,92 @@ describe('what the previous run left, said to the next operator', () => {
     assert.match(String(line), /That work is not resumed \u2014 this is a fresh run/);
   });
 });
+
+describe('the journal answers about one run (PLAN item 58)', () => {
+  // Three shipped statements said this file was archived with its run: the item's own candidate,
+  // the driver comment at the read site, and the sentence `previousRunDiagnosis` prints to the
+  // operator. None was true. `journalSeq` restarts at zero every run, so one file held two runs'
+  // sequences and `unsettled` merged them — and the consequence is a **wrong diagnosis**, not
+  // untidiness: the earlier run's history answers a question asked about the later one.
+
+  /** @param {number} seq @param {string} kind @param {string} subject @param {number | null} iteration */
+  const event = (seq, kind, subject, iteration = null) => ({
+    seq,
+    kind,
+    subject,
+    iteration,
+    detail: null,
+    at: '2026-08-20T00:00:00.000Z',
+  });
+
+  it('reports the killed run alone correctly', () => {
+    // The truth this must preserve: a run that finished iteration 1 and died in iteration 2 with a
+    // builder still running.
+    const killed = [
+      event(1, 'iteration-started', 'loop', 1),
+      event(2, 'child-started', 'builder'),
+      event(3, 'child-settled', 'builder'),
+      event(4, 'iteration-settled', 'loop', 1),
+      event(5, 'iteration-started', 'loop', 2),
+      event(6, 'child-started', 'builder'),
+    ];
+    assert.deepEqual(unsettled(killed), { unsettledIteration: 2, inFlight: ['builder'], lastPhase: null });
+  });
+
+  it('is masked entirely once a completed earlier run is merged into it', () => {
+    // **The defect, executed — and note which way round it goes.** A first draft of this case put a
+    // *completed* run second and found no masking, because the later run's `iteration-settled 1`
+    // settles the earlier run's iteration 1 too. The damaging order is the other one: the earlier
+    // run settled iteration 1, the later run died *inside* its own iteration 1, and the earlier
+    // settle now answers for the later start.
+    const completed = [
+      event(1, 'iteration-started', 'loop', 1),
+      event(2, 'child-started', 'builder'),
+      event(3, 'child-settled', 'builder'),
+      event(4, 'iteration-settled', 'loop', 1),
+    ];
+    const died = [event(1, 'iteration-started', 'loop', 1), event(2, 'child-started', 'builder')];
+
+    assert.deepEqual(unsettled(died), { unsettledIteration: 1, inFlight: ['builder'], lastPhase: null });
+    // Merged, the run that died reports nothing unsettled at all: the strongest claim the journal
+    // makes, erased by a run that finished hours earlier.
+    assert.equal(unsettled([...completed, ...died]).unsettledIteration, null);
+    // The in-flight child **does** survive the merge, and that is not luck — it is ordering. An
+    // earlier run's events always precede a later run's in the appended file, so its
+    // `child-settled` is consumed before the later `child-started` ever arrives and cannot cancel
+    // it. Worth pinning: the obvious symmetry with the iteration case does not hold, and a reader
+    // assuming it would look for a bug that is not there.
+    assert.deepEqual(unsettled([...completed, ...died]).inFlight, ['builder']);
+    assert.deepEqual(unsettled([...completed, event(5, 'child-settled', 'builder'), ...died]).inFlight, ['builder']);
+  });
+
+  it('needed the archive precisely because iteration-settled is now emitted', () => {
+    // Worth stating plainly, because it inverts the usual order. Before this slice the driver
+    // emitted no `iteration-settled` at all, so the masking above was **unreachable** — a merged
+    // journal could not settle anything. Emitting the event is what makes the archive necessary
+    // rather than merely tidy: the fix to one half created the need for the other.
+    const withoutSettles = [
+      event(1, 'iteration-started', 'loop', 1),
+      event(2, 'child-started', 'builder'),
+      event(3, 'child-settled', 'builder'),
+    ];
+    const died = [event(1, 'iteration-started', 'loop', 1), event(2, 'child-started', 'builder')];
+    assert.equal(unsettled([...withoutSettles, ...died]).unsettledIteration, 1, 'no settle, so nothing to mask');
+  });
+
+  it('names the phase a killed run was in, rather than the unknown phase', () => {
+    // `lastPhase` comes only from `phase-entered`, and nothing emitted one — so every diagnosis in
+    // the product said "the unknown phase", including for a kill inside the forty-five-minute gate
+    // window. The reader was reading for a fact the writer never recorded.
+    const inGates = [event(1, 'iteration-started', 'loop', 1), event(2, 'phase-entered', 'gates', 1)];
+    assert.equal(unsettled(inGates).lastPhase, 'gates');
+  });
+
+  it('still says nothing about a phase it was never told about', () => {
+    // The neighbour: `phase-entered` must be the source of this, not an inference from whatever
+    // event happened last. A run killed before any phase was entered has an unknown phase, and
+    // saying so is correct.
+    const early = [event(1, 'iteration-started', 'loop', 1), event(2, 'child-started', 'builder')];
+    assert.equal(unsettled(early).lastPhase, null);
+  });
+});

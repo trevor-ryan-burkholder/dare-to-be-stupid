@@ -31,6 +31,7 @@ import path from 'node:path';
 
 import { ASSUMPTIONS_FILE } from './assumptions.mjs';
 import { CAPABILITY_MANIFEST } from './capabilities.mjs';
+import { JOURNAL_FILE } from './journal.mjs';
 import { LAUNCH_RECEIPT_FILE } from './launch.mjs';
 import { ACCEPTANCE_FILE } from './acceptance-file.mjs';
 import { ORACLE_FILE } from './oracle.mjs';
@@ -92,6 +93,13 @@ const PER_RUN_ARTIFACTS = [
   'briefs',
   'reality-check.md',
   ASSUMPTIONS_FILE,
+  // **The lifecycle journal** (PLAN item 58). Three shipped statements already said this file was
+  // archived — the item's own candidate, the driver comment at the read site, and the sentence
+  // `previousRunDiagnosis` prints to the operator — and none of them was true. Nothing resets it,
+  // so a second run appended its events beside the first's indistinguishably, and `journalSeq`
+  // restarts at zero every run, so one file held two runs' sequences. A forensic record that merges
+  // two runs answers the one question it exists for with the wrong run's history.
+  JOURNAL_FILE,
   'review.json',
   'outcome.json',
   // The launch receipt (REVIEW F26). Per-run by construction — it records one run's launch

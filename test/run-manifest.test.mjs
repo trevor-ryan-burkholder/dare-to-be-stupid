@@ -435,3 +435,27 @@ describe('the sealed attempt reports are archived, and only those (REVIEW F22)',
     assert.equal(existsSync(path.join(dir, 'test-report.json')), false, 'the sealed report was left in place');
   });
 });
+
+describe('the journal is archived with the run it describes (PLAN item 58)', () => {
+  it('moves events.ndjson into the archive, so the next run starts with an empty one', () => {
+    // Three shipped statements already said this happened: the item's own candidate, the driver
+    // comment at the read site ("one line later `archiveOnce` moves it"), and the sentence
+    // `previousRunDiagnosis` prints to the operator ("...and its journal is archived with it").
+    // None was true, and the consequence is a wrong diagnosis rather than untidiness — see
+    // test/journal.test.mjs for the merged history that answers about the wrong run.
+    const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'meeseeks-journal-archive-')), '.meeseeks');
+    temporaryDirs.push(path.dirname(dir));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'outcome.json'), '{"state":"STALLED"}', 'utf8');
+    writeFileSync(path.join(dir, 'events.ndjson'), '{"seq":1,"kind":"iteration-started"}\n', 'utf8');
+
+    const target = archivePreviousRun(dir);
+    assert.notEqual(target, null);
+    assert.equal(existsSync(path.join(String(target), 'events.ndjson')), true, 'the journal was not archived');
+    assert.equal(
+      existsSync(path.join(dir, 'events.ndjson')),
+      false,
+      'the journal stayed at the canonical path, so the next run appends to it',
+    );
+  });
+});
