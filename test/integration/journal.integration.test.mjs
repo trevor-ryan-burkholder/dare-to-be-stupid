@@ -60,10 +60,19 @@ function workspace() {
 
   const bin = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-journal-bin-'));
   temporaryDirs.push(bin);
-  const fake = path.join(bin, 'claude');
+  // **A launcher delegating to a node file, which is the install form npm actually produces.**
+  // The counterfeit used to be a single `#!/usr/bin/env node` script with its logic inline, and it
+  // answered nothing at all for `--version`. Both now matter: the run seals its binary at the
+  // launch boundary, and a launcher whose delegation cannot be read is refused rather than
+  // approximately sealed. A fake that could not be sealed was not modelling a Claude Code install,
+  // it was modelling a thing the compatibility policy exists to reject.
+  const impl = path.join(bin, 'claude-impl.js');
   writeFileSync(
-    fake,
-    `#!/usr/bin/env node
+    impl,
+    `if (process.argv.slice(2).includes('--version')) {
+  process.stdout.write('2.1.230 (Claude Code)\\n');
+  process.exit(0);
+}
 const chunks = [];
 process.stdin.on('data', (c) => chunks.push(c));
 process.stdin.on('end', () => {
@@ -76,6 +85,8 @@ process.stdin.on('end', () => {
 `,
     'utf8',
   );
+  const fake = path.join(bin, 'claude');
+  writeFileSync(fake, `#!/bin/sh\nexec node ${JSON.stringify(impl)} "$@"\n`, 'utf8');
   chmodSync(fake, 0o755);
   return { root, bin };
 }

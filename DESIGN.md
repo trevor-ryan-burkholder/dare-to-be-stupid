@@ -365,9 +365,10 @@ of 2.1.234 (the newest release whose full live tier passed), the 2.1.136 binary 
 incompatible for lacking `--safe-mode`, and the evidence for each. Both directions refuse, because a
 greater version number is not evidence of forward compatibility; the escape from the ceiling is to
 run the live tier against a newer CLI and move one constant with that evidence. The
-**sealed-identity** half is not built: nothing yet fingerprints the resolved binary or re-resolves it
-before each role spawn, so a PATH shadow introduced mid-run is still unaddressed. REVIEW F28 / PLAN
-item 83 own the remaining enforcement.
+**sealed-identity** half is §3.5.1: the run fingerprints its canonical target at the run boundary and
+re-resolves it before every child. REVIEW F28 / PLAN item 83 own what is still outstanding, which is
+now the pinned boundary runs and a measured authentication check — `claude --version` succeeds
+against an installation nobody has signed in to.
 
 The 2.1.235 boundary run finished 33 of 34. Its one failure passed on isolated retries and matches a
 known model-output flake, but the admission rule above is a clean full-tier pass, not a diagnosis of
@@ -515,12 +516,27 @@ string** — which is precisely why a version check cannot see any of them:
    launch**, and a run launches many separate children;
 5. a launcher whose own bytes never change while the entrypoint it delegates to does.
 
-So the run resolves one canonical target, fingerprints it (`scripts/claude-seal.mjs`), and
+So the run resolves one canonical target, fingerprints it (`scripts/claude-seal.mjs`) once the
+launch checks pass, threads that seal through the one door every child spawns from, and
 `spawnClaude` **re-verifies immediately before every child** — at the same door the context budget
 (§3.9) and the supply boundary (§6.1) use, and for the identical reason: every child in the loop
 passes through it, so a phase added later cannot forget the check. A refusal happens before argv is
 built, so it costs no quota and no wall clock, and the test asserts the child *never ran* rather
 than asserting a failure code, because a refusal after the spawn would report the same code.
+
+**The seal is created at the run boundary, and for eleven versions it was not.** The mechanism
+landed complete at 0.249.0 — resolver, closure, refusal, five real-filesystem fixtures — and no
+production path ever called `sealTarget`. `spawnClaude` checks `options.seal` only when it is given
+one, every test handed it one directly, and every real run passed `undefined`, so the check was
+skipped in exactly the case it exists for. A guarantee whose only missing piece is a caller looks
+identical to a working one from inside the test suite, which is why the run now seals immediately
+after launch revalidation and hands the seal to `runChild` — the same door that supplies the context
+budget, the timeout and the environment boundary, and for the same reason.
+
+A binary whose invocation closure cannot be bounded refuses **there**, before the lock is taken and
+before anything is written. A run that supplies its own spawner is not sealed at all, because an
+injected spawner replaces the binary: there is nothing on disk that run will execute, and
+fingerprinting the host's real `claude` would measure a file no child is ever launched from.
 
 **Re-resolution is part of the check, not an optimization skipped.** Going straight to the sealed
 path would leave failure 1 invisible — the seal intact while a different binary is being run — so

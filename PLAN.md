@@ -1887,6 +1887,78 @@ host (65), a real browser (42 B2) — or a product decision only the operator ca
 `npm run test:integration` **306 of 306**, both exit 0; the `AGENTS.md` mirror test holds the two
 contract files byte-identical.
 
+### 139. The seal was built, documented, and never armed — **DONE (0.261.0)** (PLAN item 83)
+
+**Origin:** Phase 2, 20 Aug 2026, found while scoping item 83's remaining authentication half. It
+appears in no `REVIEW.md` finding and no prior item, because from inside the test suite it was
+invisible.
+
+**The defect.** `spawnClaude` verifies the sealed Claude binary before every child — *when it is
+given a seal.* Nothing ever gave it one. `sealTarget` was exported from `scripts/claude-seal.mjs`,
+unit-proven with eleven red proofs, fixture-proven against real PATH shadows, real atomic
+replacements and real retargeted symlinks, named in `DESIGN.md` §3.5.1 as the mechanism a four-hour
+unattended run depends on, and **called by no production path at all**. `options.seal` was
+`undefined` in every real run, so the check was skipped in exactly the case it exists for.
+
+Every one of the fifteen red proofs handed `spawnClaude` a seal directly. That is what made this
+survivable: a guarantee whose only missing piece is a caller is indistinguishable from a working one
+unless a test drives the real entrypoint with a real binary on a real PATH. It is the same shape as
+item 128's Playwright report — a declared behaviour, an exercised code path, and no wire between
+them — and the same shape the `spawn` seam in `DriverIo` was introduced to catch, described there in
+its own words as *"correct code that nothing proved was ever called."*
+
+**The repair.** `runInvocation` seals immediately after launch revalidation and hands the seal to
+`runChild`, the one door that already supplies the context budget, the timeout and the environment
+boundary — for the identical reason, which is now literal rather than cautionary. A binary whose
+invocation closure cannot be bounded refuses there, before the lock is taken and before anything is
+written.
+
+A run that supplies its own spawner is not sealed, and that is not a loophole: an injected spawner
+*replaces* the binary, so there is nothing on disk that run will execute and fingerprinting the
+host's real `claude` would measure a file no child is launched from. It is also why the proof had to
+be tier 2.
+
+**Two further defects the new fixture found on its first run.**
+
+- **The seal and its verification resolved different PATHs.** `verifySeal` defaulted to
+  `realSealIo()` with no argument — `process.env` — while the seal was taken under the run's own
+  environment. Every child refused with *"claude now resolves to ..."*. One `SealIo` is now built at
+  the boundary and used for both halves, because a check that compares against an environment the
+  run does not use is not checking the run.
+- **The version clause was inert.** `spawnClaude` defaults `sealVersion` to `options.seal.version`,
+  so `verifySeal` compared the sealed version against itself and could never fire. The version is
+  now measured immediately before each child, under the sealed controls, as item 83 asks. The
+  closure digests would have caught an ordinary update anyway — new code is new bytes — but not a
+  launcher reporting a version from a file outside its own closure.
+
+**Evidence.** `test/integration/claude-seal-run.integration.test.mjs` drives the real entrypoint with
+no injected spawner against a fake `claude` that is a real npm-shaped launcher delegating to a real
+node file. An unbounded launcher refuses at the boundary with no child having run; a sealable one
+runs children, which is the neighbour that stops the first case scoring the same as a boundary that
+refused everything; and a delegated entrypoint that **rewrites itself on its first `-p` call** stops
+the next child — failure mode 5 committed for real, by a child, against the role that follows it.
+
+Two red proofs. Removing the seal from `runChild`'s options lets the second child run against the
+tampered binary — the exact state of the repository for the last eleven versions. Disabling the
+boundary sealing fails two of the three.
+
+**Two existing fixtures were repaired rather than exempted.** The journal and ancestry counterfeits
+were single `sh` scripts delegating to nothing, which the compatibility policy correctly refuses;
+the journal suite failed loudly. Ancestry did not, and that is the more instructive half: none of
+its cases asserts a *successful* run and registration happens before the seal, so all four would
+have kept their green ticks while the run they are about died at the boundary. Both counterfeits are
+now launchers delegating to a node file, which is the install form npm actually produces and the one
+whose bytes can stay identical while the code it runs changes.
+
+**Validation:** lint, typecheck, `npm test` 3428 of 3428, `npm run test:integration` 309 of 309.
+
+**Item 83 is unchanged in status.** Its sealed-identity half is now armed rather than merely built,
+and what remains for closure is what REVIEW F28 already named: the pinned live runs at every admitted
+compatibility boundary, and a measured non-interactive authentication check. `claude --version`
+succeeds against an installation nobody has signed in to, and `DESIGN.md` §3.5 still tells operators
+so.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
@@ -4812,6 +4884,14 @@ the preflight guarantee explicitly. `PARTIAL` for those reasons.
 **The sealed-identity mechanism landed, 0.249.0 — `scripts/claude-seal.mjs` (`DESIGN.md` §3.5.1).**
 The half this item named as *"not yet done, and named rather than implied"* is built and unit-proven.
 The live half is not, and the status stays `PARTIAL` for that reason alone.
+
+**Built is not armed, 0.261.0 (item 139).** For eleven versions nothing called `sealTarget`, so
+`options.seal` was `undefined` in every real run and the door below verified nothing. The sentence
+that follows this one — "`spawnClaude` re-verifies **before every child**" — was true of the
+function and false of the product, and every test that proved it handed the function a seal by hand.
+The run now seals after launch revalidation and threads it through `runChild`. Two further defects
+surfaced the moment a fixture drove the real entrypoint: the seal and its verification resolved
+different PATHs, and the version clause compared the sealed version against itself.
 
 **Five ways the binary a role spawns stops being the binary preflight measured, and none of them
 changes the version string** — which is exactly why the version check cannot see any of them: a PATH

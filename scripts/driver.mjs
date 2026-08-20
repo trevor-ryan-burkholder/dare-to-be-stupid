@@ -63,7 +63,8 @@ import { resolveCitation } from './evidence.mjs';
 import { citationsGate } from './citations.mjs';
 import { claimsGate } from './claims.mjs';
 import { ancestorPids, depthFromAncestry, reconcileDepth } from './ancestry.mjs';
-import { sealedControls, verifySeal } from './claude-seal.mjs';
+import { SealError, sealTarget, sealedControls, verifySeal } from './claude-seal.mjs';
+import { parseClaudeVersion, versionText } from './claude-compat.mjs';
 import { deregisterRun, depthLookup, readRegistry, registerRun } from './run-registry.mjs';
 import { blankComments, integrityGate } from './integrity.mjs';
 import {
@@ -7032,6 +7033,42 @@ export function realSealIo(env = process.env) {
 }
 
 /**
+ * Measure what the canonical target reports, for {@link sealTarget} to record.
+ *
+ * Separate from preflight's `checkClaudeCli` on purpose. That one runs at `init`, which may have
+ * been days ago; this one runs at the boundary of *this* run, which is the only moment whose answer
+ * the run can rely on.
+ *
+ * **Under the sealed controls**, because a probe that let a background auto-update fire would be
+ * measuring the version *before* the update and sealing the bytes *after* it.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @returns {{ ok: true, version: string } | { ok: false, reason: string }}
+ */
+export function measureClaudeVersion(env) {
+  /** @type {string} */
+  let stdout;
+  try {
+    stdout = execFileSync('claude', ['--version'], {
+      encoding: 'utf8',
+      env: { ...env, ...sealedControls() },
+      timeout: SEAL_VERSION_TIMEOUT_MS,
+      stdio: 'pipe',
+    });
+  } catch (error) {
+    return { ok: false, reason: `claude --version could not be run: ${error instanceof Error ? error.message : error}` };
+  }
+  const version = parseClaudeVersion(stdout);
+  // Refused rather than recorded verbatim. A seal whose version field holds a wrapper's banner
+  // would compare equal to itself forever and report that as evidence.
+  if (version === null) return { ok: false, reason: `claude --version did not report a version: ${stdout.trim().slice(0, 200)}` };
+  return { ok: true, version: versionText(version) };
+}
+
+/** A `--version` call that has not answered in ten seconds is not going to. */
+const SEAL_VERSION_TIMEOUT_MS = 10_000;
+
+/**
  * Spawn one `claude -p` child and read its envelope.
  *
  * The runner is injectable so that the two properties that matter about a child — the
@@ -7303,6 +7340,7 @@ export function childEndLine(phase, result, seconds) {
  *   log?: (line: string) => void,
  *   spawn?: typeof spawnClaude,
  *   runComponent?: typeof runComponentDriver,
+ *   sealIo?: import('./claude-seal.mjs').SealIo,
  *   heartbeatMs?: number,
  * }} DriverIo `spawn` exists so a test can drive the **real** loop -- real gates, real git, real
  *   `gateTree` -- with canned child envelopes instead of paid ones. Three composition sites
@@ -7457,6 +7495,48 @@ async function runInvocation(argv, io, crash) {
   };
   const write = io.log ?? ((/** @type {string} */ line) => process.stdout.write(`${line}\n`));
   const spawn = io.spawn ?? spawnClaude;
+  /**
+   * The sealed Claude binary this run will spawn every child from, once the launch checks pass.
+   *
+   * Declared beside `spawn` because they are the same decision — what this run executes — and
+   * assigned after revalidation so a refused tree never runs a subprocess. `null` until then, and
+   * `null` forever when a test supplied its own spawner.
+   *
+   * @type {import('./claude-seal.mjs').Seal | null}
+   */
+  let seal = null;
+  /**
+   * The filesystem the seal is both **taken** and **verified** through.
+   *
+   * One object for both halves, because they have to agree about which `claude` the host would
+   * run. `verifySeal` defaulted to `realSealIo()` with no argument — `process.env` — while the
+   * seal was taken under this run's environment, so the two resolved different PATHs and every
+   * child refused with "claude now resolves to ...". A run whose `io.env` differs from the
+   * process environment is the normal case in a fixture and a supported one in production; a check
+   * that compares against an environment the run does not use is not checking the run.
+   *
+   * @type {import('./claude-seal.mjs').SealIo}
+   */
+  const sealIo = io.sealIo ?? realSealIo(env);
+  /**
+   * What the sealed target reports **now**, measured immediately before the child that is about to
+   * spawn — not the version recorded when it was sealed.
+   *
+   * Without this, `verifySeal` compares `seal.version` against itself and the version clause is
+   * inert. The closure digests would still catch an ordinary update, because new code is new bytes;
+   * what they would not catch is a launcher that reports its version from a file outside its own
+   * invocation closure. Item 83 asks for the version check to run before each role, so it runs
+   * before each role.
+   *
+   * An unmeasurable target yields a string no seal can equal, which makes it a refusal with its
+   * cause attached rather than a check that quietly passed.
+   *
+   * @returns {string}
+   */
+  const sealVersionNow = () => {
+    const measured = measureClaudeVersion(env);
+    return measured.ok ? measured.version : `unmeasurable (${measured.reason})`;
+  };
   const heartbeatMs = io.heartbeatMs ?? HEARTBEAT_MS;
   const mode = styleMode(env);
 
@@ -7570,6 +7650,10 @@ async function runInvocation(argv, io, crash) {
       // Supplied at the same one door and for the same reason (REVIEW F5). A phase added later
       // cannot forget the environment boundary, and cannot be given a wider one by accident.
       envAllow: config.childEnvAllow,
+      // The same one door again, and the reason is now literal rather than cautionary: the seal
+      // spent eleven versions being checked by a function no caller ever handed one to. Supplied
+      // here, every child in the loop carries it, including a phase added next year.
+      ...(seal === null ? {} : { seal, sealVersion: sealVersionNow(), sealIo }),
         ...allowance,
       });
     } finally {
@@ -7962,6 +8046,39 @@ async function runInvocation(argv, io, crash) {
     write(verbatim(`launch refused at HEAD ${launch.head === '' ? '(unreadable)' : launch.head}`));
     for (const failed of launch.failures) write(verbatim(`${failed.name}: ${failed.detail}\n${failed.fix}`));
     return releasing(1, { reason: 'launch revalidation refused the tree', phase: 'launch' });
+  }
+
+  // **Where the run seals the binary it is about to spawn** (PLAN item 83, DESIGN.md §3.5.1).
+  //
+  // `spawnClaude` has verified a seal before every child since 0.249.0 — *when it is given one*.
+  // Nothing gave it one. `sealTarget` was exported, unit-proven, fixture-proven against real PATH
+  // shadows and real retargeted symlinks, documented in DESIGN as the mechanism a run depends on,
+  // and called by no production path at all, so `options.seal` was `undefined` in every real run
+  // and the whole check was skipped. That is the exact shape the `spawn` seam above was introduced
+  // to catch: correct code that nothing proved was ever called.
+  //
+  // **Skipped when a test supplied its own spawner, and that is not a loophole.** An injected
+  // `spawn` *replaces* the binary; there is nothing on disk that this run will execute, and sealing
+  // the host's real `claude` would fingerprint a file no child is ever launched from. The seal's
+  // production path is proved where it can only be proved — a tier-2 fixture with a real executable
+  // on a real PATH.
+  //
+  // A binary that cannot be sealed refuses **here**, before the lock is taken and before anything
+  // is written, because an unbounded invocation closure is the one condition the compatibility
+  // policy will not approximate.
+  if (io.spawn === undefined) {
+    const measured = measureClaudeVersion(env);
+    if (!measured.ok) {
+      write(verbatim(`the run cannot seal its Claude binary: ${measured.reason}`));
+      return releasing(1, { reason: 'the Claude version could not be measured at the run boundary', phase: 'launch' });
+    }
+    try {
+      seal = sealTarget('claude', measured.version, sealIo);
+    } catch (error) {
+      if (!(error instanceof SealError)) throw error;
+      write(verbatim(`the run cannot seal its Claude binary: ${error.message}`));
+      return releasing(1, { reason: 'the Claude binary could not be sealed', phase: 'launch' });
+    }
   }
 
   /**

@@ -90,16 +90,25 @@ function fakeClaudeDir() {
     total_cost_usd: 0,
     usage: { input_tokens: 1, output_tokens: 1 },
   });
-  const script = [
-    '#!/bin/sh',
-    'for arg in "$@"; do',
-    '  if [ "$arg" = "--version" ]; then echo "2.1.230 (Claude Code)"; exit 0; fi',
-    'done',
-    `cat <<'ENVELOPE'`,
-    envelope,
-    'ENVELOPE',
-  ].join('\n');
-  writeFileSync(path.join(dir, 'claude'), `${script}\n`, 'utf8');
+  // **A launcher delegating to a node file**, because the run seals its binary at the launch
+  // boundary and refuses an install form whose invocation closure it cannot bound. A single `sh`
+  // script delegating to nothing is such a form. Left as one, every case below would still have
+  // passed — none of them asserts a *successful* run, and registration happens before the seal —
+  // while the run they are about actually died at the boundary. That is the failure mode where a
+  // test keeps its green tick and stops testing its subject.
+  const impl = path.join(dir, 'claude-impl.js');
+  writeFileSync(
+    impl,
+    [
+      "if (process.argv.slice(2).includes('--version')) {",
+      "  process.stdout.write('2.1.230 (Claude Code)\\n');",
+      '  process.exit(0);',
+      '}',
+      `process.stdout.write(${JSON.stringify(envelope)});`,
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(path.join(dir, 'claude'), `#!/bin/sh\nexec node ${JSON.stringify(impl)} "$@"\n`, 'utf8');
   chmodSync(path.join(dir, 'claude'), 0o755);
   return dir;
 }

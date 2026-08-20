@@ -1,6 +1,6 @@
 # START HERE — current handoff, last swept 19 August 2026
 
-**State:** working-tree candidate `0.260.0` on `main`; the manifests and the package-lock root
+**State:** working-tree candidate `0.261.0` on `main`; the manifests and the package-lock root
 metadata agree, and `npm run release-check` is the check that says so.
 
 **This paragraph names no commit, and that is a rule the gate now enforces** (`REVIEW.md` F40). It
@@ -46,6 +46,17 @@ current, and these do not stay current for one commit. The candidate's own numbe
   `improve-contract` document-authoring case failed once and passed twice, matching the known
   non-deterministic failure shape seen on 2.1.234. PLAN item 107 records the diagnosis without
   relabelling the failed full-suite result as a pass.
+- **The full live tier passed 39 of 39 at 0.260.0**, uncontended, in 668 seconds — the first time it
+  had ever been run against two of its own cases. Both failed. One was a bash-only `${!n+x}` probe on
+  a zsh host, which could not have passed in any state of the product; the other was a 300-second
+  ceiling on a child measured at 170.7s and 178.7s, which only ever fired beside a concurrent
+  fan-out. A tier that is never run is not evidence, and neither of those was a product defect —
+  which is the point. Deferring the tier is what kept them invisible.
+- **Historical warning:** a mechanism can be complete, documented and dead. At 0.249.0 the sealed
+  Claude binary landed with fifteen red proofs and five real-filesystem fixtures; **nothing called
+  it** until 0.261.0, because every proof handed `spawnClaude` a seal by hand and no production path
+  ever did. Before trusting a guarantee here, check that something in the run actually invokes it.
+  PLAN item 139 has the full account.
 - **Historical warning:** 0.182.0 committed mutation-test scaffolding after its recorded gates;
   0.183.0 restored the guard. PLAN items 91 and 99 contain the failure analysis. Do not use
   0.182.0's green numbers as evidence for its committed bytes.
