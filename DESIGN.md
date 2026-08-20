@@ -3183,6 +3183,44 @@ whether the host actually has bubblewrap and socat: where it does, the child sta
 where it does not, the child must be **refused** with the sandbox named as the cause. Both are
 guarantees, and only the first was ever checked.
 
+### 10.2 A declared deploy target, so an operator writes a host and not an argv
+
+`deploy.command` asks for the whole invocation. Every part of it is somewhere to be silently wrong:
+the rsync trailing slashes decide whether the build's *contents* or the build *directory* lands at
+the destination, and a missing `BatchMode=yes` turns a passphrase or host-key prompt into a run that
+hangs until its ceiling kills it — which `runDeploy`'s own timeout message already describes.
+
+So `deploy.target` names a host and this build writes the command:
+
+```json
+"target": { "kind": "ssh-static", "host": "203.0.113.10", "user": "root", "dir": "dist", "path": "/srv/preview/site" }
+```
+
+**Exactly one of `target` and `command`**, refused rather than merged: a section carrying both has
+two answers to "what does this run", and choosing one silently would run something its author did
+not write. `command` remains the escape hatch for anything this build has no profile for.
+
+**A profile is a record, not a guess.** An unknown `kind` is refused by name rather than approximated,
+because a typo is otherwise indistinguishable from a profile that does not exist — the reasoning
+`resolveToolchain` uses for toolchain names. `dir` is required rather than inferred: `dist`, `out`,
+`build` and `.next` all exist in the wild, and guessing is the trap §3.8.3 refused when it declined
+to invent `vale`'s command line.
+
+**`VERIFIED_DEPLOY_TARGETS` is separate from the kinds this build can emit**, and it is the honest
+half. A kind graduates only in the commit that proves it against a real host. `ssh-static` was proved
+on 20 August 2026: the derived argv exited 0 against an Ubuntu 22.04 droplet already serving
+`/srv/preview/site`, and the host then answered **200** on `/` and `/health` with the bytes that had
+been pushed. The command executed was the one `deployCommandFor` emits rather than a hand-written
+equivalent, because a profile proved by a different command than it produces is not proved at all.
+
+**No credential enters meeseeks**, which is why this is not PLAN item 106's territory. `ssh`
+authenticates with the operator's own key and agent exactly as if they had typed the command; no
+secret reaches a role's environment, argv, prompt or receipts, and no capability is minted for
+anyone. The Driver runs a command — it is not granted access to anything.
+
+**The Driver logs the derived argv in full.** A command an operator cannot see is one they cannot
+check, and this one was written on their behalf.
+
 **The API-shaped oracle's plumbing (R18).** The `docs` gate has always required
 `docs/api-contract.md` for every project shape. For an `api` capability the **machine-readable**
 half is now required too, at exactly `docs/openapi.yaml` — one path, not a list of accepted
@@ -3401,7 +3439,8 @@ group, so an operator-kill can still leak it (`PLAN.md` item 2's residual).
 | `schemaIntrospect` | `[]` | argv that prints the live schema as JSON for `schema-conformance` (§3.6.1, item 47). Empty means the gate does not arm. Operator configuration on purpose: a builder supplying this would describe the schema it is judged on, and the gate would confirm its own input |
 | `components` | `[]` | `{ name, dir, spec }` sub-runs executed as whole nested drivers in worktrees before the loop (§2, Phase 1c). The config declares *what* the components are; only `--give-them-the-box` on the command line permits them to run — configured components without the flag refuse the run before any child is paid for. `name` is kebab-case (it becomes branch and worktree names), `dir` is repo-relative with no `..` and is realpath-checked against the worktree at run time, `spec` is a PRD path relative to the dir or a quoted idea |
 | `deploy.enabled` | **false** | preview-only when enabled; never prod |
-| `deploy.command` | `[]` | argv array run **before** the ship decision when `enabled`; a string is refused (§10.1) |
+| `deploy.command` | `[]` | argv array run **before** the ship decision when `enabled`; a string is refused (§10.1). Mutually exclusive with `deploy.target` |
+| `deploy.target` | `null` | a declared host this build derives the command for (§10.2): `{ kind, host, user, dir, path }`. Exactly one of this and `command` when `enabled` |
 | `deploy.url` | `""` | the fixed host the smoke checks ask. Required when `enabled`; refused if not http(s) or if it looks like production |
 | `deploy.smoke` | `[]` | `{ path, status }` checks against `deploy.url`. Required when `enabled` — a deploy nothing checks cannot fail |
 | `deploy.timeoutMs` | 600_000 | the deploy command is killed after this. Validated even while `enabled` is false, because a timeout that is nonsense is wrong when it is written, not when it is used (§10.1) |

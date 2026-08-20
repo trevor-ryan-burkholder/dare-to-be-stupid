@@ -10,6 +10,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { DEFAULT_MAX_PROMPT_CHARACTERS } from './context-budget.mjs';
+import { DEPLOY_TARGET_KINDS } from './deploy-target.mjs';
 
 /**
  * Reasoning effort per phase, verified against `claude --help` and against a live child
@@ -27,7 +28,13 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 /** @typedef {{ path: string, status: number }} SmokeCheck */
 /** @typedef {{ name: string, dir: string, spec: string }} ComponentConfig */
-/** @typedef {{ enabled: boolean, command: string[], url: string, smoke: SmokeCheck[], timeoutMs: number }} DeployConfig */
+/**
+ * @typedef {{ enabled: boolean, command: string[],
+ *   target: import('./deploy-target.mjs').DeployTarget | null,
+ *   url: string, smoke: SmokeCheck[], timeoutMs: number }} DeployConfig
+ * `target` is the declared host this build derives a command for; `command` is the escape hatch for
+ * anything else. Exactly one may be set when the section is enabled (DESIGN.md §10.2).
+ */
 /** @typedef {{ after: number }} RealityCheckConfig */
 /** @typedef {{ enabled: boolean }} ImproviseConfig */
 /** @typedef {{ enabled: boolean, n: number, after: number }} RaceConfig */
@@ -277,7 +284,7 @@ export function defaultConfig() {
     // deploy that never returns stalled the run indefinitely with nothing to look at. An `ssh`
     // waiting on a passphrase prompt no unattended run can answer is the ordinary route there.
     // Generous enough for a remote build, finite either way.
-    deploy: { enabled: false, command: [], url: '', smoke: [], timeoutMs: 600_000 },
+    deploy: { enabled: false, command: [], target: null, url: '', smoke: [], timeoutMs: 600_000 },
     extractTests: true,
     chaos: 1,
     realityCheck: { after: 3 },
@@ -396,6 +403,50 @@ function requireStringArray(value, key) {
  * @param {string} key
  * @returns {Record<string, unknown>}
  */
+/**
+ * Validate a declared deploy target, so an operator supplies a host rather than an argv.
+ *
+ * Every field is required and none is guessed. `dir` in particular: `dist`, `out`, `build` and
+ * `.next` all exist in the wild, and inventing the answer is the trap `templates/toolchain-prose.md`
+ * refused when it declined to write `vale`'s command line. An operator who has to name the directory
+ * once is better served than one whose deploy silently published the wrong one.
+ *
+ * The host is held to the same pre-production rule as `deploy.url`, because a target pointing at
+ * something with users is the failure that rule exists for whichever field spells it.
+ *
+ * @param {unknown} value
+ * @returns {import('./deploy-target.mjs').DeployTarget}
+ */
+function requireDeployTarget(value) {
+  const target = requireObject(value, 'deploy.target');
+  rejectUnknownKeys(target, new Set(['kind', 'host', 'user', 'dir', 'path']), 'deploy.target');
+  const kind = requireString(target.kind, 'deploy.target.kind');
+  if (!DEPLOY_TARGET_KINDS.includes(kind)) {
+    throw new ConfigError(
+      `deploy.target.kind must be one of ${DEPLOY_TARGET_KINDS.join(', ')}, got ${JSON.stringify(kind)}. ` +
+        'A kind is refused rather than guessed at: a typo would otherwise be indistinguishable from a ' +
+        'profile this build does not have.',
+    );
+  }
+  const host = requireString(target.host, 'deploy.target.host');
+  if (host.trim() === '') throw new ConfigError('deploy.target.host is empty: there is nothing to deploy to');
+  const risky = riskyRemoteWord(host);
+  if (risky !== null) {
+    throw new ConfigError(
+      `deploy.target.host contains ${risky}: meeseeks is pre-production only and never points at anything with users`,
+    );
+  }
+  const dir = requireString(target.dir, 'deploy.target.dir');
+  if (dir.trim() === '') throw new ConfigError('deploy.target.dir is empty: name the directory the build publishes');
+  const remotePath = requireString(target.path, 'deploy.target.path');
+  if (remotePath.trim() === '') throw new ConfigError('deploy.target.path is empty: name the directory on the host to publish into');
+  // Defaulted rather than required, because a DigitalOcean droplet authenticates root by key on the
+  // image it ships with, and that is the case this profile was proved against.
+  const user = 'user' in target ? requireString(target.user, 'deploy.target.user') : 'root';
+  if (user.trim() === '') throw new ConfigError('deploy.target.user is empty');
+  return { kind, host, user, dir, path: remotePath };
+}
+
 /**
  * Validate the smoke list: one entry per request the deploy must answer correctly.
  *
@@ -710,7 +761,7 @@ export function validateConfig(input) {
 
   if ('deploy' in source) {
     const deploy = requireObject(source.deploy, 'deploy');
-    rejectUnknownKeys(deploy, new Set(['enabled', 'command', 'url', 'smoke', 'timeoutMs']), 'deploy');
+    rejectUnknownKeys(deploy, new Set(['enabled', 'command', 'target', 'url', 'smoke', 'timeoutMs']), 'deploy');
     // An argv array, not a string. `split(' ')` destroyed any quoted argument, so
     // `ssh box 'cd /srv && ./deploy.sh'` arrived as six mangled tokens; the old shape is
     // refused by name rather than coerced, because silently re-interpreting a pre-0.61.0
@@ -723,6 +774,11 @@ export function validateConfig(input) {
     }
     const enabled = 'enabled' in deploy ? requireBoolean(deploy.enabled, 'deploy.enabled') : defaults.deploy.enabled;
     const command = 'command' in deploy ? requireStringArray(deploy.command, 'deploy.command') : [...defaults.deploy.command];
+    // An explicit `null` is "no target", not a malformed one. `writeConfig` serialises the default
+    // config and `loadConfig` reads it straight back, so a validator that refused the value it
+    // itself writes would fail on a file nobody had touched.
+    const target =
+      'target' in deploy && deploy.target !== null ? requireDeployTarget(deploy.target) : defaults.deploy.target;
     const url = 'url' in deploy ? requireString(deploy.url, 'deploy.url') : defaults.deploy.url;
     const smoke = 'smoke' in deploy ? requireSmokeChecks(deploy.smoke) : [...defaults.deploy.smoke];
     // Checked even while the section is disabled, unlike command/url/smoke below. Those are
@@ -735,7 +791,21 @@ export function validateConfig(input) {
     // because a deploy nothing can check reports success whatever it did, which is the stub
     // this replaces (DESIGN.md §10.1).
     if (enabled) {
-      if (command.length === 0) throw new ConfigError('deploy.enabled is true but deploy.command is empty: there is nothing to run');
+      // **Exactly one of them, refused rather than merged** (DESIGN.md §10.2). A config carrying
+      // both has two answers to "what does this run", and picking one silently would run something
+      // its author did not write — the same reasoning that refuses a `deploy.command` string rather
+      // than splitting it.
+      if (command.length > 0 && target !== null) {
+        throw new ConfigError(
+          'deploy.command and deploy.target are both set, and they are two answers to one question. ' +
+            'Keep the target for a host this build knows how to publish to, or the command for anything else.',
+        );
+      }
+      if (command.length === 0 && target === null) {
+        throw new ConfigError(
+          'deploy.enabled is true but neither deploy.target nor deploy.command is set: there is nothing to run',
+        );
+      }
       if (url === '') {
         throw new ConfigError(
           'deploy.enabled is true but deploy.url is empty. A deploy that is not asked whether it worked is not evidence; ' +
@@ -753,7 +823,7 @@ export function validateConfig(input) {
         throw new ConfigError('deploy.enabled is true but deploy.smoke is empty: a deploy nothing checks cannot fail');
       }
     }
-    merged.deploy = { enabled, command, url, smoke, timeoutMs };
+    merged.deploy = { enabled, command, target, url, smoke, timeoutMs };
   }
 
   if ('realityCheck' in source) {

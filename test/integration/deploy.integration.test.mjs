@@ -38,7 +38,8 @@ function neverReturns() {
 function deployConfig(parts) {
   return {
     enabled: true,
-    command: parts.command,
+    target: null,
+      command: parts.command,
     url: 'http://127.0.0.1:1',
     smoke: [{ path: '/health', status: 200 }],
     timeoutMs: parts.timeoutMs,

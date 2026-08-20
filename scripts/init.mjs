@@ -13,6 +13,7 @@
 
 import path from 'node:path';
 import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 
 import { initConfig, loadConfig } from './config.mjs';
 import { formatPreflight, runPreflight } from './preflight.mjs';
@@ -68,6 +69,18 @@ export async function main(argv, io = {}) {
   return result.ok ? 0 : 1;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// **`pathToFileURL`, not string concatenation.** `file://${process.argv[1]}` is not a URL for any
+// path needing percent-encoding — a space, a `#`, anything non-ASCII — and it is never one on
+// Windows, where argv[1] is `C:\...` while `import.meta.url` is `file:///C:/...`. When the
+// comparison fails this file runs `main` for nobody: it prints nothing and **exits 0**, and
+// `commands/meeseeks.md` reads a zero exit as "preflight passed" and shells straight to the driver.
+// Every one of the thirteen refusals is bypassed, silently, on a plugin installed to a path with a
+// space in it — which `~/.claude/plugins/cache/` under a user's real name routinely is.
+//
+// Reproduced 20 August 2026 by copying this tree to a directory named `plug in` and running it in a
+// non-git directory: no output, exit 0, where the same file at an unspaced path printed all thirteen
+// checks and failed four. `driver.mjs`, `configure.mjs` and `health-probe.mjs` already guard
+// themselves this way; this was the one that did not.
+if (typeof process.argv[1] === 'string' && pathToFileURL(process.argv[1]).href === import.meta.url) {
   process.exitCode = await main(process.argv.slice(2));
 }

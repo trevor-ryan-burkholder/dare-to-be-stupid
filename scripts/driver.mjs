@@ -65,6 +65,7 @@ import { claimsGate } from './claims.mjs';
 import { ancestorPids, depthFromAncestry, reconcileDepth } from './ancestry.mjs';
 import { SealError, sealTarget, sealedControls, verifySeal } from './claude-seal.mjs';
 import { parseClaudeVersion, versionText } from './claude-compat.mjs';
+import { deployCommandFor } from './deploy-target.mjs';
 import { canarySentinels, containmentVerdict } from './containment.mjs';
 import { deregisterRun, depthLookup, readRegistry, registerRun } from './run-registry.mjs';
 import { blankComments, integrityGate } from './integrity.mjs';
@@ -6883,7 +6884,13 @@ export async function runDeploy(deploy, options) {
   if (!deploy.enabled) return { ok: true, detail: 'no deploy configured' };
   const log = options.log ?? (() => {});
   const run = options.shell ?? shell;
-  const [command, ...args] = deploy.command;
+  // **A declared target becomes the command; it never merges with one** (DESIGN.md §10.2). The
+  // config refuses a section carrying both, so reaching here with a target means there is no
+  // `command` to reconcile it with. An operator who names a host gets the argv this build knows how
+  // to write, and the log line below prints it in full — a derived command an operator cannot see is
+  // one they cannot check.
+  const argv = deploy.target === null ? deploy.command : deployCommandFor(deploy.target);
+  const [command, ...args] = argv;
   log(`deploying: ${command} ${args.join(' ')}`);
   const deployed = await run(command, args, { cwd: options.cwd, timeoutMs: deploy.timeoutMs });
   if (!deployed.ok) {
@@ -9177,6 +9184,17 @@ async function runInvocation(argv, io, crash) {
   const clearOutcomes = new Map();
 
   /**
+   * The tree this attempt's gates actually ran in, as `gateTree` reported it.
+   *
+   * The candidate's root for a top-level run and the component's project inside it for a nested
+   * one. Held rather than recomputed because the clear and the read happen in different functions,
+   * and the one time they each worked it out themselves they disagreed (PLAN item 147).
+   *
+   * @type {string | null}
+   */
+  let gatedTree = null;
+
+  /**
    * The immutable subject this iteration's gates and Panel are judging (REVIEW F14).
    *
    * **Before the first snapshot this is the main tree**, because the pre-loop phases — the PRD
@@ -9383,7 +9401,7 @@ async function runInvocation(argv, io, crash) {
    *   is a snapshot worktree — so leaving this to default would write the run's ratchet evidence
    *   into a directory that is deleted when the run ends, and `driveRun` reads it from the Driver's.
    * @returns {Promise<{ ok: boolean, results: GateResult[], passing: Set<string>,
-   *   identities: GateIdentity[] }>}
+   *   identities: GateIdentity[], dir: string }>} `dir` is the tree it gated, so no caller recomputes it
    */
   const gateTree = async (dir, runStateDir = path.join(dir, '.meeseeks')) => {
     const treeStateDir = path.join(dir, '.meeseeks');
@@ -9692,7 +9710,13 @@ async function runInvocation(argv, io, crash) {
       // must not attribute a digest to something that never wrote it.
       reports: ownedReports.get(result.name) ?? [],
     }));
-    return { ok: results.every((result) => result.ok), results, passing: credited, identities };
+    // **The tree this gated, returned rather than recomputed.** The clear outcome is keyed by it and
+    // the report collection is keyed by it, and those two happen in different functions minutes
+    // apart. When the caller worked it out a second time they disagreed for a component sub-run —
+    // gates cleared `<candidate>/packages/textstats` while the reader looked in `<candidate>` and
+    // refused every report as uncleared. One source of truth is the fix; a convention that both
+    // sides compute the same string is what failed.
+    return { ok: results.every((result) => result.ok), results, passing: credited, identities, dir };
   };
 
   /**
@@ -10053,6 +10077,9 @@ async function runInvocation(argv, io, crash) {
         // top-level run; for a component it is the difference between gating the code the builder
         // wrote and gating an empty repository root.
         const gated = await gateTree(candidateProjectDir(candidate.dir, await runPrefix()), meeseeksDir);
+        // Recorded from what `gateTree` reports, never recomputed: `readTestReports` has to read
+        // the tree the gates actually cleared, and those two used to derive it separately.
+        gatedTree = gated.dir;
         return { ok: gated.ok, results: gated.results, identities: gated.identities };
       },
       /**
@@ -10173,21 +10200,25 @@ async function runInvocation(argv, io, crash) {
         // `effects.gates()`, so the entry is always there in practice; the throw exists for the
         // ordering somebody changes later, and the loop reads it as an unreadable report, which is
         // the correct reading — the reports cannot be attributed to an attempt that never began.
-        const cleared = clearOutcomes.get(candidate.dir);
+        // The tree the gates cleared, which for a component is inside the candidate rather than
+        // its root. `null` means gates have not run this attempt, which the throw below is already
+        // the correct answer to.
+        const gatedFrom = gatedTree ?? candidate.dir;
+        const cleared = clearOutcomes.get(gatedFrom);
         if (cleared === undefined) {
           throw new DriverError(
             'the declared report paths were never cleared for this attempt, so nothing found at them can be read ' +
               "as this attempt's evidence",
           );
         }
-        const collected = collectReports(reportFiles(candidate.dir), cleared);
+        const collected = collectReports(reportFiles(gatedFrom), cleared);
         // Named, not merely withheld. The gate result carries this to the builder; this line
         // carries it to the operator, who is the only one who can go and free the file.
         if (collected.uncleared.length > 0) {
           write(
             verbatim(
               `refusing every test report this attempt: ${collected.uncleared
-                .map((file) => path.relative(candidate.dir, file))
+                .map((file) => path.relative(gatedFrom, file))
                 .join(', ')} could not be cleared before the gates ran, so what is there now may be the previous ` +
                 "attempt's",
             ),

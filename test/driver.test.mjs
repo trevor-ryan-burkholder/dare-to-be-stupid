@@ -4084,6 +4084,7 @@ describe('the candidate is sealed too, not only the main tree (REVIEW F14)', () 
     /** @type {import('../scripts/config.mjs').DeployConfig} */
     const deploy = {
       enabled: true,
+      target: null,
       command: ['ssh', 'deploy@box', '/srv/app/deploy.sh'],
       url: 'http://127.0.0.1:8731',
       smoke: [{ path: '/health', status: 200 }],

@@ -90,7 +90,7 @@ describe('defaultConfig', () => {
       childTimeoutMs: 1_800_000,
       gateTimeoutMs: 2_700_000,
       oracle: { enabled: false },
-      deploy: { enabled: false, command: [], url: '', smoke: [], timeoutMs: 600000 },
+      deploy: { enabled: false, command: [], target: null, url: '', smoke: [], timeoutMs: 600000 },
       extractTests: true,
       chaos: 1,
       realityCheck: { after: 3 },
@@ -165,7 +165,7 @@ describe('defaultConfig', () => {
   // nothing. See DESIGN.md §10.1.
   describe('the deploy contract', () => {
     it('defaults to an argv array, a blank url and no smoke checks', () => {
-      assert.deepStrictEqual(defaultConfig().deploy, { enabled: false, command: [], url: '', smoke: [], timeoutMs: 600000 });
+      assert.deepStrictEqual(defaultConfig().deploy, { enabled: false, command: [], target: null, url: '', smoke: [], timeoutMs: 600000 });
     });
 
     // The deploy command was the one call in the driver with no ceiling on it. `tokenCeiling`
@@ -248,7 +248,66 @@ describe('defaultConfig', () => {
 
     it('leaves a disabled deploy alone, so an incomplete section is not an error until it is used', () => {
       // Refusing an unused half-written section would fail runs that never deploy.
-      assert.deepStrictEqual(validateConfig({ deploy: { enabled: false } }).deploy, { enabled: false, command: [], url: '', smoke: [], timeoutMs: 600000 });
+      assert.deepStrictEqual(validateConfig({ deploy: { enabled: false } }).deploy, { enabled: false, command: [], target: null, url: '', smoke: [], timeoutMs: 600000 });
+    });
+  });
+
+  // 0.269.0 — DESIGN.md §10.2. Until then an operator had to hand-write the whole invocation,
+  // including the rsync trailing slashes and the ssh batch-mode flag, either of which is silent
+  // when wrong: the first publishes to the wrong path, the second turns a passphrase prompt into a
+  // run that hangs until its ceiling kills it.
+  describe('a declared deploy target', () => {
+    const TARGET = { kind: 'ssh-static', host: '203.0.113.10', dir: 'dist', path: '/srv/preview/site' };
+    /** @param {Record<string, unknown>} over */
+    const withTarget = (over = {}) => ({
+      deploy: { enabled: true, target: { ...TARGET, ...over }, url: 'http://203.0.113.10', smoke: [{ path: '/', status: 200 }] },
+    });
+
+    it('accepts a host instead of a command, and defaults the user to root', () => {
+      // Root by key is what a DigitalOcean image ships with, and it is the case this profile was
+      // proved against — so it is the default rather than a required field.
+      const deploy = validateConfig(withTarget()).deploy;
+      assert.equal(deploy.target?.user, 'root');
+      assert.deepStrictEqual(deploy.command, []);
+    });
+
+    it('refuses a section carrying both a target and a command', () => {
+      // Two answers to one question. Picking one silently would run something its author did not
+      // write, which is the same reason a `command` string is refused rather than split on spaces.
+      assert.throws(
+        () => validateConfig({ deploy: { ...withTarget().deploy, command: ['./deploy.sh'] } }),
+        /both set/i,
+      );
+    });
+
+    it('refuses an enabled deploy with neither', () => {
+      assert.throws(
+        () => validateConfig({ deploy: { enabled: true, url: 'http://203.0.113.10', smoke: [{ path: '/', status: 200 }] } }),
+        /neither deploy.target nor deploy.command/i,
+      );
+    });
+
+    it('refuses a kind this build has no argv for, rather than guessing one', () => {
+      // A typo is otherwise indistinguishable from a profile that does not exist — the reasoning
+      // `resolveToolchain` already uses for an unknown toolchain name.
+      assert.throws(() => validateConfig(withTarget({ kind: 'ssh-statik' })), /must be one of/i);
+    });
+
+    it('holds the target host to the same pre-production rule as the url', () => {
+      // The rule is about what is pointed at, not about which field spells it.
+      assert.throws(() => validateConfig(withTarget({ host: 'app.production.example.com' })), /pre-production only/i);
+    });
+
+    it('requires the published directory to be named rather than inferred', () => {
+      // `dist`, `out`, `build` and `.next` all exist in the wild. Guessing is how a deploy
+      // publishes the wrong directory and still reports success.
+      assert.throws(() => validateConfig(withTarget({ dir: '' })), /deploy.target.dir/);
+      assert.throws(() => validateConfig(withTarget({ path: '' })), /deploy.target.path/);
+      assert.throws(() => validateConfig(withTarget({ host: '  ' })), /deploy.target.host/);
+    });
+
+    it('refuses an unknown key inside the target, like every other section', () => {
+      assert.throws(() => validateConfig(withTarget({ pathh: '/srv' })), /deploy.target/);
     });
   });
 

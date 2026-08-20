@@ -2418,6 +2418,104 @@ satisfy seven gates from an empty directory inside its stall budget is the next 
 this item's claim.
 
 
+### 147. The gates cleared one tree and the reader looked in another — **DONE (0.269.0)** (PLAN item 24)
+
+**Origin:** Phase 1, 20 Aug 2026 — and this one was **mine**, introduced by item 146's repair an hour
+earlier and caught by the very next run of the same dogfood.
+
+**The defect.** `gateTree(dir)` clears the declared report paths before gating and records what it
+managed to remove, keyed by the tree it gated. `readTestReports` then looks that outcome up — and
+computed the key **separately**, from `candidate.dir`. Item 146 changed what the gates are handed to
+`candidateProjectDir(candidate.dir, prefix)`. For a top-level run the two are the same string, so
+3464 tier-1 and 310 tier-2 tests agreed. For a component they are not, and the reader found no clear
+outcome for the tree it was asking about:
+
+```
+ABORTED: test report could not be read: the declared report paths were never
+cleared for this attempt, so nothing found at them can be read as this attempt's evidence
+```
+
+Fail-closed, correctly, on a run whose gates had just executed properly for the first time.
+
+**The repair is structural rather than conventional.** `gateTree` now returns `dir` — the tree it
+actually gated — and the loop records it. A convention that two functions independently compute the
+same string is what failed; one source of truth is what replaces it. That is the same shape as the
+seal's `SealIo` earlier today, where the seal was taken through one filesystem view and verified
+through another.
+
+**Recorded plainly because it is the third instance of one blind spot.** Items 145, 146 and 147 are
+all "a component's directory offset was computed in a place that assumed there wasn't one", and each
+was invisible until a real nested run existed. Unit tests could not see any of them: at a repository
+root every one of these pairs is the same value, so the tests were not wrong, they were *unable* to
+be wrong.
+
+**Validation:** lint, typecheck, `npm test` **3464 of 3464**.
+
+
+### 148. A declared deploy target, so an operator writes a host — **DONE (0.269.0)** (operator request, 20 Aug 2026)
+
+**Origin:** the operator asked how a plugin user could deploy by putting a droplet IP in the config
+instead of hand-writing an argv. `deploy.command` required the whole invocation, and every part of it
+is silent when wrong: the rsync trailing slashes decide whether the build's *contents* or the build
+*directory* lands at the destination, and a missing `BatchMode=yes` turns a passphrase prompt into a
+run that hangs until its ceiling kills it — which `runDeploy`'s own timeout message already says.
+
+**`deploy.target` names a host and the build writes the command** (`scripts/deploy-target.mjs`,
+`DESIGN.md` §10.2). Exactly one of `target` and `command`, refused rather than merged: a section
+carrying both has two answers to "what does this run". An unknown `kind` is refused by name, and
+`dir` is required rather than inferred — `dist`, `out`, `build` and `.next` all exist, and guessing
+is the trap §3.8.3 refused when it declined to invent `vale`'s command line.
+
+**Proved against a real host the same day, which is the only reason it ships as verified.**
+`VERIFIED_DEPLOY_TARGETS` is deliberately separate from the kinds this build can emit. `ssh-static`
+graduated on 20 Aug 2026: the derived argv exited 0 against an Ubuntu 22.04.5 DigitalOcean droplet
+already serving `/srv/preview/site` via `python3 -m http.server`, and the host then answered **200**
+on `/` and `/health` with exactly the bytes pushed. **The command executed was the one
+`deployCommandFor` emits**, not a hand-written equivalent — a profile proved by a different command
+than it produces is not proved at all.
+
+**No credential enters meeseeks**, which is why this is not item 106's territory: `ssh` uses the
+operator's own key and agent, no secret reaches a role, and no capability is minted. The Driver runs
+a command; it is not granted access to anything.
+
+**Two things observed on the operator's droplet and reported rather than changed.** Its web server is
+`python3 -m http.server` started by hand inside a transient login scope — seven days uptime, and it
+will not survive a reboot. And `ufw` allows **2375/tcp and 2376/tcp from anywhere**, the Docker
+daemon ports; nothing is listening on them today, but if Docker is ever installed with its TCP socket
+enabled that is unauthenticated remote root. Neither was touched.
+
+**Validation:** lint, typecheck, `npm test` 3471 of 3471 before the entry-point rule, `deploy-target`
+7 of 7, `config` 146 of 146, and the live droplet deploy above.
+
+### 149. Preflight was a silent no-op on any path with a space — **DONE (0.269.0)** (feature audit, 20 Aug 2026)
+
+**Origin:** the 30-feature evidence audit, confirmed by reproduction before it was believed.
+
+**The defect.** `scripts/init.mjs` decided whether it had been invoked directly with
+`` import.meta.url === `file://${process.argv[1]}` ``. String concatenation is not a URL for any path
+needing percent-encoding — a space, a `#`, anything non-ASCII — and it is **never** one on Windows,
+where argv[1] is `C:\...` while `import.meta.url` is `file:///C:/...`.
+
+When that comparison is false the file runs `main` for nobody: it prints nothing and **exits 0**.
+`commands/meeseeks.md` reads a zero exit as *preflight passed* and shells straight to the driver, so
+**all thirteen refusals are bypassed silently** — on a plugin installed under a path with a space in
+it, which `~/.claude/plugins/cache/` under a real user's name routinely is.
+
+Reproduced: this tree copied to a directory named `plug in`, run in a non-git directory, printed
+nothing and exited 0; the same file at an unspaced path printed thirteen checks and exited 1. After
+the repair the spaced path prints thirteen checks and exits 1.
+
+**`driver.mjs`, `configure.mjs` and `health-probe.mjs` already guarded themselves correctly.**
+`init.mjs` was the only one that did not, which is why the test is a **positional rule over every
+script** rather than a case about this file: no script may build a `file:` URL by concatenation, and
+every script that inspects `process.argv[1]` must resolve it through `pathToFileURL`. The second half
+is the neighbour — deleting the comparison entirely would satisfy the first while leaving a script
+that never runs its own `main`.
+
+The rule immediately flagged the repair's own explanatory comment, so it strips comments first: a
+rule that cannot tell an example from an instance would forbid describing the bug.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
@@ -3224,9 +3322,12 @@ both when the message reverts and when the absolute deadline is removed.
 manifest and writes their packages is the next slice, and it is gated on that decision rather than
 on this code.
 
-**Still open on this item:** wiring acquisition into the loop under item 106's capability
-decision, the mutable-source and non-retainable-source fixtures that depend on that wiring, and one
-live artifact run.
+**Still open on this item:** wiring acquisition into the loop, the mutable-source and
+non-retainable-source fixtures that depend on that wiring, and one live artifact run.
+
+**No longer gated on item 106, which was REJECTED on 20 Aug 2026.** The capability decision this
+clause waited for has been made: no job needs an authenticated source, so acquisition proceeds on the
+public-HTTPS profile that is already built and measured. Both remaining halves are eligible work.
 - **Prose gates**, flagship first: a **citation resolver** (the quoted text actually appears in the cited
   source — deterministic, and exactly the "reporter emits pass/fail evidence" shape 34 names), plus
   link-check, style (vale), word-count floors, and machine-readable claim-consistency checks. For
@@ -3463,7 +3564,39 @@ and **fails on an unenforced one**; a staleness gate refuses a constitution that
 enforcement set (the `release-check` lesson — a discipline that keeps failing becomes a gate); and no
 reviewer prompt gains constitutional text as a side effect.
 
-### 106. Job-scoped external-resource capabilities — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: PARKED (post-DoD, admission-gated)
+### 106. Job-scoped external-resource capabilities — **REJECTED (20 Aug 2026)** by this item's own closing clause; reopens the moment a concrete authenticated job appears
+
+**Closed REJECTED, 20 August 2026, on the clause this item wrote for itself:** *"Close this item as
+REJECTED if no concrete authenticated job appears."* None has.
+
+**The admission has three conditions and the operator's authorization is the last of them.** The
+binding one is the second: item **34** or **49** must demonstrate *a concrete job that cannot meet
+its accepted DoD with public unauthenticated sources*. Nothing does. The public-HTTPS retrieval
+profile is built and measured (item 49, `DESIGN.md` §3.8.6), the research and artifact jobs cite
+public sources, and meeseeks builds greenfield targets from a PRD — it has no reason to read a
+private resource.
+
+**Asked directly, the operator had no case** (20 Aug 2026), offering "GitHub?" as a possibility. This
+item is explicit that such an answer is not evidence: *"A configured connector, an available MCP
+server, or general product ambition is not evidence."* Building a credential broker against a
+maybe is the speculative infrastructure `CLAUDE.md` refuses, and it is the largest, most dangerous
+surface in the plan — a raw credential that must stay outside a role's environment, argv, settings,
+prompt, tree, logs and receipts.
+
+**GitHub would also be the wrong first capability if one were ever needed**, and the reason is worth
+keeping: a personal access token is *broad* and *write-capable*, while this item requires "an exact,
+revocable grant from one sealed job to one external resource and operation class". A token that
+reaches every repository an account can see is the opposite of exact. The shape that would fit is
+narrower — **one authenticated document for a research job**, read-only, one resource, where the
+interesting question is the one item 34 already names: whether policy permits *retaining* the
+evidence at all, and `unverifiable` when it does not.
+
+**What this changes.** Item 106 leaves the DoD. Item **49**'s remaining acquisition wiring was gated
+on "item 106's capability decision" — the decision is made, and the wiring proceeds on the public
+profile alone. Item **86**'s admission list is unaffected.
+
+**Reopening is cheap and the bar is unchanged**: a job that cannot meet its DoD without a credential,
+named. Until then this is a capability nothing has asked for.
 
 **Problem solved:** item **34** deliberately starts with public HTTPS, while later research or artifact
 jobs may need one authenticated document, repository, account, or service. Supplying an ambient token,
