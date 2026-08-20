@@ -73,6 +73,7 @@ describe('defaultConfig', () => {
       erd: '',
       schemaIntrospect: [],
       dod: '',
+      toolchain: '',
       // Empty means the component phase does not exist: no nested runs, no flag demanded, no
       // behaviour change from a pre-components build.
       components: [],

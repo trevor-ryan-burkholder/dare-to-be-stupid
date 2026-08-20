@@ -2092,10 +2092,31 @@ work is entirely at the toolchain layer; **no spine change, and a change that ne
   claims remains a cold-review question; a model assertion must not masquerade as deterministic
   evidence.
 - **A prose/artifact toolchain** (`scripts/toolchains/prose.mjs`) on the existing fixed contract (detect,
-  map operations, name a reporter — the shape dotnet proved). **Dependency to resolve first:** detection
-  here is weak (a manuscript directory is not a `package.json`), so this likely needs the
-  **architect-declared toolchain** path, which `toolchains/index.mjs` notes is *not built*. Build that or
-  gate 49 behind an explicit config key; do not sniff.
+  map operations, name a reporter — the shape dotnet proved). **This prerequisite is now built
+  (0.241.0):** `config.toolchain` declares the toolchain and `resolveToolchain(root, declared)` honours
+  it, so 49's prose toolchain does not have to be detectable to be selectable. Detection here is weak — a
+  manuscript directory is not a `package.json` — and the resolution is *do not sniff*, as this item asked.
+
+**Prerequisite slice landed, 0.241.0 — the architect-declared toolchain (`DESIGN.md` §3.8.2).**
+`config.toolchain` (`scripts/config.mjs`) declares it; `resolveToolchain(root, declared)`
+(`scripts/toolchains/index.mjs`) honours it. Three refusals, each with a red proof: a declaration wins
+outright rather than being weighed against detection; agreement is computed from **every** sighting,
+not the top-ranked one, because the mixed repository is the entire reason a declaration exists; an
+unknown name throws `ToolchainError` rather than falling back, since a typo is otherwise
+indistinguishable from no declaration.
+
+The threading was the load-bearing half. Nine sites in `driver.mjs` resolve a toolchain and most sit
+inside `runInvocation`, which no tier-1 test executes — so it is held by a **positional** rule over the
+driver's source (`test/driver.test.mjs`), not a list of call sites, for the reason §6 gives about
+enumeration. Its first version checked only `resolveToolchain(` and passed with
+`gateSummary(cwd, meeseeksDir)` reverted, because a helper resolving *indirectly* never spells the
+word; widening it to the eight indirect resolvers immediately found two real defects — both
+`builderSystemPrompt` call sites had been given the parameter and never fed it.
+
+**Validation:** `npm run lint`, `npm run typecheck` clean. `npm test` **3160 of 3160**. Red proofs:
+four mutations of `resolveToolchain` (declaration ignored → 4 failures; unknown name accepted, primary
+sighting only, `detected` reporting the choice → 1 each) and nine mutations of the threading, one per
+resolution site, each failing the positional rule. `npm run release-check` passed.
 - **Prose gates**, flagship first: a **citation resolver** (the quoted text actually appears in the cited
   source — deterministic, and exactly the "reporter emits pass/fail evidence" shape 34 names), plus
   link-check, style (vale), word-count floors, and machine-readable claim-consistency checks. For

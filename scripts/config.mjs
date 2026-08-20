@@ -45,7 +45,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
  *   builderModel: string, reviewerModel: string, designModel: string,
  *   prdModel: string, lessonModel: string,
  *   qualityPlugins: string[], extraGates: { name: string, command: string[] }[], childEnvAllow: string[],
- *   erd: string, schemaIntrospect: string[], dod: string,
+ *   erd: string, schemaIntrospect: string[], dod: string, toolchain: string,
  *   components: ComponentConfig[],
  *   effort: Record<string, string>, oracle: OracleConfig,
  *   panelCarry: PanelCarryConfig, sandbox: SandboxConfig,
@@ -225,6 +225,12 @@ export function defaultConfig() {
     // Where the operator's additive done-bar lives, when it is not the conventional `DOD.md` beside
     // the PRD (item 48). Empty means the convention; an absent file means there is no extra bar.
     dod: '',
+    // The toolchain this project is, when the tree cannot be trusted to say (§3.7, §3.8, item 49).
+    // Empty means detect. A declaration wins outright and detection only reports whether it agrees:
+    // an operator knows what they are building, and a greenfield tree on iteration 1 knows nothing.
+    // Case C is the reason this exists — an empty repository defaulted to node, the brief told the
+    // builder its gates were npm, and the builder wrote TypeScript for somebody who asked for C#.
+    toolchain: '',
     // Empty by default, and an empty list changes nothing at all: no phase runs, no flag is
     // demanded, and a pre-components repository behaves exactly as it always did. Declaring one
     // is only half a decision — components are nested runs, so a run that declares any refuses
@@ -612,6 +618,7 @@ export function validateConfig(input) {
   if ('childEnvAllow' in source) merged.childEnvAllow = requireStringArray(source.childEnvAllow, 'childEnvAllow');
   if ('erd' in source) merged.erd = requireString(source.erd, 'erd');
   if ('dod' in source) merged.dod = requireString(source.dod, 'dod');
+  if ('toolchain' in source) merged.toolchain = requireString(source.toolchain, 'toolchain');
   if ('schemaIntrospect' in source) {
     merged.schemaIntrospect = requireStringArray(source.schemaIntrospect, 'schemaIntrospect');
   }

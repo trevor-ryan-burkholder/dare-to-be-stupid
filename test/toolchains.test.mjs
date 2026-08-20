@@ -739,3 +739,67 @@ describe('the node CI detectors, and why two of them stay narrow', () => {
     assert.deepEqual(operations('- uses: actions/checkout@v4'), []);
   });
 });
+
+describe('the architect declares the toolchain and detection confirms (item 49, §3.7)', () => {
+  /** @param {Record<string, string>} files @returns {string} */
+  const treeWith = (files) => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-declared-'));
+    temporaryDirs.push(dir);
+    for (const [name, body] of Object.entries(files)) writeFileSync(path.join(dir, name), body, 'utf8');
+    return dir;
+  };
+
+  it('lets a declaration win over what the tree looks like', () => {
+    // The case that motivated this: a .NET service with a JavaScript frontend resolved to node
+    // because node is first in the array, and nothing said a choice had been made.
+    const tree = treeWith({ 'package.json': '{"name":"frontend"}', 'api.csproj': '<Project />' });
+    const resolved = resolveToolchain(tree, 'dotnet');
+    assert.equal(resolved.toolchain.name, 'dotnet');
+    // Detection ranked node first and saw dotnet as an alternative. Agreement considers every
+    // sighting, because the mixed repository is the whole reason a declaration exists and reporting
+    // 'detection found node' here would understate what detection actually saw.
+    assert.match(resolved.evidence, /^declared dotnet, and detection agrees/);
+    assert.equal(resolved.detected, true);
+    assert.deepEqual(resolved.alternatives.map((entry) => entry.toolchain.name), ['node']);
+  });
+
+  it('stands by a declaration the tree shows no sign of, and says so', () => {
+    // Greenfield iteration 1: the repository is a PRD. An operator who asked for C# must not be
+    // handed npm gates because the tree is empty -- case C, exactly.
+    const tree = treeWith({ 'PRD.md': '# Build a C# service\n' });
+    const resolved = resolveToolchain(tree, 'dotnet');
+    assert.equal(resolved.toolchain.name, 'dotnet');
+    assert.match(resolved.evidence, /declared dotnet; detection found nothing\. The declaration stands/);
+    // `detected` is a statement about the tree, not confidence in the choice.
+    assert.equal(resolved.detected, false);
+  });
+
+  it('reports the disagreement as an alternative rather than swallowing it', () => {
+    const tree = treeWith({ 'package.json': '{"name":"app"}' });
+    const resolved = resolveToolchain(tree, 'dotnet');
+    assert.equal(resolved.toolchain.name, 'dotnet');
+    assert.match(resolved.evidence, /detection found node/);
+    assert.deepEqual(resolved.alternatives.map((entry) => entry.toolchain.name), ['node']);
+  });
+
+  it('refuses an unknown declaration rather than falling back to detection', () => {
+    // A typo would otherwise be indistinguishable from no declaration, and the run would proceed on
+    // a toolchain nobody chose while the operator believed they had chosen one.
+    const tree = treeWith({ 'package.json': '{"name":"app"}' });
+    assert.throws(
+      () => resolveToolchain(tree, 'rust'),
+      (error) => error instanceof ToolchainError && error.message.includes('is not one this build implements'),
+    );
+  });
+
+  it('detects as before when nothing is declared', () => {
+    // The benign neighbour: an absent declaration changes nothing.
+    const tree = treeWith({ 'package.json': '{"name":"app"}' });
+    for (const declaration of [undefined, '', '   ']) {
+      const resolved = resolveToolchain(tree, declaration);
+      assert.equal(resolved.toolchain.name, 'node');
+      assert.equal(resolved.detected, true);
+      assert.equal(resolved.evidence.includes('declared'), false);
+    }
+  });
+});

@@ -113,9 +113,10 @@ export { E2E_REPORT, ToolchainError, UNIT_REPORT };
  *
  * §3.8 predicted this exact moment: *"Node is the default because it is the only
  * implementation. When a second one lands that stops being obvious, and the answer is §3.7's:
- * the architect declares it and detection confirms."* **That declaration is not built.** Until
- * it is, a mixed repository is driven by the node toolchain and nothing says so out loud,
- * which is the one silent thing in this module.
+ * the architect declares it and detection confirms."* That declaration is `config.toolchain`,
+ * and {@link resolveToolchain} honours it — so a mixed repository is no longer driven by a
+ * guess with nothing said out loud. The guess is still the *default*; what changed is that it
+ * is now overridable, and that the override reports the disagreement rather than hiding it.
  *
  * Node stays first regardless, because reversing the order would trade a rare wrong answer for
  * a common one: far more repositories carry an incidental `package.json` than carry an
@@ -169,13 +170,65 @@ export function detectToolchain(root) {
 }
 
 /**
- * The toolchain to drive this tree with, detected or defaulted.
+ * The toolchain to drive this tree with: declared, detected, or defaulted.
  *
  * @param {string} root
+ * @param {string} [declared] the operator's `toolchain` config key, if set
  * @returns {{ toolchain: Toolchain, evidence: string, detected: boolean,
  *             alternatives: { toolchain: Toolchain, evidence: string }[] }}
  */
-export function resolveToolchain(root) {
+export function resolveToolchain(root, declared) {
+  // **The architect declares it and detection confirms** (§3.7, §3.8). This module has asked for
+  // this since the second toolchain landed, and until now a mixed repository — a .NET service with
+  // a JavaScript frontend — silently resolved to node because node is first in the array.
+  //
+  // A declaration is **not a hint**. It wins outright, and detection's only remaining job is to say
+  // whether it agrees: a declared toolchain the tree shows no sign of is reported as unconfirmed
+  // rather than overridden, because the operator knows what they are building and a greenfield tree
+  // on iteration 1 knows nothing. Silently preferring detection is exactly how case C put a
+  // TypeScript service in front of somebody who asked for C#.
+  //
+  // An unknown name is refused rather than ignored. Falling back to detection there would make a
+  // typo indistinguishable from no declaration, and the run would proceed on a toolchain nobody
+  // chose while the operator believed they had chosen one.
+  if (typeof declared === 'string' && declared.trim() !== '') {
+    const name = declared.trim();
+    const chosen = TOOLCHAINS.find((toolchain) => toolchain.name === name);
+    if (chosen === undefined) {
+      throw new ToolchainError(
+        `the declared toolchain ${JSON.stringify(name)} is not one this build implements. Known ` +
+          `toolchains: ${TOOLCHAINS.map((toolchain) => toolchain.name).join(', ')}. Refusing to fall back ` +
+          'to detection, because a typo here is indistinguishable from no declaration at all.',
+      );
+    }
+    const confirmed = detectToolchain(root);
+    // **Detection agrees if it saw the declared toolchain at all, not only if it ranked it first.**
+    // The mixed repository is the whole reason a declaration exists — a .NET service with a
+    // JavaScript frontend, where node wins on array order — and reporting "detection found node"
+    // there understates what detection actually saw. It saw both; the operator settled which one
+    // the run is for.
+    const sightings = confirmed === null ? [] : [confirmed, ...confirmed.alternatives];
+    const seen = sightings.find((entry) => entry.toolchain.name === name);
+    const agrees = seen !== undefined;
+    const sighting =
+      confirmed === null
+        ? 'found nothing'
+        : `found ${sightings.map((entry) => entry.toolchain.name).join(' and ')}`;
+    return {
+      toolchain: chosen,
+      evidence: agrees
+        ? `declared ${name}, and detection agrees: ${seen?.evidence ?? ''}`
+        : `declared ${name}; detection ${sighting}. The declaration stands - an operator knows what ` +
+          'they are building and a tree does not yet',
+      // `detected` stays a statement about the *tree*, never about confidence in the choice. A
+      // declared toolchain the tree does not show is genuinely undetected, and a caller arming a
+      // capability on detection must keep seeing that.
+      detected: agrees,
+      // Everything detection saw that is not the declared one, so a reader can tell what was
+      // overruled. Empty when detection found nothing, and never containing the declaration itself.
+      alternatives: sightings.filter((entry) => entry.toolchain.name !== name),
+    };
+  }
   const found = detectToolchain(root);
   if (found !== null) {
     // The ambiguity travels in `evidence` because that is the field the driver already prints

@@ -4482,10 +4482,12 @@ export const RED_EVIDENCE = 'red-evidence.json';
  *
  * @param {string} root the tree being gated
  * @param {string} meeseeksDir where that tree's reports are written
+ * @param {string} [declared] the architect's toolchain declaration, when the PRD names one.
+ *   Optional because most trees are detectable; a declaration exists for the ones that are not.
  * @returns {Gate[]}
  */
-export function commandGates(root, meeseeksDir) {
-  return gatesFor(resolveToolchain(root).toolchain, { root, meeseeksDir }).gates;
+export function commandGates(root, meeseeksDir, declared) {
+  return gatesFor(resolveToolchain(root, declared).toolchain, { root, meeseeksDir }).gates;
 }
 
 /**
@@ -4501,11 +4503,13 @@ export function commandGates(root, meeseeksDir) {
  * @param {string[] | undefined} changedFiles measured from the last ratchet-advancing commit,
  *   or `undefined` when no such commit exists yet — a distinction the consuming gate reports as
  *   a different sentence, because "no baseline" and "nothing changed" are different facts
+ * @param {string} [declared] the architect's toolchain declaration, when the PRD names one.
+ *   Optional because most trees are detectable; a declaration exists for the ones that are not.
  * @returns {{ gates: Gate[], skipped: { name: string, reason: string }[] }}
  */
-export function conditionalCommandGates(root, meeseeksDir, changedFiles) {
+export function conditionalCommandGates(root, meeseeksDir, changedFiles, declared) {
   return gatesFor(
-    resolveToolchain(root).toolchain,
+    resolveToolchain(root, declared).toolchain,
     { root, meeseeksDir, changedFiles },
     CONDITIONAL_GATE_OPERATIONS,
   );
@@ -4666,10 +4670,11 @@ export function firstIterationTask(unitCommand) {
 /**
  * @param {string} root
  * @param {string} meeseeksDir
+ * @param {string} [declared] the architect's toolchain declaration, when the PRD names one
  * @returns {string | null} the unit gate's command line, or null when the toolchain declines it
  */
-export function unitGateCommand(root, meeseeksDir) {
-  const found = gateSummary(root, meeseeksDir).gates.find((gate) => gate.name === 'unit');
+export function unitGateCommand(root, meeseeksDir, declared) {
+  const found = gateSummary(root, meeseeksDir, declared).gates.find((gate) => gate.name === 'unit');
   return found === undefined ? null : found.command.join(' ');
 }
 
@@ -4682,10 +4687,12 @@ export function unitGateCommand(root, meeseeksDir) {
  *
  * @param {string} root
  * @param {string} meeseeksDir
+ * @param {string} [declared] the architect's toolchain declaration, when the PRD names one.
+ *   Optional because most trees are detectable; a declaration exists for the ones that are not.
  * @returns {{ toolchain: string, detected: boolean, evidence: string, gates: Gate[], skipped: { name: string, reason: string }[] }}
  */
-export function gateSummary(root, meeseeksDir) {
-  const resolved = resolveToolchain(root);
+export function gateSummary(root, meeseeksDir, declared) {
+  const resolved = resolveToolchain(root, declared);
   const { gates, skipped } = gatesFor(resolved.toolchain, { root, meeseeksDir });
   return {
     toolchain: resolved.toolchain.name,
@@ -4804,10 +4811,11 @@ function anySourceMatches(dir, depth, predicate) {
  *
  * @param {string} cwd
  * @param {readonly string[] | null} [capabilities] the resolved set (§3.7), or null for no filter
+ * @param {string} [declared] the architect's toolchain declaration, when the PRD names one
  * @returns {{ workflows: string[], covered: string[], missing: string[],
  *            excluded: { operation: string, why: string }[] }}
  */
-export function inspectCiWorkflows(cwd, capabilities = null) {
+export function inspectCiWorkflows(cwd, capabilities = null, declared = undefined) {
   const workflowDir = path.join(cwd, '.github', 'workflows');
   const workflows = existsSync(workflowDir)
     ? readdirSync(workflowDir).filter((name) => /\.ya?ml$/.test(name)).sort()
@@ -4827,11 +4835,11 @@ export function inspectCiWorkflows(cwd, capabilities = null) {
   }
   const text = steps.join('\n');
 
-  const declared = resolveToolchain(cwd).toolchain.ci;
+  const declaredCi = resolveToolchain(cwd, declared).toolchain.ci;
 
   /** @type {{ operation: string, why: string }[]} */
   const excluded = [];
-  const required = declared.filter((entry) => {
+  const required = declaredCi.filter((entry) => {
     if (capabilities === null) return true;
     const verdict = gateApplies(entry.operation, capabilities);
     if (!verdict.applies) excluded.push({ operation: entry.operation, why: verdict.why });
@@ -4955,10 +4963,11 @@ export function findHealthPath(cwd) {
  * that is merely unstarted.
  *
  * @param {string} cwd
+ * @param {string} [declared] the architect's toolchain declaration, when the PRD names one
  * @returns {string | null}
  */
-export function startCommand(cwd) {
-  return resolveToolchain(cwd).toolchain.startCommand(cwd);
+export function startCommand(cwd, declared = undefined) {
+  return resolveToolchain(cwd, declared).toolchain.startCommand(cwd);
 }
 
 /** Where the health probe lives, resolved against this file so it works from any cwd. */
@@ -5058,7 +5067,7 @@ export function hasStructuredLogging(contents) {
  * honest proxy, and it is recorded here as a proxy rather than dressed up as evidence.
  *
  * @param {string} cwd
- * @param {{ run?: import('./plugins.mjs').Runner, probeTimeoutMs?: number }} [options]
+ * @param {{ run?: import('./plugins.mjs').Runner, probeTimeoutMs?: number, toolchain?: string }} [options]
  * @returns {Promise<GateResult>}
  */
 export async function observabilityGate(cwd, options = {}) {
@@ -5073,7 +5082,7 @@ export async function observabilityGate(cwd, options = {}) {
     return { name: 'observability', ok: false, status: 1, detail: `missing: ${missing.join(', ')}` };
   }
 
-  const start = startCommand(cwd);
+  const start = startCommand(cwd, options.toolchain);
   if (options.run === undefined || start === null) {
     // Nothing declares how to start this application, so there is nothing to ask. The
     // static finding stands, and says so rather than claiming it was probed.
@@ -5174,12 +5183,12 @@ export function openApiDocument(cwd) {
  * @param {string} cwd
  * @param {{
  *   run?: import('./plugins.mjs').Runner, capabilities?: string[] | null, probeTimeoutMs?: number,
- *   meeseeksDir?: string, oracle?: boolean, specification?: string
+ *   meeseeksDir?: string, oracle?: boolean, specification?: string, toolchain?: string
  * }} [options]
  * @returns {Promise<GateResult[]>}
  */
 export async function staticGates(cwd, options = {}) {
-  const ci = inspectCiWorkflows(cwd, options.capabilities ?? null);
+  const ci = inspectCiWorkflows(cwd, options.capabilities ?? null, options.toolchain);
 
   const readme = isSubstantial(path.join(cwd, 'README.md'), 200);
   const contract = isSubstantial(path.join(cwd, 'docs', 'api-contract.md'), 200);
@@ -6020,9 +6029,10 @@ export function realityCheckPrompt(revision) {
  * on; what the builder was told is decided here, and versioned with the plugin.
  *
  * @param {string} cwd
+ * @param {string} [declared] the architect's toolchain declaration, when the PRD names one
  * @returns {string}
  */
-export function builderSystemPrompt(cwd) {
+export function builderSystemPrompt(cwd, declared = undefined) {
   // The runner sentence is derived, not written down. An audit found this file and the
   // `no-tests` objective both hardcoding vitest while `firstIterationTask` correctly derived it
   // — three places stating one contract, two of them wrong for any toolchain but Node. On .NET
@@ -6032,7 +6042,7 @@ export function builderSystemPrompt(cwd) {
   // Every greenfield failure this project has recorded is this sentence (§8, run 6's 978
   // seconds and 14M tokens on a `node --test` suite the gate collected nothing from), so it is
   // now stated once, from `gateSummary`, and rendered.
-  const base = renderTemplate('builder-system.md', runnerLines(cwd));
+  const base = renderTemplate('builder-system.md', runnerLines(cwd, declared));
   if (!hasFrontend(cwd)) return base;
   return `${base}\n\n---\n\n${template('frontend-direction.md')}`;
 }
@@ -6045,12 +6055,13 @@ export function builderSystemPrompt(cwd) {
  * that only ever had one, which is §3.8's rule about declined operations.
  *
  * @param {string} cwd
+ * @param {string} [declared] the architect's toolchain declaration, when the PRD names one
  * @returns {{ unitLine: string, e2eLine: string }}
  */
-function runnerLines(cwd) {
+function runnerLines(cwd, declared = undefined) {
   /** @param {string} name @param {string} what */
   const line = (name, what) => {
-    const gate = gateSummary(cwd, path.join(cwd, '.meeseeks')).gates.find((g) => g.name === name);
+    const gate = gateSummary(cwd, path.join(cwd, '.meeseeks'), declared).gates.find((g) => g.name === name);
     const command = gate === undefined ? null : gate.command.join(' ');
     return command === null
       ? `- ${what} are not collected on this toolchain, so none can enter the ratchet`
@@ -6854,11 +6865,12 @@ export function overlayGates(qualityGates, extraGates) {
  *
  * @param {string} cwd
  * @param {string} meeseeksDir the driver's own directory in that tree
+ * @param {string | undefined} declared the architect's toolchain declaration, when the PRD names one
  * @param {string} startCommit the commit this run began at
  * @param {number} timeoutMs the gate ceiling, so a slow mutation run is a named failure
  * @returns {Promise<{ ok: boolean, detail: string }>}
  */
-export async function shipTimeMutation(cwd, meeseeksDir, startCommit, timeoutMs) {
+export async function shipTimeMutation(cwd, meeseeksDir, declared, startCommit, timeoutMs) {
   if (startCommit === '') {
     return { ok: false, detail: 'no start commit was recorded for this run, so its own changes cannot be identified' };
   }
@@ -6867,7 +6879,7 @@ export async function shipTimeMutation(cwd, meeseeksDir, startCommit, timeoutMs)
   if (!scope.can) return { ok: false, detail: scope.reason };
 
   writeMutationConfig(meeseeksDir);
-  const built = conditionalCommandGates(cwd, meeseeksDir, changedFiles);
+  const built = conditionalCommandGates(cwd, meeseeksDir, changedFiles, declared);
   const gate = built.gates.find((candidate) => candidate.name === 'mutation');
   if (gate === undefined) {
     // The toolchain declined — `dotnet` declines mutation rather than guessing Stryker.NET's
@@ -8203,7 +8215,7 @@ async function runInvocation(argv, io, crash) {
   // ---- Phase 1: design + quality plugins --------------------------------
   write(verbatim('designing'));
   const designed = await runChild({
-    prompt: `${template('architect.md')}\n\n---\n\n${architectGateFragment(gateSummary(cwd, meeseeksDir).gates)}\n\n---\n\nPRD.md:\n\n${prd}`,
+    prompt: `${template('architect.md')}\n\n---\n\n${architectGateFragment(gateSummary(cwd, meeseeksDir, config.toolchain).gates)}\n\n---\n\nPRD.md:\n\n${prd}`,
     model: config.designModel,
     phase: 'design',
       effort: config.effort['design'],
@@ -8533,7 +8545,7 @@ async function runInvocation(argv, io, crash) {
   // those meant a toolchain writing anything else produced a report nobody read, and an
   // unread report is indistinguishable from a run in which nothing passed.
   const reportFiles = (/** @type {string} */ dir) =>
-    resolveToolchain(dir).toolchain.reports.map((name) => path.join(dir, '.meeseeks', name));
+    resolveToolchain(dir, config.toolchain).toolchain.reports.map((name) => path.join(dir, '.meeseeks', name));
 
   /**
    * What `clearReports` managed to remove, per gated tree (REVIEW F32).
@@ -8611,7 +8623,7 @@ async function runInvocation(argv, io, crash) {
   for (const entry of sweptCandidates.removed) write(verbatim(`candidate: removed an abandoned worktree at ${entry}`));
   for (const problem of sweptCandidates.problems) write(verbatim(`candidate: ${problem}`));
 
-  const toolchainGates = gateSummary(cwd, meeseeksDir);
+  const toolchainGates = gateSummary(cwd, meeseeksDir, config.toolchain);
   write(verbatim(`toolchain: ${toolchainGates.toolchain} (${toolchainGates.evidence})`));
   // A declined operation is announced rather than merely omitted. A gate list that quietly
   // shrinks reads exactly like one that was always that short (DESIGN.md §3.8).
@@ -8623,7 +8635,7 @@ async function runInvocation(argv, io, crash) {
   // Written once, here, because this is the first moment every field exists: the toolchain is
   // resolved and the architect has declared. Nothing reads it back — see run-manifest.mjs for
   // why that absence is the point rather than an omission.
-  const resolvedToolchain = resolveToolchain(cwd);
+  const resolvedToolchain = resolveToolchain(cwd, config.toolchain);
   const capabilityRecord = resolveCapabilities({ root: cwd, declared: declaredCapabilities });
   // Captured once, into a name, because two things read it now: the run manifest below and
   // the ship-time mutation scope. Asking git twice would invite the two to disagree after the
@@ -8801,7 +8813,7 @@ async function runInvocation(argv, io, crash) {
     armSchemaInterpreter(erdForGate);
     const applicable = applicableGates(
       [
-        ...commandGates(dir, treeStateDir),
+        ...commandGates(dir, treeStateDir, config.toolchain),
         // The same overlay the brief describes, filtered here to what is actually armed. The
         // prefixes travel with it, so a brief, a gate line and a reviewer all read a failure in
         // `operator:release-check` as a project invariant rather than a toolchain result — two
@@ -8924,7 +8936,7 @@ async function runInvocation(argv, io, crash) {
       const lastGood = loadState(meeseeksDir).lastGoodCommit;
       const changedFiles = lastGood === null ? undefined : await changedSince({ cwd: dir, since: lastGood, run: shell });
       writeMutationConfig(treeStateDir);
-      const second = conditionalCommandGates(dir, treeStateDir, changedFiles);
+      const second = conditionalCommandGates(dir, treeStateDir, changedFiles, config.toolchain);
       for (const skip of second.skipped) write(verbatim(`gate ${skip.name} declined: ${skip.reason}`));
       const secondApplicable = applicableGates(second.gates, capabilities);
       for (const skip of secondApplicable.skipped) {
@@ -9025,6 +9037,7 @@ async function runInvocation(argv, io, crash) {
         await staticGates(dir, {
           run: shell,
           capabilities,
+          toolchain: config.toolchain,
           meeseeksDir: treeStateDir,
           oracle: config.oracle.enabled,
           // Threaded so the held-out gate can refuse cases written from another PRD rather than
@@ -9048,7 +9061,7 @@ async function runInvocation(argv, io, crash) {
     // belong to it. The argv is digested rather than quoted for the reason the detail is — it is
     // target-influenced text — and a static gate has no argv, which is recorded as the fact it is
     // rather than as an empty string standing in for one.
-    const owners = resolveToolchain(dir).toolchain.reportOwners ?? {};
+    const owners = resolveToolchain(dir, config.toolchain).toolchain.reportOwners ?? {};
     /** @type {Map<string, string[]>} */
     const ownedReports = new Map();
     for (const [report, operation] of Object.entries(owners)) {
@@ -9139,7 +9152,7 @@ async function runInvocation(argv, io, crash) {
         });
         writeBrief(meeseeksDir, iteration, candidateBrief, worktree.index);
 
-        const candidateSystem = builderSystemPrompt(cwd);
+        const candidateSystem = builderSystemPrompt(cwd, config.toolchain);
         const built = await runChild({
           prompt: candidateBrief,
           model: config.builderModel,
@@ -9234,13 +9247,13 @@ async function runInvocation(argv, io, crash) {
       specification: specification.revision.digest,
       config: configHash(config),
     },
-    task: firstIterationTask(unitGateCommand(cwd, meeseeksDir)),
+    task: firstIterationTask(unitGateCommand(cwd, meeseeksDir, config.toolchain)),
     // The same command, threaded so the `no-tests` objective names what the gate actually runs
     // rather than a Node-shaped guess. Three places state this contract; all three now derive it.
-    unitCommand: unitGateCommand(cwd, meeseeksDir),
+    unitCommand: unitGateCommand(cwd, meeseeksDir, config.toolchain),
     effects: {
       build: (brief) => {
-        const builderSystem = builderSystemPrompt(cwd);
+        const builderSystem = builderSystemPrompt(cwd, config.toolchain);
         return runChild({
           prompt: brief,
           model: config.builderModel,
@@ -9407,7 +9420,7 @@ async function runInvocation(argv, io, crash) {
       // Selected by *detected* toolchain rather than by anything declared, so the guidance
       // matches the commands the gates will actually run.
       toolchainGuidance: () => {
-        const resolved = resolveToolchain(cwd);
+        const resolved = resolveToolchain(cwd, config.toolchain);
         // **The loudest of the three channels that told case C's builder to write Node.** The
         // evidence string and the gate list are one line each; this is a whole page of "here is
         // how you build with npm, vitest and playwright", and a builder handed that writes Node
@@ -9459,7 +9472,13 @@ async function runInvocation(argv, io, crash) {
       // the panel judged. Pointing it at the snapshot also means the mutants it writes land in a
       // worktree that is deleted at the end of the run rather than in the operator's tree.
       shipTimeMutation: () =>
-        shipTimeMutation(candidate.dir, path.join(candidate.dir, '.meeseeks'), runStartCommit, config.gateTimeoutMs),
+        shipTimeMutation(
+          candidate.dir,
+          path.join(candidate.dir, '.meeseeks'),
+          config.toolchain,
+          runStartCommit,
+          config.gateTimeoutMs,
+        ),
       // The captured revision, re-read from `.meeseeks/` each time rather than closed over. The
       // record lives where the run may not edit it, and reading it back is what makes the check a
       // check rather than a memory of one.

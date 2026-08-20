@@ -60,6 +60,7 @@ import {
   childEnvironment,
   permissionsFor,
   commandGates,
+  gateSummary,
   meeseeksIgnoreUpdate,
   architectGateFragment,
   recordPanelVerdict,
@@ -2537,7 +2538,7 @@ describe('driveRun', () => {
       unitCommand,
       // A run identity, so lesson candidates can be counted as independent support (item 35).
       // Overridable, because the cases about promotion need two different runs.
-      runKey: configOverrides.runKey ?? 'run-under-test',
+      runKey: /** @type {any} */ (configOverrides).runKey ?? 'run-under-test',
       effects: effectsWith({ log: (/** @type {string} */ line) => logs.push(line), ...overrides }, root),
     });
     return { outcome, meeseeksDir, root, logs };
@@ -6094,6 +6095,117 @@ describe('staticGates', () => {
           `project with no browser: staticGates(${args})`,
       );
     }
+  });
+
+  it('resolves no toolchain anywhere in the driver without the declaration reaching it', () => {
+    // Item 49's config key is only real if it arrives everywhere a toolchain is chosen. The
+    // helpers below are unit-testable; the call sites are not — most live inside `runInvocation`,
+    // which no tier-1 test executes. So this is asserted the way the capability wiring above is,
+    // and for the same reason: dropping the argument at one site leaves the whole suite green
+    // while that one decision silently reverts to sniffing the tree. **Positional rather than
+    // enumerated over call sites** — a tenth site added later is caught by the rule instead of
+    // defaulting to unguarded until somebody remembers to list it.
+    //
+    // The first version of this test checked only `resolveToolchain(` and passed with
+    // `gateSummary(cwd, meeseeksDir)` reverted, because a helper that resolves *indirectly* never
+    // spells the word. Every such helper is therefore named with the position it expects, which
+    // is the only part of this that has to be maintained by hand.
+    const source = readFileSync(new URL('../scripts/driver.mjs', import.meta.url), 'utf8');
+
+    /** Where each toolchain-resolving function expects the declaration, zero-based. */
+    const DECLARATION_AT = {
+      'resolveToolchain(': 1,
+      'gateSummary(': 2,
+      'commandGates(': 2,
+      'conditionalCommandGates(': 3,
+      'unitGateCommand(': 2,
+      'startCommand(': 1,
+      'inspectCiWorkflows(': 2,
+      'builderSystemPrompt(': 1,
+      'shipTimeMutation(': 2,
+    };
+    /** What counts as the declaration: the parameter, the config key, or a forwarded options bag. */
+    const DECLARATIONS = new Set(['declared', 'config.toolchain', 'options.toolchain']);
+
+    /** Split an argument list on top-level commas only. `path.join(dir, x)` is one argument. */
+    const splitArguments = (/** @type {string} */ text) => {
+      /** @type {string[]} */
+      const parts = [];
+      let depth = 0;
+      let start = 0;
+      for (let at = 0; at < text.length; at += 1) {
+        const ch = text[at];
+        if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+        else if (ch === ')' || ch === ']' || ch === '}') depth -= 1;
+        else if (ch === ',' && depth === 0) {
+          parts.push(text.slice(start, at).trim());
+          start = at + 1;
+        }
+      }
+      parts.push(text.slice(start).trim());
+      return parts.filter((part) => part !== '');
+    };
+
+    let checked = 0;
+    for (const [call, position] of Object.entries(DECLARATION_AT)) {
+      /** @type {string[]} */
+      const argumentLists = [];
+      for (let at = source.indexOf(call); at !== -1; at = source.indexOf(call, at + 1)) {
+        // A definition, a re-export, or a longer identifier ending in the same characters.
+        const head = source.slice(0, at);
+        if (head.endsWith('export function ') || head.endsWith('function ')) continue;
+        // A longer identifier ending in these characters, or a member access on some other
+        // object — `resolved.toolchain.startCommand(` is the toolchain's own method, not this
+        // helper. A spread is not a member access: `...commandGates(` is a real call, and the
+        // first version of this guard rejected it and then reported the call site as absent.
+        if (/[A-Za-z0-9_$]$/.test(head) || /[A-Za-z0-9_$]\.$/.test(head)) continue;
+        let depth = 0;
+        let end = at + call.length - 1;
+        do {
+          if (source[end] === '(') depth += 1;
+          else if (source[end] === ')') depth -= 1;
+          end += 1;
+        } while (depth > 0 && end < source.length);
+        argumentLists.push(source.slice(at + call.length, end - 1));
+      }
+      assert.equal(argumentLists.length > 0, true, `${call} is no longer called from the driver at all`);
+      for (const args of argumentLists) {
+        const supplied = splitArguments(args)[position];
+        checked += 1;
+        assert.equal(
+          supplied !== undefined && DECLARATIONS.has(supplied),
+          true,
+          `a toolchain is resolved without the architect's declaration in position ${position}, so ` +
+            `a declared toolchain is silently ignored here: ${call}${args})`,
+        );
+      }
+    }
+    assert.equal(checked >= 9, true, `only ${checked} resolution sites were reached; the scan is not finding them`);
+
+    // The one that takes an options bag rather than a positional argument. It forwards the whole
+    // bag onward, so the declaration has to be *in* the bag at the site that builds it.
+    const built = source.slice(source.indexOf('await staticGates(dir, {'));
+    assert.match(
+      built.slice(0, built.indexOf('}')),
+      /toolchain: config\.toolchain/,
+      'staticGates is built without the declaration, so its ci and observability checks sniff the tree',
+    );
+  });
+  it('carries the declaration through every helper that picks gates from a toolchain', () => {
+    // The behavioural half. A .NET declaration over a tree that looks like nothing must produce
+    // .NET commands, or the config key is decoration.
+    const tree = repoWith({ 'package.json': '{"scripts":{"start":"node server.js"}}' });
+    const stateDir = path.join(tree, '.meeseeks');
+
+    assert.equal(gateSummary(tree, stateDir, 'dotnet').toolchain, 'dotnet');
+    assert.deepStrictEqual(commandGates(tree, stateDir, 'dotnet')[0].command, ['dotnet', 'build']);
+    assert.match(String(unitGateCommand(tree, stateDir, 'dotnet')), /^dotnet test/);
+    // The benign neighbour, and the reason the parameter is optional: without a declaration the
+    // same tree still resolves the way it always did.
+    assert.equal(gateSummary(tree, stateDir).toolchain, 'node');
+    assert.deepStrictEqual(commandGates(tree, stateDir)[0].command, ['npm', 'run', 'build']);
+    assert.equal(startCommand(tree), 'npm start');
+    assert.equal(startCommand(tree, 'dotnet'), null);
   });
 
   it('finds the start command only when the package really declares one', () => {

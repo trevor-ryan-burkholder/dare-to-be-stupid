@@ -100,7 +100,7 @@ function killAt(root, bin, marker) {
       if (stopped) return;
       stopped = true;
       try {
-        process.kill(-child.pid, 'SIGKILL');
+        process.kill(-Number(child.pid), 'SIGKILL');
       } catch {
         try { child.kill('SIGKILL'); } catch { /* already gone */ }
       }

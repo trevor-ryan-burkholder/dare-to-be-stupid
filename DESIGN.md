@@ -715,8 +715,40 @@ everywhere.
 **Detection falls back rather than refusing.** A greenfield repository has no `package.json` on
 iteration 1, so detection is honestly empty at exactly the moment the gates are first
 assembled; refusing to choose would abort every greenfield run. Node is the default because it
-is the only implementation. When a second one lands that stops being obvious, and the answer is
-§3.7's: the architect declares it and detection confirms.
+is the only implementation of a *detectable* tree, and with .NET landed that default stopped
+being obvious — so the architect declares it and detection confirms.
+
+### 3.8.2 The declaration, and the three things it is not
+
+`config.toolchain` (§10) names the toolchain when the tree cannot be trusted to say. It exists
+because §3.8's detection reads artifacts — a `package.json`, a `.csproj` — and there are real
+targets that carry neither. A manuscript directory is not a `package.json`, and sniffing one
+into a toolchain is the guess this design refuses everywhere else.
+
+Three deliberate refusals, each closing a way the declaration could quietly become a suggestion:
+
+- **A declaration wins outright.** Detection still runs, but only to *report*. `detected` stays a
+  statement about the tree rather than confidence in the choice, so evidence reads
+  `declared dotnet, but detection found node` and the disagreement survives into the manifest
+  instead of being resolved away.
+- **Agreement counts every sighting, not the winner.** A mixed repository holding both a
+  `package.json` and a `.csproj` ranks one first and the other as an alternative — and the mixed
+  repository is the whole reason a declaration exists. Reading agreement off the top-ranked
+  sighting alone would report *detection found node* about a tree where detection plainly saw
+  dotnet too.
+- **An unknown name is refused, not fallen back from.** A typo is otherwise indistinguishable
+  from no declaration at all: the run proceeds on a toolchain nobody chose while the operator
+  believes they chose one. `ToolchainError`, before any gate is assembled.
+
+**And the declaration has to arrive everywhere a toolchain is chosen, which is the half that
+breaks.** Nine call sites resolve one, and most of them live inside `runInvocation`, which no
+tier-1 test executes — so dropping the argument at one site leaves the suite green while that
+one decision silently reverts to sniffing the tree. It is held by a *positional* rule over the
+driver's source rather than a list of call sites, for §6's reason: an enumeration defaults each
+new site to unguarded until somebody remembers to add it. The rule's first version checked only
+`resolveToolchain(` and passed with `gateSummary(cwd, meeseeksDir)` reverted, because a helper
+that resolves indirectly never spells the word; widening it to those helpers immediately found
+two `builderSystemPrompt` call sites that had been given the parameter and never fed it.
 
 ---
 
@@ -2840,6 +2872,7 @@ group, so an operator-kill can still leak it (`PLAN.md` item 2's residual).
 | `childEnvAllow` | `[]` | names of environment variables a target's tooling needs that the child keep-list would otherwise drop (§6.1, REVIEW F5). **Names, never values** — the value is read from the operator's environment at spawn time, so nothing secret enters a config file, a receipt or a log. It may not name a Driver-owned marker, and `childEnvironment` refuses one that does |
 | `erd` | `''` | where a Mermaid `erDiagram` lives, when it is not the conventional `ERD.md` beside the PRD (§3.5, item 47). Empty means the convention; an absent file means there is no ERD, which gates nothing |
 | `dod` | `''` | where the operator additive done-bar lives, when it is not the conventional `DOD.md` beside the PRD (item 48). Its criteria are appended to the panel required set and can only make a ship harder; there is no path by which one relaxes anything |
+| `toolchain` | `''` | the toolchain this project is, when the tree cannot be trusted to say (§3.7, §3.8). Empty means detect. A declaration **wins outright** and detection only reports whether it agrees — the architect declares it and detection confirms. An unknown name is refused rather than falling back to detection, because a typo would otherwise be indistinguishable from no declaration |
 | `schemaIntrospect` | `[]` | argv that prints the live schema as JSON for `schema-conformance` (§3.6.1, item 47). Empty means the gate does not arm. Operator configuration on purpose: a builder supplying this would describe the schema it is judged on, and the gate would confirm its own input |
 | `components` | `[]` | `{ name, dir, spec }` sub-runs executed as whole nested drivers in worktrees before the loop (§2, Phase 1c). The config declares *what* the components are; only `--give-them-the-box` on the command line permits them to run — configured components without the flag refuse the run before any child is paid for. `name` is kebab-case (it becomes branch and worktree names), `dir` is repo-relative with no `..` and is realpath-checked against the worktree at run time, `spec` is a PRD path relative to the dir or a quoted idea |
 | `deploy.enabled` | **false** | preview-only when enabled; never prod |
