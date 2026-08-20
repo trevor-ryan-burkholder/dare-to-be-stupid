@@ -14,7 +14,7 @@
  * tracked file moves. That is a property of where the call sits in the driver, and it is exactly
  * the property eleven versions of green unit tests missed about the guard hook.
  *
- * No network, no API, no money. Real node processes and real git.
+ * No network, no API call. Real node processes and real git.
  */
 
 import assert from 'node:assert/strict';

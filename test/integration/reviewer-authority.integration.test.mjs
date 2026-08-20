@@ -12,7 +12,7 @@
  * the door and fails later, with nothing in between but the builder. That needs the real preflight,
  * a real repository and a real scan, which is this file.
  *
- * Real git, real filesystem. No network, no API, no money.
+ * Real git, real filesystem. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

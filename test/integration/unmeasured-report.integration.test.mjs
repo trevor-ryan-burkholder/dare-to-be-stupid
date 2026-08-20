@@ -18,7 +18,7 @@
  * the first iteration. Everything downstream of that — the toolchain, the gate roster, `gateTree`,
  * `collectReports`, the reporters, the ratchet, the reset — is the real thing.
  *
- * Real git, real node, counterfeit runners. No network, no API, no money.
+ * Real git, real node, counterfeit runners. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

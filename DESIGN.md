@@ -356,7 +356,7 @@ retarget, or other identity mismatch refuses; path plus self-reported version al
 For a symlink, script, or package launcher, the fingerprint policy also binds the measured delegated
 entrypoint or package identity whose mutation changes invoked code. An install form whose mutable
 invocation closure cannot be bounded and live-proven is unsupported rather than approximately sealed.
-A compatibility pass does not replace the paid live suite:
+A compatibility pass does not replace the live suite:
 flags such as `--safe-mode` have had behavior not fully specified by help text, and current official
 documentation says background updates take effect on a later launch. Since 0.205.0, preflight parses
 `claude --version` and refuses anything outside the measured range. `scripts/claude-compat.mjs` is the
@@ -519,7 +519,7 @@ So the run resolves one canonical target, fingerprints it (`scripts/claude-seal.
 `spawnClaude` **re-verifies immediately before every child** — at the same door the context budget
 (§3.9) and the supply boundary (§6.1) use, and for the identical reason: every child in the loop
 passes through it, so a phase added later cannot forget the check. A refusal happens before argv is
-built, so it costs no money and no wall clock, and the test asserts the child *never ran* rather
+built, so it costs no quota and no wall clock, and the test asserts the child *never ran* rather
 than asserting a failure code, because a refusal after the spawn would report the same code.
 
 **Re-resolution is part of the check, not an optimization skipped.** Going straight to the sealed
@@ -549,9 +549,9 @@ All five swaps are staged against a real filesystem in tier 2 — real files, re
 `PATH` resolution — because the resolver, `realpath` and the digest of an atomically replaced file
 are somebody else's implementation and no assertion about this module reaches them.
 
-**What is still owed** (item 83, REVIEW F28): the paid pinned live runs at every admitted
+**What is still owed** (item 83, REVIEW F28): the pinned live runs at every admitted
 compatibility boundary, and a measured non-interactive authentication check — `claude --version`
-succeeds without proving auth. The mechanism is built and proven at tiers 1 and 2; the paid half is
+succeeds without proving auth. The mechanism is built and proven at tiers 1 and 2; the live half is
 not.
 
 ## 3.6 Agent-config security scan (borrowed from ECC's AgentShield)
@@ -1025,7 +1025,7 @@ nothing, because nothing asked.
 
 `scripts/context-budget.mjs` measures the assembled input inside `spawnClaude`, before the
 child exists. The position is the point: every phase goes through that one door, so a phase
-added later cannot forget the check, and refusing there costs no money and no wall-clock.
+added later cannot forget the check, and refusing there costs no quota and no wall-clock.
 
 **It counts characters and calls them characters.** There is no tokenizer and there will not be
 one — hard constraint 1 forbids the dependency, and a hand-rolled estimate is worse than no
@@ -3606,7 +3606,7 @@ charitably.
 
 **What this does not yet do.** It is the substrate, not the campaign. The sealed evaluation
 protocol, the counterbalanced run order, the uncertainty interval, and the unseen final partition
-that item 57 also specifies are unbuilt, and every one of them needs paid comparative runs to be
+that item 57 also specifies are unbuilt, and every one of them needs live comparative runs to be
 worth anything.
 
 ## 12. Build order
@@ -3906,7 +3906,7 @@ invalidation and resumability; storage technology is not part of the product.
 The open safety findings in `REVIEW.md` take precedence. Dynamic fan-out magnifies the consequences
 of a non-atomic run lock and a watchdog that cannot kill a resistant child, so no unattended
 workflow experiment may become a product path until those findings are closed. Any later adoption
-also requires a paid live contract test against a pinned Claude Code version: preview behavior,
+also requires a live contract test against a pinned Claude Code version: preview behavior,
 model routing, budget reporting, worktree creation, context isolation, and termination are external
 contracts and cannot be established by unit tests over our argv.
 

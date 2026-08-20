@@ -10,7 +10,7 @@
  *
  * So this drives the real `main` with canned children and reads the file off disk.
  *
- * Real git, canned children. No network, no API, no money.
+ * Real git, canned children. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

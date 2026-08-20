@@ -12,7 +12,7 @@
  * A parent component correctly fails closed on a missing receipt. Its operator then cannot recover
  * the child's state or its spend from the artifact that promised both, which is the cost.
  *
- * Real git, canned children. No network, no API, no money.
+ * Real git, canned children. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

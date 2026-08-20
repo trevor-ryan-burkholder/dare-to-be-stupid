@@ -11,7 +11,7 @@
  *
  * The filter here is the same shape and deliberately hostile: a target could write exactly this.
  *
- * Real git, real processes. No network, no API, no money.
+ * Real git, real processes. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

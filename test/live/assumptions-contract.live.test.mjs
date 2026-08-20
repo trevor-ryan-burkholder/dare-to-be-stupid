@@ -1,5 +1,5 @@
 /**
- * Tier 3 — the builder's assumptions contract, against a real `claude -p`. **Spends money.**
+ * Tier 3 — the builder's assumptions contract, against a real `claude -p`. **Makes real model calls.**
  *
  * `parseAssumptions` is unit-tested against strings this repository wrote, which is exactly the
  * position `claudeArgs` was in before the argv defect: correct about the thing it controls, and

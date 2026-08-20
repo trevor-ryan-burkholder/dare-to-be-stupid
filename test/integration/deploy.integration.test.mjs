@@ -12,7 +12,7 @@
  * `ssh` sitting on a passphrase prompt no unattended run can answer would stall the driver
  * indefinitely, with the run looking identical to one doing useful work.
  *
- * No network, no API, no money. Just node and a process that sleeps.
+ * No network, no API call. Just node and a process that sleeps.
  */
 
 import assert from 'node:assert/strict';

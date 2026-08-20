@@ -9,7 +9,7 @@
  * This follows `reporter-paths.integration.test.mjs` — the precedent that closed F20, a claim of
  * exactly this shape, with a clean-clone test rather than an assertion.
  *
- * Real git, real clone, real files. No network, no API, no money.
+ * Real git, real clone, real files. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

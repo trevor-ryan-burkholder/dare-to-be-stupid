@@ -1,5 +1,5 @@
 /**
- * Tier 2 — the scoped restore against **real git**. Needs `git`; no network, no API, no money.
+ * Tier 2 — the scoped restore against **real git**. Needs `git`; no network, no API call.
  *
  * `scopedRestorePaths` is pure and unit-tested, and that proves nothing about whether
  * `git checkout <commit> -- <paths>` does what this design assumes: return exactly those paths

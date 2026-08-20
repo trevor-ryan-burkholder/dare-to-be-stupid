@@ -17,7 +17,7 @@
  * ordinary run that reaches a builder — is what stops this passing against a `main` that refuses
  * everything before it starts.
  *
- * Real git, real files, real processes. No network, no API, no money.
+ * Real git, real files, real processes. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

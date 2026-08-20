@@ -11,7 +11,7 @@
  * So this drives the real `main` with canned children and asks the durable record what each role was
  * given. It is the same question item 76's acceptance receipt will ask, from the same file.
  *
- * Real git, canned children. No network, no API, no money.
+ * Real git, canned children. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

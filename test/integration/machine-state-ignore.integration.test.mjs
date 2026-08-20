@@ -15,7 +15,7 @@
  * survives, whether `git add -A` really stages nothing else — is git's contract, not ours, and
  * §11.1 is unambiguous about where that has to be checked.
  *
- * No network, no API, no money. Real git.
+ * No network, no API call. Real git.
  */
 
 import assert from 'node:assert/strict';

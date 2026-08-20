@@ -17,7 +17,7 @@
  * So this test registers *itself* as a run in a disposable HOME and then spawns a real Driver as its
  * own child. The child's ancestry genuinely contains a registered run, no matter what it is told.
  *
- * Real processes, real files, no network, no API, no money.
+ * Real processes, real files, no network, no API call.
  */
 
 import assert from 'node:assert/strict';
@@ -73,7 +73,7 @@ const DRIVER = path.resolve('scripts/driver.mjs');
  * **Without this the fixture spends money, and it did.** `startDriver` runs the real entrypoint as
  * a real process, so nothing injects a spawn double the way an in-process `main` test can — the
  * child reached its design phase and called the real CLI. Tier 2 is defined as no network, no API
- * and no money (§11.1), and a fixture that quietly makes a paid call has broken the tier's only
+ * and no API call (§11.1), and a fixture that quietly makes a paid call has broken the tier's only
  * promise. This is the same technique `claude-compat.integration.test.mjs` uses, for the same
  * reason: what is under test is the Driver, and the CLI is somebody else's program.
  *

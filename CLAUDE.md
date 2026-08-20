@@ -23,7 +23,7 @@ it.** Treat the objective as standing until it is complete, impossible, or expli
   message as me, or changing a production system. Ask once, immediately before that action, and
   make the question about the irreversible consequence—not about implementation details.
 - **An explicit instruction authorizes the named irreversible action.** Do not ask me to reconfirm
-  a push, release, deletion, paid run, or external write I already requested after verifying its
+  a push, release, deletion, live run, or external write I already requested after verifying its
   exact scope and targets.
 - **Keep making progress around blockers.** A blocked path does not end the task. Exhaust safe
   alternatives, advance independent work, and return to the blocker when possible. If completion
@@ -134,14 +134,21 @@ npm test              # tier 1: unit + fixture tests, no external binaries
 | command                    | what it needs                                           | when                                                                                                   |
 | -------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `npm test`                 | nothing but node                                        | every change                                                                                           |
-| `npm run test:integration` | real `git`, `node`, `npm`; no network, no API, no money | before any commit touching `race.mjs`, `health-probe.mjs`, the toolchains, or anything that shells out |
-| `npm run test:live`        | a real `claude -p`, and **it spends money**             | when changing `spawnClaude`, `claudeArgs`, envelope parsing, or a template's output contract           |
+| `npm run test:integration` | real `git`, `node`, `npm`; no network, no API call      | before any commit touching `race.mjs`, `health-probe.mjs`, the toolchains, or anything that shells out |
+| `npm run test:live`        | a real `claude -p`; **makes real model calls**          | when changing `spawnClaude`, `claudeArgs`, envelope parsing, or a template's output contract           |
 
 `npm run test:all` is tiers 1 and 2.
 
 The live tier is armed by `MEESEEKS_LIVE=1` and **fails without it** rather than skipping. That is
 deliberate: a green tick for a suite that made no API call is a lie the reader will take for
 coverage.
+
+**A live run is not a cost decision, and "it costs money" is never a reason to defer one.** The
+operator is on a Max subscription: a live run spends quota and wall clock, both of which are
+ordinary. Tier 3 is arming, not authorization — the flag exists so a suite that made no call cannot
+report coverage, not so somebody approves the spend. Work whose acceptance evidence needs a real
+model call is **eligible work**; deferring it as "paid" is the standing instruction being ignored,
+which is what this paragraph exists to stop.
 
 The reason the tiers exist is the argv defect. `claudeArgs` was unit-tested and correct; the
 fault lived in another program's parsing of the array it built, and no assertion about that

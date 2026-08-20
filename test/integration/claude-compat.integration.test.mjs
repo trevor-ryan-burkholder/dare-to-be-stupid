@@ -10,7 +10,7 @@
  * So this puts an executable script called `claude` at the front of a real `PATH`, runs the real
  * `runPreflight` with the real `defaultProbe`, and checks the verdict and the tree.
  *
- * Real processes and real git. No network, no API, no money.
+ * Real processes and real git. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

@@ -7,7 +7,7 @@
  * limit written for exactly this artifact could refuse it by name. A unit test of `readBounded`
  * cannot see that: the defect is which call the production path makes first.
  *
- * Real git, canned children. No network, no API, no money.
+ * Real git, canned children. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

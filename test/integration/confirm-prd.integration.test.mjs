@@ -9,7 +9,7 @@
  * after committing `PRD.md`, and that the accepted run named as the continuation does not pay to
  * author the intent again.
  *
- * Real git, canned children. No network, no API, no money.
+ * Real git, canned children. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

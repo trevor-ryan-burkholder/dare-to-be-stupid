@@ -11,7 +11,7 @@
  * neighbour: a seal that refused everything would satisfy all five while bricking the host on the
  * first ordinary run.
  *
- * Real files, real symlinks, real `PATH` resolution. No network, no API, no money.
+ * Real files, real symlinks, real `PATH` resolution. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

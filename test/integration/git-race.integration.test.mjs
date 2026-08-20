@@ -11,7 +11,7 @@
  * exactly this: `claudeArgs` was unit-tested, and the defect lived in another program's
  * parsing of the array it built.
  *
- * No network, no API, no money. Just git.
+ * No network, no API call. Just git.
  */
 
 import assert from 'node:assert/strict';

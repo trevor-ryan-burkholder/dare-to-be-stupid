@@ -8,7 +8,7 @@
  * vitest emits — which is exactly the shape the reproduction used to smuggle
  * `../tmp/outside.test.js` into the ratchet.
  *
- * No network, no API, no money.
+ * No network, no API call.
  */
 
 import assert from 'node:assert/strict';

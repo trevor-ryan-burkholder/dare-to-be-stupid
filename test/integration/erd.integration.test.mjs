@@ -8,7 +8,7 @@
  * is the failure this repository has repaired four times in a day: a correct component with no
  * caller, or a caller nothing exercises.
  *
- * Real git, real filesystem, canned children. No network, no API, no money.
+ * Real git, real filesystem, canned children. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

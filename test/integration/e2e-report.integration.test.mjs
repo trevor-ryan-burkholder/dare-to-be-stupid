@@ -23,7 +23,7 @@
  * report to whatever `PLAYWRIGHT_JSON_OUTPUT_NAME` points at. Everything else — the toolchain, the
  * gate list, the gate runner, the process spawn, the parser — is the real thing.
  *
- * Real node, real shell, counterfeit runner. No network, no API, no money.
+ * Real node, real shell, counterfeit runner. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

@@ -10,7 +10,7 @@
  * application that ignores `PORT`. There is a test for exactly that below, because the probe
  * choosing a free port is worthless if the application binds its own anyway.
  *
- * No network beyond loopback, no API, no money. Just node and npm.
+ * No network beyond loopback, no API call. Just node and npm.
  */
 
 import assert from 'node:assert/strict';

@@ -13,7 +13,7 @@
  * (`--report-path -`), and every other gate in this repository discards stdout the moment it
  * passes, so nothing else has ever depended on that value arriving.
  *
- * Real node, real shell, counterfeit scanner. No network, no API, no money.
+ * Real node, real shell, counterfeit scanner. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

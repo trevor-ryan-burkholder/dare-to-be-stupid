@@ -12,7 +12,7 @@
  * `SIGTERM`, and whether its descendants really go with it, are claims about the operating system.
  * `§11.1`: an assertion about the array you build says nothing about what the callee does with it.
  *
- * No network, no API, no money. Real processes.
+ * No network, no API call. Real processes.
  */
 
 import assert from 'node:assert/strict';

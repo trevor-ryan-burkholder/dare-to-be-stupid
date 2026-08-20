@@ -12,7 +12,7 @@
  * 4.0.4 capture and exits 2, which is the status impeccable uses when primary findings exist. The
  * gate roster, the runner, the spawn, the interpreter and the partition are all the real thing.
  *
- * Real node, real shell, counterfeit detector. No network, no API, no money.
+ * Real node, real shell, counterfeit detector. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

@@ -9,7 +9,7 @@
  * `scripts/candidate.mjs` is a thin arrangement of those facts and would be worth nothing if any of
  * them were different.
  *
- * Real git. No network, no API, no money.
+ * Real git. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

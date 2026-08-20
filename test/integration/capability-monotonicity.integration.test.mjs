@@ -12,7 +12,7 @@
  * adding `index.html` resolved `web-ui, cli`; deleting it resolved `cli` alone, and the design-slop
  * gate armed for a web UI disappeared from the roster.
  *
- * Real git, canned children. No network, no API, no money.
+ * Real git, canned children. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

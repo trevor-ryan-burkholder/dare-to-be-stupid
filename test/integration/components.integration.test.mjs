@@ -13,7 +13,7 @@
  * on the branch, records `outcome.json` — without spawning a process, while the worktree,
  * config and merge halves all run against real git.
  *
- * No network, no API, no money. Just git.
+ * No network, no API call. Just git.
  */
 
 import assert from 'node:assert/strict';

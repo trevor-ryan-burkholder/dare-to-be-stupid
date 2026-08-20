@@ -1,6 +1,6 @@
 /**
  * Tier 2 — a report path that could not be cleared fails the attempt, driven through the real
- * `main` (REVIEW F32). Needs real `git` and real `node`; no network, no API, no money.
+ * `main` (REVIEW F32). Needs real `git` and real `node`; no network, no API call.
  *
  * **Why this cannot be a tier 1 test.** `collectReports` refusing a stuck attempt is unit-tested,
  * and `reportFreshnessGateResult` is unit-tested, and neither proves the two are *composed* — that

@@ -19,7 +19,7 @@
  * The sleeper is the point. Its parent shell exits immediately, so the pid it writes belongs to a
  * process nothing is waiting for — the shape that survives a kill aimed only at the direct child.
  *
- * No network, no package registry, no money.
+ * No network, no package registry, no API call.
  */
 
 import assert from 'node:assert/strict';

@@ -12,7 +12,7 @@
  * — the kind an unattended overnight run actually meets — and it fails the write half of git while
  * leaving every read working, which is exactly the shape that used to slip through.
  *
- * Real git, canned children. No network, no API, no money.
+ * Real git, canned children. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

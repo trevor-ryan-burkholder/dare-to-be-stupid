@@ -9062,7 +9062,7 @@ describe('the sealed binary is re-verified at the spawn door (item 83)', () => {
   });
 
   it('refuses before spawning when the binary was replaced with different bytes', async () => {
-    // The refusal must cost nothing: no child, no money, no wall clock. Asserting the child never
+    // The refusal must cost nothing: no child, no API call, no wall clock. Asserting the child never
     // ran is the assertion — a refusal that happened after the spawn would report the same `ok`.
     const { result, ran } = await spawnWith({ seal, sealIo: sealIo({ '/usr/bin/claude': 'swapped bytes' }) });
     assert.equal(result.ok, false);

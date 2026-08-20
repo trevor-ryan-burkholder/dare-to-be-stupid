@@ -20,7 +20,7 @@
  * `PATH` that records every invocation. A spend that never happens is the point, and the sentinel is
  * how it is proved rather than assumed.
  *
- * Real git, real node, a real Driver process, a counterfeit `claude`. No network, no API, no money.
+ * Real git, real node, a real Driver process, a counterfeit `claude`. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

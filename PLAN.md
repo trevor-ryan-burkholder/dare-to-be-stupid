@@ -20,6 +20,19 @@ required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answ
 It does not mean the development session is blocked. Use `REVIEW REQUIRED` only when verification
 is a dependency for the next available work or for a release/acceptance claim.
 
+## A live run is eligible work, not a cost decision
+
+**The operator is on a Max subscription.** A live run spends quota and wall clock; it does not
+require a purchase, an approval, or a separate authorization. `MEESEEKS_LIVE=1` is *arming* — it
+exists so a suite that made no API call cannot report coverage — and it is not a permission gate.
+
+This is written here because it was ignored for a whole session. Items whose remaining acceptance
+needed a real model call were repeatedly classified as blocked "on cost grounds" and skipped, and
+two eligibility sweeps inherited that classification and reported a drained queue that was not
+drained. **A live-run prerequisite makes an item eligible, not blocked.** What genuinely blocks an
+item is a capability this environment does not have — a Win32 host, a real browser — or a product
+decision only the operator can make.
+
 ## Autonomous traversal protocol
 
 `PLAN.md` is an executable dependency queue, not a menu for the operator. A development agent:
@@ -107,11 +120,11 @@ queue Codex closure under the traversal protocol above.
   item 72 below.
 - **F29 / item 85:** keep candidate-tree instructions out of reviewer authority — **partial at
   0.206.0**. The Driver-owned authority boundary and pre-Panel rescan landed; the supply trust-class
-  report, reviewed-tree binding for the scan, and paid canary remain in item 85.
+  report, reviewed-tree binding for the scan, and live canary remain in item 85.
 
 **Gate 0B — external child/platform contracts.** F5/item **56** is OPEN: measure the real
 child-environment contract before replacing ambient inheritance, then prove the boundary through a
-paid Claude child. F11/item **65**, F15/item **69**, F21/item **75**, and the installed-loader half
+live Claude child. F11/item **65**, F15/item **69**, F21/item **75**, and the installed-loader half
 of F25/item **80** remain open external-contract work. F27/item **82** is implemented at 0.204.0
 pending Codex verification. F28/item **83** is partial at 0.205.0: the measured version policy is
 enforced, while one-CLI-per-run binary identity and auto-update control remain. These contracts close
@@ -1057,9 +1070,9 @@ Each candidate now has a recorded measurement and a disposition, which is what t
 It authorised no runtime change and made none.
 
 **(a) Official LSP plugins to builder children — PARKED.** Unmeasurable here: the delta it owes is
-an iteration count across paid runs, and its stated blocker is unchanged — child delivery is
+an iteration count across live runs, and its stated blocker is unchanged — child delivery is
 `DESIGN.md` §5.0's open problem and the plugin does not install the language-server binary, which is
-the §3.9 silent-no-op family. **Admission:** a measured iteration-count delta from paired paid runs,
+the §3.9 silent-no-op family. **Admission:** a measured iteration-count delta from paired live runs,
 *after* child delivery has an answer. Not before, because a sharpener that silently fails to load is
 indistinguishable from one that did not help.
 
@@ -1098,7 +1111,7 @@ So the context-budget rent this candidate owed is **zero, because there is nothi
 record the two templates cost 3.09% and 5.06% of the 400,000-character budget today.
 
 **(d) Builder-honesty micro-distillations — PARKED.** Each owes a failed-iteration-rate comparison,
-which is a paid measurement across runs and cannot be taken here. **Admission:** a paired comparison
+which is a live measurement across runs and cannot be taken here. **Admission:** a paired comparison
 showing a lower failed-iteration rate. Worth noting the second distillation is partly covered
 already — `templates/prompt-hygiene` framing and item 44's untrusted-text frames landed at 0.158.0 —
 so its remaining scope is the verify-before-return half alone.
@@ -1205,7 +1218,7 @@ machine-detectable.
 **Done when:** schema/parser fixtures prove a non-empty `unverifiable[]` blocks acceptance, a missing
 or empty attack account cannot parse as `pass`, and valid hostile findings remain intact. Benign
 neighbours prove ordinary evidence still parses; malformed or extra authority-bearing output fails
-closed; the required paid tier-3 contract passes before the template/parser slice lands. — all met.
+closed; the required tier-3 contract passes before the template/parser slice lands. — all met.
 
 ### 41. Review packaging — truncation honesty + the diff base (R28) — **CLOSED (not applicable, source-traced 16 Aug 2026)**
 The proposed implementation surface does not exist. Panel processes receive a bounded prompt and
@@ -1508,7 +1521,7 @@ gate is asking about.
 
 F15 offers an explicit either/or: establish a measured read-isolation boundary for the Oracle store,
 **or** *"rename the guarantee everywhere ... and stop treating it as confidential held-out
-evidence"*. The first needs an OS boundary this environment cannot measure (item 84, paid). The
+evidence"*. The first needs an OS boundary this environment cannot measure (item 84). The
 second is entirely buildable, and it was overdue: three artifacts said three different things, and
 the flattering one was shipped to a model.
 
@@ -1645,7 +1658,7 @@ rather than by two functions agreeing about what to hash. A divergence discards 
 re-gates, which is the standard F14 already accepts for the main tree.
 
 **What this is not.** It does not make the checkout immutable, and nothing short of an OS boundary
-does (item 84, paid). It converts an *undetectable* mutation into a detected one. The finding's
+does (item 84). It converts an *undetectable* mutation into a detected one. The finding's
 remaining acceptance — *no integration case establishes that Builder descendants cannot reach the
 materialized candidate* — is about prevention, and prevention is item 84's.
 
@@ -1839,6 +1852,40 @@ one per repair, each killing the case it belongs to and previously surviving it.
 **The confirming agents ran in isolated git worktrees**, because a mutation agent that shares the
 operator's tree commits a mutant. Verified afterwards: the working tree was untouched and no
 worktree was left behind.
+
+### 138. "Paid" is not a category of blocker — **DONE (0.260.0)**
+
+**The operator is on a Max subscription, and the standing instruction already said so.** A live run
+spends quota and wall clock; it is not a purchase and needs no approval. `MEESEEKS_LIVE=1` is arming
+rather than authorization — it exists so a suite that made no API call cannot report coverage.
+
+The documentation said otherwise in **44 places**, and the consequence was not cosmetic: across a
+whole session, every item whose remaining acceptance needed a real model call was classified as
+blocked and skipped. Two eligibility sweeps then inherited that classification from the documents
+they were reading and reported a drained queue that was not drained.
+
+Corrected in `CLAUDE.md` and its `AGENTS.md` mirror (the tier table now says *makes real model
+calls*, and a new paragraph states that cost is never a reason to defer), in `DESIGN.md` (7 uses),
+in `PLAN.md` (44 uses), and across 38 test files whose headers stated the tier-2 boundary as *no
+money* rather than *no API call* — which is what tier 2 actually promises.
+
+**Two things were deliberately left alone.** The idiom *"a defect this project has already paid
+for"* means what it cost to learn something and is untouched in all five surviving places. And the
+run's own cost ceiling — `costCeiling`, `costUsd`, the budget tests — is a real product feature about
+bounding a run, not a blocker on development; one of its comments already observed that *on a
+subscription the binding constraint is the rate-limit window, not money*.
+
+**`REVIEW.md` is not corrected here**, and cannot be: it is the Codex-owned ledger, and this repository's
+rule is that Claude implements findings without rewriting them. It carries 16 instances of the same
+framing, and they will keep suggesting a blocker that does not exist until Codex revises them.
+
+**What this changes:** items 20 A/B, 24's live half, 47's discharge, 57's campaign, 80, 83, 84, 85 and
+86 are **eligible**, not blocked. What genuinely blocks work is a capability absent here — a Win32
+host (65), a real browser (42 B2) — or a product decision only the operator can make (106).
+
+**Validation:** lint and typecheck clean, `npm test` **3428 of 3428** and
+`npm run test:integration` **306 of 306**, both exit 0; the `AGENTS.md` mirror test holds the two
+contract files byte-identical.
 
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
@@ -3033,7 +3080,7 @@ still race filesystem state, and any such stronger claim depends on F42's unreso
 
 **Ancestry landed, 0.251.0 — `scripts/ancestry.mjs` and `scripts/run-registry.mjs`
 (`DESIGN.md` §6.6).** This closes the specific bypass F42 names. **It does not close F42**, which
-requires the authority to hold across a measured isolation boundary (item 84, paid).
+requires the authority to hold across a measured isolation boundary (item 84).
 
 The finding's objection was exact: `assertNotNested()` returns depth zero when `MEESEEKS_RUNNING` is
 absent, so `env -u MEESEEKS_RUNNING` never reaches ticket redemption at all. Every hardening on the
@@ -3083,7 +3130,7 @@ because depth only ever restricts.
 
 1. **It spent money.** `startDriver` runs the real entrypoint as a real process, so nothing injects a
    spawn double — the child reached its design phase and called the **real CLI**. Tier 2's definition
-   is no network, no API, no money (§11.1), and a fixture that quietly makes a paid call has broken
+   is no network, no API, no money (§11.1), and a fixture that quietly makes a live call has broken
    the tier's only promise. A fake `claude` now sits first on the child's PATH, the technique
    `claude-compat.integration.test.mjs` already uses — and which
    `nesting-authority.integration.test.mjs` was already using for exactly this reason, so the
@@ -3186,7 +3233,7 @@ reasoning or an enormous telemetry graph of ephemeral agents. Kill and restart a
 cases, not cleanup details. Do not depend on preview behavior that cannot be detected and refused
 when absent.
 
-**Done when:** all four DOGFOOD cases pass in a paid live run; receipts prove the Builder workflow
+**Done when:** all four DOGFOOD cases pass in a live run; receipts prove the Builder workflow
 remains separate from ordinary cold Panel and Oracle contexts; a child cannot recurse and an exceeded
 aggregate cap refuses closed; a forced native dollar-cap case accounts for every completed agent,
 prevents a later spawn, settles remaining background agents, and returns a failed bounded assignment;
@@ -3362,7 +3409,7 @@ changed profile compared anyway (2), an unobserved model compared anyway, and a 
 
 **Still open on this item:** the sealed evaluation protocol, counterbalanced run order, uncertainty
 interval, scenario contract audit, isolation canary, and the unseen final partition — all of which
-need paid comparative runs and item 20's cases A/B to be worth anything.
+need live comparative runs and item 20's cases A/B to be worth anything.
 
 **Problem solved:** `DOGFOOD.md` records useful scenarios and prose outcomes, but the repository
 cannot yet compare runs mechanically on the product metric: whether an unattended result is actually
@@ -3411,7 +3458,7 @@ than calling it isolated. Counterbalance baseline/candidate order across the cam
 provider drift does not consistently favor one side. This adopts Anthropic's current
 [clean-environment guidance](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)
 without importing an eval service. A deliberate leftover-file/history/service canary must fail the
-isolation check before paid comparison begins.
+isolation check before live comparison begins.
 
 Version and audit every scenario before it can enter selection or final evidence. Its contract maps
 each prompt requirement and claimed Definition-of-Done criterion to an outcome grader or an explicit
@@ -3492,7 +3539,7 @@ the same declared trial count; and at least one substantial multi-phase scenario
 separately before the project makes a measured morning-acceptance claim. A seeded false `SHIPPED`,
 scope/security violation, or destructive result cannot be averaged into acceptance; a safe refusal is
 reported separately; one requirement-paraphrase pair and one deterministic transient-fault case expose
-robustness and recovery without relying on a model's confidence report. A paid cold calibration case
+robustness and recovery without relying on a model's confidence report. A live cold calibration case
 also proves each relevant Panel role sees a seeded high-severity defect and does not invent the same
 finding in its clean neighbour; a reviewer prompt/model change cannot be selected by hiding misses,
 false positives, or disagreement behind aggregate morning acceptance. A deliberately changed CPU,
@@ -3500,7 +3547,7 @@ memory, concurrency, timeout, or tool profile refuses direct comparison, while a
 infrastructure outage remains visible as missing evidence rather than a model-quality regression. The
 campaign protocol, fixed trial count, run order, threshold, and stopping rule are sealed before the
 first result; a failed or missing attempt remains in the denominator. A deliberate prior-trial
-file/history/service contaminant is detected before paid comparison, and baseline/candidate trials
+file/history/service contaminant is detected before live comparison, and baseline/candidate trials
 start from matched fresh snapshots. Every admitted scenario passes the contract/reference/negative/
 alternative audit, and a seeded low-coverage task is quarantined rather than scored. The comparison
 reports its precommitted uncertainty interval and treats a delta that does not establish the minimum
@@ -3695,7 +3742,7 @@ neighbour, including a Windows-shaped citation resolving on a POSIX root) and
 `test/driver.test.mjs`'s loop-level pair — a unanimous report citing `does/not/exist.ts:999999`
 cannot reach the ship effect, while a report citing a real line still ships.
 
-**No paid live check is due for this slice.** `templates/reviewer-system.md` and the reviewer output
+**No live check is due for this slice.** `templates/reviewer-system.md` and the reviewer output
 contract are unchanged; the repair is entirely on the Driver's side of the parse. If this is later
 batched with item 40, item 40's own contract change carries the tier-3 requirement.
 
@@ -3712,7 +3759,7 @@ stored. Content/blob identity remains the durable pin; the line number is only a
 
 **Done when:** every hostile location in REVIEW F6's acceptance evidence fails beside a valid POSIX
 and Windows-shaped neighbour; an integration case proves fake evidence cannot reach the ship effect;
-and any parser/template contract change receives the required paid live check. This may batch with
+and any parser/template contract change receives the required live check. This may batch with
 item 40, but F6 closure remains independently reviewer-owned.
 
 ### 61. Conjoin Claude process and envelope success — IMPLEMENTED (0.179.0); REVIEW F7 CLOSED at 0.194.0
@@ -3747,7 +3794,7 @@ termination/failure representation with F2 instead of adding another parallel st
 
 **Done when:** unit and tier-2 cases keep nonzero, signal, timeout, and overflow failures failed even
 with a valid success envelope; normal success and `is_error:true` keep their meanings; and the
-mandatory paid tier-3 check observes the production `claude -p` contract. REVIEW F7 closed this at 0.194.0.
+mandatory tier-3 check observes the production `claude -p` contract. REVIEW F7 closed this at 0.194.0.
 
 ### 62. Bind the Oracle store to one run and one PRD — IMPLEMENTED (0.171.0); REVIEW F8 CLOSED at 0.194.0
 
@@ -3818,7 +3865,7 @@ supported platforms. REVIEW F9 closed this at 0.194.0.
 
 ### 64. Record every terminal run outcome atomically — IMPLEMENTED (0.189.0; reopened and repaired at 0.196.0; the at-most-once latch corrected in the 0.208.0 candidate, item 109); REVIEW F10 open pending Codex
 
-**Problem solved:** paid pre-loop and outer-exception aborts can leave no `outcome.json`, and the
+**Problem solved:** live pre-loop and outer-exception aborts can leave no `outcome.json`, and the
 existing direct overwrite can destroy the only terminal receipt on interruption.
 
 Define the durable run-start boundary and route every terminal return after it through one shared
@@ -3837,7 +3884,7 @@ line every non-crash exit routes through `releasing`, which files the receipt be
 repository back. That is the same positional argument the guard hook uses: the previous "one door"
 was one door into `driveRun`, so a failed PRD child, an unreadable declaration, an Oracle that would
 not parse, a component that aborted, and an unexpected post-lock exception each printed `ABORTED`
-and left nothing durable — on paid paths, where a parent component correctly fails closed on a
+and left nothing durable — on live paths, where a parent component correctly fails closed on a
 missing receipt and its operator then cannot recover the child's state or spend from the artifact
 that promised both.
 
@@ -4014,7 +4061,7 @@ main-tree verification; and the exact reproduction in REVIEW F14 cannot ship.
 
 **Problem solved:** Builder can read the exact `oracle.json` cases despite “held-out” language.
 
-First run a paid synthetic canary through a real Builder using `Read`, Bash, and Builder-launched
+First run a live synthetic canary through a real Builder using `Read`, Bash, and Builder-launched
 code. If the existing sandbox can establish a full read boundary without breaking target work,
 enforce and live-test it. Otherwise rename the guarantee to “not supplied adversarial cases,” make
 the limitation prominent, and do not score Oracle as confidential independent evidence. A hook-only
@@ -4233,7 +4280,7 @@ inside that path is reported and does not change the terminal state already deci
 path still refuses to *start* on a failed archive, where continuing would destroy the evidence.
 
 *Pre-loop exceptions escaped both the receipt and the lock.* Required-plugin provisioning sits
-before the loop's own `try`/`finally`, so a throw there ended a paid run with no `outcome.json` and
+before the loop's own `try`/`finally`, so a throw there ended a live run with no `outcome.json` and
 gave the repository back only because the process exited. Routed through `releasing` like every
 other pre-loop exit.
 
@@ -4451,7 +4498,7 @@ The run manifest lists only configured model selectors that can affect a child i
 post-window config fixtures exercise the documented transition; a Driver test with an injected
 child proves bare improvisation selects `prdModel`; deterministic narration creates no model record;
 `run.json` contains only active configured model selectors; and DESIGN/configure/help text agree.
-This is a shipped config/manifest change and receives the ordinary version bump. The paid live tier
+This is a shipped config/manifest change and receives the ordinary version bump. The live tier
 is required only if the implementation also changes child argv, routing, or an external CLI contract;
 the smallest compatibility repair does not.
 
@@ -4495,7 +4542,7 @@ launcher's internal preflight acknowledgement and is not promoted as a user cont
 of `--confirm-prd`; an injected-child Driver integration fixture authors an idea with the flag,
 observes a committed PRD and no later phase spawn, asserts that the exit instruction names
 `/meeseeks ./PRD.md`, then starts that exact PRD without re-authoring it; `claude plugin validate`
-passes; and the shipped command/Driver change receives the required version bump. A paid
+passes; and the shipped command/Driver change receives the required version bump. A live
 slash-command invocation is not required unless implementation changes the external Claude Code
 loading or argument-passing contract. REVIEW F24 closed this at 0.194.0.
 
@@ -4527,13 +4574,13 @@ tests reject the absent, `false`, commented and inverted spellings, and refuse `
 outright because it reads alike and enforces the opposite policy. Verified red by flipping the field
 to `false`.
 
-**Not yet done:** the paid pinned-CLI canary against the staged installed snapshot, which proves the
+**Not yet done:** the pinned-CLI canary against the staged installed snapshot, which proves the
 *loader* honours the field rather than that the file states it. Batched with items **79** and **75**
 as F25 itself directs, because a separate release campaign for one probe is the cost that finding
 was written to avoid. `PARTIAL` for exactly that reason.
 
 **Done when:** command-contract tests fail if the field is absent, false, or confused with
-`user-invocable`; `claude plugin validate` accepts the versioned command; a paid pinned-CLI canary
+`user-invocable`; `claude plugin validate` accepts the versioned command; a pinned-CLI canary
 shows the installed command is absent from the model's invocable Skill surface while a direct user
 invocation still loads it and reaches a deliberately safe preflight refusal; the canary records the
 actual CLI/plugin identities; and an unsupported or unobservable control fails acceptance rather
@@ -4611,7 +4658,7 @@ Record requested and observed tool-policy identity in item **76**'s receipt; ite
 separate prompt-supply ledger.
 
 **Done when:** unit tests assert the exact availability and approval argv for every phase, including
-literal `--tools ""` for Oracle-author and unchanged unrestricted Builder behavior; the paid Oracle
+literal `--tools ""` for Oracle-author and unchanged unrestricted Builder behavior; the live Oracle
 contract test uses `phase: "oracle-author"` rather than `review`; pinned live canaries prove the
 Oracle cannot read a repository sentinel, a read-only role can read but cannot write it, and a
 document role retains only its declared built-ins plus the guard. A synthetic inherited allow rule
@@ -4713,7 +4760,7 @@ version, a fourth retargets a symlink, and a fifth keeps launcher bytes/version 
 its delegated entrypoint or package identity. All refuse before the next child while preserving the
 complete check report. Every Driver-owned Claude probe and role receives the
 no-background-update control, operator values cannot override it, and a live canary covers the admitted
-discovery/authentication behavior, including any later bare-mode transition. Pinned paid live runs at
+discovery/authentication behavior, including any later bare-mode transition. Pinned live runs at
 every admitted compatibility boundary pass the same staged installed candidate's full
 `npm run test:live`, including the item **75**, **80**, and **82** canaries, and record exact canonical
 target, invocation-closure fingerprints, CLI, settings, and plugin identities. README, DESIGN,
@@ -4764,7 +4811,7 @@ the preflight guarantee explicitly. `PARTIAL` for those reasons.
 
 **The sealed-identity mechanism landed, 0.249.0 — `scripts/claude-seal.mjs` (`DESIGN.md` §3.5.1).**
 The half this item named as *"not yet done, and named rather than implied"* is built and unit-proven.
-The paid live half is not, and the status stays `PARTIAL` for that reason alone.
+The live half is not, and the status stays `PARTIAL` for that reason alone.
 
 **Five ways the binary a role spawns stops being the binary preflight measured, and none of them
 changes the version string** — which is exactly why the version check cannot see any of them: a PATH
@@ -4818,7 +4865,7 @@ as a `#!/bin/sh` script — which this mechanism correctly classifies as a *scri
 unreadable delegation and refuses. The fixtures now copy a real system binary, because the
 distinction between an executable and a launcher is exactly what the seal is about.
 
-**Still owed for closure (REVIEW F28):** the paid pinned live runs at every admitted compatibility
+**Still owed for closure (REVIEW F28):** the pinned live runs at every admitted compatibility
 boundary, and a measured non-interactive authentication check — `claude --version` succeeds without
 proving auth.
 
@@ -4879,7 +4926,7 @@ auto mode separately: record its exact eligibility and denial/termination behavi
 classifier outage or repeated headless denial as a named fail-closed result rather than a generic
 Builder failure.
 
-**Done when:** paid pinned live evidence distinguishes settings registration from actual filesystem
+**Done when:** pinned live evidence distinguishes settings registration from actual filesystem
 and network confinement; secret canaries never appear in logs or receipts, and any admitted mask
 releases a synthetic value only to its exact approved host; every available outbound surface is
 constrained, disabled, or named as outside the guarantee. The evidence also names the observed CPU,
@@ -4897,7 +4944,7 @@ external source or effect uses item **106**'s separately sealed, job-scoped capa
 Neither a role nor an external server may convert tool availability, network reachability, or its own
 annotations into authority.
 
-### 85. Keep candidate instructions out of reviewer authority — PARTIAL (0.206.0, supply identity 0.252.0): the authority boundary, the pre-Panel rescan and the supply trust-class report landed; the paid canary has not
+### 85. Keep candidate instructions out of reviewer authority — PARTIAL (0.206.0, supply identity 0.252.0): the authority boundary, the pre-Panel rescan and the supply trust-class report landed; the live canary has not
 
 **Supply identity landed, 0.252.0.** This item's Done-when asks that *"item 77's supply report names
 the trust class and identity of each source"*. The trust class was already there. The **identity** was
@@ -4923,7 +4970,7 @@ first version sliced each entry to the next `}` and cut identities off mid-inter
 unidentified input accepted, identity validated then dropped, identity collapsed to the class at the
 module, one driver identity collapsed to its class, and one driver entry dropping identity entirely.
 
-**Still owed:** the pinned paid hostile/benign canary, which needs live spend.
+**Still owed:** the pinned hostile/benign canary, which needs live spend.
 
 **Problem solved:** cold roles use `--safe-mode`, so current Claude Code does not automatically load
 target `CLAUDE.md`, rules, Skills, plugins, hooks, MCP servers, or memory. The reviewer template then
@@ -4946,7 +4993,7 @@ authoritative requirement frame to the immutable pre-Builder source; a post-pref
 `CLAUDE.md`, `.claude/rules/`, a Skill, hook, and MCP configuration and proves seeded hostile forms
 refuse before Panel while benign documentation remains readable only as evidence; the final scan is sealed to
 the reviewed tree; item **77**'s supply report names the trust class and identity of each source; and a
-pinned paid hostile/benign canary proves project/user/local customizations stay unloaded while the
+pinned hostile/benign canary proves project/user/local customizations stay unloaded while the
 Driver-owned reviewer prompt and implementation evidence remain available. The canary establishes
 only those seeded cases, not arbitrary prompt-injection immunity. Items **66**, **68**,
 **77**, **82**, and **83** are prerequisites. REVIEW F29 owns closure.
@@ -4987,7 +5034,7 @@ repository.
 **Not yet done, and named rather than implied:** item **77**'s supply report does not yet distinguish
 *trusted instruction*, *untrusted candidate evidence* and *disabled ambient customization* as trust
 classes; the scan result is not bound to item **68**'s reviewed-tree identity as a recorded artifact;
-and the pinned paid hostile/benign reviewer-calibration canary has not been run. A scan is a
+and the pinned hostile/benign reviewer-calibration canary has not been run. A scan is a
 known-pattern defense, and nothing here claims immunity to arbitrary prompt injection.
 
 ### 86. Verified red-team assessment job type — PARKED (post-DoD follow-on) — **IN SCOPE (DoD = all features, 19 Aug 2026)**
@@ -5439,7 +5486,7 @@ evidence; only the denial signal feeds the brief.
 
 **Done when:** a tier-2 child exits zero after writing a denial line and `spawnClaude` returns success
 while preserving it; clean-stderr and failed-envelope neighbours are unchanged; and the mandatory
-paid tier-3 guard canary has been run, because this crosses `spawnClaude` and the external CLI
+tier-3 guard canary has been run, because this crosses `spawnClaude` and the external CLI
 contract. REVIEW F36 closed this at 0.194.0.
 
 **What landed (0.188.0).** A denial travels on its own bounded field of `ShellResult` rather than
@@ -5989,7 +6036,7 @@ detection does not escalate.
 
 **Classified and not repaired, with reasons, in the report to the operator:** F13, F39 (fixed;
 residual gaps are test-coverage and a stale ledger row, not code), F5, F21, F22, F25, F27, F28, F29
-(reproducible or evidence-blocked, each needing either a paid live canary — withheld this session by
+(reproducible or evidence-blocked, each needing either a live canary — withheld this session by
 operator instruction — or a slice of its own).
 
 ### 110. The installed-snapshot harness, and two evidence leaks it uncovered — IMPLEMENTED (0.209.0 candidate)
@@ -6021,7 +6068,7 @@ It cannot prove that `meeseeks@meeseeks` **resolves** to the candidate version a
 the clause F21 turns on, so item 75 stays `PARTIAL` rather than being claimed closed.
 
 **The live canary is built and deliberately not run.** It spends money, and the operator withheld
-paid runs for this session. It skips cleanly unarmed. One `MEESEEKS_LIVE=1` run closes F25's
+live runs for this session. It skips cleanly unarmed. One `MEESEEKS_LIVE=1` run closes F25's
 remaining clause and gives F27, F28 and F29 somewhere to attach.
 
 **The argv trap is still live and bit again while writing it.** A prompt passed as an argument after
@@ -6082,7 +6129,7 @@ strictly correct, and closes the same hole from underneath.
 - **`NODE_V8_COVERAGE` is a zero-spend resolution proof.** Importing the installed `driver.mjs` under
   it recorded **40 script URLs, every one under the cache root and none from the source checkout** —
   which is F21's "prove no source-checkout path is used", with no API call. The import graph is
-  entirely static, so the closure is real. The paid canary is for *skill surface*, not for this.
+  entirely static, so the closure is real. The live canary is for *skill surface*, not for this.
 
 **Evidence.** Six tier-2 cases on the snapshot, four tier-1 cases on the answer-key leak, four on the
 narrowed claim, one structural case on the three-way classification. Every one red-proven against
@@ -6479,7 +6526,7 @@ the depth chain one and two with three refused, that a refusal mints nothing, an
 markers. Tier 2 (`test/integration/nesting-authority.integration.test.mjs`) starts the attack for
 real — a Driver process, launched from one repository against another, with a counterfeit `claude`
 first on `PATH` — across four hostile environments and two forged tickets, proving in each case a
-nonzero exit with the nesting refusal, **no paid child recorded**, no launch receipt, no lock in the
+nonzero exit with the nesting refusal, **no live child recorded**, no launch receipt, no lock in the
 victim, its history and worktree untouched, and the parent's state and ticket store unchanged. Three
 guard cases run the real hook as a subprocess, including the marker-clearing form only it can see.
 
@@ -6689,7 +6736,7 @@ second run archives into `runs/` and preserves nothing. Three go red with the pr
 
 ### 123. Trust classes, and the scan bound to the bytes it scanned — IMPLEMENTED (0.221.0); REVIEW F29 open pending Codex
 
-**Two of F29's three remaining requirements; the third is paid and is named as not done.** Item 85
+**Two of F29's three remaining requirements; the third needs a live run and is named as not done.** Item 85
 landed the reviewer-prompt authority boundary and the pre-Panel rescan. Codex's verification says
 what is still missing: *"Required trust-class supply reporting, a durable binding between the scan
 and the exact reviewed tree, and the staged-installed hostile/benign calibration remain absent."*
@@ -6719,7 +6766,7 @@ record with its unverified flag, and the per-input trust in a real manifest. Thr
 the binding actually has to hold: a clean scan whose record names the same identity `review.json`
 carries, a blocked scan recorded with the finding that blocked it, and a scan that threw.
 
-**Not done, and it is not implementable here:** F29's third requirement is a pinned paid canary
+**Not done, and it is not implementable here:** F29's third requirement is a pinned live canary
 proving a cold reviewer does not auto-load seeded project/user/local customizations, in a paired
 hostile/benign calibration. That is live-tier work and this session is not authorized to spend. The
 `verified: false` field exists precisely so the artifact does not claim it in the meantime.
@@ -6881,7 +6928,7 @@ claiming path separation or a hook parser provides OS isolation.
 **Evidence:** focused type checking and lint passed; the expanded focused run passed 1,159 unit tests
 and 47 real-process/Git integration tests. `npm run slice-check -- verify --no-integration` passed
 lint, type checking, the complete unit tier, release checks and the stable 70-file shipped-byte
-fingerprint. `npm run test:integration` passed 242 of 242 in 508.5 seconds. No paid live test was
+fingerprint. `npm run test:integration` passed 242 of 242 in 508.5 seconds. No live test was
 needed: the changed contracts are local Git/filesystem/receipt behavior and do not depend on a Claude
 CLI response.
 
@@ -6979,7 +7026,7 @@ Recorded so a future session does not "helpfully" add them:
   core.
 - **Persistent Panel/Oracle sessions or mid-run human-in-the-loop parking** — both weaken the cold,
   unattended contract. A required human decision ends with item 50's terminal question artifact; it
-  never leaves a paid run waiting overnight. A simulated, staged, or queued external effect likewise
+  never leaves a live run waiting overnight. A simulated, staged, or queued external effect likewise
   never becomes completion evidence merely to let a role continue.
 - **Persistent kernel / REPL as the builder's environment** — breaks builder starvation; state
   leaks past `git reset --hard` and the ratchet's premise dies.

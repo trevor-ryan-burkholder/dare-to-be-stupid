@@ -17,7 +17,7 @@
  * shell exits immediately. So the pid in the file is a process nothing is waiting for, in the
  * driver's own process group, which is precisely the shape that used to survive.
  *
- * No network, no API, no money. Just node, a shell, and a process that refuses to leave.
+ * No network, no API call. Just node, a shell, and a process that refuses to leave.
  */
 
 import assert from 'node:assert/strict';

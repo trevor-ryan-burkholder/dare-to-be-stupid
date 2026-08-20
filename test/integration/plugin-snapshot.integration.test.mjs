@@ -8,12 +8,12 @@
  * marketplace that reports success without refetching, and a cache directory keyed by a version
  * that did not change — are both invisible to a working-tree check.
  *
- * This tier proves the half that needs no binary and no money: that a staged snapshot is byte-for-
+ * This tier proves the half that needs no binary and no API call: that a staged snapshot is byte-for-
  * byte the candidate, that it carries the whole loader surface rather than a remembered list of it,
  * and that tampering with the copy is detected. The loader actually *accepting* those bytes is
  * `test/live/plugin-loader.live.test.mjs`, which needs a real `claude`.
  *
- * Real git and a real filesystem. No network, no API, no money.
+ * Real git and a real filesystem. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

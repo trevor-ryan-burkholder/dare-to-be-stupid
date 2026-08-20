@@ -11,7 +11,7 @@
  * it, and reads back what a forensic reader would actually find, because the property under test is
  * that the file survives the kill — which no in-process test can show.
  *
- * Real git, real process kill, counterfeit `claude` on PATH. No network, no API, no money.
+ * Real git, real process kill, counterfeit `claude` on PATH. No network, no API call.
  */
 
 import assert from 'node:assert/strict';

@@ -11,7 +11,7 @@
  * is the production path's opposite. It passed for years against a hole. What settles it is a real
  * process that really writes to stderr and really exits zero, which is what runs below.
  *
- * Needs `node`. No network, no API, no money.
+ * Needs `node`. No network, no API call.
  */
 
 import assert from 'node:assert/strict';
