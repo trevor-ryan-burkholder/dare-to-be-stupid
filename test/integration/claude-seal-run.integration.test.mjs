@@ -58,11 +58,12 @@ function repo() {
 /**
  * A fake `claude` that is a real, sealable npm-shaped launcher.
  *
- * @param {{ tamper?: boolean, bounded?: boolean }} [shape]
+ * @param {{ tamper?: boolean, bounded?: boolean, mute?: boolean }} [shape]
  *   `tamper` makes the delegated file rewrite itself on its first `-p` call — a child changing the
  *   binary the *next* role would run, which is the attack the seal exists to refuse. `bounded:
  *   false` makes the launcher delegate to something the parser cannot read, which the compatibility
- *   policy refuses outright rather than sealing approximately.
+ *   policy refuses outright rather than sealing approximately. `mute` answers `--version` and then
+ *   fails every `-p` call, which is how an installation nobody has signed in to looks from outside.
  * @returns {{ dir: string, calls: string }}
  */
 function fakeClaude(shape = {}) {
@@ -88,11 +89,23 @@ function fakeClaude(shape = {}) {
       "const { appendFileSync, readFileSync, writeFileSync } = require('node:fs');",
       "const args = process.argv.slice(2);",
       "if (args.includes('--version')) { process.stdout.write('2.1.230 (Claude Code)\\n'); process.exit(0); }",
-      `appendFileSync(${JSON.stringify(calls)}, 'p\\n');`,
+      // **The authentication probe is recorded apart from the roles.** It is a real `-p` call and it
+      // happens first, so counting it as a child would have quietly turned the tampering case below
+      // into a test of the probe rewriting the binary before any role existed — which still refuses,
+      // and still passes, and no longer means what the case says it means.
+      "const prompt = args[args.indexOf('-p') + 1] || '';",
+      `appendFileSync(${JSON.stringify(calls)}, /one word: ready/.test(prompt) ? 'auth\\n' : 'p\\n');`,
+      shape.mute === true
+        ? // Answers --version, cannot complete a call. An installation nobody has signed in to
+          // behaves this way from the outside, and the probe is deliberately not in the business of
+          // recognising *why* — only that the capability is absent.
+          "process.stderr.write('Invalid API key'); process.exit(1);"
+        : '',
       shape.tamper === true
-        ? // Exactly once, so the *second* child is the one that meets a changed binary. Rewriting on
-          // every call would still refuse, but it would not show which child was stopped.
-          `if (readFileSync(${JSON.stringify(calls)}, 'utf8').trim().split('\\n').length === 1) {\n` +
+        ? // Exactly once, and only on a *role* call, so the second child is the one that meets a
+          // changed binary. Rewriting on every call would still refuse, but it would not show which
+          // child was stopped.
+          `if (!/one word: ready/.test(prompt) && readFileSync(${JSON.stringify(calls)}, 'utf8').trim().split('\\n').filter((l) => l === 'p').length === 1) {\n` +
           `  writeFileSync(${JSON.stringify(impl)}, readFileSync(${JSON.stringify(impl)}, 'utf8') + '\\n// tampered\\n');\n` +
           `}`
         : '',
@@ -123,10 +136,16 @@ async function run(root, binDir) {
   return { code, logs };
 }
 
-/** @param {string} file @returns {number} */
-function childrenSpawned(file) {
-  if (!existsSync(file)) return 0;
-  return readFileSync(file, 'utf8').trim() === '' ? 0 : readFileSync(file, 'utf8').trim().split('\n').length;
+/** Role children only. The authentication probe is a `-p` call too, and it is not a role. */
+function childrenSpawned(/** @type {string} */ file) {
+  return callsOf(file).filter((line) => line === 'p').length;
+}
+
+/** @param {string} file @returns {string[]} */
+function callsOf(file) {
+  if (!existsSync(file)) return [];
+  const text = readFileSync(file, 'utf8').trim();
+  return text === '' ? [] : text.split('\n');
 }
 
 describe('a run seals the binary it spawns children from', () => {
@@ -145,6 +164,24 @@ describe('a run seals the binary it spawns children from', () => {
     assert.equal(childrenSpawned(calls), 0, 'a child ran against a binary the run could not seal');
   });
 
+  it('refuses before the lock when the binary cannot complete a call', async () => {
+    // **The gap DESIGN.md §3.5 documented rather than closed.** `claude --version` succeeds against
+    // an installation nobody has signed in to, so authentication used to surface at the first real
+    // role — after the lock, after the state, and on an unattended run, after everybody had gone to
+    // bed. The probe is one small call at the boundary and it fails at hour zero instead.
+    const root = repo();
+    const { dir, calls } = fakeClaude({ mute: true });
+    const { code, logs } = await run(root, dir);
+
+    assert.equal(code, 1, logs.join('\n'));
+    assert.equal(logs.some((line) => line.includes('could not complete a call')), true, logs.join('\n'));
+    // The failure is reported verbatim, so an operator can see what the binary actually said rather
+    // than this repository's guess about which of several causes it was.
+    assert.equal(logs.some((line) => line.includes('Invalid API key')), true, logs.join('\n'));
+    assert.equal(childrenSpawned(calls), 0, 'a role ran against a binary that could not authenticate');
+    assert.equal(existsSync(path.join(root, '.meeseeks', 'lock.json')), false, 'the run took the lock before proving it could work');
+  });
+
   it('runs children against a binary it could seal, so the refusal above is not a broken fake', async () => {
     // **The neighbour.** Without it, a boundary that refused every install form would score exactly
     // as well as one that refuses the right one — and it also proves the fake is a working CLI, so
@@ -158,6 +195,10 @@ describe('a run seals the binary it spawns children from', () => {
       logs.join('\n'),
     );
     assert.equal(childrenSpawned(calls) >= 2, true, `the run spawned ${childrenSpawned(calls)} children, so the case below cannot mean anything`);
+    // And the probe ran, exactly once, before any of them. Without this the refusal case above
+    // could pass against a boundary that refused that binary for some entirely different reason.
+    assert.deepEqual(callsOf(calls).slice(0, 1), ['auth'], callsOf(calls).join(','));
+    assert.equal(callsOf(calls).filter((line) => line === 'auth').length, 1, 'the run probed authentication more than once');
   });
 
   it('stops the next child when a child rewrote the binary the next one would run', async () => {

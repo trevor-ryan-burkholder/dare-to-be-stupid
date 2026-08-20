@@ -7069,6 +7069,61 @@ export function measureClaudeVersion(env) {
 const SEAL_VERSION_TIMEOUT_MS = 10_000;
 
 /**
+ * The smallest question with exactly one right answer, so the reply is checkable without being
+ * interesting. This probe is about the transport, not the model.
+ */
+const AUTH_PROBE_PROMPT = 'Reply with exactly one word: ready';
+
+/** Long enough for a cold start on a slow link, short enough that a wedged run still fails fast. */
+const AUTH_PROBE_TIMEOUT_MS = 90_000;
+
+/**
+ * Prove the sealed target can actually complete a non-interactive call.
+ *
+ * `claude --version` establishes availability and the measured version policy, and it succeeds for
+ * an installation nobody has signed in to. `DESIGN.md` §3.5 documented that gap rather than closing
+ * it, and told operators to sign in first because an authentication failure "may appear only when
+ * the first real role launches". For a four-hour unattended run that is the worst available moment:
+ * the lock is taken, the state is scaffolded, and the operator's night is gone before the first
+ * child reports that it was never able to authenticate at all.
+ *
+ * **This proves the capability; it does not classify the failure.** Nothing here matches on "not
+ * logged in" or any other message, because that text belongs to another program and would rot
+ * silently the moment it changed — the same reasoning that keeps `extractTestIds` on committed
+ * fixtures. Success is the positive conjunction: the process exits zero, the envelope parses, and it
+ * reports a result. Everything else refuses and prints what actually happened.
+ *
+ * Invoked as `claude` on PATH rather than by the sealed real path, because that is what a role
+ * resolves; the seal is what guarantees the two are the same file.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @returns {{ ok: true } | { ok: false, reason: string }}
+ */
+export function proveClaudeAuth(env) {
+  /** @type {string} */
+  let stdout;
+  try {
+    stdout = execFileSync('claude', ['-p', AUTH_PROBE_PROMPT, '--output-format', 'json'], {
+      encoding: 'utf8',
+      env: { ...env, ...sealedControls() },
+      timeout: AUTH_PROBE_TIMEOUT_MS,
+      // Closed, not inherited. `-p` is non-interactive by contract, but how an unauthenticated
+      // binary behaves is exactly what this repository does not own, and a probe that could sit
+      // forever on a prompt would replace a fast refusal with a hung run.
+      input: '',
+      stdio: 'pipe',
+    });
+  } catch (error) {
+    const failure = /** @type {{ stdout?: string, stderr?: string, message: string }} */ (error);
+    const said = `${failure.stdout ?? ''}${failure.stderr ?? ''}`.trim();
+    return { ok: false, reason: said === '' ? failure.message : said.slice(0, 400) };
+  }
+  const parsed = parseClaudeEnvelope(stdout);
+  if (!parsed.ok) return { ok: false, reason: `the reply was not a usable envelope: ${stdout.trim().slice(0, 400)}` };
+  return { ok: true };
+}
+
+/**
  * Spawn one `claude -p` child and read its envelope.
  *
  * The runner is injectable so that the two properties that matter about a child — the
@@ -8078,6 +8133,22 @@ async function runInvocation(argv, io, crash) {
       if (!(error instanceof SealError)) throw error;
       write(verbatim(`the run cannot seal its Claude binary: ${error.message}`));
       return releasing(1, { reason: 'the Claude binary could not be sealed', phase: 'launch' });
+    }
+
+    // **And that it can authenticate**, which the version check does not establish (PLAN item 83).
+    // One small call, once, at the boundary — before a run that may not reach its first role for
+    // minutes and may not stop for hours. It costs a few seconds, and it is the difference between
+    // failing at hour zero and failing at the first child.
+    const auth = proveClaudeAuth(env);
+    if (!auth.ok) {
+      write(verbatim(`claude could not complete a call: ${auth.reason}`));
+      write(
+        verbatim(
+          'Run claude once interactively and sign in, or set a working ANTHROPIC_API_KEY. The driver ' +
+            'spawns claude -p children and inherits that authentication.',
+        ),
+      );
+      return releasing(1, { reason: 'the Claude CLI could not complete a non-interactive call', phase: 'launch' });
     }
   }
 

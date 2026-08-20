@@ -24,6 +24,8 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { describe, it } from 'node:test';
 
+import { proveClaudeAuth } from '../../scripts/driver.mjs';
+
 const ARMED = process.env.MEESEEKS_LIVE === '1';
 
 /**
@@ -63,5 +65,19 @@ describe('the binary under test', { skip: ARMED ? false : 'MEESEEKS_LIVE is not 
     // A failure to execute should name itself once, not appear as four unrelated contract
     // failures whose message is whatever the CLI printed.
     assert.match(versionOf('claude'), /\d+\.\d+\.\d+/);
+  });
+
+  it('completes a non-interactive call, which reporting a version does not establish', { timeout: 120_000 }, () => {
+    // **The run boundary's authentication probe, against the real binary** (PLAN item 141). Its
+    // whole contract — that a signed-in CLI exits zero and returns a parseable envelope for a
+    // trivial `-p` prompt — is owned by another program, and §11.1 is explicit that such a thing
+    // needs one live check rather than more assertions. The tier-2 fixture proves the refusal path
+    // against a counterfeit; only this proves the accepting path against the article.
+    //
+    // It is also the case that would catch the probe becoming permanently wrong: if a future CLI
+    // stopped emitting the envelope this reads, every run on earth would refuse at the boundary,
+    // and the failure would arrive here first.
+    const verdict = proveClaudeAuth(process.env);
+    assert.equal(verdict.ok, true, JSON.stringify(verdict));
   });
 });

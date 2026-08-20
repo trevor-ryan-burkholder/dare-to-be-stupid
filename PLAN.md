@@ -1987,6 +1987,57 @@ unchanged.
 live tier 39 of 39, release-check ok at 0.262.0.
 
 
+### 141. A run proves it can authenticate before it takes the lock — **DONE (0.263.0)** (PLAN item 83)
+
+**Origin:** Phase 2, 20 Aug 2026. Item 83 named this as owed for closure and `DESIGN.md` §3.5
+documented it as an open gap in the product's own words: *"an authentication failure may appear only
+when the first real role launches."*
+
+**The problem.** `claude --version` establishes availability and the measured version policy, and it
+succeeds against an installation nobody has signed in to. On an unattended run that is the worst
+available moment to find out: the lock is taken, the state is scaffolded, and the operator's night is
+already spent before the first child reports that it could never have authenticated at all.
+
+**The repair.** One `-p` call at the run boundary, immediately after sealing, under the sealed
+controls, before the lock. `proveClaudeAuth` **proves the capability and does not classify the
+failure** — success is the positive conjunction of a zero exit, a parseable envelope and a result,
+and everything else refuses and prints what the binary actually said. Nothing matches on "not logged
+in" or any other message, because that text belongs to another program and would rot silently the
+moment it changed; it is the same reasoning that keeps `extractTestIds` on committed fixtures rather
+than on hand-written approximations. Stdin is closed and the call is bounded at 90 seconds, because
+how an unauthenticated binary behaves is precisely what this repository does not own, and a probe
+that could sit forever on a prompt would trade a fast refusal for a hung run.
+
+Invoked as `claude` on PATH rather than by the sealed real path, because that is what a role
+resolves. The seal is what guarantees the two are the same file.
+
+**Evidence.** Two new cases in `test/integration/claude-seal-run.integration.test.mjs`: a binary that
+answers `--version` and fails its `-p` call is refused with its own stderr quoted, no role runs, and
+`.meeseeks/lock.json` does not exist; and on the healthy path the probe is asserted to have run
+exactly once and first. Red proof: replacing the probe's verdict with `{ ok: true }` fails both.
+
+**One thing the probe broke, and it is worth recording.** The tampering case in that fixture rewrote
+the binary on the first `-p` call. The probe now *is* the first `-p` call, so the mutation landed
+before any role existed — the run still refused, the assertion still passed, and the case had quietly
+stopped testing what its name says. The counterfeit now records the probe apart from the roles and
+tampers only on a role call. A test that keeps its green tick while its subject moves out from under
+it is the failure mode this repository keeps finding in itself.
+
+**And one live case, because the contract is another program's.** `test/live/binary-identity.live.test.mjs`
+runs `proveClaudeAuth` against the real, signed-in binary. §11.1 is explicit that a contract owned by
+a different binary needs one live check rather than more assertions; the tier-2 fixture proves the
+refusal path against a counterfeit, and only this proves the accepting path against the article. It
+is also the case that would catch the probe becoming permanently wrong — a CLI that stopped emitting
+the envelope this reads would refuse every run on earth at the boundary, and the failure would
+surface here first.
+
+**Validation:** lint, typecheck, `npm test` 3428 of 3428, `npm run test:integration` 310 of 310,
+`binary-identity` live 3 of 3, release-check ok at 0.263.0.
+
+**Item 83's remaining half is now only the pinned boundary runs.** REVIEW F28 owns closure and only
+Codex may close it.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
@@ -4974,8 +5025,9 @@ unreadable delegation and refuses. The fixtures now copy a real system binary, b
 distinction between an executable and a launcher is exactly what the seal is about.
 
 **Still owed for closure (REVIEW F28):** the pinned live runs at every admitted compatibility
-boundary, and a measured non-interactive authentication check — `claude --version` succeeds without
-proving auth.
+boundary. The measured non-interactive authentication check landed at 0.263.0 (item 141): one `-p`
+call at the run boundary, under the sealed controls, before the lock, proving the capability rather
+than classifying the failure.
 
 ### 84. Measure and admit fail-closed child containment — OPEN (live-contract first)
 

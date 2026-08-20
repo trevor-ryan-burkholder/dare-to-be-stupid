@@ -377,11 +377,18 @@ and not a diagnosis of why one test failed. Meanwhile the host that had auto-upd
 start a run at all. On 20 August the tier passed 39 of 39 uncontended against the staged candidate,
 which is the missing evidence and the only thing that changed.
 
-**Authentication remains a requirement, not a completed preflight check.** `checkClaudeCli` currently
-runs `claude --version`; that establishes availability and the measured version policy but succeeds
-for an unsigned-in installation. Until item 83's installed discovery/authentication canary closes
-that gap, operators must sign in first and an authentication failure may appear only when the first
-real role launches.
+**Authentication is proved at the run boundary, once.** `claude --version` establishes availability
+and the measured version policy and succeeds for an unsigned-in installation, so the run makes one
+small `-p` call of its own immediately after sealing, under the sealed controls, before the lock is
+taken. It **proves the capability rather than classifying the failure**: success is the positive
+conjunction of a zero exit, a parseable envelope and a result, and anything else refuses and prints
+what the binary actually said. Nothing matches on "not logged in", because that text belongs to
+another program and would rot silently the moment it changed.
+
+This closes the gap this paragraph used to describe, which was that an authentication failure could
+surface only when the first real role launched — after the lock, after the state, and on an
+unattended run, hours after anybody could act on it. `/meeseeks init` still reports availability and
+version only; the capability check belongs to the run, because that is what it protects.
 
 **The run lock is `.meeseeks/lock.json`; `.meeseeks/run.json` is the run manifest (§7.1).** The
 lock must be acquired atomically by the driver before Phase 0, before the first child spawn,
