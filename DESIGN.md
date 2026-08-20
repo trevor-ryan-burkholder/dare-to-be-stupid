@@ -652,19 +652,22 @@ Everything the loop knew about building used to be six npm and npx command lines
 `driver.mjs`, plus a second and quietly different set of assumptions inside CI inspection. A
 toolchain is that seam, given a contract:
 
-| operation | Node | .NET |
-|---|---|---|
-| `detect` | `package.json` present | a `.sln` or `.csproj`, bounded depth |
-| `restore` | `npm ci` | `dotnet restore` |
-| `build` | `npm run build` | `dotnet build` |
-| `lint` | `npm run lint` | `dotnet format --verify-no-changes` |
-| `types` | `npm run typecheck` | **not applicable** — the compiler subsumes it |
-| `unit` | `npx vitest run --reporter=json --outputFile=…` |
-| `e2e` | `npx playwright test` |
-| `security-audit` | `npm audit --audit-level=high` |
-| `mutation` | `npx --yes @stryker-mutator/core run .meeseeks/stryker.config.json --testRunner vitest --mutate …` (§4.4) |
-| `startCommand` | `npm start`, when the manifest declares one |
-| `ci` | which operations a workflow must be seen to run |
+| operation | Node | .NET | prose (§3.8.3) |
+|---|---|---|---|
+| `detect` | `package.json` present | a `.sln` or `.csproj`, bounded depth | **never** — declaration only |
+| `restore` | `npm ci` | `dotnet restore` | `npm ci` |
+| `build` | `npm run build` | `dotnet build` | **not applicable** — nothing is compiled |
+| `lint` | `npm run lint` | `dotnet format --verify-no-changes` | **not applicable** — no verified prose linter |
+| `types` | `npm run typecheck` | **not applicable** — the compiler subsumes it | **not applicable** — no type system |
+| `unit` | `npx vitest run --reporter=json --outputFile=…` | `dotnet test --logger trx;…` | the checks suite, same vitest argv |
+| `e2e` | `npx playwright test` | **not applicable** — no runner the SDK ships | **not applicable** — no runtime to drive |
+| `security-audit` | `npm audit --audit-level=high` | `dotnet restore --force -warnaserror:NU190…` | `npm audit --audit-level=high` |
+| `mutation` | `npx --yes @stryker-mutator/core run …` (§4.4) | **not applicable** — Stryker.NET unverified | **not applicable** — would measure the checks |
+| `startCommand` | `npm start`, when the manifest declares one | `dotnet run --project …`, when one is executable | `null` — an artifact has no runtime |
+| `ci` | which operations a workflow must be seen to run | same, from the same table | same, for the two that are commands |
+
+Every cell is one of two things: a command, or an explicit refusal with a reason. There is no
+third state and in particular no empty command list, for the reason below.
 
 Six of these become Phase-3 gates, in that order. `restore` is in the contract but is **not**
 gated — a toolchain that cannot express "restore dependencies" cannot describe .NET or Rust at
@@ -729,8 +732,8 @@ Three deliberate refusals, each closing a way the declaration could quietly beco
 
 - **A declaration wins outright.** Detection still runs, but only to *report*. `detected` stays a
   statement about the tree rather than confidence in the choice, so evidence reads
-  `declared dotnet, but detection found node` and the disagreement survives into the manifest
-  instead of being resolved away.
+  `declared dotnet; detection found node. The declaration stands` and the disagreement survives
+  into the manifest instead of being resolved away.
 - **Agreement counts every sighting, not the winner.** A mixed repository holding both a
   `package.json` and a `.csproj` ranks one first and the other as an alternative — and the mixed
   repository is the whole reason a declaration exists. Reading agreement off the top-ranked
@@ -750,6 +753,49 @@ new site to unguarded until somebody remembers to add it. The rule's first versi
 that resolves indirectly never spells the word; widening it to those helpers immediately found
 two `builderSystemPrompt` call sites that had been given the parameter and never fed it.
 
+### 3.8.3 The prose toolchain — an artifact through the same machine
+
+Item 49's substrate. `scripts/toolchains/prose.mjs` drives *"write me a book about…"* and
+*"research this and make a report…"* **without the spine learning what a book is.** The ratchet
+parses reporter JSON into ids and holds them monotonic; it has no concept of a test, only of ids
+that passed. A gate is any command with an exit code. So an artifact whose deterministic checks
+emit reporter JSON drives the existing machine unchanged, and all of the work lands at this layer
+— no spine change, and a change that needs one is wrong.
+
+**It never detects.** Every other adapter recognizes itself from an artifact; a prose project has
+none. A directory of markdown is a manuscript, a documentation site, a notes folder, or this
+repository, and the evidence does not distinguish them — which is why item 49's instruction was
+*do not sniff*. `detect()` returns `null` unconditionally, and the toolchain is reachable **only**
+through §3.8.2's declaration. That is the same refusal `notApplicable` encodes for operations,
+applied to detection: *cannot be determined* and *determined to be absent* are different claims,
+and only the honest one is available here.
+
+The costs are asymmetric, which is what settles it. Failing to detect a prose project means the
+operator declares it. Wrongly detecting one strips `build`, `types`, `e2e` and `security-audit`
+off a real application, which then ships with four gates having never run.
+
+**Four operations decline, and `security-audit` deliberately does not.** A manuscript is not
+compiled, has no type system, has no browser flow, and mutating its checks would measure the
+checks rather than the writing. Those are stated rather than omitted, per §3.8. But the checks are
+real JavaScript with real dependencies, and that surface is as exploitable in a manuscript
+repository as anywhere else — so `npm audit` runs. The end result the driver sees is **two gates
+and four stated skips**, never two gates.
+
+**The runner is vitest, and that is forced rather than chosen.** `extractTestIds` parses three
+formats with a committed fixture for each: vitest JSON, Playwright JSON, .NET TRX. Node's built-in
+runner emits none of them, so item 49's claim of *zero parser work* is only true through a runner
+the ratchet already reads. The checks are ordinary vitest files over the artifact directory, and
+each check becomes a ratcheted id — a chapter that once passed may never silently regress while
+the next one is being written.
+
+**And the guarantee weakens, in the product's own words.** For code, *does it pass* is objective.
+For prose, structure and traceability are objective — a section exists, a citation's quoted text
+really appears at the locator it names, a manifest does not assign two conflicting normalized
+values to one claim id — while source support, factual truth and quality require judgment. The
+claim is therefore **provably structurally sound and traceable, plus cold factuality and quality
+judgments**, not *provably correct*. `templates/toolchain-prose.md` says this to the builder in
+those terms, with the instruction not to name a check `citation-proves-claim` and not to summarize
+a green suite as "verified", because the run must never dress the second claim as the first.
 ---
 
 ## 3.9 The context budget — measured before a child is spawned
@@ -2872,7 +2918,7 @@ group, so an operator-kill can still leak it (`PLAN.md` item 2's residual).
 | `childEnvAllow` | `[]` | names of environment variables a target's tooling needs that the child keep-list would otherwise drop (§6.1, REVIEW F5). **Names, never values** — the value is read from the operator's environment at spawn time, so nothing secret enters a config file, a receipt or a log. It may not name a Driver-owned marker, and `childEnvironment` refuses one that does |
 | `erd` | `''` | where a Mermaid `erDiagram` lives, when it is not the conventional `ERD.md` beside the PRD (§3.5, item 47). Empty means the convention; an absent file means there is no ERD, which gates nothing |
 | `dod` | `''` | where the operator additive done-bar lives, when it is not the conventional `DOD.md` beside the PRD (item 48). Its criteria are appended to the panel required set and can only make a ship harder; there is no path by which one relaxes anything |
-| `toolchain` | `''` | the toolchain this project is, when the tree cannot be trusted to say (§3.7, §3.8). Empty means detect. A declaration **wins outright** and detection only reports whether it agrees — the architect declares it and detection confirms. An unknown name is refused rather than falling back to detection, because a typo would otherwise be indistinguishable from no declaration |
+| `toolchain` | `''` | the toolchain this project is, when the tree cannot be trusted to say (§3.7, §3.8). Empty means detect. A declaration **wins outright** and detection only reports whether it agrees — the architect declares it and detection confirms. An unknown name is refused rather than falling back to detection, because a typo would otherwise be indistinguishable from no declaration. `prose` (§3.8.3) is reachable **only** this way: it never detects |
 | `schemaIntrospect` | `[]` | argv that prints the live schema as JSON for `schema-conformance` (§3.6.1, item 47). Empty means the gate does not arm. Operator configuration on purpose: a builder supplying this would describe the schema it is judged on, and the gate would confirm its own input |
 | `components` | `[]` | `{ name, dir, spec }` sub-runs executed as whole nested drivers in worktrees before the loop (§2, Phase 1c). The config declares *what* the components are; only `--give-them-the-box` on the command line permits them to run — configured components without the flag refuse the run before any child is paid for. `name` is kebab-case (it becomes branch and worktree names), `dir` is repo-relative with no `..` and is realpath-checked against the worktree at run time, `spec` is a PRD path relative to the dir or a quoted idea |
 | `deploy.enabled` | **false** | preview-only when enabled; never prod |

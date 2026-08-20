@@ -28,6 +28,7 @@
 
 import { dotnetToolchain } from './dotnet.mjs';
 import { E2E_REPORT, UNIT_REPORT, nodeToolchain } from './node.mjs';
+import { proseToolchain } from './prose.mjs';
 import { ToolchainError } from './shared.mjs';
 
 /** @typedef {import('./shared.mjs').Operation} Operation */
@@ -124,7 +125,7 @@ export { E2E_REPORT, ToolchainError, UNIT_REPORT };
  *
  * @type {Toolchain[]}
  */
-export const TOOLCHAINS = [nodeToolchain, dotnetToolchain];
+export const TOOLCHAINS = [nodeToolchain, dotnetToolchain, proseToolchain];
 
 /**
  * The toolchain used when detection finds nothing.

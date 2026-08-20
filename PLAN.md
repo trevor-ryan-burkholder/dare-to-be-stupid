@@ -2117,6 +2117,34 @@ word; widening it to the eight indirect resolvers immediately found two real def
 four mutations of `resolveToolchain` (declaration ignored → 4 failures; unknown name accepted, primary
 sighting only, `detected` reporting the choice → 1 each) and nine mutations of the threading, one per
 resolution site, each failing the positional rule. `npm run release-check` passed.
+
+**Prose toolchain landed, 0.242.0 — `scripts/toolchains/prose.mjs` (`DESIGN.md` §3.8.3).** Two of
+Done-when's clauses close: *an artifact toolchain is declared and maps its operations*, and *the code
+gates it cannot run decline visibly*.
+
+**It never detects, on any tree, and that is the design.** `detect()` returns `null` unconditionally,
+so the adapter is reachable only through `config.toolchain`. Item 49 said *do not sniff* and the costs
+are asymmetric: failing to detect a prose project means the operator declares it, while wrongly
+detecting one strips `build`, `types`, `e2e` and `security-audit` off a real application which then
+ships with four gates having never run. A manuscript tree carrying the `package.json` its vitest checks
+need detects as **node** — which is exactly why §3.8.2's declaration had to be built first.
+
+Four operations decline by name; `security-audit` deliberately does not, because the checks are real
+JavaScript with real dependencies. The driver therefore sees **two gates and four stated skips**. The
+unit runner is vitest and that is forced rather than chosen: `extractTestIds` parses vitest JSON,
+Playwright JSON and .NET TRX, node's own runner emits none of them, so *zero parser work* is only true
+through a runner the ratchet already reads. `templates/toolchain-prose.md` carries the weakened
+guarantee to the builder in the product's own words — provably structurally sound and traceable, plus
+cold judgments; never *verified*.
+
+**Validation:** lint and typecheck clean, `npm test` **3175 of 3175**, `npm run release-check` passed.
+Six red proofs against the adapter: detect sniffing a manuscript (2 failures), `build` trivially
+succeeding (3), `security-audit` wrongly declining (3), `unit` dropping the report path (1), a CI
+pattern for a declined operation (1), and `startCommand` inventing a runtime (1).
+
+**Still open on this item:** the checks-as-tests suite over a real artifact feeding the ratchet
+end to end, the citation resolver and its fail-closed fetch, the contradiction fixture, the
+authoring-time refusal of an unfalsifiable criterion, and the live artifact run.
 - **Prose gates**, flagship first: a **citation resolver** (the quoted text actually appears in the cited
   source — deterministic, and exactly the "reporter emits pass/fail evidence" shape 34 names), plus
   link-check, style (vale), word-count floors, and machine-readable claim-consistency checks. For

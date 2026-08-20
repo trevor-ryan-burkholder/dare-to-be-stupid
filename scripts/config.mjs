@@ -230,6 +230,11 @@ export function defaultConfig() {
     // an operator knows what they are building, and a greenfield tree on iteration 1 knows nothing.
     // Case C is the reason this exists — an empty repository defaulted to node, the brief told the
     // builder its gates were npm, and the builder wrote TypeScript for somebody who asked for C#.
+    //
+    // `prose` (§3.8.3) is reachable **only** through this key. That adapter never detects, on any
+    // tree, because a directory of markdown is a manuscript, a documentation site, a notes folder,
+    // or this repository and the evidence does not distinguish them — so an artifact job is
+    // declared or it does not happen.
     toolchain: '',
     // Empty by default, and an empty list changes nothing at all: no phase runs, no flag is
     // demanded, and a pre-components repository behaves exactly as it always did. Declaring one

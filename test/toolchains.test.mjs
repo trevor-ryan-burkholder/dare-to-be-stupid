@@ -28,7 +28,8 @@ import {
   resolveToolchain,
 } from '../scripts/toolchains/index.mjs';
 import { TRX_REPORT, dotnetToolchain } from '../scripts/toolchains/dotnet.mjs';
-import { MUTATION_CONFIG, MUTATION_CONFIG_CONTENTS, nodeToolchain } from '../scripts/toolchains/node.mjs';
+import { MUTATION_CONFIG, MUTATION_CONFIG_CONTENTS, UNIT_REPORT, nodeToolchain } from '../scripts/toolchains/node.mjs';
+import { proseToolchain } from '../scripts/toolchains/prose.mjs';
 import { command, notApplicable } from '../scripts/toolchains/shared.mjs';
 
 /** @type {string[]} */
@@ -801,5 +802,122 @@ describe('the architect declares the toolchain and detection confirms (item 49, 
       assert.equal(resolved.detected, true);
       assert.equal(resolved.evidence.includes('declared'), false);
     }
+  });
+});
+
+describe('the prose toolchain (item 49)', () => {
+  /** @type {string[]} */
+  const temporaryDirs = [];
+  after(() => {
+    for (const dir of temporaryDirs) rmSync(dir, { recursive: true, force: true });
+  });
+  /** @param {Record<string, string>} files @returns {string} */
+  const treeWith = (files) => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-prose-'));
+    temporaryDirs.push(dir);
+    for (const [name, body] of Object.entries(files)) {
+      mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+      writeFileSync(path.join(dir, name), body, 'utf8');
+    }
+    return dir;
+  };
+  const context = { root: '/artifact', meeseeksDir: path.join('/artifact', '.meeseeks') };
+
+  it('never detects itself, on any tree, including the ones it is for', () => {
+    // The design, not a gap. A directory of markdown is a manuscript, a documentation site, a
+    // notes folder, or this repository, and the evidence does not distinguish them. The costs
+    // are asymmetric: failing to detect a prose project means the operator declares it, while
+    // wrongly detecting one strips `build`, `types`, `e2e` and `security-audit` off a real
+    // application which then ships with four gates having never run.
+    const trees = [
+      treeWith({ 'manuscript/01-intro.md': '# Intro\n', 'checks/intro.test.js': 'it("x", () => {});' }),
+      treeWith({ 'README.md': '# notes\n' }),
+      treeWith({ 'package.json': '{"name":"app"}' }),
+      treeWith({}),
+    ];
+    for (const tree of trees) assert.equal(proseToolchain.detect(tree), null);
+  });
+
+  it('is unreachable by detection and reachable by declaration', () => {
+    // The two halves of the previous case, stated at the level the driver uses. A manuscript
+    // tree carrying the package.json its vitest checks need detects as **node** — which is
+    // exactly why the declaration had to be built before this adapter could exist.
+    const tree = treeWith({
+      'manuscript/01-intro.md': '# Intro\n',
+      'checks/intro.test.js': 'it("x", () => {});',
+      'package.json': '{"devDependencies":{"vitest":"^4"}}',
+    });
+    assert.equal(resolveToolchain(tree).toolchain.name, 'node');
+
+    const declared = resolveToolchain(tree, 'prose');
+    assert.equal(declared.toolchain.name, 'prose');
+    assert.equal(declared.detected, false);
+    assert.match(declared.evidence, /^declared prose; detection found node\. The declaration stands/);
+  });
+
+  it('declines the four code operations by name, and audits dependencies anyway', () => {
+    // Declined rather than omitted (§3.8): a gate list that shrinks from six entries to two
+    // reads exactly like a job that never needed the other four. And `security-audit` is
+    // deliberately not among them — the checks are real JavaScript with real dependencies.
+    /** @type {import('../scripts/toolchains/index.mjs').OperationName[]} */
+    const declining = ['build', 'lint', 'types', 'e2e', 'mutation'];
+    for (const name of declining) {
+      const operation = proseToolchain.operations[name](context);
+      assert.equal(operation.kind, 'not-applicable', `${name} should decline`);
+      assert.equal(operation.kind === 'not-applicable' && operation.reason.length > 40, true);
+    }
+    assert.deepEqual(proseToolchain.operations['security-audit'](context), {
+      kind: 'command',
+      command: ['npm', 'audit', '--audit-level=high'],
+    });
+    assert.deepEqual(proseToolchain.operations.restore(context), { kind: 'command', command: ['npm', 'ci'] });
+  });
+
+  it('writes the unit report where the ratchet reads it, through a runner it already parses', () => {
+    // Item 49's "zero parser work" is only true through a runner `extractTestIds` has a
+    // committed fixture for. Node's own test runner emits none of the three formats, so the
+    // argv is vitest's and the report name is the one the driver already looks for.
+    assert.deepEqual(proseToolchain.operations.unit(context), {
+      kind: 'command',
+      command: [
+        'npx',
+        'vitest',
+        'run',
+        '--reporter=json',
+        `--outputFile=${path.join(context.meeseeksDir, UNIT_REPORT)}`,
+      ],
+    });
+    assert.deepEqual(proseToolchain.reports, [UNIT_REPORT]);
+    assert.deepEqual(proseToolchain.reportOwners, { [UNIT_REPORT]: 'unit' });
+  });
+
+  it('has nothing to start, and says null rather than offering a command that would fail', () => {
+    assert.equal(proseToolchain.startCommand(treeWith({ 'manuscript/01.md': '# a\n' })), null);
+  });
+
+  it('names a CI pattern for each operation that produces a command, and for no other', () => {
+    // The rule the registry already enforces for node and dotnet, restated here because the
+    // failure it prevents is silent: a pattern for a declined operation would demand a workflow
+    // step for a command that does not exist, and no project could ever satisfy it.
+    const commanded = GATE_OPERATIONS.filter(
+      (name) => proseToolchain.operations[name](context).kind === 'command',
+    );
+    assert.deepEqual(
+      proseToolchain.ci.map((entry) => entry.operation).sort(),
+      [...commanded].sort(),
+    );
+    for (const entry of proseToolchain.ci) {
+      const operation = proseToolchain.operations[entry.operation](context);
+      assert.equal(operation.kind, 'command');
+      assert.match(operation.kind === 'command' ? operation.command.join(' ') : '', entry.pattern);
+    }
+  });
+
+  it('produces exactly the two gates whose operations are commands, and reports the four skips', () => {
+    // The end the driver actually sees. Two gates and four *stated* skips, not two gates.
+    const { gates, skipped } = gatesFor(proseToolchain, context);
+    assert.deepEqual(gates.map((gate) => gate.name), ['unit', 'security-audit']);
+    assert.deepEqual(skipped.map((entry) => entry.name), ['build', 'lint', 'types', 'e2e']);
+    for (const entry of skipped) assert.equal(entry.reason.length > 40, true, `${entry.name} skipped without a reason`);
   });
 });
