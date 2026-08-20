@@ -3156,9 +3156,13 @@ able to fetch anything, and the run would be *described* as network-contained wh
 **That description is the failure, not the reachability**, so this design does not declare a network
 policy and does not claim network containment for any writing role.
 
+**No resource guarantee is offered, and the absence is evidenced.** The CLI carries 26 `sandbox.*`
+settings and none names CPU, memory, process count, disk or workspace growth. Filesystem isolation is
+not a resource ceiling and is never described as one here.
+
 The narrower guarantee, stated in full: with a sandbox armed, a builder's **filesystem reads** can be
 denied and **its subprocesses' network access** can be denied. Its own fetch and search tools cannot,
-and neither can the model channel. Constraining those means removing them through §6.2's tool policy,
+and neither can the model channel, and no resource is bounded. Constraining those means removing them through §6.2's tool policy,
 which is a capability decision with its own cost and is not made here on the strength of a
 measurement alone.
 

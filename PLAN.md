@@ -2257,9 +2257,32 @@ option that would narrow the gap, and it is **not taken here**: no network polic
 there is nothing to narrow, and stripping a builder capability on the strength of a measurement
 alone would be speculative. It becomes a prerequisite the moment a network policy is proposed.
 
-**Still open on item 84:** the credential `deny`/`mask` measurements (`sandbox.credentials.*`), the
-MCP/plugin/Unix-socket surfaces, auto-mode eligibility, and the CPU/memory/process/disk posture. None
-is blocked now that the host can sandbox.
+**The resource posture is `absent`, and that is evidenced rather than assumed.** Item 84 requires
+each limit to be recorded as enforced, merely available, or absent, and forbids calling filesystem
+isolation a resource ceiling. The CLI binary carries **26** `sandbox.*` settings and **none** of them
+names CPU, memory, process count, disk, or workspace growth. No exhaustion canary was run and none is
+needed for this conclusion — the control does not exist to be tested, which is a stronger negative
+than a canary that merely did not trip. This repository therefore states no resource guarantee for a
+child.
+
+**The credential measurements are deferred, with the reason.** Item 84 asks for `deny` and `mask` to
+be measured *"for an explicitly required synthetic target credential"*. There is no such credential:
+item **56** removed ambient environment values, the driver hands no secret to any child, and item
+**106** — which would introduce one — is not admitted. Measuring a control for a credential that does
+not exist is speculative infrastructure, which this repository refuses on principle rather than on
+effort. It becomes prerequisite work the moment item 106 is admitted, and it is named there.
+
+**MCP, plugins and Skills are the same finding as WebFetch, one layer up.** Restricted roles already
+receive no MCP surface (item **82**: no `--mcp-config`, so an operator's servers cannot broaden a cold
+role). The builder is `availableTools: null`, so it holds whatever the host CLI holds. The guarantee
+is stated at the same narrowness for all of them: a sandbox constrains a builder's filesystem reads
+and its subprocesses' network, and constrains nothing the builder's own toolset can reach.
+
+**Still open on item 84, and each with its prerequisite:** the credential `deny`/`mask` measurements
+(needs item **106**'s admission to have a credential worth protecting); auto-mode eligibility and
+denial behaviour (measurable now, low value — item 84 itself says the classifier is model-judged,
+cannot certify work, and cannot advance the ratchet); and the decision to remove WebFetch/WebSearch
+from the builder (needs a proposed network policy to be narrowing anything).
 
 
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
@@ -5257,7 +5280,7 @@ boundary. The measured non-interactive authentication check landed at 0.263.0 (i
 call at the run boundary, under the sealed controls, before any child, proving the capability rather
 than classifying the failure.
 
-### 84. Measure and admit fail-closed child containment — OPEN; **first tranche DONE (0.264.0, item 142)**: the declared sandbox was measured to enforce nothing and now refuses instead
+### 84. Measure and admit fail-closed child containment — OPEN; **tranches DONE (0.264.0 item 142, 0.266.0 item 144)**: the declared sandbox enforced nothing and now refuses; a working one is now *observed* confining each run; the outbound and resource inventory is measured and the guarantee stated at its real narrowness
 
 **Remaining tranche's missing capability, named (19 Aug phase directive).** Every canary below that
 measures what a *working* sandbox confines needs a host with **bubblewrap and socat installed**. This
