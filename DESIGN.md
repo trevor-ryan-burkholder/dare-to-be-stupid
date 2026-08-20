@@ -370,9 +370,12 @@ re-resolves it before every child. REVIEW F28 / PLAN item 83 own what is still o
 now the pinned boundary runs and a measured authentication check — `claude --version` succeeds
 against an installation nobody has signed in to.
 
-The 2.1.235 boundary run finished 33 of 34. Its one failure passed on isolated retries and matches a
-known model-output flake, but the admission rule above is a clean full-tier pass, not a diagnosis of
-why one test failed. The release therefore remains measured but unadmitted until that evidence exists.
+**2.1.235 was refused for two days and is admitted now, which is the mechanism working.** Its
+18 August run finished 33 of 34; the one failure passed on isolated retries and matched a known
+model-output flake, and it was still refused, because the admission rule is a clean full-tier pass
+and not a diagnosis of why one test failed. Meanwhile the host that had auto-updated to it could not
+start a run at all. On 20 August the tier passed 39 of 39 uncontended against the staged candidate,
+which is the missing evidence and the only thing that changed.
 
 **Authentication remains a requirement, not a completed preflight check.** `checkClaudeCli` currently
 runs `claude --version`; that establishes availability and the measured version policy but succeeds

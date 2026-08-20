@@ -92,12 +92,12 @@ describe('classifyClaudeVersion', () => {
     assert.equal(classifyClaudeVersion(VERIFIED_THROUGH).ok, true);
   });
 
-  it('does not admit a release whose full live tier failed', () => {
-    // 2.1.235 finished 33 of 34. Isolated retries diagnose the known model-output flake, but the
-    // repository's compatibility rule requires the staged candidate's full tier to pass.
-    const verdict = classifyClaudeVersion('2.1.235 (Claude Code)');
-    assert.equal(verdict.ok, false);
-    assert.equal(/** @type {any} */ (verdict).reason.includes('newer than'), true, JSON.stringify(verdict));
+  it('admits the release whose full live tier finally passed', () => {
+    // 2.1.235 was refused for two days on a 33-of-34 result while the host that had auto-updated to
+    // it could not start a run. It is admitted now because the missing evidence arrived — 39 of 39
+    // on 20 August 2026 — and for no other reason. The case is kept rather than deleted, because
+    // what it is really asserting is that this boundary moves on evidence and nothing else.
+    assert.equal(classifyClaudeVersion('2.1.235 (Claude Code)').ok, true);
   });
 
   it('accepts a version inside the range', () => {
@@ -157,7 +157,12 @@ describe('the policy itself', () => {
     assert.equal(evidence.includes(SUPPORTED_FLOOR), true, evidence);
     assert.equal(evidence.includes(VERIFIED_THROUGH), true, evidence);
     assert.equal(evidence.includes('2.1.136'), true, 'the recorded incompatible version is not cited');
-    assert.equal(evidence.includes('2.1.235 — not admitted'), true, 'the failed boundary run is not recorded');
+    // **The refused run stays in the record after its release was admitted.** This used to assert
+    // the literal string `2.1.235 — not admitted`, which pinned a verdict rather than a property and
+    // failed the moment the missing evidence arrived. What has to hold is that the failed run is
+    // still cited: an evidence list quietly rewritten to read as though 2.1.235 passed the first
+    // time is a measurement log that has started editing its own history.
+    assert.equal(evidence.includes('33-of-34'), true, 'the refused boundary run was dropped once its release was admitted');
     for (const line of COMPATIBILITY_EVIDENCE) {
       assert.match(line, /^\d+\.\d+\.\d+ — .{20,}$/, `evidence too thin to check: ${line}`);
     }

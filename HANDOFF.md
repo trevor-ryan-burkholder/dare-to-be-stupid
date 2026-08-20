@@ -1,6 +1,6 @@
 # START HERE — current handoff, last swept 19 August 2026
 
-**State:** working-tree candidate `0.261.0` on `main`; the manifests and the package-lock root
+**State:** working-tree candidate `0.262.0` on `main`; the manifests and the package-lock root
 metadata agree, and `npm run release-check` is the check that says so.
 
 **This paragraph names no commit, and that is a rule the gate now enforces** (`REVIEW.md` F40). It
@@ -41,11 +41,13 @@ current, and these do not stay current for one commit. The candidate's own numbe
   109 for the per-finding evidence and its red proofs. The first integration invocation outlived its outer 180-second
   command wrapper and lost its captured exit status; it was allowed to finish before the clean,
   non-overlapping measured rerun.
-- **Live compatibility evidence:** the 2.1.235 run completed 33 of 34 tests and did not widen the
-  admitted 2.1.226-through-2.1.234 range. The one
-  `improve-contract` document-authoring case failed once and passed twice, matching the known
-  non-deterministic failure shape seen on 2.1.234. PLAN item 107 records the diagnosis without
-  relabelling the failed full-suite result as a pass.
+- **Live compatibility evidence:** the admitted range is **2.1.226 through 2.1.235**. 2.1.235 was
+  refused for two days on a 33-of-34 result — the one `improve-contract` document-authoring case
+  failing once and passing twice, the known non-deterministic shape also seen on 2.1.234 — and was
+  admitted on 20 August 2026 when the tier passed **39 of 39** uncontended against the 0.261.0
+  candidate. For those two days this host could not start a run, because it had auto-updated to
+  2.1.235; the answer was to produce the missing run, not to lower the bar. PLAN items 107 and 140
+  hold both halves, and the evidence list still cites the refused run.
 - **The full live tier passed 39 of 39 at 0.260.0**, uncontended, in 668 seconds — the first time it
   had ever been run against two of its own cases. Both failed. One was a bash-only `${!n+x}` probe on
   a zsh host, which could not have passed in any state of the product; the other was a 300-second

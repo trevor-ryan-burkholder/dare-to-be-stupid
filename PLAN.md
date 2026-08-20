@@ -1959,6 +1959,34 @@ succeeds against an installation nobody has signed in to, and `DESIGN.md` §3.5 
 so.
 
 
+### 140. The compatibility ceiling moved, on the run that was missing — **DONE (0.262.0)** (PLAN item 107)
+
+**Origin:** Phase 2, 20 Aug 2026. Found while confirming that arming the seal (item 139) had not
+bricked the operator's own install: `sealTarget` bounded it cleanly as a symlink to a versioned
+native binary, and the version it reported was **2.1.235** — above the admitted ceiling. `/meeseeks`
+had been refusing to start on this host since the CLI background-updated itself.
+
+**Not a defect, and that is why it is recorded.** The refusal was the compatibility policy doing
+precisely its job: 2.1.235's 18 August tier finished 33 of 34, isolated retries diagnosed the
+failure as a known model-output flake, and item 107 refused to treat a diagnosis as a result. The
+cost of that correctness was a host that could not run the product for two days. Both halves belong
+in the record — a fail-closed rule that never costs anything has not been tested.
+
+**The repair is the documented escape, run as documented.** `MEESEEKS_LIVE=1 npm run test:live`
+against the 0.261.0 candidate on 2.1.235: **39 of 39, uncontended, 697 seconds.** `VERIFIED_THROUGH`
+moved to 2.1.235 in one commit with that evidence, the evidence line records both runs rather than
+replacing the failed one, and `checkClaudeCli` now admits the host.
+
+**The refusal test was kept, not deleted.** `does not admit a release whose full live tier failed`
+became `admits the release whose full live tier finally passed`, because the property it is really
+holding is that this boundary moves on evidence and nothing else. Forward refusal is still proved by
+the `99.0.0` case, and the floor, the 2.1.136 incompatibility and the widening instruction are
+unchanged.
+
+**Validation:** lint, typecheck, `npm test` 3428 of 3428, `npm run test:integration` 309 of 309, the
+live tier 39 of 39, release-check ok at 0.262.0.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
@@ -6016,6 +6044,13 @@ binary until a complete run supplies the missing evidence.
 bounded PRD" failed once and passed twice on 2.1.235 — the same model-output variability seen on
 2.1.234. That diagnoses the failure; it does not turn the failed full-suite result into a pass. The
 escape remains available and intentionally fail-closed.
+
+**Admitted 20 August 2026 at 0.262.0, on the evidence and nothing else (item 140).** The tier passed
+**39 of 39** uncontended against the 0.261.0 candidate and `VERIFIED_THROUGH` moved to 2.1.235 in one
+commit with that result. The two-day refusal is the part worth keeping: for those two days the
+operator's own host had auto-updated to 2.1.235 and `/meeseeks` refused to start on it, and the
+answer was to produce the missing run rather than to lower the bar. A ceiling that yields to
+inconvenience is not a ceiling.
 
 ### 108. Fail closed on malformed compatibility and nesting markers — IMPLEMENTED (0.208.0)
 
