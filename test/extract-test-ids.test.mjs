@@ -15,6 +15,7 @@ import { describe, it } from 'node:test';
 import { extractTestIds } from '../scripts/ratchet.mjs';
 import { decodeXmlEntities } from '../scripts/reporters/trx.mjs';
 import {
+  MAX_REPORT_DEPTH,
   MAX_REPORT_TESTS,
   REPORTERS,
   ReportFormatError,
@@ -616,5 +617,56 @@ describe('a report may not amplify past what the ratchet will carry (REVIEW F19)
 
   it('accepts exactly the ceiling, so the boundary is the number it names', () => {
     assert.equal(parseReport(reportOf(MAX_REPORT_TESTS), { rootDir: ROOT }).tests.length, MAX_REPORT_TESTS);
+  });
+});
+
+describe('a report may not nest past what the parser will follow (REVIEW F19, item 131)', () => {
+  // The byte ceiling bounds what is read and the record ceiling bounds what enters monotonic
+  // state, and neither sees nesting: `'['.repeat(n)` is n bytes, zero records, and n stack frames
+  // plus n arrays inside `JSON.parse` — allocation and recursion a synchronous parse cannot be
+  // stopped partway through. The depth scan runs on the raw text *before* the parse, which is the
+  // only place a depth bound prevents anything rather than measuring it afterwards.
+
+  it('refuses a report nested deeper than the bound, before parsing it', () => {
+    const deep = '['.repeat(MAX_REPORT_DEPTH + 1) + ']'.repeat(MAX_REPORT_DEPTH + 1);
+    assert.throws(
+      () => parseReport(deep, { rootDir: ROOT }),
+      (error) =>
+        error instanceof ReportFormatError &&
+        error.message.includes(String(MAX_REPORT_DEPTH)) &&
+        error.message.includes('nests'),
+    );
+  });
+
+  it('allows exactly the bound through to the parser, so the boundary is the number it names', () => {
+    // At the limit the depth check stays silent and the *reporter* check speaks — a bracket blob
+    // matches no known runner. The distinct error is what proves the depth gate did not fire.
+    const atLimit = '['.repeat(MAX_REPORT_DEPTH) + ']'.repeat(MAX_REPORT_DEPTH);
+    assert.throws(
+      () => parseReport(atLimit, { rootDir: ROOT }),
+      (error) => error instanceof ReportFormatError && error.message.includes('none of the known reporters'),
+    );
+  });
+
+  it('does not count brackets inside strings, escapes included', () => {
+    // A test title may legitimately contain brackets; a depth scan that read string content as
+    // structure would refuse an honest report for its names.
+    const brackets = '['.repeat(MAX_REPORT_DEPTH * 2);
+    const report = JSON.stringify({
+      numTotalTests: 1,
+      testResults: [
+        {
+          name: `${ROOT}/test/a.test.js`,
+          assertionResults: [
+            { ancestorTitles: [`${brackets} \\" [`], title: `case ${brackets}`, status: 'passed' },
+          ],
+        },
+      ],
+    });
+    assert.equal(parseReport(report, { rootDir: ROOT }).tests.length, 1);
+  });
+
+  it('carries a real committed report without complaint', () => {
+    assert.equal(parseReport(VITEST_RUN1, { rootDir: VITEST_ROOT }).tests.length > 0, true);
   });
 });

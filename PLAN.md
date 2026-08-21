@@ -1643,6 +1643,18 @@ itself (2). `npm test` **3391 of 3391** and `npm run test:integration` **295 of 
 already built, which is the allocation the byte ceiling already governs — so the useful version is a
 streaming parser, and that is a larger change than this finding needs.
 
+**The depth half landed at 0.282.0, by a third shape neither sentence above considered.** The
+post-parse walk is useless (it measures the allocation after paying for it) and the streaming parser
+is disproportionate — but a **linear scan of the raw text before the parse** is neither:
+`nestsDeeperThan` in `scripts/reporters/index.mjs` counts brackets outside string literals, escapes
+included, stops at the first breach, and `parseReport` refuses above `MAX_REPORT_DEPTH` (128) before
+`JSON.parse` allocates anything. That closes the one attack the byte and record ceilings cannot see —
+`'['.repeat(n)` is n bytes, zero records, and n arrays plus n stack frames inside a parse that cannot
+be interrupted. Evidence: red first (missing export, then the refusal case against the unbounded
+parser); boundary case proves depth-at-limit passes the depth gate and fails only reporter detection;
+a bracket-laden test title inside strings stays uncounted; the committed vitest capture still parses.
+`test/extract-test-ids.test.mjs` **68 of 68**, lint and typecheck clean, tier 1 at the owning commit.
+
 ### 132. Red evidence is stamped per id, not per file — **DONE (0.255.0)** (REVIEW F17, reopened)
 
 F17's reopened half gives an exact reproduction, and the code's own comment stated the reasoning

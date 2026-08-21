@@ -105,6 +105,54 @@ export const RAW_REPORTERS = [trxReporter];
 export const MAX_REPORT_TESTS = 200_000;
 
 /**
+ * How deep a report's JSON may nest before it is refused unparsed (REVIEW F19, item 131).
+ *
+ * The byte ceiling bounds what is read; `MAX_REPORT_TESTS` bounds what enters monotonic state;
+ * neither sees nesting. `'['.repeat(n)` is n bytes and zero records, and it is also n arrays and a
+ * recursion depth of n inside `JSON.parse` — allocation a synchronous parse cannot be stopped
+ * partway through, which is why this bound is enforced on the raw text *before* the parse. A walk
+ * of the parsed object would only measure the allocation after paying for it.
+ *
+ * 128 is far above any real report: a reporter's depth grows with suite nesting, and the deepest
+ * committed fixture is under 20. It is also far below where `JSON.parse` recursion becomes a
+ * stack concern.
+ */
+export const MAX_REPORT_DEPTH = 128;
+
+/**
+ * Does this JSON text nest deeper than `limit`?
+ *
+ * A linear scan of the raw bytes: brackets count only outside string literals, string state
+ * tracks escapes, and the scan stops at the first breach rather than measuring the rest. Malformed
+ * text is not this function's problem — whatever it answers, `JSON.parse` still renders the
+ * verdict on validity.
+ *
+ * @param {string} text
+ * @param {number} limit
+ * @returns {boolean}
+ */
+function nestsDeeperThan(text, limit) {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const ch = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{' || ch === '[') {
+      depth += 1;
+      if (depth > limit) return true;
+    } else if (ch === '}' || ch === ']') depth -= 1;
+  }
+  return false;
+}
+
+/**
  * Worst-first. Used to collapse duplicate ids and to keep a failure visible.
  * @type {TestStatus[]}
  */
@@ -167,6 +215,16 @@ export function parseReport(input, options) {
   /** @type {unknown} */
   let report = input;
   if (typeof input === 'string') {
+    // Before the parse, because after it is too late: the refusal exists to stop `JSON.parse`
+    // allocating an object graph and a recursion depth the byte ceiling cannot see. An input that
+    // arrives already parsed was allocated by its caller and is that caller's account.
+    if (nestsDeeperThan(input, MAX_REPORT_DEPTH)) {
+      throw new ReportFormatError(
+        `report nests deeper than the ${MAX_REPORT_DEPTH} levels this build will follow. Refusing before ` +
+          'parsing: a byte ceiling bounds what is read, not what a parser allocates following brackets, and a ' +
+          'report this shape is not something any known reporter emits.',
+      );
+    }
     try {
       report = JSON.parse(input);
     } catch (error) {
