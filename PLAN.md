@@ -2969,6 +2969,54 @@ phase; this one did not, because a child chose to tidy a file it was not asked t
 the failure is legible next time rather than mistaken for a regression.
 
 
+### 163. A shared tool cache is visible to git where a real one is not — **OPEN**, root-caused (PLAN item 24)
+
+**Found by the furthest a component run has ever reached.** With items 145–147, 157 and 161 in place,
+measurement run 3's component passed its gates and **convened the review panel three times**. Every
+verdict was discarded:
+
+```
+the candidate changed while it was being judged: the candidate is now 19b68aa… and was
+checked out as c3b4d49…. Something wrote to the candidate while the gates or the panel were
+reading it, so the verdict describes bytes that are not the ones that were judged.
+```
+
+Three times, then `STALLED: 4 iterations with no gate improvement`. The seal is behaving correctly —
+something really did change.
+
+**Root cause, reproduced minimally.** `shareToolCaches` links `node_modules` into the candidate as a
+**symlink**. The target's `.gitignore` says `node_modules/` — *with a trailing slash* — and a
+trailing slash matches **directories only**. A symlink is not a directory to git:
+
+| `packages/textstats/node_modules` is | `git status --porcelain` |
+| --- | --- |
+| a real directory | *(ignored)* |
+| a symlink | `?? packages/textstats/node_modules` |
+
+So the shared cache is an untracked entry git reports, where the real thing it stands in for is
+invisible. `made.tree` is also measured **before** the share runs, so the recorded identity cannot
+include it either way.
+
+**Not repaired here, deliberately.** The obvious repairs each have a defect:
+
+- *Copy instead of link* — the cost the sharing exists to avoid.
+- *Add `node_modules` to the candidate's `.gitignore`* — that file is **tracked**, so writing it
+  changes the very tree whose identity is in question, and item **162** has just recorded why a
+  producing phase must not touch it.
+- *Measure the tree after sharing* — makes the identity describe the cache rather than the code, and
+  weakens a seal whose whole job is to notice writes.
+
+The shape that looks right is `$GIT_DIR/info/exclude` for the candidate worktree: per-repository,
+**untracked**, invisible to the tree, and exactly what git provides for "ignore this here without
+saying so in the project". That is a bounded slice with a real design, and it is not being written
+against a security-relevant seal at the end of a long session on reasoning alone — it needs its own
+slice and its own live run.
+
+**Item 24 remains IN PROGRESS.** Six runs: five machine defects found and fixed, one model-variance
+refusal, and this one open. Each run has reached further than the last; this is the first to reach
+the panel at all.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
