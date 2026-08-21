@@ -20,7 +20,7 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { citationPathProblem, resolveCitation, splitCitation } from '../scripts/evidence.mjs';
-import { resolveReportEvidence } from '../scripts/driver.mjs';
+import { combinePanel, resolveReportEvidence } from '../scripts/driver.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -308,9 +308,66 @@ describe('resolveReportEvidence is the boundary between a document and a reposit
       { root },
     );
     assert.equal(resolved.advisories[0].actionable, false);
-    assert.match(resolved.problems[0], /advisory-1/);
     // Recorded rather than deleted: the finding still exists, it just cannot be acted on.
     assert.equal(resolved.advisories.length, 1);
+    // **The reason lands on the finding, not in `problems`, and this case used to assert the
+    // opposite** — locking in a defect the audit later found. `combinePanel` counts a member as a
+    // pass only when `problems.length === 0`, so a member-level problem here disqualified the
+    // reviewer and, under `requireUnanimous`, failed the whole panel over an advisory. That
+    // contradicts §4.1 in the product's own words and `combinePanel`'s own comment.
+    assert.match(resolved.advisories[0].detail, /does not resolve/);
+    assert.match(resolved.advisories[0].detail, /imaginary\/thing\.ts:3/);
+    assert.deepEqual(resolved.problems, [], 'an advisory disqualified the member that reported it');
+  });
+
+  it('does not let an unresolvable advisory fail the panel (feature audit, item 156)', () => {
+    // The case the old one could not be: the property is about `combinePanel`, and every test that
+    // claimed to cover it stopped at a layer where it still held. Measured before the repair —
+    // member `pass`, panel `fail`.
+    const { root } = makeRepo();
+    const resolved = resolveReportEvidence(
+      report({
+        requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'src/app.ts:1', detail: 'works' }],
+        advisories: [
+          {
+            id: 'advisory-1',
+            status: 'fail',
+            severity: 'major',
+            confidence: 0.9,
+            evidence: 'imaginary/thing.ts:3',
+            detail: 'a suggestion',
+            repairHint: 'h',
+            actionable: true,
+          },
+        ],
+      }),
+      { root },
+    );
+    assert.equal(resolved.verdict, 'pass', 'the member itself was failed by an advisory');
+    const panel = combinePanel([resolved], { requireUnanimous: true, requiredIds: ['PRD-1.1'] });
+    assert.equal(panel.verdict, 'pass', 'an advisory held a compliant build back');
+    assert.deepEqual(panel.failing, [], `the advisory reached the failure list: ${panel.failing.join('; ')}`);
+
+    // **Not handed to the builder, and not lost either.** `combinePanel` reports only actionable
+    // advisories — sending a builder to a file that does not exist is the harm this disarming
+    // exists to prevent — while `recordPanelVerdict` persists the member reports whole, so the
+    // reason travels into the run's durable record on the finding that earned it.
+    assert.deepEqual(panel.advisories, [], 'a disarmed advisory was handed to the builder anyway');
+    assert.match(resolved.advisories[0].detail, /does not resolve/);
+  });
+
+  it('still disqualifies a member whose requirement citation does not resolve', () => {
+    // The neighbour, and it is the one that proves the repair did not disarm the real check. A
+    // *requirement* marked pass on a citation that does not resolve is flipped to fail and the
+    // member is disqualified — that is REVIEW F6 and it must survive untouched.
+    const { root } = makeRepo();
+    const resolved = resolveReportEvidence(
+      report({ requirements: [{ id: 'PRD-1.1', status: 'pass', evidence: 'imaginary/thing.ts:3', detail: 'works' }] }),
+      { root },
+    );
+    assert.equal(resolved.verdict, 'fail');
+    assert.equal(resolved.problems.length, 1, resolved.problems.join('; '));
+    assert.match(resolved.problems[0], /PRD-1\.1/);
   });
 
   it('leaves an actionable advisory whose location resolves alone', () => {

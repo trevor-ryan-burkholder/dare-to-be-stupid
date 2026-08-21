@@ -2725,6 +2725,46 @@ argument order is another binary's contract and this repository has been bitten 
 return `[]` fails two of the three.
 
 
+### 156. An advisory could fail the whole panel — **DONE (0.275.0)** (feature audit, item 151)
+
+**The defect, and it inverts a stated invariant.** `resolveReportEvidence` pushed a member-level
+*problem* when an advisory's citation did not resolve. `combinePanel` counts a member as a pass only
+when `problems.length === 0`, so that advisory disqualified the reviewer — and under
+`requireUnanimous`, failed the panel.
+
+`DESIGN.md` says *"§4.1 says an advisory cannot move the verdict in either direction"*, and
+`combinePanel`'s own comment says advisories never reach it because *"a number must not be able to
+hold a compliant build back"*. They reached it through the shared `problems` channel.
+
+Measured before the repair — one passing requirement with a resolvable citation, a valid attack
+account, and one advisory citing a file that does not exist:
+
+```
+member verdict after resolution: pass
+PANEL VERDICT                  : fail
+```
+
+**A compliant build, failed by a suggestion with a typo in its citation.**
+
+**The repair** records the reason on the advisory that earned it rather than in the array that
+decides verdicts. The finding is still disarmed (`actionable: false`), so the builder is never sent
+to a file that is not there, and `recordPanelVerdict` persists the member reports whole — the reason
+travels into the run's durable record instead of into the verdict.
+
+**Why the tests said otherwise.** The case named *"does not let an advisory failure change the
+verdict"* calls only `parseReviewerReport`, the one layer where the property still held. And
+`test/evidence.test.mjs` asserted `resolved.problems[0]` matched the advisory id — **locking in the
+breaking behaviour** without ever running `combinePanel` over it. That assertion is now inverted, and
+a new case runs the two functions together, which is where the property actually lives.
+
+The neighbour is the one that matters: a *requirement* marked pass on a citation that does not
+resolve is still flipped to fail and still disqualifies the member. That is REVIEW F6 and the repair
+had to leave it untouched.
+
+**Validation:** lint, typecheck, `npm test` **3493 of 3493**, `evidence` 35 of 35. Red proof:
+restoring the member-level problem fails two cases.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation

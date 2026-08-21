@@ -855,11 +855,27 @@ export function resolveReportEvidence(report, options) {
     if (!finding.actionable) return finding;
     const resolution = resolveCitation(options.root, finding.evidence ?? '');
     if (resolution.ok) return finding;
-    problems.push(
-      `advisory ${finding.id} cited ${JSON.stringify(finding.evidence)}, which does not resolve: ` +
-        `${resolution.reason}; it is recorded but not actionable`,
-    );
-    return { ...finding, actionable: false };
+    // **Recorded on the finding, not in `problems`** (feature audit, item 156). This used to push a
+    // member-level problem, and `combinePanel` counts a member as a pass only when
+    // `problems.length === 0` — so an advisory with a bad citation disqualified the reviewer and,
+    // under `requireUnanimous`, failed the whole panel.
+    //
+    // That contradicts §4.1 in the product's own words — *"an advisory cannot move the verdict in
+    // either direction"* — and `combinePanel`'s own comment, which says advisories never reach it
+    // because "a number must not be able to hold a compliant build back". They reached it through
+    // this channel. Measured: one passing requirement with a resolvable citation, a valid attack
+    // account, and one advisory citing a file that does not exist returned member `pass` and panel
+    // `fail`.
+    //
+    // The reason is kept where the reader needs it — on the advisory that earned it, which
+    // `combinePanel` collects and reports — rather than in the array that decides verdicts.
+    return {
+      ...finding,
+      actionable: false,
+      detail:
+        `${finding.detail}${finding.detail.endsWith('.') ? '' : '.'} Citation ` +
+        `${JSON.stringify(finding.evidence)} does not resolve: ${resolution.reason}; recorded but not actionable.`,
+    };
   });
   /** @type {'pass' | 'fail'} */
   let verdict = requirements.length > 0 && requirements.every((entry) => entry.status === 'pass') ? 'pass' : 'fail';
