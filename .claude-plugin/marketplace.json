@@ -1,5 +1,6 @@
 {
   "name": "meeseeks",
+  "description": "The meeseeks autonomous build loop and the design gate it arms, distributed together.",
   "owner": {
     "name": "Trevor Ryan Burkholder"
   },

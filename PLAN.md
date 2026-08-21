@@ -5633,8 +5633,9 @@ exit having done nothing — and which **no test had ever invoked as a CLI on an
 guard-registration shape in a tool. Evidence: `test/integration/plugin-snapshot.integration.test.mjs`
 now runs the real command and requires it to have staged the manifest (7 of 7); lint and typecheck
 clean. The install-check's own end-to-end evidence remains what it always was — its next live
-execution against a staged candidate, which the item 83 boundary runs perform. Still open here:
-the marketplace-description manifest change (version bump, its own slice) and the
+execution against a staged candidate, which the item 83 boundary runs perform. The marketplace description landed at 0.284.0
+— a top-level `description` in `.claude-plugin/marketplace.json`, resolving the validator warning
+this item's own text records, with the ordinary shipped-manifest bump. Still open here: the
 mandatory-release-stage decision this item's text already records.
 
 ### 76. Persist a complete exact-tree acceptance receipt — **IMPLEMENTED (0.210.0-0.224.0); REVIEW F22 owns closure**
