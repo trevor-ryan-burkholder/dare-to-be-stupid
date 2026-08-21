@@ -2765,6 +2765,40 @@ had to leave it untouched.
 restoring the member-level problem fails two cases.
 
 
+### 157. The gated tree and the subject drifted apart — **DONE (0.276.0)** (feature audit, item 151)
+
+**The fifth instance of one blind spot in a day, and the second caused by repairing the fourth.**
+Item 146 moved the gates to `candidateProjectDir(candidate.dir, prefix)` for a component sub-run and
+left `candidateSubject` returning `candidate.dir` — the candidate **repository root**. At a
+repository root those are the same string. For a component they are not.
+
+**The consequence is silent and total.** `gateTree` parses reports with the gated tree as `rootDir`
+and writes red evidence keyed `test/foo.test.mjs::x`; `driveRun` parses the same reports against the
+subject and produces `packages/textstats/test/foo.test.mjs::x`. `toPosixRelative` resolves absolute
+report paths against whichever root it is handed, so the two spellings are **disjoint**:
+`unprovenIds` intersects nothing, every passing test is unproven, `credited` is empty, and **the
+ratchet can never advance for a component sub-run**. The definition digests key by the same ids and
+miss identically.
+
+**One value is right for every reader**, which is why this is a single correction rather than a
+per-caller one: `subject()` also resolves reviewer citations and the agent-surface scan, and the
+reviewer child runs with `cwd` set to the component's project — so its citations are project-relative
+too, and the surface worth scanning is the component's own.
+
+The prefix is now resolved **once**, before the loop, and shared. It is still taken lazily elsewhere
+because a run started outside a git repository must fail with its own refusal rather than with *"git
+could not say where this directory sits"*; by the time the loop starts, launch revalidation has
+established the repository, and `candidateSubject` is synchronous.
+
+**The rule pins the agreement, not the expression.** Both must derive from the same
+`candidateProjectDir(candidate.dir, resolvedPrefix)`, and `resolvedPrefix` must be computed exactly
+once — because the failure mode is not a wrong value, it is *two* values, which is how the pair
+drifted in the first place.
+
+**Validation:** lint, typecheck, `npm test` **3493 of 3493**, `driver` 663 of 663. Red proof:
+returning the subject to `candidate.dir` fails the agreement rule.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation

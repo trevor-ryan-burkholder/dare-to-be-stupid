@@ -9184,3 +9184,31 @@ describe("the oracle gate is handed the store's directory (feature audit, item 1
     assert.match(SOURCE, /await staticGates\(dir, \{/, 'staticGates no longer gates the candidate tree');
   });
 });
+
+describe("the gated tree and the subject are the same tree (feature audit, item 157)", () => {
+  // **The fifth instance of one blind spot, and the second caused by repairing the fourth.** Item
+  // 146 moved the gates to the component's project directory and left `candidateSubject` at the
+  // candidate root. At a repository root those are the same string; for a component sub-run they
+  // are not, and the consequence is silent and total.
+  //
+  // `gateTree` parses reports with the gated tree as `rootDir` and writes red evidence keyed
+  // `test/foo.test.mjs::x`; `driveRun` parses the same reports against the subject and produces
+  // `packages/textstats/test/foo.test.mjs::x`. The two spellings are disjoint, so `unprovenIds`
+  // intersects nothing, every passing test is unproven, and the ratchet can never advance.
+  //
+  // Held positionally because both live inside `runInvocation`, which no tier-1 test executes. What
+  // is pinned is not the expression but the *agreement*: both must derive from the same call.
+  const SOURCE = readFileSync(new URL('../scripts/driver.mjs', import.meta.url), 'utf8');
+
+  it("derives both from candidateProjectDir with the same prefix", () => {
+    assert.match(SOURCE, /gateTree\(candidateProjectDir\(candidate\.dir, resolvedPrefix\)/, 'the gates no longer use the shared prefix');
+    assert.match(SOURCE, /candidateSubject: \(\) => candidateProjectDir\(candidate\.dir, resolvedPrefix\)/, 'the subject no longer matches the gated tree');
+  });
+
+  it("resolves that prefix exactly once, so the two cannot be computed apart", () => {
+    // The failure mode this forbids is not a wrong value, it is *two* values. A second resolution
+    // is how the pair drifted in the first place.
+    const resolutions = [...SOURCE.matchAll(/const resolvedPrefix = await runPrefix\(\)/g)];
+    assert.equal(resolutions.length, 1, `resolvedPrefix is computed ${resolutions.length} times`);
+  });
+});

@@ -9941,6 +9941,12 @@ async function runInvocation(argv, io, crash) {
   // a late crash with a phase the run had already left.
   crash.phase = 'loop';
   try {
+    // **Resolved once, here, so the gates and the subject cannot disagree** (items 146, 157). It is
+    // taken lazily elsewhere because a run started outside a git repository must fail with its own
+    // refusal rather than with "git could not say where this directory sits"; by this point launch
+    // revalidation has established the repository, and the loop needs a plain string rather than a
+    // promise — `candidateSubject` is synchronous and is read from several places.
+    const resolvedPrefix = await runPrefix();
     outcome = await driveRun({
     receipt: outcomeWritten,
     config,
@@ -10157,7 +10163,7 @@ async function runInvocation(argv, io, crash) {
         // **Where this run's project is, not where its repository starts.** Identical for a
         // top-level run; for a component it is the difference between gating the code the builder
         // wrote and gating an empty repository root.
-        const gated = await gateTree(candidateProjectDir(candidate.dir, await runPrefix()), meeseeksDir);
+        const gated = await gateTree(candidateProjectDir(candidate.dir, resolvedPrefix), meeseeksDir);
         // Recorded from what `gateTree` reports, never recomputed: `readTestReports` has to read
         // the tree the gates actually cleared, and those two used to derive it separately.
         gatedTree = gated.dir;
@@ -10190,8 +10196,28 @@ async function runInvocation(argv, io, crash) {
         candidate = { dir: made.dir, tree: made.tree };
         return { ok: true, dir: made.dir, tree: made.tree, detail: '' };
       },
-      /** The directory the loop must resolve evidence, test definitions and the agent scan against. */
-      candidateSubject: () => candidate.dir,
+      /**
+       * The directory the loop must resolve evidence, test definitions and the agent scan against.
+       *
+       * **The tree that was gated, not the repository it sits in** (feature audit, item 157). Item
+       * 146 moved the gates to `candidateProjectDir(...)` for a component sub-run and left this at
+       * the candidate root, which is the same value at a repository root and a different one
+       * everywhere the correction was needed.
+       *
+       * The consequence was silent and total for a component: `gateTree` parses reports with the
+       * gated tree as `rootDir` and writes red evidence keyed `test/foo.test.mjs::x`, while
+       * `driveRun` parses the same reports against this subject and produces
+       * `packages/textstats/test/foo.test.mjs::x`. `toPosixRelative` resolves absolute report paths
+       * against whichever root it is handed, so the two spellings are **disjoint** — `unprovenIds`
+       * intersects nothing, every passing test is unproven, `credited` is empty, and the ratchet can
+       * never advance. The definition digests key by the same ids and miss for the same reason.
+       *
+       * One value is right for every reader here, which is why this is a single correction rather
+       * than a per-caller one: the reviewer child runs with `cwd` set to the component's project, so
+       * its citations are project-relative too, and the agent surface worth scanning is the
+       * component's own.
+       */
+      candidateSubject: () => candidateProjectDir(candidate.dir, resolvedPrefix),
       /**
        * Is the **candidate** still the tree it was checked out from? (REVIEW F14)
        *
