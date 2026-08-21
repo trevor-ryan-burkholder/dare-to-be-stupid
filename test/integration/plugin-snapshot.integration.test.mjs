@@ -17,10 +17,12 @@
  */
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { SHIPPED_PATHS, isShipped } from '../../tools/release-check.mjs';
 import { shippedFiles, stageSnapshot, verifySnapshot } from '../../tools/plugin-snapshot.mjs';
@@ -32,7 +34,7 @@ after(() => {
   for (const dir of temporaryDirs) rmSync(dir, { recursive: true, force: true });
 });
 
-const ROOT = path.resolve(new URL('../..', import.meta.url).pathname);
+const ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
 /** @returns {string} */
 function scratch() {
@@ -118,5 +120,21 @@ describe('a staged plugin snapshot is the candidate, byte for byte', () => {
     // Nothing staged is never "staged nothing successfully". A loader given an empty directory has
     // no plugin, and a harness that passed here would prove the opposite of what it exists for.
     assert.throws(() => stageSnapshot({ root: scratch(), dest: scratch() }), /no shipped files/);
+  });
+
+  it('runs as a command, which nothing had ever proved (REVIEW F21)', () => {
+    // The direct-invocation guard compares `process.argv[1]` against `import.meta.url`. With
+    // `new URL(...).pathname` that comparison silently never matches on Windows, and no test
+    // invoked the file as a CLI, so the guard's answer was asserted by nobody on any platform —
+    // the guard-registration shape, in a tool. This runs the real command against the real
+    // repository and requires it to have actually staged something.
+    const dest = path.join(scratch(), 'snapshot');
+    const stdout = execFileSync(process.execPath, [path.join(ROOT, 'tools', 'plugin-snapshot.mjs'), dest], {
+      cwd: ROOT,
+      stdio: 'pipe',
+      encoding: 'utf8',
+    });
+    assert.match(stdout, /^staged \d+ shipped file\(s\) into /);
+    assert.equal(existsSync(path.join(dest, '.claude-plugin', 'plugin.json')), true, 'the CLI staged no manifest');
   });
 });

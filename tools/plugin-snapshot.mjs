@@ -26,6 +26,7 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 import { SHIPPED_PATHS, isShipped } from './release-check.mjs';
 
@@ -122,8 +123,11 @@ export function verifySnapshot(options) {
   return problems;
 }
 
+// `fileURLToPath`, never `new URL(...).pathname`: on Windows the pathname of a file URL is
+// `/C:/…`, which never equals a `path.resolve`d argv, so this guard would silently never run and
+// the CLI would exit having done nothing (REVIEW F21).
 const invokedDirectly =
-  typeof process.argv[1] === 'string' && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname);
+  typeof process.argv[1] === 'string' && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (invokedDirectly) {
   const dest = process.argv[2];
   if (dest === undefined) {

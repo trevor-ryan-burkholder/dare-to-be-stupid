@@ -5618,6 +5618,25 @@ requires the ordinary version bump.
 version, missing transitive file, wrong commit, and source-checkout leakage fixtures fail; the
 operator's actual plugin registry is byte-identical before and after; and no model/API call occurs.
 
+**F21's tooling sub-claims repaired (21 Aug 2026, tools/test only — no bump; `tools/` is not a
+loader path).** Verified against current code first, every cited line still live, then repaired:
+the absent-settings crash (`digestOf` was a bare `readFileSync` called at module top level on
+`~/.claude/settings.json` and the registry, so a fresh operator got an uncaught ENOENT instead of a
+`REFUSED:` line — absence is now an identity of its own, equal to itself and unequal to presence);
+the POSIX-only `sh -c command -v` binary probe (now platform-forked to `where` on win32); three
+hand-built `file://${path}` URLs and one `url.slice('file://'.length)` reversal (now
+`pathToFileURL`/`fileURLToPath`, because a Windows coverage URL is `file:///C:/…` and the slice
+leaves `/C:/…`, so every module read as a stray and a correct install was refused);
+`transcript_path: '/dev/null'` (now `os.devNull`); and `plugin-snapshot.mjs`'s direct-invocation
+guard comparing against `new URL(...).pathname`, which never matches on Windows so the CLI would
+exit having done nothing — and which **no test had ever invoked as a CLI on any platform**, the
+guard-registration shape in a tool. Evidence: `test/integration/plugin-snapshot.integration.test.mjs`
+now runs the real command and requires it to have staged the manifest (7 of 7); lint and typecheck
+clean. The install-check's own end-to-end evidence remains what it always was — its next live
+execution against a staged candidate, which the item 83 boundary runs perform. Still open here:
+the marketplace-description manifest change (version bump, its own slice) and the
+mandatory-release-stage decision this item's text already records.
+
 ### 76. Persist a complete exact-tree acceptance receipt — **IMPLEMENTED (0.210.0-0.224.0); REVIEW F22 owns closure**
 
 **Header corrected 19 Aug 2026 after checking the code rather than the note.** It read "the

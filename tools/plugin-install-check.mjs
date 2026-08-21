@@ -32,10 +32,11 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { operatorPath } from './operator-path.mjs';
 import { isShipped } from './release-check.mjs';
@@ -76,8 +77,18 @@ function run(command, args, options = {}) {
   }
 }
 
-/** @param {string} file @returns {string} */
-const digestOf = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
+/**
+ * A file's identity for the touched-nothing check, absence included.
+ *
+ * A fresh operator machine has no `settings.json` and no plugin registry, and this check's first
+ * act must not be an uncaught ENOENT (REVIEW F21). Absence is an identity of its own: absent
+ * before and absent after compares equal, and a file this check *created* compares different —
+ * which is exactly the modification the comparison exists to refuse.
+ *
+ * @param {string} file @returns {string}
+ */
+const digestOf = (file) =>
+  existsSync(file) ? createHash('sha256').update(readFileSync(file)).digest('hex') : '(absent)';
 
 /**
  * Every shipped file in a commit, mapped to its blob hash.
@@ -141,7 +152,10 @@ const cli = run('claude', ['--version']).trim();
 // **Which binary, not just which version** (REVIEW F28: "path plus a self-reported version is not
 // sufficient identity" — and a version with no path is less than that). A shadowed `claude` is the
 // scenario the finding is about, and this check met one on its first run.
-const cliPath = run('sh', ['-c', 'command -v claude'], { allowFailure: true }).trim() || '(path unknown)';
+const cliPath =
+  (process.platform === 'win32'
+    ? run('where', ['claude'], { allowFailure: true }).split(/\r?\n/)[0].trim()
+    : run('sh', ['-c', 'command -v claude'], { allowFailure: true }).trim()) || '(path unknown)';
 say(`checking ${PLUGIN}@${MARKETPLACE} ${declared} at ${head.slice(0, 12)} against ${cli} at ${cliPath}`);
 
 // A working tree that differs from HEAD is not a failure — but the install carries HEAD, so saying
@@ -216,7 +230,7 @@ try {
   // never opens a hook file, but a module graph cannot lie about where it loaded from: importing the
   // installed driver under `NODE_V8_COVERAGE` records every script URL Node resolved.
   const coverage = path.join(scratch, 'coverage');
-  run(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(`file://${path.join(record.installPath, 'scripts', 'driver.mjs')}`)});`], {
+  run(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(pathToFileURL(path.join(record.installPath, 'scripts', 'driver.mjs')).href)});`], {
     cwd: scratch,
     env: { ...isolated, NODE_V8_COVERAGE: coverage },
   });
@@ -226,7 +240,10 @@ try {
     for (const script of JSON.parse(readFileSync(path.join(coverage, name), 'utf8')).result ?? []) {
       const url = String(script.url ?? '');
       // `[eval1]` is this probe's own entry point, not a module the plugin resolved.
-      if (url.startsWith('file://') && !url.endsWith('[eval1]')) resolved.push(url.slice('file://'.length));
+      // `fileURLToPath`, never `url.slice('file://'.length)`: a Windows coverage URL is
+      // `file:///C:/…`, and the slice leaves `/C:/…` — a path that matches nothing, so every
+      // module reads as a stray and the check refuses a correct install (REVIEW F21).
+      if (url.startsWith('file://') && !url.endsWith('[eval1]')) resolved.push(fileURLToPath(url));
     }
   }
   if (resolved.length === 0) refuse('the coverage probe recorded no modules, so it established nothing');
@@ -241,7 +258,7 @@ try {
   // eleven-version failure this repository already paid for.
   const probe = {
     session_id: '00000000-0000-4000-8000-000000000000',
-    transcript_path: '/dev/null',
+    transcript_path: os.devNull,
     cwd: scratch,
     permission_mode: 'bypassPermissions',
     hook_event_name: 'PreToolUse',
@@ -282,8 +299,8 @@ try {
   // committed, pushed, reinstalled and reloaded while the loader keeps running the previous build,
   // and every symptom is indistinguishable from a wrong fix. Importing the *installed* modules and
   // asking them directly is the only answer that cannot be fooled: these are the bytes a run uses.
-  const installedDriver = await import(`file://${path.join(record.installPath, 'scripts', 'driver.mjs')}`);
-  const installedCompat = await import(`file://${path.join(record.installPath, 'scripts', 'claude-compat.mjs')}`);
+  const installedDriver = await import(pathToFileURL(path.join(record.installPath, 'scripts', 'driver.mjs')).href);
+  const installedCompat = await import(pathToFileURL(path.join(record.installPath, 'scripts', 'claude-compat.mjs')).href);
 
   // F27: available tools are modelled apart from approved ones, in the installed copy.
   for (const [phase, policy] of Object.entries(installedDriver.PHASE_PERMISSIONS)) {
