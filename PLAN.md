@@ -933,12 +933,12 @@ itself**, whose deliverable is a recorded answer. Items 32 and 54 say *experimen
 titles; item 59 is a development protocol for authoring prompts rather than something a run does.
 Those three stay out. Everything else that is a capability is in.
 
-**Amended 21 Aug 2026 (operator, in-session).** Items **34** (research mode) and **49** (artifact
-job-types' remaining work) move **post-DoD**: wanted capabilities, built after the current bar
-completes, alongside the item **166** dashboard's same-day disposition. Item 49's shipped substrate
+**Amended 21 Aug 2026 (operator, in-session).** Items **34** (research mode), **49** (artifact
+job-types' remaining work), **166** (dashboard), and **168** (host setup/bootstrap) are
+**post-DoD** capabilities, built after the current bar completes. Item 49's shipped substrate
 — the prose toolchain and the citation/claim gates — remains shipped and in force; only its
 unbuilt remainder defers, with its evidence gap named at the item. The current DoD completes
-without all three.
+without those four.
 
 **Why the list was long, recorded because the reasons were not equal.** Items 47–51 were parked as
 "Phase-6 class" on 15 Aug to protect the capstone timeline, and that reason died with the capstone.
@@ -3252,6 +3252,88 @@ with and without hostile operator customizations installed; the hostile customiz
 the Builder prompt or become invocable guidance; Driver-declared versioned guidance still arrives;
 the Builder's intended tool availability is unchanged; and pinned live evidence proves the external
 CLI behavior rather than inferring it from argv alone.
+
+### 168. One-command host setup and dependency bootstrap — **DEFERRED post-DoD (operator, in-session 21 Aug 2026)**
+
+**Problem solved:** plugin installation makes Meeseeks available but does not prepare every optional
+host tool, and users currently have to translate preflight repairs into a separate setup sequence.
+Provide one explicit, repeatable bootstrap without turning marketplace installation into arbitrary,
+privileged code execution.
+
+**Platform boundary:** Claude Code exposes no automatic plugin `install` or `postinstall` lifecycle
+hook. Its
+[Setup hook](https://code.claude.com/docs/en/hooks#setup) runs only when explicitly requested, while
+[plugin dependencies](https://code.claude.com/docs/en/plugin-dependencies) install other Claude
+plugins and locked
+[Node dependencies](https://code.claude.com/docs/en/plugins-reference#nodejs-package-dependencies)
+install with lifecycle scripts disabled. Dependencies that need a first-use installer belong in the
+persistent `${CLAUDE_PLUGIN_DATA}` directory, not the versioned plugin cache or a target repository.
+
+**Scope:** add an explicit `/meeseeks:setup` Skill or documented `claude --init-only` path. Use
+`plugin.json.dependencies` only for genuine Claude plugin dependencies; keep target-specific quality
+tools in the existing first-run provisioning path; install plugin-owned user-space dependencies
+idempotently under `${CLAUDE_PLUGIN_DATA}`; and detect privileged or platform package requirements
+without silently running `apt`, Homebrew, Scoop, or administrator operations. A failed or partial
+setup remains safe to retry, records no secret, and prints the exact manual repair. Setup never
+mutates a target repository until the operator explicitly selects it and authorizes that action.
+
+**Admission:** resume after the current all-features DoD, unless a clean-profile installation test
+first proves that the supported install → preflight → run path cannot start without it. The existing
+preflight and first-run provisioning remain the supported path until this item ships.
+
+**Done when:** on each supported host, a clean Claude Code profile can install the marketplace and
+Meeseeks, invoke one explicit setup operation, and pass preflight in a disposable repository. A
+second invocation is a no-op; an updated dependency manifest installs only the changed dependency;
+offline, permission, unsupported-platform, partial-install, and corrupt-state cases give bounded,
+actionable recovery; uninstall and retained-data behavior are documented; no privileged package
+manager runs implicitly; and clean-profile install/update tests exercise the real cached marketplace
+package rather than a source checkout.
+
+### 168. A root file and a component file with one name were one path — **DONE (0.287.0)** (PLAN item 24, boxed run 11)
+
+**Found by boxed run 11, 21 Aug 2026** — the first boxed run with the launch fix (item 165), a
+loaded config, and a 75-minute wall. The child cleared launch, prd, and entered design; the design
+role (opus, no Bash — Read/Glob/Grep/Write/Edit only) wrote an undeclared `.gitignore`, and the
+design phase refused exactly as item 81's law requires: `ABORTED`, 1.26M tokens, $2.83. The refusal
+was correct. What the investigation found underneath it was not.
+
+**The defect: `relativeToCwd` was lossy.** It mapped in-prefix paths to cwd-relative spellings
+(item 145) and passed out-of-prefix paths through at their repository-root spelling, believing that
+made them unmatchable against declared outputs. False for every **root-level** path: root
+`.gitignore` and `packages/<name>/.gitignore` spell identically after the mapping, and
+`changedPaths`' Set merged them into **one entry** — admittable against the wrong declaration
+(latent: the prd phase declares `.gitignore` and a dirty root one would ride it), never staged by
+the cwd-relative `git add` (leaking to the next phase misattributed), and unnameable in a refusal —
+which is why this incident needed a forensic investigation instead of one log line.
+
+**Two accessories.** `templates/architect.md` never told the design role its declared file set is
+closed, so an ordinarily-helpful model writing a `.gitignore` was invited, at 889k tokens per
+lesson. And the refusal's promise that "the change is still on disk" was false for a component: the
+parent sweeps the worktree on every path out, destroying the undeclared file before anyone can name
+it — this run's actual `.gitignore` writer target (component's own vs root via `../`) is
+unrecoverable for exactly that reason.
+
+**The repairs (0.287.0).** `relativeToCwd` spells out-of-prefix paths truthfully with
+`path.posix.relative` — `../../.gitignore` — so an out-of-prefix change is *structurally* unable to
+match a declared output (`../` cannot appear in one), the two files stay two entries, the refusal
+names a path a reader can `git diff` verbatim from the cwd, and item 145's in-prefix mapping is
+untouched. `architect.md` states the file set is closed, `.gitignore` above all. The components
+phase logs the doomed worktree's `git status --porcelain` before removing it, so the next such
+abort carries its own autopsy.
+
+**Evidence.** Unit: the collision reproduced and refuted (both `.gitignore`s as two exact entries),
+the root-level change refused under a declared name while the component's own is admitted, the
+refusal text carrying the `../` spelling, the out-of-prefix README case updated to the truthful
+spelling, and the two old cases that had leaned on the answers-everything double moved to the
+per-command one its own comment had warned about. Tier 2 against real git: porcelain root-spelling
+plus `../` pathspec staging the root file from the component cwd — both facts git's, both proven
+against the binary. `test/launch.test.mjs` 45/45, tier 1 **3,529 of 3,529**, tier 2 full run at the
+owning commit, lint and typecheck clean. The template sentence's live proof rides run 12, which is
+also item 24's next attempt.
+
+**Item 24 remains IN PROGRESS** — eight runs, seven machine defects found and fixed, one
+model-variance refusal that item 168's template sentence now addresses at its cause. Run 12 owes
+the ship.
 
 ### 34. Verified research mode — **DEFERRED post-DoD (operator, in-session 21 Aug 2026)** — a wanted capability, built after the current bar completes; was: IN SCOPE (19 Aug), OPEN before that
 

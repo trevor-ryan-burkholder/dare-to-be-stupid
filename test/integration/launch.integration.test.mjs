@@ -19,7 +19,7 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { main, meeseeksIgnoreUpdate } from '../../scripts/driver.mjs';
-import { LAUNCH_RECEIPT_FILE } from '../../scripts/launch.mjs';
+import { LAUNCH_RECEIPT_FILE, changedPaths } from '../../scripts/launch.mjs';
 import { checkCleanWorkingTree } from '../../scripts/preflight.mjs';
 
 /** @type {string[]} */
@@ -411,5 +411,48 @@ describe('launch revalidation inside a component worktree (boxed run 7, PLAN ite
     writeFileSync(path.join(componentDir, 'rogue.js'), 'export const rogue = 1;\n');
     assert.equal(checkCleanWorkingTree(probe).ok, false, 'real uncommitted work rode the exemption');
     git(root, ['worktree', 'remove', '--force', worktree]);
+  });
+
+  it('keeps a root file and a component file with one name apart, against real git (boxed run 11)', async () => {
+    // Real git, because both facts are git's: porcelain spells from the repository root, and a
+    // `../`-spelled pathspec from a subdirectory reaches the root file. Run 11's collision — both
+    // `.gitignore`s presenting as one entry — is reproduced and refuted here, and the truthful
+    // spelling is proven usable exactly as a refusal would print it.
+    const root = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-launch-'));
+    temporaryDirs.push(root);
+    git(root, ['init', '--quiet']);
+    git(root, ['config', 'user.email', 'test@example.com']);
+    git(root, ['config', 'user.name', 'test']);
+    writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n');
+    mkdirSync(path.join(root, 'packages', 'x'), { recursive: true });
+    writeFileSync(path.join(root, 'packages', 'x', '.gitignore'), 'dist/\n');
+    git(root, ['add', '-A']);
+    git(root, ['commit', '--quiet', '-m', 'base']);
+    const componentDir = path.join(root, 'packages', 'x');
+    writeFileSync(path.join(root, '.gitignore'), 'node_modules/\nchanged-at-root\n');
+    writeFileSync(path.join(componentDir, '.gitignore'), 'dist/\nchanged-in-component\n');
+
+    const changed = await changedPaths({
+      run: async (command, args) => {
+        try {
+          return {
+            ok: true,
+            stdout: execFileSync(command, args, { cwd: componentDir, stdio: 'pipe', encoding: 'utf8' }),
+            stderr: '',
+          };
+        } catch (error) {
+          const failure = /** @type {{ stderr?: string, message: string }} */ (error);
+          return { ok: false, stdout: '', stderr: String(failure.stderr ?? failure.message) };
+        }
+      },
+      cwd: componentDir,
+    });
+    assert.deepStrictEqual(changed, ['../../.gitignore', '.gitignore']);
+
+    // And the truthful spelling is a working pathspec: staging it from the component cwd reaches
+    // the root file — the property that makes the refusal's text actionable as written.
+    git(componentDir, ['add', '--', '../../.gitignore']);
+    const staged = git(root, ['diff', '--cached', '--name-only']);
+    assert.deepStrictEqual(staged.split('\n'), ['.gitignore']);
   });
 });

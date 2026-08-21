@@ -26,6 +26,10 @@ At the repository root:
 
 <!-- meeseeks:declared-outputs docs/architecture.md docs/api-contract.md docs/data-model.md docs/openapi.yaml CLAUDE.md PRODUCT.md -->
 
+**The file set above is closed.** Write those files and no other — no `.gitignore` (the driver
+owns it), no scaffolding, no placeholder source, no configuration. A design phase that touches
+anything else is refused whole, and the run ends with it (boxed run 11 died exactly this way).
+
 ## Declare what this project is
 
 The gates that run against every iteration depend on what is being built. A CLI has no health

@@ -9335,6 +9335,26 @@ async function runInvocation(argv, io, crash) {
               ),
             );
           } finally {
+            // What the doomed worktree still held, recorded before it is destroyed (run 11). The
+            // refusal a child prints promises "the change is still on disk", and for a component
+            // this removal made that false — an undeclared-output abort whose undeclared file
+            // nobody could name afterwards. One porcelain listing in the parent log is the
+            // difference between an autopsy and an excavation.
+            const leftBehind = await shell('git', ['status', '--porcelain'], {
+              cwd: worktreeDir,
+              timeoutMs: GIT_OPERATION_TIMEOUT_MS,
+            });
+            const dirty = leftBehind.ok
+              ? leftBehind.stdout.split('\n').filter((line) => line.trim() !== '')
+              : [];
+            if (dirty.length > 0) {
+              write(
+                verbatim(
+                  `component ${component.name}: the removed worktree still held ${dirty.length} uncommitted ` +
+                    `change(s): ${dirty.slice(0, 10).join(', ')}`,
+                ),
+              );
+            }
             // On every path out, the failing ones included — a worktree that outlives its component
             // refuses the next run's `worktree add`. The branch survives as the record of the work.
             const cleaned = await removeWorktrees({ cwd, run: shell, worktrees: [{ index: 1, dir: worktreeDir }] });

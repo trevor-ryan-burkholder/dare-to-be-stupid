@@ -98,19 +98,12 @@ describe('changedPaths', () => {
   /** @param {{ ok: boolean, stdout?: string, stderr?: string }} answer */
   const runner = (answer) => async () => ({ ok: answer.ok, stdout: answer.stdout ?? '', stderr: answer.stderr ?? '' });
 
-  it('excludes the run\'s own machine state, which is never a phase output', async () => {
-    const changed = await changedPaths({
-      run: runner({ ok: true, stdout: '?? .meeseeks/\0?? .meeseeks/config.json\0?? PRD.md\0' }),
-      cwd: '/nowhere',
-    });
-    assert.deepStrictEqual(changed, ['PRD.md']);
-  });
-
   /**
-   * A double that answers **per command**, because the one above answers every command the same way
-   * and therefore hands `git rev-parse --show-prefix` a porcelain listing. That is harmless for the
-   * cases it was written for and useless for these: a probe double that ignores its arguments cannot
-   * test what the arguments were.
+   * A double that answers **per command**. The one above answers every command the same way and
+   * therefore hands `git rev-parse --show-prefix` a porcelain listing — which was "harmless" until
+   * the out-of-prefix spelling became `path.posix.relative` over that garbage prefix, and two old
+   * cases started asserting paths like `../../../.meeseeks`. Every case that reaches the prefix
+   * now uses this one; `runner` stays only where the probe's *failure* is the subject.
    *
    * @param {{ status: string, prefix?: string }} answers
    */
@@ -118,6 +111,14 @@ describe('changedPaths', () => {
     if (args[0] === 'rev-parse') return { ok: true, stdout: `${answers.prefix ?? ''}\n`, stderr: '' };
     return { ok: true, stdout: answers.status, stderr: '' };
   };
+
+  it('excludes the run\'s own machine state, which is never a phase output', async () => {
+    const changed = await changedPaths({
+      run: gitRunner({ status: '?? .meeseeks/\0?? .meeseeks/config.json\0?? PRD.md\0' }),
+      cwd: '/nowhere',
+    });
+    assert.deepStrictEqual(changed, ['PRD.md']);
+  });
 
   it('reports a nested driver\'s paths the way that driver declares them (PLAN item 24)', async () => {
     // **The defect the first real boxed component run found.** `git status --porcelain` reports
@@ -132,15 +133,43 @@ describe('changedPaths', () => {
     assert.deepStrictEqual(changed, ['.gitignore', 'PRD.md']);
   });
 
-  it('leaves a path outside the nested directory spelled from the root, so it still refuses', async () => {
-    // Not an oversight. A component sub-run that changed a file outside its own directory has done
-    // something undeclared, and rewriting that path to look local would be the check disarming
-    // itself.
+  it('spells a path outside the nested directory truthfully relative to the cwd, so it still refuses', async () => {
+    // The root spelling was believed to make out-of-prefix changes unmatchable, and boxed run 11
+    // disproved it: a ROOT-level path's root spelling equals a declared cwd-relative name. `../`
+    // cannot appear in a declared output, so the truthful spelling is structurally unmatchable —
+    // and it is a valid pathspec from the cwd, so the refusal's reader can act on it as written.
     const changed = await changedPaths({
       run: gitRunner({ status: '?? packages/textstats/PRD.md\0 M README.md\0', prefix: 'packages/textstats/' }),
       cwd: '/nowhere',
     });
-    assert.deepStrictEqual(changed, ['PRD.md', 'README.md']);
+    assert.deepStrictEqual(changed, ['../../README.md', 'PRD.md']);
+  });
+
+  it('keeps a root file and the component file with the same name apart (boxed run 11)', async () => {
+    // The defect in one line: both `.gitignore`s used to collapse into one Set entry — admittable
+    // against the wrong declaration, unstageable by a cwd-relative `git add`, and unnameable in
+    // the refusal. 889k tokens paid for this assertion.
+    const changed = await changedPaths({
+      run: gitRunner({ status: ' M .gitignore\0 M packages/textstats/.gitignore\0', prefix: 'packages/textstats/' }),
+      cwd: '/nowhere',
+    });
+    assert.deepStrictEqual(changed, ['../../.gitignore', '.gitignore']);
+  });
+
+  it('refuses a root-level change under a declared name, and admits the component\'s own', () => {
+    // The admit decision downstream of the spelling: the root `.gitignore` may never ride the prd
+    // phase's declared `.gitignore` into a commit it does not belong to.
+    const decision = admitOutputs({ changed: ['../../.gitignore', '.gitignore'], allowed: ['.gitignore', 'PRD.md'] });
+    assert.equal(decision.ok, false);
+    assert.deepStrictEqual(decision.unexpected, ['../../.gitignore']);
+    assert.deepStrictEqual(decision.admitted, ['.gitignore']);
+    assert.equal(
+      describeUnexpected({ phase: 'prd', unexpected: decision.unexpected, allowed: ['.gitignore', 'PRD.md'] }).includes(
+        '../../.gitignore',
+      ),
+      true,
+      'the refusal must name the true path',
+    );
   });
 
   it('excludes a nested run\'s own machine state, which the root spelling used to hide', async () => {
@@ -178,7 +207,7 @@ describe('changedPaths', () => {
 
   it('sorts and de-duplicates, so a rename reported twice is one path', async () => {
     const changed = await changedPaths({
-      run: runner({ ok: true, stdout: 'R  b.md\0a.md\0 M a.md\0' }),
+      run: gitRunner({ status: 'R  b.md\0a.md\0 M a.md\0' }),
       cwd: '/nowhere',
     });
     assert.deepStrictEqual(changed, ['a.md', 'b.md']);

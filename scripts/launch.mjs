@@ -230,17 +230,24 @@ export async function repoPrefix(run) {
 /**
  * One git-reported path, expressed the way the phase contract expresses it.
  *
- * A path **outside** the prefix keeps its repository-root spelling and will not match any declared
- * output. That is the correct answer rather than an oversight: a component sub-run that changed a
- * file outside its own directory has done something undeclared, and rewriting the path to hide it
- * would be the check disarming itself.
+ * A path **outside** the prefix is spelled truthfully relative to the cwd — `../../.gitignore`,
+ * not `.gitignore`. The earlier form kept the repository-root spelling, and the comment here
+ * claimed that meant it "will not match any declared output". False, and boxed run 11 paid 889k
+ * tokens to prove it: a **root-level** path's root spelling equals a declared cwd-relative name
+ * character for character, so root `.gitignore` and `packages/<name>/.gitignore` collapsed into
+ * one Set entry — admittable against the wrong declaration, unstageable by a cwd-relative
+ * `git add`, and unnameable in the refusal that finally fired. `../` cannot appear in a declared
+ * output, so an out-of-prefix change is now *structurally* unable to match one, which is what the
+ * old comment believed it already had — and the spelling is a valid pathspec from the cwd, so a
+ * reader of the refusal can run `git diff -- <path>` exactly as written.
  *
  * @param {string} target @param {string} prefix
  * @returns {string}
  */
 function relativeToCwd(target, prefix) {
-  if (prefix === '' || !target.startsWith(prefix)) return target;
-  return target.slice(prefix.length);
+  if (prefix === '') return target;
+  if (target.startsWith(prefix)) return target.slice(prefix.length);
+  return path.posix.relative(prefix.replace(/\/+$/, ''), target);
 }
 
 /**
