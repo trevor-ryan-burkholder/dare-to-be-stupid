@@ -9656,6 +9656,9 @@ async function runInvocation(argv, io, crash) {
    */
   const gateTree = async (dir, runStateDir = path.join(dir, '.meeseeks')) => {
     const treeStateDir = path.join(dir, '.meeseeks');
+    // This run's offset inside its repository, for the one gate whose applicability is positional
+    // rather than capability-shaped (PLAN item 169): `ci` at a component sub-run.
+    const treePrefix = await runPrefix();
     // **Before anything runs** (REVIEW F16). The expected report paths are fixed, so a gate that
     // crashes, times out, or fails before writing leaves the *previous* attempt's report on disk
     // and everything downstream reads it as this attempt's evidence — which is how a failed
@@ -9943,7 +9946,27 @@ async function runInvocation(argv, io, crash) {
           specification: specification.revision.digest,
         }),
         capabilities,
-      ).gates,
+      ).gates.filter((gate) => {
+        // **`ci` does not apply to a component sub-run, and demanding it was a contradiction the
+        // builder could never satisfy** (boxed run 12, PLAN item 169). GitHub executes workflows
+        // only at the repository root; this run's project is `packages/<name>`, so a workflow the
+        // gate could see there is one GitHub would never run, and the root workflow the builder
+        // correctly wrote is one this gate could never see. Run 12's child oscillated between the
+        // truth and the gate for eight iterations, 24M tokens, and a stall. The parent's own `ci`
+        // gate judges the repository root for the merged whole — the same doctrine that keeps a
+        // component's SHIPPED a pre-filter rather than a substitute (item 24). Reported every
+        // iteration, exactly as `e2e`'s exclusion is, because a gate list that quietly shrinks
+        // reads like one that was always that short.
+        if (gate.name !== 'ci' || treePrefix === '') return true;
+        write(
+          verbatim(
+            'gate ci does not apply: this is a component sub-run, and GitHub executes workflows only at the ' +
+              "repository root. The parent's ci gate judges the root workflows for the merged whole; a workflow " +
+              'under this component would never run, and requiring one here demands a decoration',
+          ),
+        );
+        return false;
+      }),
       // Judged only where there is evidence to judge. A red-evidence verdict over a refused
       // attempt would be a verdict about nothing, and `report-freshness` has already failed.
       ...(evidence === null ? [] : [redEvidenceGate(evidence)]),

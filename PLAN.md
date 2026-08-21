@@ -3331,9 +3331,58 @@ against the binary. `test/launch.test.mjs` 45/45, tier 1 **3,529 of 3,529**, tie
 owning commit, lint and typecheck clean. The template sentence's live proof rides run 12, which is
 also item 24's next attempt.
 
-**Item 24 remains IN PROGRESS** — eight runs, seven machine defects found and fixed, one
-model-variance refusal that item 168's template sentence now addresses at its cause. Run 12 owes
-the ship.
+**Item 24 remains IN PROGRESS** — nine runs, eight machine defects found and fixed, one
+model-variance refusal. Run 12 (24.2M tokens, $28.31) was the deepest yet — eight loop iterations,
+34 tests passing, panels convening — and stalled on the ci contradiction item 169 records and
+repairs. Item 170's harness now proves the boxed traversal model-free before any live spend. Run
+13 owes the ship.
+
+### 169. The ci gate demanded a decoration from a component — **DONE (0.288.0)** (PLAN item 24, boxed run 12)
+
+**Found by boxed run 12, 21 Aug 2026** — the deepest boxed run yet: launch, prd, design, and eight
+full loop iterations with 34 tests passing and panels convening. The child STALLED at the loop's
+own limit, 24.2M tokens and $28.31, on one gate that failed every iteration: `ci`.
+
+**The contradiction, named.** GitHub executes workflows only at the repository root; the component's
+gates read only its project directory. When the builder did the correct thing — a root workflow, by
+iteration two — the gate could not see it: *"no workflow under .github/workflows."* When it appeased
+the gate with a pocket copy at iteration four, the gate demanded explicit runner names — and a
+pocket workflow is a decoration regardless, because GitHub would never run it. Truth-invisible or
+lie-refused, eight times, until the stall detector fired. The refusals were each individually
+lawful; their composition was unsatisfiable.
+
+**The repair (0.288.0).** For a run whose repository prefix is non-empty — a component sub-run —
+`gateTree` excludes the `ci` static gate with a reported reason, every iteration, exactly as `e2e`'s
+does-not-apply is reported: *"GitHub executes workflows only at the repository root... the parent's
+ci gate judges the root workflows for the merged whole."* This is item 24's own doctrine — a
+component's SHIPPED is a pre-filter and the parent's gates judge the merged whole — applied to the
+one gate whose applicability is positional rather than capability-shaped. `DoD-3-ci` stays required
+of the panel unchanged: run 12's log contains zero panel findings against it, and the reviewers
+read the whole tree, root workflows included.
+
+**Evidence.** Item 170's harness drives the real parent, the real components phase, and a real
+child driver to its gates, model-free: the exclusion line printed, the treadmill line absent, and
+the parent's own `ci` gate intact — red when the exclusion is disarmed (the treadmill line
+returns), green with it. Gates at the owning commit.
+
+### 170. The boxed dry-run harness — tranche 1 **DONE (0.288.0)**; the counterfeit ship is the next tranche
+
+**Why (operator question, 21 Aug 2026: "can we make sure these work before the hour-long runs?").**
+Four of the five boxed graves were deterministic — path spellings and gate posture, no model
+contract anywhere — and each was learned live at an hour of wall clock and dollars of quota.
+`test/integration/boxed-component.integration.test.mjs` now drives the real parent driver, the real
+components phase, a real child driver in a real worktree, and the child's real gates, with a
+counterfeit `claude` on PATH answering every role — the journal suite's own technique, extended to
+the box. **52 seconds, zero spend, tier 2.** What is counterfeit is the model; everything the
+graves were dug in is real.
+
+**Tranche 1 scope:** the traversal reaches the child's first gated iteration and asserts gate
+posture (item 169's evidence). **Deliberately not yet modelled:** the reviewer contract, so the
+counterfeit cannot yet reach a SHIPPED child, the seal subtraction under ship, or the
+fast-forward merge — the seams run 13 still owes live. The next tranche adds a contract-shaped
+counterfeit reviewer (citations resolving against the real tree, the attack account, unanimous
+pass) so a full counterfeit ship runs before any live run does. Every future change to the boxed
+path passes this harness before it is allowed to spend.
 
 ### 34. Verified research mode — **DEFERRED post-DoD (operator, in-session 21 Aug 2026)** — a wanted capability, built after the current bar completes; was: IN SCOPE (19 Aug), OPEN before that
 
