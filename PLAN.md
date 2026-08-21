@@ -5940,7 +5940,7 @@ the restriction in place — but a pass on re-run does not erase the failure.
 not proof that a child cannot reach anything by other means, and `--safe-mode` remains a
 customization control rather than a tool set.
 
-### 83. Enforce a measured Claude Code compatibility policy — PARTIAL (0.205.0): the policy and its fail-closed parse landed; sealed binary identity has not
+### 83. Enforce a measured Claude Code compatibility policy — PARTIAL (policy 0.205.0; seal armed 0.261.0, item 139; auth preflight 0.263.0, item 141): what remains is the same-candidate live tier at both admitted boundaries (REVIEW F28)
 
 **Problem solved:** preflight currently accepts any executable whose `claude --version` exits
 successfully, even though Meeseeks relies on versioned flags, settings, hooks, command/Skill
@@ -6113,11 +6113,16 @@ than classifying the failure.
 
 ### 84. Measure and admit fail-closed child containment — OPEN; **tranches DONE (0.264.0 item 142, 0.266.0 item 144)**: the declared sandbox enforced nothing and now refuses; a working one is now *observed* confining each run; the outbound and resource inventory is measured and the guarantee stated at its real narrowness
 
-**Remaining tranche's missing capability, named (19 Aug phase directive).** Every canary below that
-measures what a *working* sandbox confines needs a host with **bubblewrap and socat installed**. This
-one has neither, installing them needs root this session does not hold, and a host that cannot start
-a sandbox cannot produce evidence about one. The tranche that did not need them is done (item 142):
-the product no longer reports a sandbox it does not have.
+**The capability this paragraph once named as missing was installed on 20 August 2026, and the
+paragraph moves with the measurement.** It said bubblewrap and socat were absent and needed root;
+they are installed, and the measured result lives in `HANDOFF.md`: `filesystem.denyRead` and
+`network.deniedDomains` enforce, `network.allowedDomains` is **not** a boundary, and
+`failIfUnavailable` proves the dependencies *exist* rather than that the sandbox *started* — on this
+kernel `unshare(CLONE_NEWUSER)` can fail and a child reported disabling the sandbox to get its
+result. So the run *observes* confinement per run instead of trusting the declaration (item 144).
+What still cannot be claimed is that a working sandbox confines anything on a host whose kernel
+refuses to start one. The tranche that did not need the tools is done (item 142): the product no
+longer reports a sandbox it does not have.
 
 **Problem solved:** R19's optional sandbox proves only that Claude accepts
 `{"sandbox":{"enabled":true}}`; its live test deliberately does not prove confinement. The current
@@ -6192,7 +6197,7 @@ external source or effect uses item **106**'s separately sealed, job-scoped capa
 Neither a role nor an external server may convert tool availability, network reachability, or its own
 annotations into authority.
 
-### 85. Keep candidate instructions out of reviewer authority — PARTIAL (0.206.0, supply identity 0.252.0): the authority boundary, the pre-Panel rescan and the supply trust-class report landed; the live canary has not
+### 85. Keep candidate instructions out of reviewer authority — IMPLEMENTED (0.206.0, supply identity 0.252.0, isolation canary landed and run 20 Aug 2026 at 542e29e): REVIEW F29 owns closure
 
 **Supply identity landed, 0.252.0.** This item's Done-when asks that *"item 77's supply report names
 the trust class and identity of each source"*. The trust class was already there. The **identity** was
