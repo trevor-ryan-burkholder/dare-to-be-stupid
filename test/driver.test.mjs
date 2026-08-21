@@ -130,6 +130,7 @@ import {
   recordProgress,
   runGates,
   shouldContinue,
+  toolVersions,
 } from '../scripts/driver.mjs';
 import { builderSystemPrompt } from '../scripts/driver.mjs';
 import { loadState, saveState } from '../scripts/ratchet.mjs';
@@ -9360,5 +9361,34 @@ describe('the acceptance roster holds only gates that will run (feature audit, i
     // field, never by its name.
     const verdict = gateApplies('quality:impeccable', ['cli']);
     assert.equal(verdict.applies, true, 'the name-keyed policy already excluded it, so the field would be redundant');
+  });
+});
+
+describe('toolVersions never asks PATH which claude (REVIEW F28)', () => {
+  /** A runner that records every invocation and answers plausibly. */
+  const recording = () => {
+    /** @type {string[]} */
+    const asked = [];
+    /** @type {import('../scripts/plugins.mjs').Runner} */
+    const run = async (command) => {
+      asked.push(command);
+      return { ok: true, status: 0, stdout: 'v1.0.0\n', stderr: '' };
+    };
+    return { asked, run };
+  };
+
+  it('probes the ordinary tools and not claude, whose identity the seal owns', async () => {
+    const { asked, run } = recording();
+    const versions = await toolVersions(run, '/nowhere', '2.1.235 (Claude Code)');
+    assert.equal(asked.includes('claude'), false, `a bare-PATH claude probe executed: ${asked.join(', ')}`);
+    assert.deepStrictEqual(asked.sort(), ['git', 'node', 'npm']);
+    assert.equal(versions.claude, '2.1.235 (Claude Code)');
+  });
+
+  it('records no claude at all when the run has no seal, because nobody measured one', async () => {
+    const { asked, run } = recording();
+    const versions = await toolVersions(run, '/nowhere');
+    assert.equal(asked.includes('claude'), false);
+    assert.equal('claude' in versions, false, 'an unmeasured claude version was invented');
   });
 });

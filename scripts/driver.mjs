@@ -6362,7 +6362,10 @@ const VERSION_PROBES = [
   { tool: 'node', argv: ['node', '--version'] },
   { tool: 'npm', argv: ['npm', '--version'] },
   { tool: 'git', argv: ['git', '--version'] },
-  { tool: 'claude', argv: ['claude', '--version'] },
+  // `claude` is deliberately absent (REVIEW F28, 21 Aug 2026). A bare-PATH `claude --version` here
+  // executed an unverified target with no sealed controls — the auto-update suppression and the
+  // fingerprint check both bypassed by a metadata probe. The sealed identity is the only honest
+  // answer to "which claude", and `toolVersions` takes it as an input instead of asking PATH.
 ];
 
 /**
@@ -6372,11 +6375,16 @@ const VERSION_PROBES = [
  * manifest that reads like a version and is not one; an absent key says plainly that nobody
  * managed to ask.
  *
+ * The `claude` entry is never probed from PATH: it comes from the run's sealed binary identity,
+ * supplied by the caller, or it is absent (REVIEW F28). A run without a seal — the injected-spawn
+ * test path — records no `claude` key, which is the honest shape: nobody measured one.
+ *
  * @param {import('./plugins.mjs').Runner} run
  * @param {string} cwd
+ * @param {string} [sealedClaude] the sealed binary's measured version, when the run has one
  * @returns {Promise<Record<string, string>>}
  */
-export async function toolVersions(run, cwd) {
+export async function toolVersions(run, cwd, sealedClaude) {
   /** @type {Record<string, string>} */
   const versions = {};
   for (const probe of VERSION_PROBES) {
@@ -6384,6 +6392,7 @@ export async function toolVersions(run, cwd) {
     const text = (result.stdout || '').trim();
     if (result.ok && text !== '') versions[probe.tool] = text.split('\n')[0];
   }
+  if (sealedClaude !== undefined && sealedClaude !== '') versions.claude = sealedClaude;
   return versions;
 }
 
@@ -7191,16 +7200,24 @@ export function realSealIo(env = process.env) {
  * **Under the sealed controls**, because a probe that let a background auto-update fire would be
  * measuring the version *before* the update and sealing the bytes *after* it.
  *
+ * **Through an explicit invocation, never a bare PATH lookup** (REVIEW F28, 21 Aug 2026). A bare
+ * `claude` here performs its own PATH resolution, which can land on a different file than the one
+ * the seal fingerprints — the exact two-lookups window the seal exists to close, opened by the
+ * probe that feeds it. The caller says what to execute: the boundary passes the path it has just
+ * resolved and fingerprinted, and the per-role check passes the sealed path. There is no default,
+ * so a call site cannot fall back to the defect.
+ *
  * @param {Record<string, string | undefined>} env
- * @param {string} [cwd] where the probe runs; `shell` requires one and it is never written to
+ * @param {string} cwd where the probe runs; `shell` requires one and it is never written to
+ * @param {string} invocation the resolved path (or, in injected-spawn tests, the command) to execute
  * @returns {Promise<{ ok: true, version: string } | { ok: false, reason: string }>}
  */
-export async function measureClaudeVersion(env, cwd = process.cwd()) {
+export async function measureClaudeVersion(env, cwd, invocation) {
   // **Through `shell`, not `execFileSync`.** A `timeout` on `execFileSync` sends one `SIGTERM` and then
   // waits forever for a child that ignores it, and sweeps no descendants — the pre-F2/F33 shape
   // this repository already replaced everywhere else. A boundary probe whose whole job is to fail
   // fast must not be the one call that can hang the run before it starts.
-  const result = await shell('claude', ['--version'], {
+  const result = await shell(invocation, ['--version'], {
     cwd,
     env: { ...env, ...sealedControls() },
     input: '',
@@ -7858,7 +7875,10 @@ async function runInvocation(argv, io, crash) {
    * @returns {Promise<string>}
    */
   const sealVersionNow = async () => {
-    const measured = await measureClaudeVersion(env, cwd);
+    // Through the sealed path, never a fresh PATH lookup (REVIEW F28): the question is "what does
+    // the sealed binary report now", and a bare lookup could answer it about a different file.
+    // Only awaited when a seal exists — the injected-spawn path never reaches this.
+    const measured = await measureClaudeVersion(env, cwd, seal === null ? 'claude' : seal.path);
     return measured.ok ? measured.version : `unmeasurable (${measured.reason})`;
   };
   const heartbeatMs = io.heartbeatMs ?? HEARTBEAT_MS;
@@ -8423,17 +8443,32 @@ async function runInvocation(argv, io, crash) {
   // previous run's artifacts first. Nothing is destroyed — the archive preserves them — but the
   // refusal is not free, and calling it free was wrong.
   if (io.spawn === undefined) {
-    const measured = await measureClaudeVersion(env, cwd);
-    if (!measured.ok) {
-      write(verbatim(`the run cannot seal its Claude binary: ${measured.reason}`));
-      return releasing(1, { reason: 'the Claude version could not be measured at the run boundary', phase: 'launch' });
-    }
+    // **Identity before execution** (REVIEW F28, 21 Aug 2026). The earlier order ran a bare-PATH
+    // `claude --version` and then sealed whatever a *second* lookup found — two resolutions, and a
+    // shadow inserted between them executes once while the seal reports success about a different
+    // file. Now the target is resolved and its closure fingerprinted first, without executing
+    // anything; the probe executes exactly that resolved path; and the fingerprint is verified
+    // again after the probe, so bytes that changed under the measurement refuse the run instead of
+    // being sealed as if they had answered.
+    /** @type {import('./claude-seal.mjs').Seal} */
+    let unversioned;
     try {
-      seal = sealTarget('claude', measured.version, sealIo);
+      unversioned = sealTarget('claude', 'unmeasured', sealIo);
     } catch (error) {
       if (!(error instanceof SealError)) throw error;
       write(verbatim(`the run cannot seal its Claude binary: ${error.message}`));
       return releasing(1, { reason: 'the Claude binary could not be sealed', phase: 'launch' });
+    }
+    const measured = await measureClaudeVersion(env, cwd, unversioned.path);
+    if (!measured.ok) {
+      write(verbatim(`the run cannot seal its Claude binary: ${measured.reason}`));
+      return releasing(1, { reason: 'the Claude version could not be measured at the run boundary', phase: 'launch' });
+    }
+    seal = { ...unversioned, version: measured.version };
+    const held = verifySeal(seal, measured.version, sealIo);
+    if (!held.ok) {
+      write(verbatim(`the run cannot seal its Claude binary: ${held.reason}`));
+      return releasing(1, { reason: 'the Claude binary changed while its version was being measured', phase: 'launch' });
     }
 
     // **And that it can authenticate**, which the version check does not establish (PLAN item 83).
@@ -9476,7 +9511,7 @@ async function runInvocation(argv, io, crash) {
         evidence: resolvedToolchain.evidence,
       },
       capabilities: capabilityRecord,
-      tools: await toolVersions(shell, cwd),
+      tools: await toolVersions(shell, cwd, seal === null ? undefined : seal.version),
     }),
   );
 
@@ -10098,7 +10133,7 @@ async function runInvocation(argv, io, crash) {
     gateRoster,
     identities: {
       plugin: pluginVersion(),
-      cli: (await toolVersions(shell, cwd)).claude ?? '',
+      cli: (await toolVersions(shell, cwd, seal === null ? undefined : seal.version)).claude ?? '',
       specification: specification.revision.digest,
       config: configHash(config),
     },

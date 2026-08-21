@@ -21,7 +21,7 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { sealTarget, verifySeal } from '../../scripts/claude-seal.mjs';
-import { realSealIo } from '../../scripts/driver.mjs';
+import { measureClaudeVersion, realSealIo } from '../../scripts/driver.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -172,5 +172,39 @@ describe('the sealed binary against a real filesystem (item 83)', () => {
     unlinkSync(path.join(dir, 'claude'));
     const verdict = verifySeal(seal, '2.1.230', io);
     assert.equal(verdict.ok, false);
+  });
+});
+
+describe('the version probe executes only what it was handed (REVIEW F28)', () => {
+  // The defect this closes: `measureClaudeVersion` performed its own bare PATH lookup, so the
+  // probe could execute a different file than the one the seal fingerprints — two resolutions,
+  // with a shadow's execution falling in between. The probe now takes an explicit invocation.
+  // Real processes, because the claim is about what actually executes.
+
+  it('ignores a PATH shadow and answers from the explicit path, executing the shadow never', async () => {
+    const shadowDir = binDir();
+    const marker = path.join(shadowDir, 'shadow-ran');
+    executable(
+      path.join(shadowDir, 'claude'),
+      `#!/bin/sh\n: > "${marker}"\necho "9.9.9 (Claude Code)"\n`,
+    );
+    const realDir = binDir();
+    const real = path.join(realDir, 'claude');
+    executable(real, '#!/bin/sh\necho "1.2.3 (Claude Code)"\n');
+
+    const measured = await measureClaudeVersion(pathWith(shadowDir), shadowDir, real);
+    assert.equal(measured.ok, true, JSON.stringify(measured));
+    assert.equal(/** @type {{ version: string }} */ (measured).version.includes('1.2.3'), true);
+    assert.equal(existsSync(marker), false, 'the PATH shadow executed: the probe performed its own lookup');
+  });
+
+  it('still fails honestly when the explicit target cannot answer', async () => {
+    // The benign neighbour: an explicit invocation is not a correctness shortcut, and a target
+    // that reports nothing parseable is refused exactly as before.
+    const dir = binDir();
+    const silent = path.join(dir, 'claude');
+    executable(silent, '#!/bin/sh\necho "not a version"\n');
+    const measured = await measureClaudeVersion(pathWith(dir), dir, silent);
+    assert.equal(measured.ok, false);
   });
 });

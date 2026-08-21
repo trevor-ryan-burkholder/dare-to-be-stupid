@@ -136,10 +136,13 @@ platform doubles are not acceptance evidence, and `REVIEW.md` F11 owns defect st
 F21/item **75**, and the
 installed-loader half of F25/item **80** remain open external-contract work. F27/item **82** is
 implemented at 0.204.0 pending Codex verification. F28/item **83** is **PARTIAL**: the measured
-version policy, role seal wiring, and authentication probe exist, but version probes can execute a
-bare unverified PATH target before the seal check and `toolVersions()` bypasses the controls entirely;
-the same-candidate live boundary evidence also remains. Native-Windows CLI resolution and launcher
-closure are deferred under item **65**.
+version policy, role seal wiring, and authentication probe exist. The two source defects the 21 Aug
+review found — version probes executing a bare unverified PATH target before the seal check, and
+`toolVersions()` bypassing the controls entirely — are **repaired at 0.285.0**: identity is resolved
+and fingerprinted before any execution, the probe runs the resolved path, the fingerprint is
+verified again after the probe, and `toolVersions` takes the sealed version as an input instead of
+asking PATH. What remains is the same-candidate live boundary evidence. Native-Windows CLI
+resolution and launcher closure are deferred under item **65**.
 These contracts close before feature fan-out. Item 65's deferral changes traversal, not that bar:
 it remains a prerequisite for any Windows cleanup claim and for an item whose own admission requires
 all of Gate 0; it does not block an independent POSIX-only capability that explicitly refuses
@@ -6429,7 +6432,21 @@ controls or verification. Reorder the boundary so identity is resolved/fingerpri
 version execution, execute the probe through that verified closure, verify again afterward, and
 route every metadata probe through the same control. Hostile fixtures must prove the unverified
 version target never executes, not merely that the later role does not. Item 65 separately owns the
-native-Windows resolver and launcher forms. The measured non-interactive authentication check landed
+native-Windows resolver and launcher forms.
+
+**Both repaired at 0.285.0.** The run boundary now seals first with a placeholder version — resolve,
+realpath, closure fingerprint, no execution — then measures `--version` through the resolved path
+it just fingerprinted, then verifies the fingerprint again before binding the measured version into
+the seal; bytes that changed under the measurement refuse the run. `measureClaudeVersion` takes an
+explicit invocation with **no default**, so a future call site cannot fall back to a bare lookup;
+the per-role check passes `seal.path`. `toolVersions` no longer probes `claude` at all — the sealed
+version is an input, and a run without a seal records no `claude` key rather than inventing one.
+Evidence: the hostile fixture the paragraph above demands — a PATH-first shadow that records its own
+execution; the probe answers from the explicit path and the shadow's marker must not exist, red
+under the bare-lookup form and green after — plus the silent-target refusal neighbour, and unit
+cases proving `toolVersions` never invokes `claude` and never invents an unmeasured key. Gates at
+the owning commit; the boundary composition's live half rides the targeted
+`binary-identity.live.test.mjs` run recorded there. The measured non-interactive authentication check landed
 at 0.263.0 (item 141): one `-p` call at the run boundary, under the sealed controls, before any role,
 proving the capability rather than classifying the failure.
 
