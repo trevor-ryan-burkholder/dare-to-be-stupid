@@ -348,7 +348,8 @@ describe('revalidateLaunch re-asks the mutable repository questions', () => {
 
   const cleanAnswers = {
     'git rev-parse HEAD': { ok: true, stdout: 'a1b2c3d4e5f6\n' },
-    'git status --porcelain': { ok: true, stdout: '' },
+    'git rev-parse --show-prefix': { ok: true, stdout: '' },
+    'git status --porcelain --untracked-files=all': { ok: true, stdout: '' },
     'git ls-files .meeseeks': { ok: true, stdout: '' },
     'git remote -v': { ok: true, stdout: 'origin\tgit@github.com:me/throwaway.git (fetch)\n' },
   };
@@ -372,7 +373,7 @@ describe('revalidateLaunch re-asks the mutable repository questions', () => {
       cwd: root,
       meeseeksDir: path.join(root, '.meeseeks'),
       sandboxWanted: false,
-      probe: cannedProbe({ ...cleanAnswers, 'git status --porcelain': { ok: true, stdout: ' M src/app.ts\n' } }),
+      probe: cannedProbe({ ...cleanAnswers, 'git status --porcelain --untracked-files=all': { ok: true, stdout: ' M src/app.ts\n' } }),
     });
     assert.equal(result.ok, false);
     assert.deepStrictEqual(
@@ -468,7 +469,7 @@ describe('revalidateLaunch re-asks the mutable repository questions', () => {
       sandboxWanted: false,
       probe: cannedProbe({
         ...cleanAnswers,
-        'git status --porcelain': { ok: true, stdout: ' M src/app.ts\n' },
+        'git status --porcelain --untracked-files=all': { ok: true, stdout: ' M src/app.ts\n' },
         'git ls-files .meeseeks': { ok: true, stdout: '.meeseeks/config.json\n' },
         'git remote -v': { ok: true, stdout: 'origin\tgit@github.com:acme/customer-data.git (push)\n' },
       }),

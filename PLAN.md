@@ -3084,6 +3084,49 @@ capstone and item-86 phrases are absent, and candidate-coupled 0.208.0 metadata 
 control-plane headings.
 
 
+### 165. The launch revalidation read a component's own config as operator work — **DONE (0.283.0)** (PLAN item 24, boxed run 7)
+
+**Found by boxed run 7, 21 Aug 2026 — the first run made with item 163's seal repair in place.** The
+parent's phases ran clean at 0.281.0, the components phase created the worktree and wrote the child's
+`.meeseeks/config.json` — exactly as item 24's spec says it must — and the child refused its own
+launch: `clean-working-tree: 1 uncommitted change(s)`. The parent then correctly refused to build on
+a component that did not ship. `ABORTED`, 498,510 tokens, $1.38.
+
+**Three git facts conspired, each measured in the reproduction:**
+
+1. `!.meeseeks/config.json` un-ignores the child's settings at any depth — **by design**, so a run
+   is reproducible from its repository. The parent-written child config is therefore *visible* to
+   `git status`, and correctly so.
+2. `git status --porcelain` spells every path from the repository root wherever it runs, so the
+   child's own state is `packages/textstats/.meeseeks/config.json` — a spelling the launch
+   exemption `isMeeseeksOwned` did not know. The items-145/146/147/161 offset family, now found in
+   the launch revalidation.
+3. The default listing **collapses** an untracked directory to its top entry: the actual porcelain
+   line was `?? packages/` — which names neither the run's state nor the operator's work, and can be
+   read safely in neither direction.
+
+**The repair (0.283.0).** `checkCleanWorkingTree` resolves the run's own offset through its probe
+(`git rev-parse --show-prefix`) — resolved rather than accepted as a parameter, because a parameter
+is a thing a call site can omit and the launch revalidation and init preflight must never disagree
+about it — lists with `--untracked-files=all` so a collapsed directory line is never emitted, and
+`isMeeseeksOwned` exempts `<prefix>.meeseeks/` and nothing else. A collapsed line that appears
+anyway reads as dirty, fail-closed; an unresolvable prefix refuses rather than guessing the root.
+
+**Evidence.** The live refusal itself is the red proof — real git, real run, recorded in the run 7
+log. Unit: the run-7 case (component config exempt at its offset), real work beside the state still
+refused, the root `.meeseeks/` not claimable by a component run, the collapsed ancestor read as
+dirty, and an unresolvable prefix refusing. Tier 2: a real component worktree with the
+parent-written config passes `checkCleanWorkingTree` through a real probe and still refuses a
+planted file. Gates at the owning commit: lint clean, typecheck clean, tier 1 and tier 2 full runs.
+
+**Item 24 remains IN PROGRESS** — seven runs, six machine defects found and fixed, one
+model-variance refusal. Earlier children sailed past this exact state, which looks like a
+contradiction until items 149 and 150 are read beside it: preflight could be a silent no-op and the
+`--yes` acknowledgement was parsed and never read, both repaired on 20 August (0.269.0–0.270.0). Run
+7 is the first boxed run whose child launch checks demonstrably *ran*, and the latent offset defect
+they had been hiding fired on first honest contact — the recurring shape of item 151, again. Run 8
+owes the ship.
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation

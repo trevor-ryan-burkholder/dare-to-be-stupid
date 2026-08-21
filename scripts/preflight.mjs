@@ -272,14 +272,21 @@ export function checkHasCommits(probe) {
 /**
  * Is this porcelain line Meeseeks's own run state rather than the operator's work?
  *
- * `git status --porcelain` emits two status characters, a space, then the path.
+ * `git status --porcelain` emits two status characters, a space, then the path — spelled from the
+ * **repository root** wherever the command runs. A run at the root owns `.meeseeks/`; a component
+ * sub-run in `packages/<name>` owns `packages/<name>/.meeseeks/`, which is why the caller's prefix
+ * is part of the question (boxed run 7, PLAN item 165): the parent writes the child's
+ * `config.json` before the child launches, and an exemption that knows only the root spelling
+ * reads the child's own settings as uncommitted operator work and refuses the launch.
  *
  * @param {string} line
+ * @param {string} prefix this run's offset inside its repository, `''` at the root
  * @returns {boolean}
  */
-function isMeeseeksOwned(line) {
+function isMeeseeksOwned(line, prefix) {
   const target = line.slice(3).trim().replace(/^"|"$/g, '');
-  return target === '.meeseeks' || target === '.meeseeks/' || target.startsWith('.meeseeks/');
+  const own = `${prefix}.meeseeks`;
+  return target === own || target === `${own}/` || target.startsWith(`${own}/`);
 }
 
 /**
@@ -295,14 +302,31 @@ function isMeeseeksOwned(line) {
  * @returns {CheckResult}
  */
 export function checkCleanWorkingTree(probe) {
-  const result = probe('git', ['status', '--porcelain']);
+  // Where this run sits inside its repository, resolved here through the probe rather than
+  // accepted as a parameter — a parameter is a thing a call site can omit, and the launch
+  // revalidation and init preflight are two call sites that must never disagree about it.
+  const located = probe('git', ['rev-parse', '--show-prefix']);
+  if (!located.ok) {
+    return check(
+      'clean-working-tree',
+      false,
+      `git rev-parse --show-prefix failed: ${located.stderr.trim()}`,
+      'Ensure git works here.',
+    );
+  }
+  const prefix = located.stdout.trim();
+  // `--untracked-files=all`, because the default collapses an untracked directory to its top
+  // entry. Measured on boxed run 7: the parent-written child config surfaced as `?? packages/` —
+  // a line that names neither the run's own state nor the operator's work, and can be read
+  // safely in neither direction.
+  const result = probe('git', ['status', '--porcelain', '--untracked-files=all']);
   if (!result.ok) {
     return check('clean-working-tree', false, `git status failed: ${result.stderr.trim()}`, 'Ensure git works here.');
   }
   const dirty = result.stdout
     .split('\n')
     .filter((line) => line.trim().length > 0)
-    .filter((line) => !isMeeseeksOwned(line));
+    .filter((line) => !isMeeseeksOwned(line, prefix));
   return check(
     'clean-working-tree',
     dirty.length === 0,

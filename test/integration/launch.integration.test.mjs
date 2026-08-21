@@ -20,6 +20,7 @@ import { after, describe, it } from 'node:test';
 
 import { main, meeseeksIgnoreUpdate } from '../../scripts/driver.mjs';
 import { LAUNCH_RECEIPT_FILE } from '../../scripts/launch.mjs';
+import { checkCleanWorkingTree } from '../../scripts/preflight.mjs';
 
 /** @type {string[]} */
 const temporaryDirs = [];
@@ -363,5 +364,52 @@ describe('a pre-loop phase commits what it declared and nothing else', () => {
     assert.equal(subjects.includes('meeseeks: design documents'), true, subjects.join(' | '));
     // Nothing was installed here, so provisioning staged nothing and made no empty commit.
     assert.equal(subjects.includes('meeseeks: provision quality plugins'), false, subjects.join(' | '));
+  });
+});
+
+describe('launch revalidation inside a component worktree (boxed run 7, PLAN item 165)', () => {
+  // Real git, because every fact here is git's: `status --porcelain` spells paths from the
+  // repository root wherever it runs, the default listing collapses an untracked directory to its
+  // top entry, and `!.meeseeks/config.json` un-ignores the child's settings at any depth. Boxed
+  // run 7 met all three at once — the parent wrote the child's config into the worktree, by
+  // design, and the child's launch revalidation refused its own settings as `?? packages/`.
+  it('does not read the parent-written child config as operator work, and still refuses real work', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'meeseeks-launch-'));
+    temporaryDirs.push(root);
+    git(root, ['init', '--quiet']);
+    git(root, ['config', 'user.email', 'test@example.com']);
+    git(root, ['config', 'user.name', 'test']);
+    writeFileSync(path.join(root, '.gitignore'), '.meeseeks/*\n!.meeseeks/config.json\nnode_modules/\n');
+    writeFileSync(path.join(root, 'README.md'), '# monorepo\n');
+    git(root, ['add', '-A']);
+    git(root, ['commit', '--quiet', '-m', 'shell']);
+    const worktree = path.join(mkdtempSync(path.join(os.tmpdir(), 'meeseeks-launch-wt-')), 'component');
+    temporaryDirs.push(path.dirname(worktree));
+    git(root, ['worktree', 'add', '--detach', worktree, 'HEAD']);
+    const componentDir = path.join(worktree, 'packages', 'textstats');
+    mkdirSync(path.join(componentDir, '.meeseeks'), { recursive: true });
+    writeFileSync(path.join(componentDir, '.meeseeks', 'config.json'), '{}\n');
+
+    /** @type {import('../../scripts/preflight.mjs').Probe} */
+    const probe = (command, args) => {
+      try {
+        return {
+          ok: true,
+          stdout: execFileSync(command, args, { cwd: componentDir, stdio: 'pipe', encoding: 'utf8' }),
+          stderr: '',
+        };
+      } catch (error) {
+        const failure = /** @type {{ stderr?: string, message: string }} */ (error);
+        return { ok: false, stdout: '', stderr: String(failure.stderr ?? failure.message) };
+      }
+    };
+
+    const clean = checkCleanWorkingTree(probe);
+    assert.equal(clean.ok, true, `the child was refused for its own settings: ${clean.detail}`);
+
+    // The exemption must not widen: a real file beside the state still refuses the launch.
+    writeFileSync(path.join(componentDir, 'rogue.js'), 'export const rogue = 1;\n');
+    assert.equal(checkCleanWorkingTree(probe).ok, false, 'real uncommitted work rode the exemption');
+    git(root, ['worktree', 'remove', '--force', worktree]);
   });
 });

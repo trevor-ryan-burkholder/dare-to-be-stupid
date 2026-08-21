@@ -54,7 +54,8 @@ const HEALTHY = {
   'claude --version': { ok: true, stdout: '2.1.226 (Claude Code)\n' },
   'git rev-parse --is-inside-work-tree': { ok: true, stdout: 'true\n' },
   'git rev-parse HEAD': { ok: true, stdout: 'a1b2c3d4e5f67890abcdef1234567890abcdef12\n' },
-  'git status --porcelain': { ok: true, stdout: '' },
+  'git rev-parse --show-prefix': { ok: true, stdout: '' },
+  'git status --porcelain --untracked-files=all': { ok: true, stdout: '' },
   'git remote -v': { ok: true, stdout: 'origin\tgit@github.com:example/throwaway.git (fetch)\n' },
   'npm ping --silent': { ok: true, stdout: '' },
 };
@@ -141,7 +142,7 @@ describe('each check fails on its own', () => {
     [{ probe: probeWith({ 'git rev-parse --is-inside-work-tree': { ok: false } }) }, 'git-repository'],
     [{ probe: probeWith({ 'git rev-parse HEAD': { ok: false, stderr: 'unknown revision' } }) }, 'has-commits'],
     [{ probe: probeWith({ 'git rev-parse HEAD': { ok: true, stdout: '\n' } }) }, 'has-commits'],
-    [{ probe: probeWith({ 'git status --porcelain': { ok: true, stdout: ' M src/app.ts\n' } }) }, 'clean-working-tree'],
+    [{ probe: probeWith({ 'git status --porcelain --untracked-files=all': { ok: true, stdout: ' M src/app.ts\n' } }) }, 'clean-working-tree'],
     [
       {
         probe: probeWith({
@@ -184,7 +185,7 @@ describe('every failure is reported at once', () => {
       yes: false,
       probe: probeWith({
         'claude --version': { ok: false, stderr: 'not found' },
-        'git status --porcelain': { ok: true, stdout: '?? junk\n' },
+        'git status --porcelain --untracked-files=all': { ok: true, stdout: '?? junk\n' },
       }),
     });
     assert.deepStrictEqual(failedNames(result), [
@@ -220,7 +221,7 @@ describe('individual checks', () => {
     // The first run scaffolds .meeseeks/config.json. Counting that made every subsequent run
     // fail on the file the previous run had created, so /meeseeks refused after attempt one.
     const result = checkCleanWorkingTree(
-      probeWith({ 'git status --porcelain': { ok: true, stdout: '?? .meeseeks/\n' } }),
+      probeWith({ 'git status --porcelain --untracked-files=all': { ok: true, stdout: '?? .meeseeks/\n' } }),
     );
     assert.equal(result.ok, true);
     assert.equal(result.detail, 'working tree is clean');
@@ -229,7 +230,7 @@ describe('individual checks', () => {
   it('ignores every path under .meeseeks/ but nothing else', () => {
     const result = checkCleanWorkingTree(
       probeWith({
-        'git status --porcelain': {
+        'git status --porcelain --untracked-files=all': {
           ok: true,
           stdout: '?? .meeseeks/\n M .meeseeks/state.json\n?? .meeseeks/bloopers.log\n M src/app.ts\n',
         },
@@ -241,14 +242,77 @@ describe('individual checks', () => {
 
   it('is not fooled by a path that merely starts with the same letters', () => {
     const result = checkCleanWorkingTree(
-      probeWith({ 'git status --porcelain': { ok: true, stdout: '?? .meeseeksdevil/notes.md\n' } }),
+      probeWith({ 'git status --porcelain --untracked-files=all': { ok: true, stdout: '?? .meeseeksdevil/notes.md\n' } }),
+    );
+    assert.equal(result.ok, false);
+  });
+
+  it('does not count a component sub-run\'s own config, spelled from the repository root (run 7)', () => {
+    // Boxed run 7: the parent writes the child's `.meeseeks/config.json` into the worktree before
+    // the child launches — by design, the config is deliberately un-ignored — and the child's
+    // launch revalidation, knowing only the root spelling, read the child's own settings as
+    // uncommitted operator work and refused the launch.
+    const result = checkCleanWorkingTree(
+      probeWith({
+        'git rev-parse --show-prefix': { ok: true, stdout: 'packages/textstats/\n' },
+        'git status --porcelain --untracked-files=all': {
+          ok: true,
+          stdout: '?? packages/textstats/.meeseeks/config.json\n',
+        },
+      }),
+    );
+    assert.equal(result.ok, true, result.detail);
+  });
+
+  it('still counts real work beside a component\'s state, at the same offset', () => {
+    const result = checkCleanWorkingTree(
+      probeWith({
+        'git rev-parse --show-prefix': { ok: true, stdout: 'packages/textstats/\n' },
+        'git status --porcelain --untracked-files=all': {
+          ok: true,
+          stdout: '?? packages/textstats/.meeseeks/config.json\n?? packages/textstats/src/x.js\n',
+        },
+      }),
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.detail, '1 uncommitted change(s)');
+  });
+
+  it('does not let a component run claim the root run\'s state as its own', () => {
+    // `.meeseeks/` at the root of a component's worktree is not this run's state directory, and
+    // exempting it would let any stray root artifact ride into an unattended launch.
+    const result = checkCleanWorkingTree(
+      probeWith({
+        'git rev-parse --show-prefix': { ok: true, stdout: 'packages/textstats/\n' },
+        'git status --porcelain --untracked-files=all': { ok: true, stdout: '?? .meeseeks/config.json\n' },
+      }),
+    );
+    assert.equal(result.ok, false);
+  });
+
+  it('reads a collapsed untracked directory as dirty, never as exempt', () => {
+    // `--untracked-files=all` should prevent this line from ever being emitted; if it appears
+    // anyway, a directory that merely *contains* the run's state cannot be assumed to contain
+    // nothing else. Fail closed.
+    const result = checkCleanWorkingTree(
+      probeWith({
+        'git rev-parse --show-prefix': { ok: true, stdout: 'packages/textstats/\n' },
+        'git status --porcelain --untracked-files=all': { ok: true, stdout: '?? packages/\n' },
+      }),
+    );
+    assert.equal(result.ok, false);
+  });
+
+  it('refuses when the prefix itself cannot be resolved, instead of guessing the root', () => {
+    const result = checkCleanWorkingTree(
+      probeWith({ 'git rev-parse --show-prefix': { ok: false, stderr: 'fatal: not a git repository' } }),
     );
     assert.equal(result.ok, false);
   });
 
   it('counts the uncommitted changes it found', () => {
     const result = checkCleanWorkingTree(
-      probeWith({ 'git status --porcelain': { ok: true, stdout: ' M a\n?? b\n M c\n' } }),
+      probeWith({ 'git status --porcelain --untracked-files=all': { ok: true, stdout: ' M a\n?? b\n M c\n' } }),
     );
     assert.equal(result.ok, false);
     assert.equal(result.detail, '3 uncommitted change(s)');
