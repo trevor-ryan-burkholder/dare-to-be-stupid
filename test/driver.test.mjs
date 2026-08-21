@@ -14,6 +14,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { gateApplies } from '../scripts/gate-policy.mjs';
 import { sealTarget } from '../scripts/claude-seal.mjs';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -9300,5 +9301,40 @@ describe('the ci gate reads what a workflow runs, not what it mentions (feature 
     );
     assert.equal(text.includes('playwright'), false, text);
     assert.equal(text.includes('npm run build'), true, text);
+  });
+});
+
+describe('the acceptance roster holds only gates that will run (feature audit, item 160)', () => {
+  // **The run's provenance artifact could not be written in the default configuration.**
+  // `buildAcceptanceReceipt` refuses when a roster name has no gate result. The roster was built
+  // from `describedGates`, which dropped each overlay gate's `capability`; `applicableGates` filters
+  // by the name-keyed policy alone and an unknown name defaults to universal, so every `quality:*`
+  // gate survived — while the executing set filtered those same gates by the field that had been
+  // dropped.
+  //
+  // Observed in a real boxed run: "the acceptance receipt is incomplete and was not written: …
+  // quality:impeccable is in the roster and has no result …".
+  const SOURCE = readFileSync(new URL('../scripts/driver.mjs', import.meta.url), 'utf8');
+
+  it('carries each overlay gate\'s capability into the described set', () => {
+    const described = SOURCE.slice(SOURCE.indexOf('const describedGates = ['), SOURCE.indexOf('const applicableNames'));
+    assert.match(described, /capability: gate\.capability/, 'the described gates drop the field the roster needs');
+  });
+
+  it('builds the roster from a capability-filtered list, not from every described gate', () => {
+    // Held positionally because the roster is computed inside `runInvocation`, which no tier-1 test
+    // executes. What is pinned is that the filter is applied where the roster is made — a unit test
+    // that re-composed the same call would pass whether or not the driver did.
+    const roster = SOURCE.slice(SOURCE.indexOf('const gateRoster ='), SOURCE.indexOf('const gateNames'));
+    assert.match(roster, /describedGates\.filter\(/, 'the roster is not filtered by capability');
+    assert.match(roster, /briefCapabilities\.includes\(/, 'the roster ignores the run capabilities');
+  });
+
+  it('shows why the filter is needed: an unknown gate name is universal to the policy', () => {
+    // The mechanism, in one assertion. `gateApplies` answers `true` for a name it has no entry for —
+    // "gates default to universal" — so a `quality:*` gate can only be excluded by its capability
+    // field, never by its name.
+    const verdict = gateApplies('quality:impeccable', ['cli']);
+    assert.equal(verdict.applies, true, 'the name-keyed policy already excluded it, so the field would be redundant');
   });
 });

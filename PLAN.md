@@ -2869,6 +2869,47 @@ code that nothing proved was called, in the tests for a fix about exactly that. 
 **Validation:** lint, typecheck, `npm test` **3506 of 3506**, `driver` 671 of 671.
 
 
+### 160. The acceptance receipt could not be written in the default configuration — **DONE (0.279.0)** (feature audit, item 151)
+
+**The run's provenance artifact was absent from every ordinary run.** `buildAcceptanceReceipt`
+refuses when a roster name has no gate result — correctly, because an incomplete receipt describes no
+acceptance. The roster was built from `describedGates`, which mapped each overlay gate to
+`{ name, text }` and **dropped `capability`**. `applicableGates` filters by the name-keyed policy
+alone, and `gateApplies` answers `true` for a name it has no entry for — *gates default to universal*
+— so every `quality:*` gate survived into the roster. The **executing** set filtered those same gates
+by the field that had been dropped.
+
+Consequence, on any project that is not `web-ui` or `api`: `quality:impeccable`, `quality:semgrep`
+and `quality:schemathesis` sat in the roster, never ran, and the receipt refused.
+
+**Observed in a real boxed run before the audit named it** — measurement run 3's own log:
+
+```
+no acceptance receipt: the acceptance receipt is incomplete and was not written:
+  … results.gates: quality:impeccable is in the roster and has no result …
+```
+
+Demonstrated directly for a `cli` project: roster before `["quality:impeccable","quality:gitleaks"]`,
+after `["quality:gitleaks"]`.
+
+**The repair** carries `capability` into the described set and builds the roster from a list filtered
+by the same predicate the executing set uses. The brief still declares both kinds of absence — a
+toolchain skip and a capability skip — because `gateNames` is unchanged; only the *roster* narrows.
+
+Filtered against the brief's capabilities, and the run's capability set is monotonic, so this can
+only shrink the roster. That direction is the safe one: an extra gate *result* is harmless, a roster
+entry that never runs is fatal.
+
+**Held positionally**, because the roster is computed inside `runInvocation` which no tier-1 test
+executes — and because a unit test that re-composed the same call would pass whether or not the
+driver did it. That is the trap item 159 fell into an hour earlier. A third case pins the *mechanism*:
+`gateApplies('quality:impeccable', ['cli'])` answers `true`, so capability is the only field that can
+exclude such a gate.
+
+**Validation:** lint, typecheck, `npm test` **3510 of 3510**, `driver` 674 of 674. Red proof:
+restoring the unfiltered roster fails the wiring case.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation

@@ -9498,6 +9498,11 @@ async function runInvocation(argv, io, crash) {
     ...overlayGates(provisioning.gates, config.extraGates).map((gate) => ({
       name: gate.name,
       text: gate.text,
+      // **Carried, because the roster below has to agree with what actually runs** (feature audit,
+      // item 160). Dropping it here left `applicableGates` filtering by the name-keyed policy alone,
+      // and an unknown name defaults to universal — so every `quality:*` gate survived into the
+      // roster while the executing set filtered the same gates by this very field.
+      ...(gate.capability === undefined ? {} : { capability: gate.capability }),
     })),
     {
       name: 'ci',
@@ -9537,7 +9542,25 @@ async function runInvocation(argv, io, crash) {
   // receipt used it as the required-gate roster. It refused every run, correctly: a sentence is not
   // a gate name, and no result could ever match one. The roster an acceptance claim is about is the
   // set of gates this project is actually held to.
-  const gateRoster = applicableNames.gates.map((gate) => gate.name);
+  // **Only gates this run will actually execute** (feature audit, item 160). `buildAcceptanceReceipt`
+  // refuses when a roster name has no result, and `quality:impeccable`, `quality:semgrep` and
+  // `quality:schemathesis` are armed by capability — so on any project that is not `web-ui` or `api`
+  // they sat in the roster, never ran, and **the acceptance receipt could not be written at all**.
+  // Observed in a real boxed run: *"the acceptance receipt is incomplete and was not written: …
+  // quality:impeccable is in the roster and has no result …"*. The run's provenance artifact, absent
+  // in the default configuration.
+  //
+  // Filtered by the same predicate the executing set uses, against the brief's capabilities. The
+  // run's capability set is monotonic, so this can only ever shrink the roster — an extra *result*
+  // is harmless, a roster entry that never runs is fatal.
+  const gateRoster = applicableGates(
+    describedGates.filter(
+      (gate) =>
+        /** @type {{ capability?: string }} */ (gate).capability === undefined ||
+        briefCapabilities.includes(/** @type {any} */ (/** @type {{ capability?: string }} */ (gate).capability)),
+    ),
+    briefCapabilities,
+  ).gates.map((gate) => gate.name);
   const gateNames = [
     ...applicableNames.gates.map((gate) => gate.text),
     // Both kinds of absence are declared. A toolchain skip means "this stack has no such
