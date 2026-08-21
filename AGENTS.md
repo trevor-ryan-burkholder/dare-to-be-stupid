@@ -97,7 +97,8 @@ done, or the budget dies. Pre-production only.
 
 Read `DESIGN.md` before writing code. Section map: pipeline §2, architecture §3, preflight
 §3.5, security scan §3.6, DoD §4, impeccable §5.1, guard hook §6, layout §7, builder prompt
-§8, style §9, config §10, weak point §11, build order §12, extras §13.
+§8, style §9, config §10, weak point §11, foundational order §12, extras §13, deferred
+workflows and specialized jobs §15, read-only observer architecture §16.
 
 ---
 

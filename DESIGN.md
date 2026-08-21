@@ -1,8 +1,9 @@
 # meeseeks — Design (v2, refined)
 
 > A Claude Code plugin. One command, `/meeseeks`, hands an idea or PRD to an autonomous
-> loop that authors specs, designs, builds, tests, secures, ships, fixes, and iterates
-> until the app passes an *enterprise-production* definition of done — or the budget dies.
+> loop that authors specs, designs, produces, tests, secures, ships, fixes, and iterates
+> until the target deliverable passes an *enterprise-production* definition of done — or the
+> budget dies.
 >
 > Named for the Weird Al song. The joke is that it runs the Ralph Loop **on purpose**,
 > with `--dangerously-skip-permissions`, and narrates the whole thing in the voice of an
@@ -136,6 +137,11 @@ The original spec was really *build → review → ship*. The goal is *design �
 → fix → iterate*. Here is the whole thing. Phases 0 and 1 run **once** at the top; the
 loop is phases 2–6.
 
+The diagram is the current code-job rendering of the common Driver pipeline. The shipped prose
+toolchain defines prose-specific deterministic gates and evidence contracts, while the production
+Driver still invokes the code producer practice. A future specialized producer may also substitute
+job practice under §§3.8, 8.5, and 15.4; neither case adds a control phase or authority class.
+
 ```
 /meeseeks <path-to-PRD | "idea in quotes" | (nothing)>
 └─ node scripts/driver.mjs
@@ -248,6 +254,11 @@ loop living inside a session can do neither.
 - Each `claude -p` is a fresh process. Builder gets full context; reviewer gets a
   deliberately starved one.
 
+**Future local observer.** `PLAN.md` item 166 proposes a separately launched, read-only observer.
+It is outside the phase pipeline: not a Claude child, controller, run prerequisite, or shipped
+entrypoint today. Section 16 defines the future authority and safety boundary; `PLAN.md` owns
+admission and `DASHBOARD.md` owns presentation and interaction behavior.
+
 ---
 
 ## 3.5 Prerequisites & preflight (what the user sets up)
@@ -264,8 +275,8 @@ command preflight supplies `--yes` internally, so neither mechanism replaces the
 control. This is not an OS authentication wall against a model already granted arbitrary Bash and
 aware of a script path; direct script entry is an unsupported operator/development path. Since
 0.203.0, the shipped command sets `disable-model-invocation: true` and its contract tests pin the
-field. REVIEW F25 / PLAN item 80 remain open for the installed-loader canary, without claiming the
-broader wall.
+field. REVIEW F25 / PLAN item 80 own the installed-loader canary and its status; this contract does
+not claim the broader OS wall.
 
 **An ERD, when supplied, is checked against the PRD once the run has both of them.** Not in
 `runPreflight`, which `meeseeks init` runs before a PRD exists, and not in `revalidateLaunch`, which
@@ -302,9 +313,10 @@ commit, the Driver re-runs preflight's own clean-tree, positional tracked-state,
 remote, effective-config, agent-surface and requested-sandbox checks — *reused*, not reimplemented,
 because a second answer to "is this remote production-shaped" eventually disagrees with the first
 one quietly. Every check runs even after one fails, so an operator with three problems learns all
-three now. A refusal names the observed HEAD and each failing check, and writes nothing at all:
-repository bytes are preserved, and so is the previous run's receipt, which the archive has not yet
-moved.
+three now. A refusal names the observed HEAD and each failing check and changes no target content.
+Its common terminal path first archives the previous run's evidence, then writes this run's
+`outcome.json` and best-effort `question.json`; if archiving fails, it preserves the previous
+canonical receipt rather than overwriting it.
 
 Each pre-loop document phase then commits an **enumerated** path list rather than `git add -A`. What
 it may leave is read from the template that declares it — `<!-- meeseeks:declared-outputs ... -->`
@@ -320,15 +332,14 @@ each check's name and verdict, and each phase's declared and staged paths, bound
 the remainder counted; it carries no file contents and no check sentence, because `safe-remote`'s
 sentence quotes the remote URL and that is where an embedded credential would be.
 
-`REVIEW.md` F26 records the defect and its acceptance evidence, and remains open until Codex has
-verified the repair.
+`REVIEW.md` F26 owns review status and records the defect and its acceptance evidence.
 
 **Preflight verifies (hard-fails with a fix hint if missing):**
 
 | Check | Why | If missing |
 |---|---|---|
 | Node ≥ 22.12 | driver + impeccable installer | abort, print required version |
-| one resolved `claude` binary inside the measured compatibility policy; non-interactive authentication is required but not yet independently preflighted | driver and command rely on versioned flags, settings, hooks, Skill controls, envelope fields, and one unchanged CLI contract per run | abort incompatible identity before the run; until item 83 closes, an auth failure can surface at the first role and names the sign-in fix |
+| one resolved `claude` binary reporting a version inside the measured compatibility policy | driver and command rely on versioned flags, settings, hooks, Skill controls, envelope fields, and one compatible CLI contract per run | abort an unavailable or incompatible CLI before the run; authentication is proved separately at the run boundary below |
 | Inside a git repository | every state transition and rollback is commit-based | abort, name the required repository |
 | Repository has at least one commit | worktrees, baselines and reset targets need a commit | abort, create the initial commit |
 | **Clean working tree** | ratchet does `git reset --hard` | abort, tell user to commit/stash |
@@ -346,29 +357,35 @@ releases or a deliberately evidenced range that passes the staged candidate's fu
 `npm run test:live`, including every mandatory command/child contract. The policy records both its
 oldest demonstrated floor and its highest demonstrated compatible boundary; a greater version is not
 automatically compatible. Preflight parses `claude --version` and refuses values outside that policy,
-including prerelease-ambiguous or unparseable output, before any run work. The Driver resolves one
-canonical real invocation path, content fingerprint, and reported version for the run. It captures
-the fingerprint before and after each compatibility probe, executes every later Claude probe and role
-through that sealed path rather than another `PATH` lookup, and rechecks the canonical target,
-fingerprint, and version immediately before every role spawn. Item 56 supplies a sealed
-no-background-update control to every such probe and role. A same-version byte replacement, symlink
+including prerelease-ambiguous or unparseable output, before any run work. At the Driver-owned run
+boundary, the Driver resolves and seals one canonical real invocation path, content fingerprint,
+delegated invocation closure, and reported version before executing any further Claude probe or role.
+Every Driver-owned Claude invocation **must** be made through that sealed identity, with its
+fingerprint captured before and after compatibility probes and reverified immediately before
+execution — role spawns do this today, while the bare-PATH version probes and the two
+`toolVersions()` metadata probes do not yet (REVIEW F28, PLAN items 83 and 139 record the gap and
+own its repair). Item 56
+supplies a sealed no-background-update control to every such probe and role. A same-version byte replacement, symlink
 retarget, or other identity mismatch refuses; path plus self-reported version alone is not identity.
-For a symlink, script, or package launcher, the fingerprint policy also binds the measured delegated
-entrypoint or package identity whose mutation changes invoked code. An install form whose mutable
-invocation closure cannot be bounded and live-proven is unsupported rather than approximately sealed.
+For a symlink, script, package launcher, or platform-specific wrapper, the fingerprint policy also
+binds every measured delegated entrypoint or package identity whose mutation changes invoked code.
+An install form whose mutable invocation closure cannot be bounded and live-proven is unsupported
+rather than approximately sealed. Platform-specific implementation and evidence gaps belong in
+`PLAN.md`; they do not weaken this product contract.
 A compatibility pass does not replace the live suite:
 flags such as `--safe-mode` have had behavior not fully specified by help text, and current official
 documentation says background updates take effect on a later launch. Since 0.205.0, preflight parses
 `claude --version` and refuses anything outside the measured range. `scripts/claude-compat.mjs` is the
 single runtime source: a floor of 2.1.226 (the oldest release with live measurements here), a ceiling
-of 2.1.234 (the newest release whose full live tier passed), the 2.1.136 binary recorded as
+of 2.1.235 (the newest release whose full live tier passed), the 2.1.136 binary recorded as
 incompatible for lacking `--safe-mode`, and the evidence for each. Both directions refuse, because a
 greater version number is not evidence of forward compatibility; the escape from the ceiling is to
 run the live tier against a newer CLI and move one constant with that evidence. The
 **sealed-identity** half is §3.5.1: the run fingerprints its canonical target at the run boundary and
-re-resolves it before every child. REVIEW F28 / PLAN item 83 own what is still outstanding, which is
-now the pinned boundary runs and a measured authentication check — `claude --version` succeeds
-against an installation nobody has signed in to.
+re-resolves it before every Driver-owned Claude invocation. REVIEW F28 / PLAN item 83 own live
+compatibility-boundary evidence and status. The measured authentication check is the separate
+run-boundary probe below;
+`claude --version` alone still proves no authentication.
 
 **2.1.235 was refused for two days and is admitted now, which is the mechanism working.** Its
 18 August run finished 33 of 34; the one failure passed on isolated retries and matched a known
@@ -379,9 +396,9 @@ which is the missing evidence and the only thing that changed.
 
 **Authentication is proved at the run boundary, once.** `claude --version` establishes availability
 and the measured version policy and succeeds for an unsigned-in installation, so the run makes one
-small `-p` call of its own immediately after sealing, under the sealed controls, beside launch
-revalidation and before any child. It runs **after** the run lock, not before it: `releasing` owns
-the lock and a refusal at this point releases it cleanly, where a pre-lock refusal would need a
+small `-p` call of its own immediately after sealing, through the same sealed invocation boundary,
+beside launch revalidation and before any role child. It runs **after** the run lock, not before it:
+`releasing` owns the lock and a refusal at this point releases it cleanly, where a pre-lock refusal would need a
 second exit path. A run refusing here has therefore taken the lock and archived the previous run's
 artifacts first, which is the same cost every launch-revalidation refusal has always had. It **proves the capability rather than classifying the failure**: success is the positive
 conjunction of a zero exit, a parseable envelope and a result, and anything else refuses and prints
@@ -441,8 +458,7 @@ the nesting refusal in particular must keep its own message, because a nested ru
 thing that flag exists to permit. It is released by its owner on every path out, including the
 pre-loop refusals, which is enforced positionally rather than by a list somebody has to remember.
 
-`REVIEW.md` F1 records the defect and its acceptance evidence; Codex closed it at the 0.194.0
-verification baseline.
+`REVIEW.md` F1 owns review status and records the defect and its acceptance evidence.
 
 Living under `.meeseeks/` means §6's positional rule already protects it — a process marked
 `MEESEEKS_RUNNING` may not write there at any depth, so a builder cannot forge or clear it.
@@ -519,8 +535,8 @@ saying it can resume. A stalled allowance is not a failed build and must never b
 
 Preflight's version check answers *"is the CLI on PATH compatible?"* once. It does not answer the
 question a four-hour unattended run depends on: **is the binary this role is about to spawn the same
-binary preflight measured?** Those come apart in five ways, and **none of them changes the version
-string** — which is precisely why a version check cannot see any of them:
+binary preflight measured?** Those come apart in five ways. All can occur after preflight, and
+several can preserve the reported version, so the one-time check excludes none of them:
 
 1. a PATH shadow inserted after preflight, so a later role resolves a different file;
 2. an atomic byte replacement that still reports the same version;
@@ -529,16 +545,20 @@ string** — which is precisely why a version check cannot see any of them:
    launch**, and a run launches many separate children;
 5. a launcher whose own bytes never change while the entrypoint it delegates to does.
 
-So the run resolves one canonical target, fingerprints it (`scripts/claude-seal.mjs`) once the
-launch checks pass, threads that seal through the one door every child spawns from, and
-`spawnClaude` **re-verifies immediately before every child** — at the same door the context budget
-(§3.9) and the supply boundary (§6.1) use, and for the identical reason: every child in the loop
-passes through it, so a phase added later cannot forget the check. A refusal happens before argv is
-built, so it costs no quota and no wall clock, and the test asserts the child *never ran* rather
-than asserting a failure code, because a refusal after the spawn would report the same code.
+After the launch checks pass, the Driver resolves one canonical target and fingerprints its complete
+invocation closure (`scripts/claude-seal.mjs`) **before any further Driver-owned Claude invocation**.
+It **must** thread that seal through the one door used by compatibility, authentication,
+containment, metadata, and role calls: a door that re-resolves and verifies the seal immediately
+before execution, executes the verified identity, and checks the fingerprint again after
+compatibility probes. Role spawns and the authentication probe go through it today; the initial and
+per-role bare-PATH version probes and both `toolVersions()` metadata probes do not yet, which is the
+open half REVIEW F28 and PLAN items 83/139 own. It is the same boundary that owns the context budget
+(§3.9) and role supply (§6.1), so a phase or probe added later cannot forget the check. A refusal
+happens before the candidate binary executes; asserting only that the later paid role did not start
+is insufficient.
 
 **The seal is created at the run boundary, and for eleven versions it was not.** The mechanism
-landed complete at 0.249.0 — resolver, closure, refusal, five real-filesystem fixtures — and no
+first landed at 0.249.0 — resolver, closure, refusal, and real-filesystem fixtures — but no
 production path ever called `sealTarget`. `spawnClaude` checks `options.seal` only when it is given
 one, every test handed it one directly, and every real run passed `undefined`, so the check was
 skipped in exactly the case it exists for. A guarantee whose only missing piece is a caller looks
@@ -546,42 +566,39 @@ identical to a working one from inside the test suite, which is why the run now 
 after launch revalidation and hands the seal to `runChild` — the same door that supplies the context
 budget, the timeout and the environment boundary, and for the same reason.
 
-A binary whose invocation closure cannot be bounded refuses **there**, beside launch revalidation
-and before any child runs. A run that supplies its own spawner is not sealed at all, because an
-injected spawner replaces the binary: there is nothing on disk that run will execute, and
-fingerprinting the host's real `claude` would measure a file no child is ever launched from.
+A launcher whose invocation closure cannot be bounded refuses **there**, beside launch revalidation
+and before any `claude -p` probe or role runs. A test run that supplies its own spawner is not sealed
+against the host binary, because the injected spawner replaces it; those tests must not be cited as
+evidence for the real executable boundary.
 
-**Re-resolution is part of the check, not an optimization skipped.** Going straight to the sealed
-path would leave failure 1 invisible — the seal intact while a different binary is being run — so
-`verifySeal` performs the PATH lookup again and compares.
+**Re-resolution is part of the check, not an optimization skipped.** It proves that the invocation
+the environment would select still resolves to the sealed closure; execution then uses that verified
+identity rather than trusting a second bare `PATH` lookup. This closes both sides of failure 1: a
+shadow cannot execute merely because a version probe happens before the later role check.
 
 **Identity is install-form-specific.** A native executable is one artifact. A symlink binds its
-resolved target, since retargeting changes what runs while the link's bytes never move. A script
-launcher binds **both itself and what it delegates to**, which is why the seal is a *list* of
-fingerprints rather than one: failure 5 is a launcher that is byte-for-byte identical.
-
-**An unbounded closure is refused, not approximated.** The delegation parser reads the one shape
-npm-installed CLIs use — a quoted `.js`/`.mjs`/`.cjs` path within the first forty lines — and returns
-nothing for anything else. A cleverer parser would be guessing about a shell program, and a wrong
-guess seals the wrong file while reporting success. Item 83's own wording is that inventing
-precision would be no better than the absent check, so the compatibility policy refuses that install
-form. The quote characters are load-bearing: an unquoted path may contain a space, so reading one
-means picking an arbitrary end for it.
+resolved target, since retargeting changes what runs while the link's bytes never move. A script,
+package launcher, or platform wrapper binds **both itself and every mutable delegated entrypoint**,
+which is why the seal is a list of fingerprints rather than one. The classifier must cover each
+supported platform's real invocation forms. An unknown or unbounded closure is refused, not treated
+as a native executable and approximately sealed.
 
 **And the controls are what make the seal a guarantee rather than an alarm.** Every Driver-owned
-invocation carries `DISABLE_AUTOUPDATER`, merged **last** so an operator value cannot override it —
-a run whose binary changes underneath it is not a preference. Without it, failure 4 happens on its
-own and `verifySeal` correctly refuses, turning a silent contract change into a hard stop mid-run.
-Suppressing the update is what stops that being the normal case.
+Claude invocation—including version and metadata probes—carries `DISABLE_AUTOUPDATER`, merged
+**last** so an operator value cannot override it. Without it, failure 4 happens on its own and seal
+verification correctly refuses, turning a silent contract change into a hard stop mid-run.
+Suppressing the update is what stops that from being the normal case.
 
-All five swaps are staged against a real filesystem in tier 2 — real files, real symlinks, real
-`PATH` resolution — because the resolver, `realpath` and the digest of an atomically replaced file
-are somebody else's implementation and no assertion about this module reaches them.
+Tier-2 tests stage the clean neighbour and every supported filesystem swap class with real files,
+links, wrappers, and platform resolution. Native-platform acceptance must additionally prove the
+actual resolver and launcher forms on that host. These are product requirements; incomplete ordering,
+probe coverage, launcher classification, or native-platform evidence remains implementation work in
+PLAN items 65 and 83 rather than a reason to narrow this section.
 
-**What is still owed** (item 83, REVIEW F28): the pinned live runs at every admitted
-compatibility boundary, and a measured non-interactive authentication check — `claude --version`
-succeeds without proving auth. The mechanism is built and proven at tiers 1 and 2; the live half is
-not.
+**Live-boundary status remains external to this specification** (item 83, REVIEW F28). Seal
+verification and the separate non-interactive authentication probe are implemented; a version query
+by itself still proves no authentication. The plan and review ledger own which admitted boundaries
+still need the complete live tier against the staged candidate.
 
 ## 3.6 Agent-config security scan (borrowed from ECC's AgentShield)
 
@@ -1164,7 +1181,10 @@ satisfied by the smallest artifact that quiets it, and a builder under pressure 
 gate called `ci` will write exactly that — a workflow file that runs nothing. So `ci` reads
 the `run:` steps, and `/health` is asked a real question by starting the application
 (`scripts/health-probe.mjs`, and the probe kills the whole process group afterwards, because
-a leaked server poisons every later iteration with a port conflict).
+a leaked server poisons every later iteration with a port conflict). That sweep is the requirement
+on every platform; it is proved on POSIX, and the native-Windows half is a deferred evidence gap
+(REVIEW F11, item 65's final native-Win32 tranche) — deferral changes traversal, not the
+requirement.
 
 Two things stay static, on purpose:
 
@@ -1981,12 +2001,14 @@ brainstorm → explore → plan → critique → build. This loop already owns t
 second process in the same prompt yields a builder that redesigns instead of shipping while
 the ratchet charges it for every test written along the way.
 
-It is *appended*, never inherited, and that is the load-bearing part. A `claude -p` child
-picks up whatever skills the operator happens to have installed, so guidance acquired by
-inheritance would make a build depend on the machine it ran on. §10 already forces
-`outputStyle: default` to stop a persona leaking into a build; the same argument applies to
-skills, and only what is appended here is versioned with the plugin. **The general problem —
-that builder children inherit the operator's whole skill surface — remains open.**
+It is *appended*, never inherited, and that is the load-bearing part. A supported Builder must not
+acquire behavioral guidance merely because the operator happens to have a Skill installed; that
+would make the same sealed run depend on the machine that launched it. §10 already fixes
+`outputStyle: default` to stop a persona leaking into a build, and the same rule applies to ambient
+Skills and other customizations: only Driver-declared, versioned guidance may influence the role.
+This does not narrow the Builder's intentional tool availability under item 82. Tool breadth and
+ambient instruction inheritance are separate boundaries. PLAN item 167 owns the remaining work and
+evidence for enforcing that distinction.
 
 **Accessibility is deliberately not a gate.** `@axe-core/playwright` assertions belong
 *inside* the Playwright specs, which the builder brief now requires for every page. A gate
@@ -2309,9 +2331,9 @@ a Builder-launched background process runs as the same user, so it can discover 
 after the Builder call returns. The tree object still names the intended snapshot, and candidate
 reuse now fails if `git clean -ffd` cannot remove every non-ignored untracked path (including a nested
 repository), but neither fact proves what bytes a same-user process exposed while a gate or reviewer
-read the worktree. `REVIEW.md` F14 therefore remains open: closing that threat requires a measured
-filesystem/process isolation boundary or another mechanism that makes the reviewed files immutable
-to Builder descendants, not another before/after sample.
+read the worktree. Resolving that threat requires a measured filesystem/process isolation boundary
+or another mechanism that makes the reviewed files immutable to Builder descendants, not another
+before/after sample. `REVIEW.md` F14 owns review status.
 
 **What the subject is.** Tracked files plus untracked-but-not-ignored ones — `git add -A`'s view, the
 same set the iteration's commit will contain. Ignored paths are outside it by definition: not
@@ -2459,7 +2481,8 @@ its own environment correctly. A renamed copy of the whole plugin or an indirect
 remain unrecognisable by lexical command inspection, and arbitrary same-user code can attempt state
 writes without spelling a protected path in the command the hook sees. Tickets therefore harden the
 ordinary component path but do not prove that a Builder cannot mint or start another Driver.
-`REVIEW.md` F42 remains open until that authority is enforced across a measured isolation boundary.
+Enforcement across a measured isolation boundary is a separate acceptance requirement;
+`REVIEW.md` F42 owns review status.
 
 ---
 
@@ -2508,8 +2531,8 @@ Three refusals, and the second is the one a careless version gets wrong:
   an unreadable *register* reports `unknown` rather than empty. "Nothing is running" would let the
   bypass through on any host where the register cannot be read, silently.
 
-**Unknown contradicts nothing, and that is deliberate.** On Windows the walk is unavailable (item
-65), and on a read-only home the register cannot be written. Both report `unknown`, because a `0`
+**Unknown contradicts nothing, and that is deliberate.** On Windows the ancestry walk is unavailable
+(item 65), and on a read-only home the register cannot be written. Both report `unknown`, because a `0`
 there would be this check asserting the very fact it exists to verify — and would refuse every
 legitimate boxed component on that host. Entries are pruned by **liveness rather than age**: a run
 killed with `SIGKILL` writes no farewell, and a legitimate run lasts hours, so *old* is the wrong
@@ -2523,7 +2546,8 @@ child does not own instead of one it does.
 ## 7. File layout
 
 This is the current runtime and release structure, not a substitute for `git ls-files`. Tests,
-fixtures, and historical documentation are summarized by directory so this map stays useful.
+fixtures, and historical documentation are summarized by directory so this map stays useful; a
+runtime module absent from it is an omission to fix, not a curatorial choice.
 
 ```
 meeseeks/
@@ -2548,7 +2572,8 @@ meeseeks/
 │   │   ├── index.mjs             # the registry: detect, resolve, gates
 │   │   ├── shared.mjs            # Operation — a command, or a reasoned refusal
 │   │   ├── node.mjs
-│   │   └── dotnet.mjs            # every command verified against a real SDK (§3.8.1)
+│   │   ├── dotnet.mjs            # every command verified against a real SDK (§3.8.1)
+│   │   └── prose.mjs             # checkable prose artifacts and source evidence (§3.8.3)
 │   ├── brief.mjs                 # compiles the per-iteration Build Brief (§8.1)
 │   ├── lessons.mjs               # sparse evidence-derived lesson memory (§13.8)
 │   ├── history.mjs               # conditional git-history context (§8.2)
@@ -2562,11 +2587,26 @@ meeseeks/
 │   ├── context-budget.mjs        # measures a prompt before the child is spawned (§3.9)
 │   ├── pins.mjs                  # pinned security elements and requirements (§4.3)
 │   ├── oracle.mjs                # held-out acceptance cases and relations (§4.6)
+│   ├── acceptance.mjs            # exact-tree gate and Panel acceptance receipt
+│   ├── acceptance-file.mjs       # shared acceptance-receipt filename constant
+│   ├── outcome.mjs               # terminal receipt writer (§7.3)
+│   ├── role-supply.mjs           # cold-role prompt/tool supply metadata (§6.4)
+│   ├── claude-compat.mjs         # measured external CLI compatibility policy (§3.5)
+│   ├── claude-seal.mjs           # canonical binary/delegation identity (§3.5.1)
+│   ├── containment.mjs           # requested-sandbox capability canary (§10)
+│   ├── ancestry.mjs              # nesting depth derived from process ancestry (§6.6)
+│   ├── run-registry.mjs          # same-user active-run ancestry registry (§6.6)
 │   ├── quarantine.mjs            # corrupt driver-state isolation
 │   ├── assumptions.mjs           # what the builder had to assume (§8.3)
 │   ├── run-manifest.mjs          # .meeseeks/run.json, and archiving the last run (§7.1, §7.2)
 │   ├── integrity.mjs             # gate-integrity: no-op gates, weak assertions (§4)
 │   ├── evidence.mjs              # resolves reviewer citations against the reviewed tree (§4)
+│   ├── bounded-read.mjs          # shared size-bounded artifact reads
+│   ├── acquire.mjs               # bounded public-HTTPS evidence acquisition (§3.8.6)
+│   ├── address-policy.mjs        # public-address and redirect policy (§3.8.6)
+│   ├── citations.mjs             # citation resolution and source binding (§3.8.4)
+│   ├── claims.mjs                # prose claim consistency (§3.8.5)
+│   ├── eval-result.mjs           # comparable trial-result substrate (§11.3)
 │   ├── specification.mjs         # .meeseeks/specification.json: the revision a run is held to (§4)
 │   ├── reports.mjs               # per-attempt test-report freshness (§4)
 │   ├── preflight.mjs             # the thirteen checks run before a run starts (§3.5)
@@ -2578,6 +2618,9 @@ meeseeks/
 │   ├── launch.mjs                # .meeseeks/launch.json: the driver's own launch observation
 │   │                             #   and each pre-loop phase's declared output contract (§3.5)
 │   ├── security-scan.mjs         # the agent surface, pre-run and pre-panel, with its tree-bound record (§3.6, §6.3)
+│   ├── secrets-scan.mjs          # gitleaks JSON report into gate-failing evidence (§14, item 29)
+│   ├── audit.mjs                 # the clean-clone acceptance traversal (REVIEW F22, items 76/126)
+│   ├── deploy-target.mjs         # a deploy command derived from a declared target (item 148)
 │   ├── config.mjs                # defaults, validation, and the risky-remote words (§10)
 │   ├── configure.mjs             # interactive author for validated config
 │   ├── style.mjs                 # the Meeseeks render layer, output only (§9)
@@ -2593,6 +2636,8 @@ meeseeks/
 │   ├── producer-authority.md     # Phase 2, job-agnostic (§8.5)
 │   ├── producer-code-practice.md # Phase 2, the code job
 │   ├── producer-code-gates.md    # Phase 2, the code job
+│   ├── producer-research-practice.md # future research-job practice (§15.4)
+│   ├── producer-research-gates.md    # future research-job evidence contract (§15.4)
 │   ├── reviewer-system.md        # Phase 5 (the actual product)
 │   ├── oracle-author.md          # PRD-only held-out acceptance author
 │   ├── security-escalation.md    # scoped cold adjudication of security pins
@@ -2600,6 +2645,7 @@ meeseeks/
 │   ├── frontend-direction.md     # appended to the builder only when there is a UI (§5.0)
 │   ├── toolchain-node.md         # per-toolchain idioms, into the brief (§8.4)
 │   ├── toolchain-dotnet.md       # same, for .NET
+│   ├── toolchain-prose.md        # prose artifact idioms and evidence discipline
 │   └── toolchain-undetected.md   # stack-neutral guidance before detection succeeds
 ├── output-styles/meeseeks.md
 ├── skills/mr-meeseeks/SKILL.md   # opt-in voice skill; tone only
@@ -2624,11 +2670,21 @@ Written once, after the design phase — the first moment every field exists:
   "plugin": { "name": "meeseeks", "version": "0.17.0" },
   "configHash": "sha256:…",
   "models": { "builder": "claude-sonnet-5", "reviewer": "claude-opus-5", … },
+  "effort": { "builder": "high", "review": "max", … },
   "toolchain": { "name": "node", "detected": true, "evidence": "file package.json" },
   "capabilities": { "declared": ["api"], "detected": ["api", "persistent-storage"], "resolved": […] },
   "tools": { "node": "v22.12.0", "npm": "10.9.0", "git": "git version 2.43.0", "claude": "2.1.226" }
 }
 ```
+
+**Current identity limitation.** Version 1 has no canonical repository identity or generation id
+shared across the run's artifacts. The Driver deliberately combines `startedAt` and `startCommit` as
+the lesson store's durable `runKey`, but that key is created after early observations and is not bound
+into every per-run record. It therefore cannot establish cross-artifact generation coherence. The
+future observer contract in §16 requires one immutable generation identity before the first
+run-scoped observation. Its implementing slice must either add an earlier identity record or
+deliberately change this manifest's lifecycle and schema; an observer may not promote the lesson key
+or manufacture a shared identity from the fields above.
 
 **It records; it does not decide.** Nothing in the codebase reads it back, and a test greps
 `scripts/` to keep it that way — the strongest available guarantee that a manifest's contents
@@ -2636,10 +2692,17 @@ cannot influence a run is that no code path can consult them. Failing to *write*
 run, because an artifact the operator was promised and did not get is a real fault; what is
 *in* it decides nothing.
 
-**No secrets.** The configuration is recorded as a hash, not embedded. Today `.meeseeks/config.json`
-holds only models, counts and booleans, so embedding would be harmless; hashing stays harmless
-after someone adds a field that is not, and still answers the question worth asking — was this
-the same configuration as that run?
+**The future observer exception is not shipped.** If item 166 is admitted, only the separately
+invoked observer boundary in §16 may read this record after bounded validation. Driver decision
+paths and modules reachable from them remain forbidden readers, and the implementation slice must
+narrow the enforcement test around that process boundary. Until then, the no-reader invariant above
+and its current test remain unchanged.
+
+**Do not copy configuration into the manifest.** The configuration is recorded as a hash, not
+embedded. It can contain operator-specific paths, deploy host/user/directory values, component and
+schema commands, extra-gate argv, and allowlists. Hashing avoids reproducing that potentially
+sensitive payload while still answering the question worth asking — was this the same configuration
+as that run?
 
 **Nothing is inferred.** Every value is passed in, and a missing one throws rather than
 defaulting. A manifest that quietly says `"unknown"` is worse than no manifest: it looks like
@@ -2652,7 +2715,7 @@ record of what it is.
 ### 7.2 `.meeseeks/runs/NNN/` — the previous run, kept
 
 A manifest that only ever describes the *current* run is current rather than forensic. Before
-this run writes anything of its own, the previous run's artifacts are moved to
+this run writes any run-scoped artifact in the archive inventory, the previous run's artifacts are moved to
 `.meeseeks/runs/NNN/`.
 
 **What is actually lost between runs was the whole of this work, because the two accounts
@@ -2664,16 +2727,16 @@ because it lives in the driver's in-memory `progress` rather than in `state.json
 run writes `briefs/iter-001.md` over the first run's, then `iter-002.md` over the next, and the
 loss is silent: the replacement looks exactly like the original.
 
-Six artifact classes are archived, and each earned its place:
+The per-run inventory is explicit in `scripts/run-manifest.mjs`; every entry is either overwritten,
+collides when numbering restarts, or would otherwise merge evidence from different runs. The current
+fixed inventory is:
 
 | artifact | why |
 |---|---|
-| `run.json` | overwritten wholesale, and the only record of what a run *was* |
-| `briefs/` | collides by number, per above; the only record of what the builder was actually asked on the iteration a run went wrong |
-| `reality-check.md` | overwritten, and it is the reasoning behind an `ABORTED` |
-| `assumptions.json` | **appended**, not overwritten — a different fault with a worse consequence, below |
-| `review.json` | appended by iteration, whose numbering restarts; without archiving, different runs' panel evidence becomes indistinguishable |
-| `outcome.json` | overwritten wholesale, and the only durable record of how a run ended |
+| `run.json`, `launch.json`, `specification.json`, `capabilities.json` | one run's metadata/profile, launch observation, sealed specification, and resolved capability set would be overwritten or incorrectly carried into the next run |
+| `briefs/`, `reality-check.md`, `assumptions.json` | iteration numbering restarts; prompts collide, the abort rationale is overwritten, and appended assumptions become attributable to the wrong run |
+| `events.ndjson`, `review.json`, `outcome.json` | lifecycle sequence and review iteration numbers are run-scoped, while the terminal receipt is overwritten wholesale |
+| `oracle.json`, `acceptance.json`, `supply.json` | held-out cases, exact-tree acceptance evidence, and cold-role supply belong to one specification and run |
 
 `assumptions.json` earned its place late, and by a different argument from the other three. It
 loses nothing: entries accumulate. But they are keyed by `iteration`, and iteration numbering
@@ -2688,21 +2751,30 @@ means a finding the panel appears to have discovered may have been *supplied* to
 run's assumption — which is a weaker claim than independent discovery, and the two are
 indistinguishable after the fact.
 
-The unit and e2e reports are deliberately **not** archived. They are rewritten every
-*iteration*, so they are already transient within a run, and keeping the last one would
-preserve an arbitrary moment while implying it was the run's.
+Unsealed or unmatched unit and e2e reports are deliberately **not** archived. They are rewritten
+every iteration, so keeping the last one would preserve an arbitrary moment while implying it was
+the run's. A report joins the archive only when `acceptance.json` names its digest and the bytes at
+archive time still match. That preserves the exact sealed evidence without granting authority to an
+unattributed last-written report.
 
 **Numbered, not timestamped.** An integer is derived from what is on disk, needs no clock —
 which this module does not have and should not acquire — sorts correctly when printed, and
 survives a machine whose clock moved. Slots are allocated from the highest existing number
 rather than from a count, so deleting `runs/001` cannot make a later run land on top of `002`.
 A directory an operator renamed is ignored rather than errored on; organising your own evidence
-is not a fault.
+is not a fault. Ignoring it for numeric slot allocation does not make it invalid evidence: the future
+observer in §16 may display a contained operator-renamed direct child. Current schemas label its
+generation coherence unavailable; after the §16.2 binding ships, the observer also validates its
+required bindings. Allocation and observation are separate operations.
 
-**Archiving moves; it never reads.** §7.1's no-reader guarantee is about a manifest's
-*contents* influencing a run, and `renameSync` does not open the file. Failure to archive
-**fails the run**, on the same argument: the alternative is destroying the previous run's
-evidence and continuing, which is the outcome archiving exists to prevent.
+**Archiving never reads `run.json` or uses archived contents to decide the new run.** Fixed inventory
+entries move by name. For report inclusion, `archiveSealedReports` parses `acceptance.json`, hashes
+eligible report bytes, and moves only exact digest matches. Those attribution inputs are
+decision-bearing evidence under the shared bounded-read requirement: each must be refused before
+whole-file allocation above its class limit. PLAN item 73 owns the current implementation gap. These
+reads decide what evidence is preserved, not whether the candidate or next run passes. Failure to
+archive **fails the run**, on the same argument: the alternative is destroying
+the previous run's evidence and continuing, which is the outcome archiving exists to prevent.
 
 It needs no new guard rule. §6 is positional, so `.meeseeks/runs/` is protected the day it appears.
 
@@ -2747,6 +2819,39 @@ So `finish` writes one record on every terminal path — `state`, `reason`, `ite
 
 It joins the per-run archive list, because like `run.json` it is overwritten wholesale and a
 second run would otherwise erase the first one's ending.
+
+### 7.4 `.meeseeks/events.ndjson` — forensic lifecycle, never run authority
+
+The journal preserves the last successfully written observations relevant to a hard-killed run:
+selected phase entry, child start and settlement, and iteration start and settlement. It records
+exactly five transition kinds: `phase-entered`, `child-started`, `child-settled`,
+`iteration-started`, and `iteration-settled`. A writer record contains a run-scoped `seq`, `at`,
+`kind`, bounded `subject`, nullable `iteration`, and bounded nullable `detail`.
+
+It is Driver-owned, append-only, line-oriented, and observational. It contains no prompt, response,
+reasoning, tool chatter, or model output. A write failure is reported but cannot fail the run; making
+forensics a run authority would invert its purpose. Whole-file allocation and every field are bounded
+and schema-validated before a record can inform diagnosis or projection; unknown or wrong-shape data
+is refused rather than normalized into evidence. PLAN item 58 owns any implementation alignment.
+The file is archived with its run, and sequence numbering restarts for the next run.
+
+Because writes are best-effort, absence of a transition is not proof that the transition did not
+happen. An open lifecycle is therefore unsettled/unknown unless terminal, archive, or admitted
+liveness evidence resolves it; the journal alone cannot prove a child is still running or that a
+phase failed to settle.
+
+The reader tolerates an unparseable final line as the ordinary shape of a crash during append. An
+unparseable earlier line is corruption: reading stops rather than skipping a gap. Only a bounded,
+schema-valid `outcome.json` may defeat a trailing unsettled-journal warning. Mere file presence,
+malformed JSON, or a wrong-shape receipt is not terminal evidence and must remain visibly unavailable
+or corrupt. PLAN item 58 owns implementation alignment with this precedence rule; §16.3 applies the
+same rule to the future observer.
+
+The current schema is deliberately incomplete as a dashboard lifecycle: phase entries are not a
+complete roster or settlement history; repeated child subjects are aggregate counts rather than
+stable concurrent identities; and `child-settled` carries no outcome. Any richer observation admitted
+under §16 must be versioned, justified by a fact no existing artifact already owns, and remain unable
+to authorize a phase, accept a candidate, or create a second terminal-state ledger.
 
 
 ## 8. Builder system prompt (Phase 2)
@@ -3091,8 +3196,8 @@ Only phases that keep the guard get it, and the split is **derived** from `isCol
 than listed, for the same reason the guard's is: a phase added later with write tools is
 sandboxed automatically. Cold phases run under `--safe-mode` to strip customizations. Safe mode is
 not the phase's closed tool-availability policy; since 0.204.0, PLAN item 82 separately supplies an
-exact `--tools` surface and refuses inherited MCP expansion. REVIEW F27 remains open for external
-acceptance of that repair.
+exact `--tools` surface and refuses inherited MCP expansion. REVIEW F27 / PLAN item 82 own external
+acceptance and status for that repair.
 
 **The driver refuses the fallback on the builder's behalf.** R19's recorded failure mode is an
 agent on a kernel where bubblewrap failed *asking to rerun unsandboxed*, and a sandbox that can be
@@ -3135,7 +3240,9 @@ inconclusive, and inconclusive refuses.
 
 The three boundary probes — version, authentication, containment — run through `shell` rather than
 `execFileSync`, so their ceilings escalate to `SIGKILL` and sweep the process group (§11.1, REVIEW
-F2/F33). A probe whose purpose is to fail fast must not be the one call that can hang a run. Their
+F2/F33) — the requirement on every platform, proved on POSIX, with the native-Windows half deferred
+under item 65 rather than accepted. A probe whose purpose is to fail fast must not be the one
+call that can hang a run. Their
 token and dollar spend is added to the run's pre-loop total **whether or not the answer was usable**,
 because spend counted only on success understates a receipt by exactly its failures.
 
@@ -3422,7 +3529,7 @@ group, so an operator-kill can still leak it (`PLAN.md` item 2's residual).
 | `tokenCeiling` | 4_000_000 | bounds *work* after returned envelopes; not a hard cap and not convertible to money (§3.5) |
 | `costCeiling` | 50 | bounds *spend* in USD from `total_cost_usd`; decimals allowed; `0` disables it |
 | `childTimeoutMs` | 1_800_000 | wall-clock watchdog per child; roughly 2.8x the longest child observed when chosen |
-| `gateTimeoutMs` | 2_700_000 | wall-clock watchdog per gate; an explicitly unmeasured backstop that also sweeps leaked descendants |
+| `gateTimeoutMs` | 2_700_000 | wall-clock watchdog per gate; an explicitly unmeasured backstop that also sweeps leaked descendants — required on every platform, proved on POSIX, Windows half deferred under item 65 |
 | `sandbox.enabled` | **false** | R19: an OS-level floor **under** the guard (bubblewrap on Linux/WSL2, seatbelt on macOS). Off by default because bubblewrap is a separate package and the driver **refuses an unsandboxed fallback** — defaulting it on would refuse every run on a host without it. Preflight checks the host before the run starts |
 | `oracle.enabled` | **false** | staged held-out CLI oracle (§4.6); off until more live evidence settles false-failure risk |
 | `panelCarry.enabled` | true | A8's carry: a requirement a cold reviewer already passed with `file:line` evidence, whose evidenced file has not changed, is not re-argued on an iteration that is going to fail anyway. **A pre-filter only** — a narrowed panel that passes triggers the full panel before any ship, so nothing carried ever reaches a ship decision |
@@ -3647,8 +3754,8 @@ Excluding `flaky` from ratchet credit is necessary but not sufficient. A normali
 must also fail the current iteration explicitly: retrying runners can exit zero, and without that
 second decision a new unstable test has neither prior ratchet credit to regress nor a failed gate to
 block Panel. It may establish RED history, never current passing evidence. Since 0.176.0, normalized
-flaky results explicitly fail the deterministic gate before Panel; PLAN item 87 records the repair
-and REVIEW F30 records its verified closure.
+flaky results explicitly fail the deterministic gate before Panel; PLAN item 87 records the repair,
+and REVIEW F30 owns its review status and evidence.
 
 Four behaviours must survive any widening, and each has a test. **Unidentifiable throws** —
 never an empty id set, which reads exactly like a green run. **Malformed throws**, naming what
@@ -3765,7 +3872,32 @@ protocol, the counterbalanced run order, the uncertainty interval, and the unsee
 that item 57 also specifies are unbuilt, and every one of them needs live comparative runs to be
 worth anything.
 
-## 12. Build order
+`PLAN.md` item 57 owns admission and live status. If that campaign proceeds, its protocol receipt is
+sealed before the first trial and binds the baseline and candidate, scenarios and partitions, trial
+count and counterbalanced order, inclusion/retry rules, graders, primary metric, non-compensable
+failures, practically meaningful delta, uncertainty method, decision rule, and stopping rule. Failed,
+interrupted, and missing attempts remain visible; the campaign cannot peek, extend itself, or discard
+an inconvenient trial after seeing results. Baseline and candidate compare only under matched
+effective identities and execution profiles, and provider, model, tool, or resource drift is
+confounded evidence rather than a win.
+
+Every live trial starts from the same immutable fixture in a fresh disposable workspace. Scenario
+contracts map every claimed requirement to an executable or explicit human criterion; a known-good
+answer passes, seeded defects fail, and a valid alternative is not rejected merely for differing from
+a reference patch. The final partition remains unseen until the precommitted selection rule has
+chosen a candidate.
+
+Deterministic `record`, `replay`, and `refresh` fixtures may validate the harness around those
+artifacts. Only `record` may invoke a live scenario. Replay and refresh are keyless by construction,
+refuse missing, mutated, incompatible, or orphaned evidence, and never resume a production run,
+repeat a side effect, count as a fresh trial, or acquire terminal authority. Final encodings remain
+unshipped until the item 57 implementation slice defines and tests them.
+
+## 12. Original core build order (historical dependency)
+
+This is the dependency order that built the foundational loop, not the live implementation queue.
+`PLAN.md` alone owns current admission, priority, and traversal; preserve the dependency below when
+reconstructing or replacing these foundations.
 
 Write `CLAUDE.md` (test gates, slice-init rules) before step 1.
 
@@ -3986,10 +4118,11 @@ unarmed on a target with no UI under the single skip defined in §5.1.
 
 ## 15. Deferred execution and provenance architecture
 
-**Status: constraints and research conclusions, not shipped behavior.** The supporting analysis,
+**Scope: constraints and research conclusions, not shipped behavior.** The supporting analysis,
 official-source notes, alternatives, failure modes, and live questions are in
 [`docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md`](docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md). This
-section is the normative boundary if experiments in `PLAN.md` proceed.
+section is the normative boundary if experiments in `PLAN.md` proceed; `PLAN.md` alone owns their
+admission, order, and live status.
 
 ### 15.1 Dynamic workflows are disposable role internals
 
@@ -4024,6 +4157,16 @@ or terminal-state transition merely because one of its agents reports success.
 - **The Driver owns an aggregate descendant ceiling.** Claude Code platform limits are not a safety
   policy. Meeseeks must impose a lower run-scoped cap across role workflows, refuse when it is
   exhausted, and settle every descendant before cancellation or role return.
+- **Validate before publication.** The request, route, Driver-owned cap, and serializable input are
+  checked before a workflow start becomes observable. A workflow script cannot inspect, replace, or
+  widen the Driver cap.
+- **Cancellation closes admission before cleanup.** A pending start that resolves after cancellation
+  is disposed without becoming an admitted child. Every published child receives exactly one terminal
+  settlement. Disposal is bounded and idempotent, waits for quiescence, terminates survivors, and can
+  never turn incomplete work into success.
+- **The boundary is plain JSON.** Inputs, outputs, and receipts refuse cycles, functions,
+  `undefined`, non-finite numbers, and non-plain or custom-prototype objects. Platform convenience
+  values do not silently become durable state.
 
 Workflow isolation is not a snapshot protocol. An isolated worktree generally begins from a Git
 commit, not from the caller's uncommitted edits. A role that delegates evolving work must therefore
@@ -4042,7 +4185,14 @@ The current design already encodes the useful graph implicitly: requirements and
 ratcheted test ids, evidence fingerprints, security and requirement pins, assumptions, findings,
 delegated runs, and terminal conditions. Replacing these with a graph abstraction would add a
 second authority without yet solving a demonstrated product failure. A graph database, workflow
-framework, or node-per-agent telemetry model is rejected.
+framework, or node-per-agent telemetry model is rejected. The paragraph below is the only
+contemplated exception, and it is conditional, not shipped.
+
+No live-member exception ships today. After item 54 ships its aggregate receipt and item 166 is
+admitted, §16 permits only a capped, generation-scoped presentation snapshot beneath one durable
+role. It carries no reasoning, per-member model, token, or cost data, acceptance authority, or
+durable organization chart and collapses to the single §15.1 receipt at settlement. Without that
+contract, individual live workflow-member nodes remain unavailable.
 
 The first justified increment, if stale evidence or requirement drift proves costly in real runs,
 is **exact provenance metadata** on the existing artifacts: stable claim ids, requirement ids,
@@ -4061,8 +4211,13 @@ invalidation and resumability; storage technology is not part of the product.
 
 The open safety findings in `REVIEW.md` take precedence. Dynamic fan-out magnifies the consequences
 of a non-atomic run lock and a watchdog that cannot kill a resistant child, so no unattended
-workflow experiment may become a product path until those findings are closed. Any later adoption
-also requires a live contract test against a pinned Claude Code version: preview behavior,
+workflow experiment may become a product path until those findings are closed. `PLAN.md` item 54
+owns live admission and its current prerequisites; this section does not duplicate their changing
+status. The atomic-lock, timeout, cold-review, environment, containment, and POSIX
+descendant-settlement behavior—plus item 54's unresolved cross-platform settlement
+prerequisite—remain mandatory regression evidence for the same reason. Any later adoption also
+requires a live contract test against a pinned
+Claude Code version: preview behavior,
 model routing, budget reporting, worktree creation, context isolation, and termination are external
 contracts and cannot be established by unit tests over our argv.
 
@@ -4126,3 +4281,168 @@ malformed output, disagreement, timeout, and incomplete coverage fail closed. `B
 `inconclusive`, and `unverifiable` are structured reason or coverage classifications, never a fifth
 terminal state: Driver maps them to the existing `STALLED`, `BUDGET`, or `ABORTED` state according to
 the sealed brief and cause.
+
+---
+
+## 16. Read-only operator observer architecture
+
+**Scope: normative future constraints, not shipped behavior.** `PLAN.md` item 166 owns admission,
+order, and completion. No observer, entrypoint, new record, or schema exists merely because this
+section specifies its boundary. `DASHBOARD.md` owns layout, animation, interaction, responsive
+behavior, and accessibility; this section owns the process, data, authority, compatibility, and
+security rules an implementation must satisfy.
+
+[ADR-0002](docs/adr/0002-read-only-operator-observer.md) records why this is a separate read-only
+observer and why its projection contracts remain outside the Driver's decision path.
+
+### 16.1 The observer is outside the control plane
+
+The observer is a separately and explicitly started Node process. The Driver does not start it, wait
+for it, read its state, or react to its connection status. Closing the browser, losing the connection,
+or crashing the observer cannot pause, fail, or otherwise change a run.
+
+- It uses Node ≥22.12 built-ins and local static assets only: no runtime dependency, CDN, analytics,
+  font download, model call, or outbound external network request.
+- It reads a selected repository's current and validated archived run evidence through bounded,
+  contained readers. It writes neither repository content nor `.meeseeks/` state, including caches,
+  preferences, acknowledgements, indexes, and replay cursors.
+- It has no Driver command channel and no authority to advance, approve, dismiss, retry, resume,
+  cancel, terminate, configure, accept, ship, or acquire a run lock.
+- `live`, `disconnected`, `interrupted`, and `incompatible` are projection states. They do not add to
+  the Driver's four terminal states or become evidence merely because the browser displays them.
+
+The initial live transport is a loopback-only HTTP server with server-sent projection updates. A
+transport epoch and cursor are observer cache coordinates, never product evidence. The exact command,
+asset paths, port selection, and shutdown interface are settled and documented in the implementing
+slice rather than invented here before a process exists.
+
+### 16.2 One generation, existing owners, smallest new observations
+
+An existing canonical artifact keeps every fact it already owns. The observer never parses styled
+stdout, transcripts, filenames, configuration, or filesystem timestamps to reconstruct a stronger
+claim. A new Driver-owned observation is admitted only for a target fact no current artifact can
+establish, and remains observational: it cannot authorize work, accept a candidate, settle a finding,
+or become a second status or terminal ledger.
+
+Every artifact consumed by a full target-schema projection is versioned and bound to the same
+immutable run-generation id established before the first observation. A record may carry that id
+directly, or an atomically replaced Driver-owned generation inventory may bind its contained path,
+schema, digest, and observation revision. New durable records are bounded and atomically readable and
+join the per-run archive inventory before shipping. Every ephemeral snapshot is generation-scoped
+and is finalized or removed before a new generation writes current state.
+
+The generation inventory is the publication boundary for a coherent multi-file view. A complete
+inventory names its generation, revision, artifact bindings, and any admitted observation-stream
+prefix. Before changing bytes behind an existing complete binding, the Driver must use one of two
+publication shapes: write immutable revisioned artifact paths and atomically switch the complete
+inventory only after they are ready, or atomically publish a non-accepting `updating` inventory before
+mutating bound paths and publish the next complete inventory after the writes finish. It never changes
+bytes behind a complete binding as an unannounced intermediate state.
+
+The observer accepts only a complete inventory. It reads the inventory, reads and validates its
+bounded artifact set or observation-stream prefix, then rereads the inventory. It accepts the snapshot
+only when generation, revision, and complete state are unchanged and every binding matches. An
+`updating` inventory or revision change receives bounded retries and renders updating/unavailable;
+retry exhaustion alone cannot distinguish a slow or suspended writer from a crash. A missing or
+mismatched binding against the same unchanged complete inventory is an integrity error because that
+inventory is the immutability assertion. An unsupported schema is incompatible rather than silently
+projected.
+
+Before target-schema archiving moves any bound current path, the Driver withdraws the complete current
+inventory with a non-accepting archival/update state. It assembles all bound members and the finalized
+inventory in a contained, non-discoverable staging directory, then atomically renames that directory
+into the discoverable archive slot. A finalized archive is immutable. An incomplete stage is
+updating/unavailable, not coherent evidence; ordinary file-by-file movement is never exposed as a
+completed target-schema archive.
+
+Current schemas have neither a common generation binding nor this publication boundary. Their
+compatibility view is explicitly eventually consistent: the observer may retry files that change
+during a read, but it labels generation coherence unavailable and never claims an atomic snapshot or
+mixed-generation detection. Old schemas remain readable with explicit unavailable fields; absence is
+not migrated by guessing or by treating directory placement, sequence restart, or timestamps as a
+generation id.
+
+The full target schema requires these fact families. Their final filenames and encodings belong to
+the slice that implements and tests their writers and readers.
+
+| Target fact | Normative requirement |
+|---|---|
+| Run and repository identity | Create an immutable run-generation id before any observation and a safe repository display identity. Until then, the selected root is observer context and §7.1 fields are not a manufactured id. |
+| Phase lifecycle | Record the sealed run-scoped roster and order, applicability or explicit skip/refusal, activation, and literal terminal result/reason. A current `phase-entered` event alone proves neither queue position nor settlement. |
+| Child lifecycle | Give each activation a stable id, parent, durable role/subject, start, literal result/reason, timing, and aggregate usage. Current repeated subjects remain anonymous counts and `child-settled` remains outcome-free. |
+| Candidate and gate attempt | Bind candidate tree, attempt, gate, start, settlement, timing, and report digest or explicit absence. `acceptance.json` remains the exact-tree acceptance authority. |
+| Liveness | Positive evidence must identify the exact Driver process instance and generation. Expiry, missed writes, host sleep, observer disconnect, or clock movement yields unknown/disconnected; interrupted requires supersession/archive evidence or positive proof that the exact instance ended. Liveness observation is best-effort and cannot fail the run. |
+| Live resources | Record bounded current-run units and update/finalization semantics for tokens, cost, iterations, stalls, ceilings, and remaining budgets. Persistent ratchet state and stdout are not live-run resource evidence. |
+| Component lineage | Write the parent-child identity before spawn and preserve bounded child evidence before cleanup. When a valid child `outcome.json` exists, bind its digest and what the parent consumed; when it is missing or invalid, record that fact and the parent-observed exit without inventing a child outcome. Component `SHIPPED` remains only a parent pre-filter. |
+| Panel activation | Bind each independently cold activation and normalized report to a stable activation id and any Driver-declared role label. Historical unlabeled reports remain anonymous rather than receiving inferred specialties. |
+| Operator decision | Bind the decision record to its run generation and archive it before the observer attributes or replays it. Current `question.json` does not satisfy this contract. |
+| Dynamic-workflow activity | Only after item 54 ships §15.1's aggregate receipt may a separate capped live snapshot expose presentation id, parent, role, lifecycle state, timing, and workflow-level aggregate usage. It contains no per-member model/token/cost data, prompts, responses, or reasoning and collapses to the one receipt at settlement. |
+
+The standalone observer is the only planned exception to §7.1's no-reader rule. Its implementation
+must give it a bounded validator and an import/process boundary that the enforcement test can
+distinguish from every Driver decision path. Until that slice ships, no reader is permitted.
+
+### 16.3 Projection, precedence, and replay
+
+The target projector is a deterministic, bounded fold over a single-generation snapshot accepted by
+§16.2's publication protocol and admitted ordered observations. Every displayed or derived field
+retains its source identity. The current-schema compatibility projector uses bounded reads and
+retries but remains eventually consistent: a changing input or unresolved cross-artifact mismatch
+whose publisher may still be active renders updating/unavailable. A malformed individual record is
+an integrity error. A current-schema cross-artifact mismatch becomes an integrity error only after
+the selected run is archived or superseded, or positive evidence proves its exact publisher ended;
+until then it remains an explicit unresolved conflict. Current-schema lifecycle order is only the
+journal's run-scoped `seq`; independently rewritten artifacts gain neither a total order from
+modification times nor cross-artifact atomicity.
+
+- A valid terminal `outcome.json` outranks a trailing open journal transition.
+- `acceptance.json` and its bound reports remain the candidate and gate authority; a lifecycle event
+  can say a gate settled but cannot say the candidate was accepted.
+- Missing optional fields are unavailable; unsupported schemas are incompatible. A missing required
+  binding, contradiction against the same unchanged complete inventory, or durable sequence gap is a
+  visible integrity error rather than a convenient precedence guess; current-schema cross-artifact
+  conflicts follow the rule above.
+- The deterministic fold does not read the wall clock. Freshness and elapsed time use an explicit
+  presentation-clock input that deterministic replay freezes.
+- A transport cursor gap may recover with a complete reset snapshot. A gap in a durable source cannot
+  be repaired by reset and remains an integrity error.
+- Replay means re-rendering recorded evidence. It never repeats a side effect, spawns a child,
+  reacquires a lock, resumes a run, or counts as fresh evaluation evidence.
+
+Archive discovery validates contained direct children rather than assuming every basename is numeric.
+Numeric names remain the writer's allocation scheme, and an operator-renamed archive remains
+discoverable. Current-schema archives display generation coherence as unavailable. Once the §16.2
+binding ships, missing or mismatched required bindings are refused; a symlink escape is always
+refused.
+
+### 16.4 Local web security is a product boundary
+
+The server binds a literal loopback address and accepts only an exact `Host` allowlist including the
+chosen port. It serves same-origin requests with no CORS opt-in and rejects cross-site `Origin` and
+Fetch Metadata requests; loopback alone does not prevent DNS-rebinding or malicious-browser-origin
+requests. Static assets come from an explicit allowlist under a restrictive Content Security Policy,
+including `connect-src 'self'`. There is no generic repository-file endpoint.
+
+Every resolved evidence path stays beneath the selected repository and validated current/archive
+roots after real-path resolution. Oversized, incompatible, traversing, or symlink-escaping inputs are
+refused. Repository names, paths, identifiers, findings, errors, and all model-derived strings are
+hostile text: assign text content and never interpret them as HTML, raw Markdown, CSS, script, or a
+URL.
+
+The display allowlist excludes prompts, raw/full responses, hidden reasoning, tool chatter,
+environment values, raw configuration, credentials, secrets, arbitrary source files, and arbitrary
+command output. Driver-normalized verdict and finding fields are evidence only when explicitly
+allowlisted. Secret redaction outranks exact-text display and leaves a visible redaction marker plus
+source identity rather than a plausible reconstruction.
+
+Loopback and same-user execution are not an isolation boundary. The product states that limitation
+and does not claim to protect artifacts from another process running as the operator.
+
+### 16.5 Promotion and compatibility rule
+
+Each observer implementation slice moves its exact accepted entrypoint, schema, archive behavior,
+compatibility policy, and enforcement tests into the applicable shipped-runtime section of this
+document in the same change. A fixture or animated prototype remains labelled as such and cannot
+satisfy item 166. If item 54 rejects dynamic workflows, the rest of the observer remains implementable
+and the live-member view stays unavailable; if item 65 remains unproved, no Windows view may imply
+native execution or descendant settlement the runtime cannot establish.

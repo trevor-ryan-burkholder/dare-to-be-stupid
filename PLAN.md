@@ -131,11 +131,19 @@ queue Codex closure under the traversal protocol above.
 
 **Gate 0B — external child/platform contracts.** F5/item **56** is OPEN: measure the real
 child-environment contract before replacing ambient inheritance, then prove the boundary through a
-live Claude child. F11/item **65**, F15/item **69**, F21/item **75**, and the installed-loader half
-of F25/item **80** remain open external-contract work. F27/item **82** is implemented at 0.204.0
-pending Codex verification. F28/item **83** is partial at 0.205.0: the measured version policy is
-enforced, while one-CLI-per-run binary identity and auto-update control remain. These contracts close
-before feature fan-out.
+live Claude child. Item **65** is **DEFERRED** to the final native-Win32 tranche; WSL and injected
+platform doubles are not acceptance evidence, and `REVIEW.md` F11 owns defect status. F15/item **69**,
+F21/item **75**, and the
+installed-loader half of F25/item **80** remain open external-contract work. F27/item **82** is
+implemented at 0.204.0 pending Codex verification. F28/item **83** is **PARTIAL**: the measured
+version policy, role seal wiring, and authentication probe exist, but version probes can execute a
+bare unverified PATH target before the seal check and `toolVersions()` bypasses the controls entirely;
+the same-candidate live boundary evidence also remains. Native-Windows CLI resolution and launcher
+closure are deferred under item **65**.
+These contracts close before feature fan-out. Item 65's deferral changes traversal, not that bar:
+it remains a prerequisite for any Windows cleanup claim and for an item whose own admission requires
+all of Gate 0; it does not block an independent POSIX-only capability that explicitly refuses
+`win32`.
 
 **Gate 0D — closed repair gaps retained as history (items 88–94).** F31–F37 were found by the
 second Codex pass and are CLOSED in REVIEW at 0.194.0. Their item sections remain evidence for the
@@ -159,10 +167,11 @@ that must still pass.
 
 F9's positional machine-state ignore boundary through item **63** is **implemented at 0.178.0;
 REVIEW F9 CLOSED at 0.194.0**. See item 63 below. F10/items **64**
-and **103**, F13/item **67**, F17/item **71**, F19/item **73**, F20/item **74**, F23/item **78**,
-and F24/item **79** are implemented; REVIEW has closed F20, F23, and F24, while F10, F13, F17,
-and F19 remain open pending verification of later repairs. Their item headings own the exact repair
-versions. F22/item **76** remains OPEN. F11 may share F2's process-lifecycle implementation, but
+and **103**, F13/item **67**, F17/item **71**, F20/item **74**, F23/item **78**, and F24/item **79**
+are implemented. Item **73** is **REOPENED** for the archive-attribution whole-file reads named in its
+section. REVIEW has closed F20, F23, and F24, while F10, F13, F17, and F19 remain open pending
+verification of later repairs. Their item headings own the exact repair versions. F22/item **76**
+remains OPEN. F11 may share F2's process-lifecycle implementation, but
 retains its own platform evidence under item **65**.
 
 **Gate 0 dependency edges.** The A/B/C groups classify priority and external evidence; they are not
@@ -227,8 +236,9 @@ are already complete and no longer part of the traversal.
 **Research-gated and conditional work:** item **54** remains **BLOCKED** on Gate 0, item **77**, and
 a recorded item **84** outcome; it does not enter the queue merely because the supporting analysis
 exists. Item **55** was rejected because the required provenance already exists. Item **58**'s
-killed-run experiment admitted and narrowed its journal, which is implemented but does not authorize
-checkpoint/resume. Item **106** was rejected because no concrete authenticated-resource job met its
+killed-run experiment admitted and narrowed its journal; the journal is implemented, its
+valid-outcome precedence repair remains, and it does not authorize checkpoint/resume. Item **106**
+was rejected because no concrete authenticated-resource job met its
 admission condition; configured connectivity alone does not reopen it.
 
 **Scope and admission summary:** the Standing Rules below own the current all-features DoD; each
@@ -236,10 +246,11 @@ item's heading and admission clause own its traversal state. Items **21** and **
 Item **33** is a named operator deferral outside the current DoD. Items **32**, **54**, and **59**
 are experiment or development-protocol work rather than product capabilities. Item **30** is a
 completed research intake, not an implicit build. Item **86** is an in-scope capability but remains
-`PARKED` until its containment and incremental-detection admission conditions close. Item **106**
-was `REJECTED` by its own admission test and reopens only when its heading's condition is met.
-All other scope and status claims come from the Standing Rules and the individual item—not from the
-historical phase heading in which an item happens to appear.
+`PARKED` until its containment and incremental-detection admission conditions close. Item **166** is
+an in-scope capability but remains operator-`DEFERRED` until its heading's resumption condition is
+met. Item **106** was `REJECTED` by its own admission test and reopens only when its heading's
+condition is met. All other scope and status claims come from the Standing Rules and the individual
+item—not from the historical phase heading in which an item happens to appear.
 
 `PLAN.md` owns these statuses. `HANDOFF.md` summarizes them and must not invent a second ledger.
 
@@ -930,10 +941,12 @@ decision, and it is the larger half of the pile.
 here, then testing and code fixes. The capstone and improve mode are withdrawn unless a newer
 operator directive explicitly restores them. A feature or finding whose acceptance evidence cannot
 be obtained in this environment is **deferred** with the missing capability named, not held open.
-Current environment deferrals are F11/item 65 (needs a real Win32 host; WSL is explicitly not
-evidence) and item 16's confinement half (unverifiable here). Item 32 is an optional experiment and
-follows its own admission condition rather than the feature phase. Items 31 (capstone) and 21
-(improve mode) are withdrawn from the current traversal.
+Current environment deferrals are F11/item 65 (**final native-Win32 tranche**; WSL is explicitly not
+evidence) and item 16's confinement half (unverifiable here). Deferral changes traversal order, not
+the unresolved acceptance bar or any dependent item's admission. Item 32 is an optional experiment
+and follows its own admission condition rather than the feature phase. Dashboard item **166** is a
+separate operator deferral until explicit resumption, not an environment limitation. Items 31
+(capstone) and 21 (improve mode) are withdrawn from the current traversal.
 
 **External review terminates (operator directive, 19 Aug 2026).** A pass is ACCEPTED when no HIGH
 finding is open against the reviewed baseline; MEDIUM findings are a backlog and never withhold
@@ -2034,7 +2047,7 @@ unchanged.
 live tier 39 of 39, release-check ok at 0.262.0.
 
 
-### 141. A run proves it can authenticate before it takes the lock — **DONE (0.263.0)** (PLAN item 83)
+### 141. A run proves it can authenticate at the run boundary before any role — **DONE (0.263.0)** (PLAN item 83)
 
 **Origin:** Phase 2, 20 Aug 2026. Item 83 named this as owed for closure and `DESIGN.md` §3.5
 documented it as an open gap in the product's own words: *"an authentication failure may appear only
@@ -3126,6 +3139,98 @@ contradiction until items 149 and 150 are read beside it: preflight could be a s
 7 is the first boxed run whose child launch checks demonstrably *ran*, and the latent offset defect
 they had been hiding fired on first honest contact — the recurring shape of item 151, again. Run 8
 owes the ship.
+
+### 166. Animated operator dashboard — DEFERRED (operator, confirmed in-session 21 Aug 2026: in scope, build after the current all-features DoD completes; resume on explicit direction)
+
+**Problem solved:** long unattended runs leave the operator reconstructing the current phase, work in
+flight, evidence, budgets, and stop reason from terminal output and separate artifacts. A local,
+animated observer should make that state legible without becoming another controller or source of
+truth.
+
+**Authority:** `PLAN.md` owns this feature's status, ordering, dependencies, and completion state.
+`DASHBOARD.md` owns the supporting interaction, animation, accessibility, and visual specification.
+`DESIGN.md` §16 owns the observer's process, authority, projection, compatibility, and web-security
+architecture; the applicable runtime sections own exact shipped events, artifacts, and schemas.
+Complete an admitted runtime behavior there before implementation; do not duplicate it here or let
+the dashboard establish it by convention.
+
+**Admission:** begin implementation only when the operator resumes dashboard work. First map every
+displayed fact to its canonical Driver-owned artifact or the deliberately non-authoritative forensic
+journal. The product is a read-only, loopback-only projection: it cannot advance a phase, settle or
+cancel a child, alter configuration or the ratchet, approve a finding, retry work, or declare terminal
+state. Current artifacts are the bootstrap, not the feature ceiling. Where they cannot support the
+target experience, prove the exact observational gap, admit the smallest bounded Driver-owned contract
+under the §16 boundary and the applicable runtime section, and implement its writer and compatibility
+behavior in the same slice. Do not scrape styled output or create a second session log, status ledger,
+provenance graph, or dashboard-owned cache under `.meeseeks/`.
+
+The base dashboard may be implemented and replay-tested in WSL from current and archived artifacts.
+The complete product also adds the admitted observational fact families defined in `DESIGN.md`
+§16.2 and presented in `DASHBOARD.md`:
+stable run identity; full phase and correlated child lifecycle; literal child outcomes; candidate and
+gate-attempt state; generation-safe liveness; live resource and budget state; named Panel activations;
+run-bound operator decisions; and durable component lineage/archive. Every artifact consumed by a
+full target-schema projection either carries the same immutable run-generation id or is
+path/schema/digest-bound by the Driver-owned atomic generation inventory, and every new record joins
+the per-run archive or
+finalization contract before shipping. Old and operator-renamed archives remain discoverable; current
+schemas label generation coherence unavailable rather than receiving invented identities, outcomes,
+atomicity, or order. Admit the standalone observer as the narrow
+`run.json` reader planned by `DESIGN.md` §16 by amending §7.1 and its enforcement test in the
+implementation slice, without permitting any Driver decision path to consume it.
+
+After item **54** is admitted and ships its one aggregate workflow receipt, item 166 adds the separate
+capped live snapshot needed to animate ephemeral workflow members. This uses the conditional narrow
+exception under `DESIGN.md` §§15.2 and 16; it exposes lifecycle shape and workflow-level aggregate
+usage, never per-member token/model/cost or reasoning telemetry. Those members remain transient
+children of their durable role, collapse to the aggregate receipt at settlement, and never look like
+independent acceptance authorities. Item **65** is not a prerequisite for the POSIX implementation,
+but no dashboard path may imply unsupported Windows process settlement.
+
+**Done when:** the accepted `DASHBOARD.md` specification, normative `DESIGN.md` §16 boundary, and
+corresponding shipped-runtime contracts are implemented; the target run, phase, child, candidate/gate,
+component, Panel, liveness, resource, and decision views operate from their canonical observations;
+if item 54 admits dynamic workflows, their live view and aggregate collapse operate from the admitted
+contracts; every durable
+fact resolves to its owner; and projections are deterministic, bounded, compatible, and rebuildable.
+Conflicting, missing, corrupt, oversized, old-schema, or incompatible inputs render explicit
+unavailable/error states rather than inferences. Only a bounded, schema-valid terminal receipt wins
+over a trailing unsettled journal. Observer disconnect, expiry, missed writes, host sleep, or clock movement do not imply Driver
+death; current open work stays unsettled/unknown until positive generation-safe evidence establishes
+that the exact producer instance is alive or no longer exists, or the run is archived/superseded.
+Liveness observation cannot fail the run merely to make the UI decisive. The target projection accepts
+a multi-file view only across matching generation-inventory reads and bindings; current-schema views
+remain explicitly eventually consistent and never claim generation coherence or atomicity.
+
+Reconnect and replay cannot duplicate, reorder, or silently drop durable transitions. A transport
+cursor gap recovers from a reset snapshot; a durable source-sequence gap remains an integrity error.
+Normal, old-schema, named parallel-Panel, component, cancellation, timeout, truncated-final-line,
+earlier-corruption, archive, generation-inventory publish/race/crash, and reconnect/reset fixtures
+pass without model calls. If item 54 admits
+the feature, capped dynamic-workflow fixtures also pass and live detail collapses to its aggregate
+receipt without becoming permanent per-agent telemetry. The local observer performs no repository or
+`.meeseeks/` writes, exposes no control channel, serves no arbitrary repository content, rejects
+browser-origin and DNS-rebinding paths, and leaks no prompts, responses, hidden reasoning, tool chatter,
+configuration, credentials, or secrets.
+
+### 167. Isolate Builder guidance from ambient Skills and customizations — PROPOSED (reviewer-derived from DESIGN §5, 21 Aug 2026; enters the queue when the operator or an implementing session admits it)
+
+**Problem solved:** `DESIGN.md` §5 requires Builder behavior to come from Driver-declared, versioned
+guidance rather than whatever Skills or customizations happen to be installed on the operator's
+machine. This is separate from item 82: the Builder may retain its intentionally broad tool surface
+without accepting ambient instructions as product behavior.
+
+Implement the smallest measured boundary supported by the admitted Claude Code contract. Preserve
+the explicit frontend direction and other Driver-appended guidance, reject or disable ambient Skill,
+Agent, command, persona, and customization influence, and record the effective customization identity
+with the role supply evidence. If the CLI cannot provide that boundary, refuse the unsupported
+configuration rather than silently dropping the requirement from DESIGN.
+
+**Done when:** two otherwise identical Builder runs produce the same effective instruction supply
+with and without hostile operator customizations installed; the hostile customization cannot alter
+the Builder prompt or become invocable guidance; Driver-declared versioned guidance still arrives;
+the Builder's intended tool availability is unchanged; and pinned live evidence proves the external
+CLI behavior rather than inferring it from argv alone.
 
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
@@ -4460,12 +4565,12 @@ DoD-5-design."). Plain-mode bypass + mapping-tightness tests per event, the exis
 evening, on quota — `CLAUDE.md`'s warning stands: the style layer is the thing most likely to eat time
 that belongs to the ratchet.
 
-### 54. Role-internal Claude Code dynamic workflow experiment — BLOCKED (research-gated)
-
 **Done when:** mapping-tightness tests cover all three new events and refuse a missing renderer;
 `MEESEEKS_STYLE=plain` preserves the complete plain payload; styled output keeps gate details
 verbatim; and changing style cannot alter gate, carry, Panel, ratchet, or terminal decisions. No
 heartbeat or child-output path gains narration.
+
+### 54. Role-internal Claude Code dynamic workflow experiment — BLOCKED (research-gated)
 
 **Problem solved:** bounded fan-out and synthesis may improve difficult implementation work, but
 only if they do not transfer durable authority to an ephemeral agent organization. This item tests
@@ -4476,7 +4581,9 @@ recorded item **84** containment outcome. Gate 0 includes the atomic owner, hard
 process settlement, child-environment boundary, exact role tools/CLI compatibility, and candidate-independent
 review authority that fan-out would otherwise amplify. Item 84 need not adopt a stronger profile—a
 measured rejection is an outcome—but the workflow probe must know and state the containment guarantee
-it actually has.
+it actually has. Item 65's host deferral does not satisfy this experiment's existing hard
+cross-platform-settlement prerequisite; admitting a POSIX-only experiment would require an explicit
+scope change rather than treating missing Windows evidence as a pass.
 
 **Architecture boundary:** `DESIGN.md` §15 and
 `docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md`. Builder may invoke a bounded workflow as an internal
@@ -4509,6 +4616,29 @@ reasoning or an enormous telemetry graph of ephemeral agents. Kill and restart a
 cases, not cleanup details. Do not depend on preview behavior that cannot be detected and refused
 when absent.
 
+**External lifecycle pattern accepted as hostile tests, not a runtime.** Use the useful invariants
+from DeepSeek Harness's pinned
+[workflow contract](https://github.com/deepseek-ai/deepseek-harness/blob/b150a551b8d465e31e418e1b2eaf5e79bbb7d28e/packages/workflow/workflow/README.md#L11-L43)
+and
+[worker lifecycle](https://github.com/deepseek-ai/deepseek-harness/blob/b150a551b8d465e31e418e1b2eaf5e79bbb7d28e/packages/workflow/workflow-worker-thread/README.md#L37-L73)
+as acceptance cases around the Claude-native experiment. Do not import Cordis, its workflow worker,
+session runtime, UI packages, or `node:vm` execution model.
+
+Validate the request, route, Driver-owned aggregate cap, and serializable input before publishing a
+workflow start. The workflow script cannot see, replace, or widen the Driver cap. Cancellation closes
+admission before pending starts settle; a start that resolves after cancellation is disposed without
+becoming an admitted child. Every published child receives exactly one terminal settlement. Disposal
+is bounded and idempotent, waits for child quiescence, terminates survivors, and cannot turn an
+incomplete workflow into success. Inputs, outputs, and receipts cross a plain-JSON boundary that
+refuses cycles, functions, `undefined`, non-finite numbers, and non-plain or custom-prototype values.
+
+Before the live probe, commit deterministic lifecycle fixtures that drive the production workflow
+spawn path through success, child failure, recursion refusal, aggregate-cap refusal, role timeout,
+post-turn wait expiry, hard kill, and restart. Each fixture records descendant processes and created
+worktrees and proves bounded settlement, bystander survival, no stale run lock or orphan worktree,
+and no ratchet, finding, or terminal-state advancement. Removing any settlement path must make the
+owning fixture fail.
+
 **Done when:** all four DOGFOOD cases pass in a live run; receipts prove the Builder workflow
 remains separate from ordinary cold Panel and Oracle contexts; a child cannot recurse and an exceeded
 aggregate cap refuses closed; a forced native dollar-cap case accounts for every completed agent,
@@ -4518,7 +4648,9 @@ workflow terminated by any ceiling leaves no process or worktree ambiguity; work
 advance global state; an independently cold panel
 reviews the result; and the measured outcome gives a credible improvement in accepted work or cost
 without a new false-completion path. A failed or inconclusive probe rejects adoption without
-affecting the existing Claude-native path.
+affecting the existing Claude-native path. Pre-start validation cannot publish a run, cancellation
+cannot admit a late child, duplicate or missing child settlement refuses, a second disposal is a
+no-op, forced termination leaves no live descendant, and a non-JSON result cannot enter a receipt.
 
 ### 55. Exact evidence provenance before any explicit graph — **REJECTED by its own admission test (19 Aug 2026), with evidence**
 
@@ -4687,6 +4819,21 @@ changed profile compared anyway (2), an unobserved model compared anyway, and a 
 interval, scenario contract audit, isolation canary, and the unseen final partition — all of which
 need live comparative runs and item 20's cases A/B to be worth anything.
 
+**Deterministic fixture strategy:** add the smallest Node-native `record`, `replay`, and `refresh`
+mechanism the campaign needs, adapting DeepSeek Harness's pinned
+[snapshot discipline](https://github.com/deepseek-ai/deepseek-harness/blob/b150a551b8d465e31e418e1b2eaf5e79bbb7d28e/packages/test-support/acp-snapshot/README.md#L5-L14)
+without importing ACP, Cordis, Vitest infrastructure, or its dependency closure. `record` may execute
+a live declared scenario; `replay` and `refresh` are keyless and structurally unable to invoke Claude.
+Replay consumes sealed protocol and result artifacts through production readers, not hand-built
+objects or prose logs. Normalize only enumerated volatile fields such as disposable roots and
+timestamps; preserve semantic identities, ordering, terminal outcomes, failures, and child receipts.
+Missing, malformed, incompatible, duplicate, truncated, mutated, stale, profile-mismatched, or
+orphaned fixtures refuse rather than silently regenerating.
+
+Replay validates harness logic only. It is not production resume, terminal authority, a new canonical
+event log, a fresh trial, or live model evidence. Refresh cannot discard an unsuccessful attempt or
+change a sealed campaign decision.
+
 **Problem solved:** `DOGFOOD.md` records useful scenarios and prose outcomes, but the repository
 cannot yet compare runs mechanically on the product metric: whether an unattended result is actually
 acceptable in the morning, not whether an agent reported success. Adopt the useful part of
@@ -4832,9 +4979,18 @@ The final package digest is recorded, its hidden answers and checks are absent f
 surfaces before use, and an exact-answer search leak marks the affected result contaminated. A final
 failure denies readiness without becoming optimization input, and an opened package cannot be reused as
 final evidence. Human-labelled acceptance records the rubric and whether candidate identity and the
-agent's terminal assertion were successfully blinded.
+agent's terminal assertion were successfully blinded. At least one real case-A and case-B capture
+replays deterministically; replay is byte-stable under its declared normalization contract; keyless CI
+fails if a model invocation is attempted; hostile fixture cases refuse; and replay cannot alter the
+sealed decision or count as another attempt.
 
-### 58. Forensic lifecycle event journal before resumability — **IMPLEMENTED (0.238.0), narrowed by its own experiment**
+### 58. Forensic lifecycle event journal before resumability — **IMPLEMENTED (0.238.0)**, narrowed by its own experiment; a valid-outcome precedence follow-up was admitted with §7.4 on 21 Aug 2026
+
+**Status note (21 Aug 2026).** A review pass demoted this to PARTIAL over the `existsSync`
+presence-only outcome check. The 0.238.0 slice met the contract it was built against; the
+"valid-outcome precedence" rule it fails was introduced by the same uncommitted §7.4/§16.3 batch
+that recorded the demotion. The honest shape is the one above: the slice is IMPLEMENTED against its
+own contract, and the precedence rule is follow-up work admitted with §7.4, tracked here.
 
 **The admission experiment ran before anything was built**, which is what the item asked for: kill a
 controlled run at named boundaries, try to reconstruct the settled and unsettled work from current
@@ -4899,6 +5055,14 @@ when everything stopped", not "failed in a way nobody recorded".
 shape of a file produced by a crash, and refusing it would make the journal useless at the one moment
 it matters. A malformed line anywhere earlier is refused: a gap in the middle of a history is not a
 history.
+
+**Remaining contract:** validate every journal field and bound its allocation before a record informs
+diagnosis or projection. Terminal precedence must likewise validate `outcome.json` through the bounded
+receipt reader before suppressing an unsettled-journal diagnosis. Presence alone is not evidence:
+missing, malformed, oversized, wrong-shape, or field-oversized records remain unavailable/corrupt
+while the journal keeps its literal state. Add hostile and valid-neighbour fixtures at launch
+diagnosis and the future observer boundary. This is implementation work under DESIGN §§7.4 and 16.3,
+not a reason to weaken their evidence rules.
 
 **Nothing decides on it.** The Driver never reads it back. It records transitions and identity, never
 content — `detail` carries a model name, never an exchange, bounded at 200 characters, because a
@@ -5188,18 +5352,45 @@ in the lock-owned region returns through `releasing` — anchors on the helper's
 gained the terminal argument. Its own benign-neighbour scan was updated with it, so a rule that
 matched nothing still cannot pass.
 
-### 65. Prove and enforce Windows descendant cleanup — OPEN (REVIEW F11)
+### 65. Prove native-Windows CLI sealing and descendant cleanup — DEFERRED (final native-Win32 tranche; REVIEW F11; REVIEW F28 evidence)
 
-**Problem solved:** Windows timeout cleanup currently terminates the `shell:true` wrapper without
-establishing that its application children and grandchildren are gone.
+**Scheduling:** execute this implementation-and-acceptance slice after all eligible WSL/POSIX work,
+on a real native-Windows host. Deferral changes traversal order only: it does not resolve F11,
+satisfy a cross-platform prerequisite, or permit a Windows guarantee. WSL, POSIX process trees, and
+injected `win32` doubles may support design and deterministic tests but are not native-Windows
+acceptance evidence.
+
+**Problems solved:** Windows timeout cleanup currently terminates the `shell:true` wrapper without
+establishing that its application children and grandchildren are gone. The production Claude seal
+also resolves through `sh -c 'command -v …'` and has no native-Windows resolver/classifier path;
+non-shebang `.cmd` or PowerShell launchers are treated as native executables, so stable wrapper bytes
+do not bind a delegated entrypoint. A host without `sh` can refuse before any role, while a package
+shim can be under-sealed. Neither shape has native-Windows evidence.
 
 Implement a bounded Windows process-tree termination path shared with F2's lifecycle contract.
 Preserve grace then force, guaranteed settlement, and bystander safety; do not weaken the existing
-POSIX process-group path.
+POSIX process-group path. Add a platform-aware CLI resolver and launcher-closure classifier that
+matches the actual bare-PATH invocation on native Windows, binds every mutable delegated artifact, or
+refuses the install form before any `claude -p` probe or role. Keep the mechanism dependency-free and
+feed its evidence into item 83/REVIEW F28 without treating platform support as finding closure.
 
-**Done when:** a Windows tier-2 fixture starts a shell, application, and grandchild and proves all
-three disappear within the bound while an unrelated process survives; POSIX cleanup and successful
-health probes remain green. A POSIX-only result cannot close REVIEW F11.
+DeepSeek Harness's pinned
+[`taskkill /T /F` path](https://github.com/deepseek-ai/deepseek-harness/blob/b150a551b8d465e31e418e1b2eaf5e79bbb7d28e/packages/subprocess/subprocess-local/src/spawn.ts#L253-L264)
+and
+[kill-on-close Job Object wrapper](https://github.com/deepseek-ai/deepseek-harness/blob/b150a551b8d465e31e418e1b2eaf5e79bbb7d28e/packages/sandbox/sandbox-windows-acl/src/spawn.ts#L210-L226)
+are candidate mechanisms to measure, not an accepted design or closure evidence. Prefer the smallest
+dependency-free mechanism that passes this repository's native fixture. Do not import Cordis, Koffi,
+sandbox, or subprocess packages.
+
+**Done when:** on a real native-Windows host, a tier-2 fixture starts a shell, application, and
+grandchild and proves all three disappear within the bound while an unrelated process survives.
+Exercise cooperative grace, forced termination, partial startup, repeated cleanup, and failure to
+establish ownership. POSIX cleanup and successful health probes remain green. A WSL, POSIX-only, or
+simulated result cannot close REVIEW F11. Separate native fixtures resolve the admitted Claude install
+form without POSIX `command -v`, reject a hostile PATH shadow before its version path executes, bind
+or refuse `.cmd`/PowerShell/package delegation, and detect a stable wrapper whose delegated target
+changes while a benign neighbour reaches the role. The staged pinned-CLI live contract passes on that
+host before the product claims native-Windows execution.
 
 ### 66. Bind the run to an immutable specification revision — IMPLEMENTED (0.170.0); REVIEW F12 CLOSED at 0.194.0 and reopened against `3debe73`; the delivery half is item 118
 
@@ -5478,10 +5669,18 @@ airtime, component receipts, and terminal outcomes derive from or reconcile agai
 cost enter `alreadySpent`; failed/exhausted parallel panels conserve all completed envelopes; no
 success path double-charges; and REVIEW F18's reproduction reports the actual 160 tokens and $6.01.
 
-### 73. Bound allocation for decision-bearing artifacts — IMPLEMENTED (0.192.0; reopened and repaired at 0.197.0; three unbounded callers closed in the 0.208.0 candidate, item 109); REVIEW F19 open pending Codex
+### 73. Bound allocation for decision-bearing artifacts — REOPENED (21 Aug 2026; archive attribution reads); prior repairs 0.192.0, 0.197.0, and item 109; REVIEW F19 open pending Codex
 
 **Problem solved:** prompt-bound, parsed, and hashed files can be synchronously loaded without a
 size boundary, allowing a repository or generated report to exhaust the Driver.
+
+**Current reopened gap:** `archiveSealedReports()` synchronously reads `acceptance.json` and every
+eligible `.json`/`.trx` report with `readFileSync` before deciding which evidence to preserve. A
+target-controlled oversized receipt or report can therefore exhaust the Driver during the next run's
+archive path, bypassing the shared bounded-read policy. Route the receipt and report content through
+the existing class limits (or a bounded/streamed equivalent), preserve exact digest matching, and add
+oversized receipt/report fixtures plus boundary-sized benign neighbours. Refusal must preserve the
+previous evidence and reach the existing terminal path.
 
 Classify file inputs by use. Stat and refuse oversized prompt/report/evidence artifacts before full
 allocation, with explicit names and sizes; stream repository hashing; and bound parser cardinality
@@ -6015,7 +6214,7 @@ the restriction in place — but a pass on re-run does not erase the failure.
 not proof that a child cannot reach anything by other means, and `--safe-mode` remains a
 customization control rather than a tool set.
 
-### 83. Enforce a measured Claude Code compatibility policy — PARTIAL (policy 0.205.0; seal armed 0.261.0, item 139; auth preflight 0.263.0, item 141): what remains is the same-candidate live tier at both admitted boundaries (REVIEW F28)
+### 83. Enforce a measured Claude Code compatibility policy — PARTIAL (policy 0.205.0; seal armed 0.261.0, item 139; auth preflight 0.263.0, item 141): probe/seal ordering, metadata probes, and the same-candidate live tier remain (REVIEW F28)
 
 **Problem solved:** preflight currently accepts any executable whose `claude --version` exits
 successfully, even though Meeseeks relies on versioned flags, settings, hooks, command/Skill
@@ -6083,10 +6282,11 @@ printing the measurements the bounds come from.
 
 **The bounds are a record, not a constant somebody liked.** F28 is explicit that inventing precision
 would be no better than the absent check, so the floor is **2.1.226**, the oldest release with live
-measurements in this repository, and the ceiling is **2.1.234**, the newest release whose full live
+measurements in this repository, and the ceiling is **2.1.235**, the newest release whose full live
 tier passed. 2.1.136 is cited as *recorded incompatible* — no `--safe-mode` — which is why the true
 floor is unknown and the demonstrated one is named instead. A test requires every bound to appear in
-the evidence list. Item **107** records the attempted 2.1.235 widening and why it was not admitted.
+the evidence list. Item **107** records the initially refused 2.1.235 widening and the later clean
+full-tier pass that admitted it.
 
 **Refusing forward is the uncomfortable half and is deliberate.** A greater version number is not
 evidence of compatibility, and the CLI documents a coming bare-mode default for `-p` that would
@@ -6152,6 +6352,15 @@ invocation, **merged last so an operator cannot override it** — a run whose bi
 it is not a preference, and suppressing the update is what makes the seal a guarantee rather than an
 alarm.
 
+**Corrected by review, 21 Aug 2026 (Codex; verified against `scripts/driver.mjs` and accepted by the
+implementing session — appended rather than rewritten, because dated evidence is history):** the
+door above covers *role* children; the initial and per-role bare-PATH `claude --version` probes
+execute before `sealTarget`/`verifySeal`, so a shadowed or replaced launcher can execute once
+outside the sealed path, and the two `toolVersions()` metadata probes carry neither the seal nor
+`DISABLE_AUTOUPDATER`. The delegation parser's refusal applies to the recognized shebang shape; a
+non-shebang target is currently classified as native, and native-Windows launcher classification is
+item 65's. These gaps are recorded against REVIEW F28's still-open closure.
+
 **Validation:** lint and typecheck clean, `npm test` **3336 of 3336**, `release-check` passed. Fifteen
 red proofs — eleven against the module (PATH shadow accepted, no fingerprint rechecked, only the
 launcher rechecked and not its entrypoint, retargeted symlink accepted, version change accepted, an
@@ -6182,9 +6391,17 @@ unreadable delegation and refuses. The fixtures now copy a real system binary, b
 distinction between an executable and a launcher is exactly what the seal is about.
 
 **Still owed for closure (REVIEW F28):** the pinned live runs at every admitted compatibility
-boundary. The measured non-interactive authentication check landed at 0.263.0 (item 141): one `-p`
-call at the run boundary, under the sealed controls, before any child, proving the capability rather
-than classifying the failure.
+boundary, plus two source defects found on 21 August. The initial and per-role
+`measureClaudeVersion()` calls execute bare-PATH `claude --version` before `sealTarget` or
+`verifySeal`, so a shadowed/replaced launcher can execute once even though the later paid role is
+refused. Both `toolVersions()` metadata calls execute another bare-PATH version probe without sealed
+controls or verification. Reorder the boundary so identity is resolved/fingerprinted before any
+version execution, execute the probe through that verified closure, verify again afterward, and
+route every metadata probe through the same control. Hostile fixtures must prove the unverified
+version target never executes, not merely that the later role does not. Item 65 separately owns the
+native-Windows resolver and launcher forms. The measured non-interactive authentication check landed
+at 0.263.0 (item 141): one `-p` call at the run boundary, under the sealed controls, before any role,
+proving the capability rather than classifying the failure.
 
 ### 84. Measure and admit fail-closed child containment — OPEN; **tranches DONE (0.264.0 item 142, 0.266.0 item 144)**: the declared sandbox enforced nothing and now refuses; a working one is now *observed* confining each run; the outbound and resource inventory is measured and the guarantee stated at its real narrowness
 

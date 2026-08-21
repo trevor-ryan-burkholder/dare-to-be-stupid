@@ -18,6 +18,7 @@ document needed for the task. Historical and research documents are evidence, no
 | `REVIEW.md` | Codex-owned findings and closure evidence | Release gate, not a per-repair session stop | Claude may repair and continue; Codex closes at a dependency/release boundary |
 | `HANDOFF.md` | Current repository state and immediate handoff | Operational summary | Keep short; move chronology to `docs/history/` |
 | `DOGFOOD.md` | Pending live experiments and current scenario status | Operational runbook | Completed results move to `docs/history/` |
+| `DASHBOARD.md` | Animated, read-only run-observer UI specification | Supporting UI specification; `PLAN.md` item 166 owns live status, while `DESIGN.md` §16 owns observer architecture and applicable runtime sections own shipped contracts | Keep interaction and visual detail here; complete admitted runtime behavior in `DESIGN.md` instead of duplicating it |
 | `docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md` | Dynamic-workflow and explicit-provenance architecture note and experiment rationale | Supporting analysis; `DESIGN.md` §15 is normative | Update when official behavior is re-verified or an architecture decision changes |
 | `README.md` | Installation, use, and contributor quick start | User-facing summary | Link to canonical detail instead of duplicating it |
 | `commands/meeseeks.md` | Installed launcher contract and operator-visible flags | Shipped runtime instruction; `DESIGN.md` remains normative | Change with command behavior, contract tests, and a version bump |
@@ -51,6 +52,9 @@ When documents disagree, use the canonical owner for the disputed fact:
 - **Dynamic-workflow or provenance work:** `DESIGN.md` §15, then
   `docs/DYNAMIC-WORKFLOWS-AND-PROVENANCE.md`, `PLAN.md`, and `DOGFOOD.md`.
 - **Running dogfood:** `DOGFOOD.md`; consult the archived run record only for precedent.
+- **Dashboard work:** `PLAN.md` item 166 for status and dependencies, `DASHBOARD.md` for UI and
+  interaction, `DESIGN.md` §16 for observer architecture, and the applicable `DESIGN.md` runtime
+  section for each implemented event or artifact.
 - **Understanding why:** the relevant file under `docs/history/`, `docs/research/`, or
   `docs/adr/`.
 

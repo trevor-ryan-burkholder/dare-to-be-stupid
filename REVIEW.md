@@ -11,8 +11,9 @@ the prior repair verification and F41; `3debe73` / 0.211.0 for F42–F44; and th
 verification.
 **Comparison used for the last pass:** `origin/main..HEAD` plus the 0.226.0 working tree as it stood
 on 19 August. No later candidate has been reviewed by Codex in this ledger.
-**Verdict:** **CHANGES REQUESTED** — nine high-priority defects and seven medium-priority defects
-remain open. Twenty-eight findings are closed below after exact-diff review and that pass's validation.
+**Verdict:** **CHANGES REQUESTED** — nine high-priority defects and six medium-priority defects
+remain open; F11 is unresolved but deferred until native-Windows evidence is available. Twenty-eight
+findings are closed below after exact-diff review and that pass's validation.
 
 This pass reviewed and corrected implementation, tests, documentation, manifests and this ledger as
 authorized by the user. It did not commit, push, publish, deploy, run live model tests, or modify the
@@ -64,12 +65,12 @@ reported in the verification section below, `release-check` ok, and `git diff --
 | F38 | `d57c09e` | deploy-created commits and dirty changes are rejected; clean deploy tags exactly the reviewed commit in real Git; current gates | none beyond F22's receipt completeness |
 | F39 | `408d861`, `f87c751`, `b1c8cfc` | post-rename read failure loses arbitration; only an exact token/nameless match is removed, with unmatched replacements restored or quarantined; deterministic directory replacement and mixed-version real-process cohorts checked; current gates | none beyond ordinary filesystem liveness assumptions |
 
-### Incomplete and reopened paths verified at 0.211.0
+### Incomplete, reopened, and deferred paths verified at 0.211.0
 
 | Finding | Exact remaining defect and why current tests miss it |
 |---|---|
 | F5 | `childEnvironment()` still spreads the complete operator environment into every role (`scripts/driver.mjs:1538-1561`). Tests preserve required run/configuration markers but do not prove unrelated credentials and control variables are absent; no allowlist or synthetic credential canary has landed. |
-| F11 | POSIX termination has current real-process evidence, but `processSnapshot()` returns no ownership set on Windows (`scripts/driver.mjs:5317-5319`) and the health probe retains direct-child-only fallback paths (`scripts/health-probe.mjs:448-485`). No Windows shell→child→grandchild plus bystander fixture proves equivalent bounded cleanup. |
+| F11 | **DEFERRED on this host:** POSIX termination has current real-process evidence, but `processSnapshot()` returns no ownership set on Windows (`scripts/driver.mjs:5317-5319`) and the health probe retains direct-child-only fallback paths (`scripts/health-probe.mjs:448-485`). No Windows shell→child→grandchild plus bystander fixture proves equivalent bounded cleanup. |
 | F14 | Gates and Panel now use a materialized worktree, but it is a predictable same-user path (`scripts/candidate.mjs:58-70`) that a Builder-launched background process can discover and mutate. A content-addressed source tree names the intended checkout; it does not make the files read-only during judgment. |
 | F15 | Expected Oracle stdout is no longer fed back, but active surfaces still promise visibility isolation (`templates/oracle-author.md:3`, `scripts/oracle.mjs:15`, `DESIGN.md` §4.6) while admitting arbitrary Builder code can read the store. No terminal/evaluation policy discounts this non-confidential evidence, as F15 requires. |
 | F17 | Banking now applies the definition rule, but red-evidence freshness is one digest per file (`scripts/driver.mjs:4807-4823`, `:4958-4968`). After two tests share a file, observing sibling A fail under rewritten bytes refreshes old evidence for weakened B; the current reproduction left B with `stale=[]` and `withheld=[]` without B failing under those bytes. Tests cover different files, not same-file siblings. |
@@ -470,7 +471,8 @@ write can also destroy the only terminal record.
 
 ### F11 — MEDIUM: Windows cleanup kills the shell but not its application descendants
 
-**Status:** OPEN
+**Status:** DEFERRED — unresolved; execute in PLAN item 65's final native-Win32 tranche. WSL and
+simulated `win32` paths are not acceptance evidence.
 **Affected:** `scripts/health-probe.mjs:340-399`, `scripts/health-probe.mjs:414-422`,
 and the generic sweep limitation at `scripts/driver.mjs:4210-4230`
 
@@ -1946,7 +1948,7 @@ These tables are reviewer evidence and triage aids, not new sources of product r
 | test/e2e reports, mutation config, browser marker | per attempt/tool invocation | ratchet and gates consume reports | attempt/path/flaky repairs verified; F17 and F19 remain |
 | `runs/NNN/` | cross-run archive, Driver-owned | human/forensic evidence | successful archival verified; archive failure preserves the prior outcome under an exclusive derived name or refuses without overwrite |
 
-### Open failure-shape summary
+### Unresolved failure-shape summary
 
 Closed defects are recorded in the closure matrices above. This table contains only current gaps, so a
 future reviewer does not mistake historical evidence for an active defect.
@@ -1954,7 +1956,7 @@ future reviewer does not mistake historical evidence for an active defect.
 | Finding | Boundary | Remaining failure shape |
 |---|---|---|
 | F5 | child environment | ambient operator credentials cross into roles |
-| F11 | Windows process cleanup | shell-wrapper descendants are not equivalently reaped |
+| F11 | Windows process cleanup — deferred to the native-Win32 tranche | shell-wrapper descendants are not equivalently reaped |
 | F14 | gated/reviewed subject | A→B→A substitution lets gates or Panel pass bytes other than the committed tree |
 | F15 | Oracle confidentiality | Builder can inspect cases while active docs overclaim visibility isolation and evidence weight |
 | F17 | ratchet evidence | one same-file test refreshes another id's stale red evidence |
@@ -2031,7 +2033,7 @@ future reviewer does not mistake historical evidence for an active defect.
 |---|---|
 | authority and read order | `docs/INDEX.md` routes DESIGN → PLAN/REVIEW → HANDOFF; historical ledgers remain evidence only |
 | `CLAUDE.md` / `AGENTS.md` mirror | byte-identical after the seven-line AGENTS preamble (`cmp` exit 0) |
-| current finding counts | REVIEW alone owns nine high and seven medium open findings; HANDOFF does not copy the queue |
+| current finding counts | REVIEW alone owns nine high and six medium open findings plus deferred, unresolved F11; HANDOFF does not copy the queue |
 | current Git state | live Git commands are authoritative; HANDOFF delegates mutable state and F40 is closed |
 | ratchet terminology | historical passing ids remain monotonic; F17 specifically concerns per-id evidence under current definition bytes, not deletion |
 | publication subject | F31/F38 close final Git publication; F14 leaves the same-user candidate mutable and F22 owns retained proof; F12 is closed |
