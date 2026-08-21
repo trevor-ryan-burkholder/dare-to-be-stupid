@@ -921,3 +921,54 @@ describe('the prose toolchain (item 49)', () => {
     for (const entry of skipped) assert.equal(entry.reason.length > 40, true, `${entry.name} skipped without a reason`);
   });
 });
+
+describe('the .NET adapter names the project it detected (feature audit, item 155)', () => {
+  // **The composition that was never made.** `detect()` is tested against a nested tree and the
+  // operations are tested against a fixed synthetic context — separately, so nothing ever asked what
+  // the operations *say* for the tree the detector documents as conventional.
+  //
+  // They said `dotnet build` with no project. The driver runs gates with `cwd` at the tree root, so
+  // on `src/Foo/Foo.csproj` the SDK answered `MSBUILD : error MSB1003: Specify a project or solution
+  // file` and build, lint and the audit all exited 1 — a gate no amount of correct C# could pass.
+  // Reproduced against dotnet 8.0.423, the SDK this adapter cites as its baseline.
+  const CSPROJ = '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>\n';
+
+  /** @param {string} root @returns {Record<string, string>} */
+  const argvByGate = (root) =>
+    Object.fromEntries(
+      gatesFor(dotnetToolchain, { root, meeseeksDir: '/tmp/state' }).gates.map((gate) => [gate.name, gate.command.join(' ')]),
+    );
+
+  it('passes the project path on every operation that acts on one, when it is nested', () => {
+    const root = makeProject({ 'src/Probe.Lib/Probe.Lib.csproj': CSPROJ });
+    const argv = argvByGate(root);
+    for (const gate of ['build', 'lint', 'unit', 'security-audit']) {
+      assert.equal(
+        argv[gate].includes('src/Probe.Lib/Probe.Lib.csproj'),
+        true,
+        `${gate} does not name the project the detector found: ${argv[gate]}`,
+      );
+    }
+  });
+
+  it('changes nothing at the root, where every recorded verification was made', () => {
+    // The neighbour, and it is load-bearing: this adapter's header records exit codes measured
+    // against a flat scaffold. If those commands changed, the recorded evidence would describe
+    // something that no longer runs.
+    const root = makeProject({ 'Probe.Lib.csproj': CSPROJ });
+    const argv = argvByGate(root);
+    assert.equal(argv.build, 'dotnet build');
+    assert.equal(argv.lint, 'dotnet format --verify-no-changes');
+    assert.equal(argv['security-audit'], 'dotnet restore --force -warnaserror:NU1901,NU1902,NU1903,NU1904');
+  });
+
+  it('puts the project before the flags that follow it', () => {
+    // `dotnet format <project> --verify-no-changes`, not `dotnet format --verify-no-changes
+    // <project>`. Argument order is another binary's contract, and the repository has been bitten by
+    // exactly that before.
+    const root = makeProject({ 'src/Probe.Lib/Probe.Lib.csproj': CSPROJ });
+    const argv = argvByGate(root);
+    assert.match(argv.lint, /dotnet format src\/Probe\.Lib\/Probe\.Lib\.csproj --verify-no-changes/);
+    assert.match(argv['security-audit'], /dotnet restore src\/Probe\.Lib\/Probe\.Lib\.csproj --force/);
+  });
+});

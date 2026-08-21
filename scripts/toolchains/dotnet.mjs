@@ -151,6 +151,31 @@ export function executableProjects(root, prefix = '', depth = 0) {
   return found.sort();
 }
 
+/**
+ * The project or solution to act on, as argv, when it is not at the tree root.
+ *
+ * **`detect` finds `src/Foo/Foo.csproj` and calls that layout conventional; every operation then
+ * ran without naming it.** The driver runs gates with `cwd` set to the tree root, so on that layout
+ * `dotnet build`, `dotnet format`, `dotnet test` and the audit all exited 1 with
+ * `MSBUILD : error MSB1003: Specify a project or solution file` — a gate no amount of correct C#
+ * could pass, for the shape the detector documents as normal. Reproduced against dotnet 8.0.423,
+ * the SDK this file cites as its baseline: flat layout exit 0, `src/Probe.Lib/Probe.Lib.csproj`
+ * exit 1.
+ *
+ * `startCommand` below already handled nesting with `--project`, so the author solved it for one
+ * operation and not the other five.
+ *
+ * Empty at the root, which is what every existing verification ran against — so those commands are
+ * unchanged and their recorded exit codes still describe what runs.
+ *
+ * @param {string} root
+ * @returns {string[]}
+ */
+function projectArgs(root) {
+  const found = findProjectFile(root);
+  return found === null || !found.includes('/') ? [] : [found];
+}
+
 /** @type {import('./index.mjs').Toolchain} */
 export const dotnetToolchain = {
   name: 'dotnet',
@@ -168,16 +193,19 @@ export const dotnetToolchain = {
     // Verified exit 0. Not gated, for the same reason `npm ci` is not: it is in the contract
     // because a toolchain that cannot express "restore dependencies" cannot describe this
     // stack at all, and running it every iteration would add time without adding evidence.
-    restore: () => command(['dotnet', 'restore']),
+    /** @param {{ root: string }} context */
+    restore: ({ root }) => command(['dotnet', 'restore', ...projectArgs(root)]),
 
     // Verified exit 0 on the scaffolded solution.
-    build: () => command(['dotnet', 'build']),
+    /** @param {{ root: string }} context */
+    build: ({ root }) => command(['dotnet', 'build', ...projectArgs(root)]),
 
     // Verified both directions: exit 0 on formatted source, **exit 2** on a file with
     // deliberate whitespace damage, reporting `error WHITESPACE`. Non-zero is all a gate
     // needs, but the value is recorded because 2 rather than 1 is the kind of thing a later
     // reader assumes is a typo.
-    lint: () => command(['dotnet', 'format', '--verify-no-changes']),
+    /** @param {{ root: string }} context */
+    lint: ({ root }) => command(['dotnet', 'format', ...projectArgs(root), '--verify-no-changes']),
 
     // The case §3.8 describes in the abstract, arriving concretely. The C# compiler rejects
     // type errors as part of `build`, so there is no separate step to run. It must not return
@@ -191,9 +219,9 @@ export const dotnetToolchain = {
 
     // Verified: exit 0 with 2 passed and 1 skipped, exit 1 with a failure. The logger argument
     // carries its own semicolon and is one argv element — there is no shell here to split it.
-    /** @param {{ meeseeksDir: string }} context */
-    unit: ({ meeseeksDir }) =>
-      command(['dotnet', 'test', '--logger', `trx;LogFileName=${TRX_REPORT}`, '--results-directory', meeseeksDir]),
+    /** @param {{ meeseeksDir: string, root: string }} context */
+    unit: ({ meeseeksDir, root }) =>
+      command(['dotnet', 'test', ...projectArgs(root), '--logger', `trx;LogFileName=${TRX_REPORT}`, '--results-directory', meeseeksDir]),
 
     // Not written, because it cannot be verified here. Playwright for .NET is a per-project
     // package with its own install step rather than anything the SDK ships, so there is no
@@ -207,7 +235,9 @@ export const dotnetToolchain = {
 
     // NOT `dotnet list package --vulnerable` — see this file's header. That command reported a
     // High severity advisory and exited 0.
-    'security-audit': () => command(['dotnet', 'restore', '--force', '-warnaserror:NU1901,NU1902,NU1903,NU1904']),
+    /** @param {{ root: string }} context */
+    'security-audit': ({ root }) =>
+      command(['dotnet', 'restore', ...projectArgs(root), '--force', '-warnaserror:NU1901,NU1902,NU1903,NU1904']),
 
     // Stryker.NET exists and is a separate `dotnet tool` that is not installed here. Writing
     // its argv unverified is precisely what this adapter's header is about, so it is declined
@@ -242,6 +272,7 @@ export const dotnetToolchain = {
   reports: [TRX_REPORT],
 
   // One owner, because `e2e` is declined and a declined operation names no report (REVIEW F22).
+  /** @type {Record<string, import('./index.mjs').OperationName>} */
   reportOwners: { [TRX_REPORT]: 'unit' },
 
   // Which operations a workflow must be seen to run. `types` and `e2e` are absent because

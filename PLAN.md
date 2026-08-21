@@ -2683,6 +2683,48 @@ input unchanged would pass every preservation case. Red proof: removing the spre
 **Validation:** lint, typecheck, `npm test` 3489 of 3489, `lessons` 62 of 62.
 
 
+### 155. The .NET adapter detected a nested project and then never named it — **DONE (0.274.0)** (feature audit, item 151)
+
+**The defect.** `findProjectFile` walks two levels and its own comment calls `src/Foo/Foo.csproj`
+*"the conventional layout"*; a test asserts `detect()` returns exactly that. Every operation was then
+argv with **no project argument** — `dotnet build`, `dotnet format --verify-no-changes`,
+`dotnet test …`, `dotnet restore --force …` — and the driver runs gates with `cwd` at the tree root.
+
+Reproduced against **dotnet 8.0.423**, the SDK this adapter cites as its verification baseline:
+
+| layout | `dotnet build` at the tree root |
+| --- | --- |
+| project at the root | exit 0 |
+| project at `src/Probe.Lib/` | exit 1, `MSBUILD : error MSB1003: Specify a project or solution file` |
+
+So for the layout the detector documents as normal, **build, lint and the audit could not pass** —
+the §4.2 defect class, a gate no amount of correct C# satisfies. `startCommand` already handled
+nesting with `dotnet run --project <dir>`, so the author solved it for one operation and not the
+other five.
+
+**The repair.** `projectArgs(root)` returns the detected path when it is below the root and **nothing
+when it is at the root** — so every command this adapter's header records an exit code for is
+byte-identical to what it was, and the recorded evidence still describes what runs. Verified against
+the real SDK after the change: `dotnet build src/Probe.Lib/Probe.Lib.csproj` and
+`dotnet format src/… --verify-no-changes` both exit 0 from the tree root.
+
+**A second defect found while fixing the first.** `dotnet.mjs` carried no
+`/** @type {Toolchain} */` annotation — `node.mjs` does — so its object literal was never checked
+against the interface. That is why five operations could take a context parameter the contract
+describes while nothing verified they matched it. Annotated, which immediately surfaced two widened
+types that had been invisible.
+
+**Why no test caught it:** the nested-detection case and the operation cases were never composed.
+Operations were asserted against a fixed synthetic context, so nothing ever asked what they *say* for
+the tree the detector was tested on. Three cases now compose them, including the root neighbour and
+one on argument order — `dotnet format <project> --verify-no-changes`, not the reverse, because
+argument order is another binary's contract and this repository has been bitten by exactly that.
+
+**Validation:** lint, typecheck, `npm test` 3488 of 3488 before the new cases, `toolchains` 102 of
+102, and the two nested commands run against the real SDK. Red proof: making `projectArgs` always
+return `[]` fails two of the three.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
