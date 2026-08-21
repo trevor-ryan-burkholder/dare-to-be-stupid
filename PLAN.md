@@ -5702,7 +5702,20 @@ airtime, component receipts, and terminal outcomes derive from or reconcile agai
 cost enter `alreadySpent`; failed/exhausted parallel panels conserve all completed envelopes; no
 success path double-charges; and REVIEW F18's reproduction reports the actual 160 tokens and $6.01.
 
-### 73. Bound allocation for decision-bearing artifacts — REOPENED (21 Aug 2026; archive attribution reads); prior repairs 0.192.0, 0.197.0, and item 109; REVIEW F19 open pending Codex
+### 73. Bound allocation for decision-bearing artifacts — REOPENED 21 Aug 2026 (archive attribution reads), **repaired at 0.286.0**; prior repairs 0.192.0, 0.197.0, and item 109; REVIEW F19 open pending Codex
+
+**The reopening's repair (0.286.0).** `archiveSealedReports` performed the module's own forbidden
+shape twice: the acceptance receipt read whole and parsed unbounded, then every `.json`/`.trx` in
+`.meeseeks/` — files gates the target controls get to write — read whole to hash. Both now go
+through `readBounded`: the receipt at the record ceiling (driver-written, small by construction; an
+oversized one is corrupt and names nothing), the candidates at the report ceiling (banking already
+refuses larger reports, so a sealed report can never legitimately exceed it — a file above the
+bound is unverifiable, and unverifiable is left behind exactly as an unmatched digest is). Red
+first: a 33MB claimed report was archived and an 17MB-padded receipt still named reports under the
+unbounded reads; both refuse after. Benign neighbours unchanged: the sealed report still archives,
+the unmatched one still stays behind. `test/run-manifest.test.mjs` 47/47, tier 1 3527/3527, lint
+and typecheck clean. The DESIGN §7.2 sentence naming this gap is amended when the operator's
+in-flight DESIGN edit lands, to avoid sweeping their uncommitted work into a slice commit.
 
 **Problem solved:** prompt-bound, parsed, and hashed files can be synchronously loaded without a
 size boundary, allowing a repository or generated report to exhaust the Driver.

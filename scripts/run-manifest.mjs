@@ -26,10 +26,11 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { ASSUMPTIONS_FILE } from './assumptions.mjs';
+import { READ_LIMITS, readBounded } from './bounded-read.mjs';
 import { CAPABILITY_MANIFEST } from './capabilities.mjs';
 import { JOURNAL_FILE } from './journal.mjs';
 import { LAUNCH_RECEIPT_FILE } from './launch.mjs';
@@ -360,7 +361,9 @@ export function archiveSealedReports(meeseeksDir) {
   /** @type {unknown} */
   let receipt;
   try {
-    receipt = JSON.parse(readFileSync(path.join(meeseeksDir, ACCEPTANCE_FILE), 'utf8'));
+    // Bounded (item 73, REVIEW F19). The receipt is driver-written and small by construction; one
+    // above the record ceiling is corrupt, and a corrupt receipt names nothing.
+    receipt = JSON.parse(readBounded(path.join(meeseeksDir, ACCEPTANCE_FILE), READ_LIMITS.record));
   } catch {
     // No receipt, or an unreadable one. There is nothing naming these bytes, so there is nothing to
     // preserve them *as* — the exclusion stands untouched.
@@ -382,7 +385,11 @@ export function archiveSealedReports(meeseeksDir) {
     /** @type {string} */
     let bytes;
     try {
-      bytes = readFileSync(path.join(meeseeksDir, name), 'utf8');
+      // Bounded (item 73, REVIEW F19): these files are written by gates the target controls, and
+      // hashing one meant reading it whole. A sealed report can never legitimately exceed the
+      // report ceiling — banking already refuses larger ones — so a file above it is unverifiable,
+      // and unverifiable is left behind exactly as an unmatched digest is.
+      bytes = readBounded(path.join(meeseeksDir, name), READ_LIMITS.report);
     } catch {
       continue;
     }

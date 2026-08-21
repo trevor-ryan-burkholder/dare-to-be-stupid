@@ -410,6 +410,31 @@ describe('the sealed attempt reports are archived, and only those (REVIEW F22)',
     assert.deepEqual(archiveSealedReports(dir), []);
   });
 
+  it('leaves behind a report too large to verify, instead of reading it whole (item 73, REVIEW F19)', () => {
+    // The archive decision reads files a gate the target controls gets to write. Reading one whole
+    // to hash it is the unbounded allocation the bounded-read inventory exists to refuse — and a
+    // sealed report can never legitimately exceed the report ceiling, because banking already
+    // refuses larger ones. A file above the bound is therefore unverifiable, and unverifiable is
+    // left behind, exactly as an unmatched digest is.
+    const oversized = 'x'.repeat(33 * 1024 * 1024);
+    const dir = stateDir({
+      'acceptance.json': receiptNaming([digest(oversized)]),
+      'test-report.json': oversized,
+    });
+    assert.deepEqual(archiveSealedReports(dir), []);
+  });
+
+  it('treats a receipt too large to read as no receipt at all (item 73, REVIEW F19)', () => {
+    // The receipt is driver-written and bounded by construction; one above the record ceiling is
+    // corrupt, and a corrupt receipt names nothing. Refusing the read lands in the same honest
+    // state as an absent or unparseable one.
+    const dir = stateDir({
+      'acceptance.json': receiptNaming([digest(REPORT)]) + ' '.repeat(17 * 1024 * 1024),
+      'test-report.json': REPORT,
+    });
+    assert.deepEqual(archiveSealedReports(dir), []);
+  });
+
   it('never re-lists an artifact the per-run list already carries', () => {
     // `outcome.json` is JSON in the same directory. Returning it here would rename it twice and the
     // second rename would fail the whole archive — turning a preservation feature into an outage.
