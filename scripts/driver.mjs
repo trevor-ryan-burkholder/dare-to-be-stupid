@@ -4875,6 +4875,82 @@ function anySourceMatches(dir, depth, predicate) {
 }
 
 /**
+ * The commands a workflow actually runs, as text, excluding steps that cannot fail it.
+ *
+ * **Deliberately a line reader, not a YAML parser.** This repository ships no runtime dependencies
+ * (`CLAUDE.md` hard constraint 1), and the question here is narrow enough not to need one: which
+ * `run:` bodies belong to steps whose failure fails the job.
+ *
+ * What it reads is the shape GitHub Actions actually writes — `run: <command>` inline, and
+ * `run: |` / `run: >` block scalars whose body is indented under them. What it deliberately does
+ * **not** read is everything else in the file, which is the entire point: a comment, a job key and a
+ * step `name:` are not commands, and treating them as coverage is how a workflow of `echo nothing`
+ * reported full coverage.
+ *
+ * **A step carrying `continue-on-error` contributes nothing unless it is literally `false`.** Such a
+ * step cannot fail the workflow, so it is not verification; an expression (`${{ … }}`) is treated the
+ * same way, because a value this cannot evaluate is not a value it may credit. Unrecognised shapes
+ * contribute no text, which fails the gate rather than passing it.
+ *
+ * Not modelled, and stated rather than implied: `if:` conditions, matrix exclusions, and reusable
+ * workflows called with `uses:`. A step this cannot see is a step this does not credit, so each of
+ * those makes the gate stricter rather than more permissive.
+ *
+ * @param {string} contents one workflow file
+ * @returns {string} the concatenated bodies of its blocking `run:` steps
+ */
+export function ciRunText(contents) {
+  const lines = contents.split(/\r?\n/);
+  /** @type {string[]} */
+  const runs = [];
+  /** @type {string[]} */
+  let current = [];
+  let blocking = true;
+  /** @type {number | null} */
+  let blockIndent = null;
+
+  const flush = () => {
+    if (blocking) runs.push(...current);
+    current = [];
+    blocking = true;
+    blockIndent = null;
+  };
+
+  for (const line of lines) {
+    const indent = line.length - line.trimStart().length;
+    const trimmed = line.trim();
+
+    // Inside a block scalar: anything indented past the `run:` that opened it belongs to the command.
+    if (blockIndent !== null) {
+      if (trimmed !== '' && indent <= blockIndent) blockIndent = null;
+      else {
+        if (trimmed !== '') current.push(trimmed);
+        continue;
+      }
+    }
+
+    // A new list item ends the previous step. Steps are the unit `continue-on-error` applies to.
+    if (/^-\s/.test(trimmed) || trimmed === '-') flush();
+
+    const withoutDash = trimmed.replace(/^-\s*/, '');
+    const continues = /^continue-on-error:\s*(.+)$/.exec(withoutDash);
+    if (continues !== null) {
+      blocking = continues[1].trim() === 'false';
+      continue;
+    }
+
+    const run = /^run:\s*(.*)$/.exec(withoutDash);
+    if (run !== null) {
+      const value = run[1].trim();
+      if (value === '|' || value === '>' || value === '|-' || value === '>-') blockIndent = indent;
+      else if (value !== '') current.push(value);
+    }
+  }
+  flush();
+  return runs.join('\n');
+}
+
+/**
  * Does this repository have CI that runs the validation set, or only a file that says CI?
  *
  * The presence check this replaces passed on an empty workflow. That is not a hypothetical:
@@ -4921,9 +4997,18 @@ export function inspectCiWorkflows(cwd, capabilities = null, declared = undefine
   for (const name of workflows) {
     try {
       const contents = readFileSync(path.join(workflowDir, name), 'utf8');
-      // `run:` may be a single line or a block scalar; take the whole file's text for the
-      // command search and rely on the patterns being specific enough to mean something.
-      steps.push(contents);
+      // **Only what the workflow actually runs** (feature audit, item 159). This used to push the
+      // whole file and match the toolchain's patterns against all of it, so coverage could be
+      // satisfied by a YAML comment, a job key, or a step `name:`. Measured: a workflow whose every
+      // step was `echo nothing`, with `# npm run build` in a comment and steps named `eslint`,
+      // `typecheck`, `vitest` and `playwright`, reported `covered: [build, lint, types, unit, e2e]`
+      // and `missing: []`.
+      //
+      // Worse, the `playwright` step carried `continue-on-error: true` — a step whose failure cannot
+      // fail the workflow — and this file's own docstring records dogfood run 2 shipping exactly
+      // that, caught only by the model panel. The deterministic gate could not see it, and now the
+      // step contributes nothing.
+      steps.push(ciRunText(contents));
     } catch {
       // A workflow that cannot be read contributes no coverage, which fails the gate.
     }

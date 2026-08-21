@@ -2833,6 +2833,42 @@ caller with no tree is unchanged. Red proof: ignoring the missing target fails t
 **Validation:** lint, typecheck, `npm test` **3499 of 3499**, `design-slop` 28 of 28.
 
 
+### 159. The ci gate credited commands nothing runs — **DONE (0.278.0)** (feature audit, item 151)
+
+**The defect.** `inspectCiWorkflows` concatenated the **whole text** of every workflow file and
+matched the toolchain's ci patterns against all of it. Its own comment said so: *"take the whole
+file's text for the command search and rely on the patterns being specific enough to mean
+something."* They are not specific enough, because a workflow file contains prose.
+
+Reproduced: every step `run: echo nothing`, `# npm run build` in a comment, steps named `eslint`,
+`typecheck`, `vitest` and `playwright` — result `covered: [build, lint, types, unit, e2e]`,
+`missing: []`, gate **ok**. A job key, a step `name:`, or a comment satisfied the gate the DoD
+depends on.
+
+**And `continue-on-error: true` was invisible.** A step whose failure cannot fail the workflow is not
+verification. This file's own docstring records dogfood run 2 shipping exactly that shape on a
+Playwright step, **caught only by the model panel** — the deterministic gate could not see it then
+and could not see it now.
+
+**The repair.** `ciRunText` reads only the bodies of blocking `run:` steps: inline commands and
+`|`/`>` block scalars, with a step dropped when it carries `continue-on-error` set to anything but a
+literal `false`. Deliberately a line reader rather than a YAML parser — this repository ships no
+runtime dependencies, and the question is narrow. Shapes it cannot read contribute no text, which
+makes the gate stricter rather than more permissive; `if:` conditions, matrix exclusions and `uses:`
+workflows are named as unmodelled for the same reason.
+
+Measured after the repair: the hostile workflow covers **nothing**; an honest one covering build,
+lint, types, unit and e2e — including a block scalar carrying two commands — still passes; and that
+same honest workflow with `continue-on-error: true` added to its e2e step reports `missing: [e2e]`.
+
+**My own tests had the defect they were written to catch.** Every new case called `ciRunText`
+directly, so the red proof — reverting the call site to whole-file matching — **passed**. Correct
+code that nothing proved was called, in the tests for a fix about exactly that. A case now drives
+`inspectCiWorkflows` over a real workflow tree, and the mutation fails it.
+
+**Validation:** lint, typecheck, `npm test` **3506 of 3506**, `driver` 671 of 671.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation

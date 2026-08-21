@@ -109,6 +109,7 @@ import {
   MEESEEKS_IGNORED_PATHS,
   isColdPhase,
   combinePanel,
+  ciRunText,
   inspectCiWorkflows,
   observabilityGate,
   ownershipPlan,
@@ -6287,6 +6288,38 @@ it('arms the citations gate on the declared toolchain, never on the manifest bei
     assert.deepStrictEqual(inspected.missing, []);
   });
 
+  it('refuses a workflow that runs nothing but mentions everything (feature audit, item 159)', () => {
+    // **The wiring, not the reader.** The pure cases for `ciRunText` live at the bottom of this file
+    // and every one of them passed while `inspectCiWorkflows` still concatenated the whole file —
+    // the red proof caught that, which is the trap this session keeps finding: correct code that
+    // nothing proved was called.
+    //
+    // Every step here is `echo nothing`. `build` appears only in a YAML comment; the rest appear
+    // only as step names; the playwright step is `continue-on-error: true`, which is the shape
+    // dogfood run 2 shipped.
+    const dir = repoWith({
+      'package.json': JSON.stringify({ name: 'p', scripts: { build: 'tsc', lint: 'eslint .', test: 'vitest run' } }),
+      '.github/workflows/ci.yml': [
+        '# npm run build',
+        'steps:',
+        '  - name: eslint',
+        '    run: echo nothing',
+        '  - name: typecheck',
+        '    run: echo nothing',
+        '  - name: vitest',
+        '    run: echo nothing',
+        '  - name: playwright',
+        '    continue-on-error: true',
+        '    run: echo nothing',
+        '',
+      ].join('\n'),
+    });
+
+    const inspected = inspectCiWorkflows(dir, ['web-ui'], 'node');
+    assert.deepEqual(inspected.covered, [], `a workflow of echo nothing covered: ${inspected.covered.join(', ')}`);
+    assert.equal(inspected.missing.length > 0, true, 'the gate reported full coverage over commands nothing runs');
+  });
+
   it('refuses a workflow whose unit step is a runner the unit gate cannot collect', async () => {
     // The contradiction this closes, in full. `CI_REQUIRED_COMMANDS` accepted `node --test`
     // while the unit gate ran `npx vitest run --reporter=json`, so a project could satisfy
@@ -9210,5 +9243,62 @@ describe("the gated tree and the subject are the same tree (feature audit, item 
     // is how the pair drifted in the first place.
     const resolutions = [...SOURCE.matchAll(/const resolvedPrefix = await runPrefix\(\)/g)];
     assert.equal(resolutions.length, 1, `resolvedPrefix is computed ${resolutions.length} times`);
+  });
+});
+
+describe('the ci gate reads what a workflow runs, not what it mentions (feature audit, item 159)', () => {
+  // **Reproduced before repair.** `inspectCiWorkflows` concatenated the whole file and matched the
+  // toolchain's patterns against all of it, so a workflow whose every step was `echo nothing` — with
+  // `# npm run build` in a comment and steps named `eslint`, `typecheck`, `vitest`, `playwright` —
+  // reported `covered: [build, lint, types, unit, e2e]` and `missing: []`.
+  //
+  // And the `playwright` step carried `continue-on-error: true`. This file's own docstring records
+  // dogfood run 2 shipping exactly that shape, caught only by the model panel; the deterministic
+  // gate could not see it.
+
+  it('does not count a command named in a comment', () => {
+    assert.equal(ciRunText('# npm run build\nsteps:\n  - run: echo nothing\n').includes('npm run build'), false);
+  });
+
+  it('does not count a command that is only a step name', () => {
+    const text = ciRunText('steps:\n  - name: npx eslint .\n    run: echo nothing\n');
+    assert.equal(text.includes('eslint'), false, text);
+    assert.equal(text.includes('echo nothing'), true, text);
+  });
+
+  it('counts an inline run and a block scalar body alike', () => {
+    // The neighbour. A reader that saw only inline commands would refuse every workflow that groups
+    // steps, which is most of them.
+    const text = ciRunText('steps:\n  - run: npm ci\n  - run: |\n      npm run build\n      npx tsc --noEmit\n');
+    assert.equal(text.includes('npm ci'), true, text);
+    assert.equal(text.includes('npm run build'), true, text);
+    assert.equal(text.includes('npx tsc --noEmit'), true, text);
+  });
+
+  it('drops a step whose failure cannot fail the workflow', () => {
+    // Dogfood run 2's shape exactly.
+    const text = ciRunText('steps:\n  - name: e2e\n    continue-on-error: true\n    run: npx playwright test\n');
+    assert.equal(text.includes('playwright'), false, text);
+  });
+
+  it('keeps a step that says continue-on-error: false, which is blocking', () => {
+    // The other direction: writing the key explicitly must not cost a project its coverage.
+    const text = ciRunText('steps:\n  - continue-on-error: false\n    run: npx playwright test\n');
+    assert.equal(text.includes('playwright'), true, text);
+  });
+
+  it('drops a step whose continue-on-error is an expression it cannot evaluate', () => {
+    // A value this cannot read is not a value it may credit.
+    const text = ciRunText('steps:\n  - continue-on-error: ${{ github.event_name == \'pull_request\' }}\n    run: npx playwright test\n');
+    assert.equal(text.includes('playwright'), false, text);
+  });
+
+  it('confines continue-on-error to the step that declared it', () => {
+    // The bug a naive reader would introduce: one non-blocking step silencing the rest of the job.
+    const text = ciRunText(
+      'steps:\n  - continue-on-error: true\n    run: npx playwright test\n  - run: npm run build\n',
+    );
+    assert.equal(text.includes('playwright'), false, text);
+    assert.equal(text.includes('npm run build'), true, text);
   });
 });
