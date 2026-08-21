@@ -50,7 +50,8 @@ For repository-development objectives, repeat this loop without waiting for anot
    for shipped files, documentation, and one focused commit.
 4. Self-review the exact diff against `DESIGN.md`, the invariants, and acceptance evidence. Repair
    defects immediately; a green suite is not the end of the slice.
-5. Record implementation truth in `PLAN.md`/`HANDOFF.md`. Never close a Codex-owned finding.
+5. Record slice truth and validation at the owning `PLAN.md` item. Update `HANDOFF.md` only for
+   candidate-wide state or evidence that outlives the slice. Never close a Codex-owned finding.
 6. Immediately select the next eligible item. A commit and a review-pending repair are queue
    transitions, not reasons to return control.
 
@@ -68,9 +69,10 @@ or review-pending status is **not** a stop state.
 
 ---
 
-Conventions for working **on this repo** (the plugin itself). `DESIGN.md` is the spec and
-the source of truth; when this file and `DESIGN.md` disagree, `DESIGN.md` wins — fix this
-file.
+Conventions for working **on this repo** (the plugin itself). `DESIGN.md` is the product spec and
+source of truth for product behavior; `CONSTITUTION.md` is the source for repository invariants.
+When this file disagrees with either document within its authority, that canonical document wins—
+fix this file.
 
 Read `docs/INDEX.md` before traversing project-management documents. Historical ledgers are
 evidence, not instructions; `PLAN.md` and `REVIEW.md` own current work and review status.
@@ -264,8 +266,9 @@ unreadable header is not evidence of a correct one.
 ## External review
 
 `REVIEW.md` is the **Codex-owned external review ledger**. Claude Code implements open findings but
-does not rewrite them or mark them closed. After each repair, record evidence in `PLAN.md` and
-`HANDOFF.md`, keep the slice separately reviewable, and continue with the next eligible item.
+does not rewrite them or mark them closed. After each repair, record slice evidence at the owning
+`PLAN.md` item, update `HANDOFF.md` only for candidate-wide or durable cross-slice evidence, keep the
+slice separately reviewable, and continue with the next eligible item.
 **Do not stop or ask the operator to summon Codex after every repair.**
 
 ### The review has a definition of done, and this section is it
@@ -301,12 +304,14 @@ the one condition nobody can ever meet.
 
 ### When a pass happens
 
-Review is a **checkpoint between phases, never an interrupt.** The operator's phase order:
+Review is a **checkpoint between phases, never an interrupt.** The operator's current phase order:
 
 1. **Build every feature that can be built here.** Anything impossible in this environment goes to
    the deferred list rather than blocking the phase.
 2. **Testing and code fixes.**
-3. **Capstone**, added by the operator, when the operator calls the code complete.
+
+The capstone and improve mode are withdrawn from the current traversal unless a newer operator
+directive explicitly restores them.
 
 One pass at each phase boundary, plus the cases that were already blocking: before a release or
 acceptance claim, when no independent eligible work remains, or when the operator asks for one. At

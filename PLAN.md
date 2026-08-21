@@ -1,4 +1,4 @@
-# PLAN — what remains. Compiled 13 August 2026; statuses last swept 18 August at candidate 0.208.0
+# PLAN — what remains
 
 **This is the only live implementation plan.** `REVIEW.md` is the separate Codex-owned external
 acceptance gate; its finding status is authoritative and is linked here rather than duplicated.
@@ -14,7 +14,14 @@ Statuses: `OPEN` → `IN PROGRESS` → `DONE (version)` / `CLOSED (reason)` — 
 required them: `PREPARED` (staged, unrun), `RUN (date)` (executed, question answered or moved),
 `ANSWERED` (measurement obtained), `BLOCKED` (cannot start until named prerequisites close),
 `PARKED` (intentionally outside the current queue until its admission condition is met),
-`DROPPED` (operator refused), and `DEFERRED` (operator postponed).
+`DROPPED` (operator refused), `DEFERRED` (operator postponed), `WITHDRAWN` (operator removed from
+the current objective), and `REJECTED` (the item's admission test failed).
+
+Status controls traversal, not Definition-of-Done scope. The Standing Rules' capability-versus-
+experiment distinction determines scope. An in-scope capability may remain `BLOCKED`, `PARKED`, or
+`DEFERRED` until its named condition changes; that status alone does not remove it from the DoD.
+Explicitly `WITHDRAWN`, `DROPPED`, `REJECTED`, and experiment-only items remain outside the current
+feature queue unless their documented reopening condition is met.
 
 `IMPLEMENTED (...); REVIEW ... open pending Codex` means **implementation complete, review queued**.
 It does not mean the development session is blocked. Use `REVIEW REQUIRED` only when verification
@@ -56,7 +63,7 @@ implementation decision.
 
 ---
 
-## Build order — current traversal at candidate 0.208.0
+## Build order — current traversal
 
 **Gate 0A — high-priority external review dependency ledger.** Closed repairs remain in this
 section only to preserve the dependency and evidence trail; they are not current work. Only entries
@@ -207,35 +214,32 @@ check once.
 evidence, viewport path) → item **29** (detect-first gitleaks and registry version pinning).
 
 **Campaign 3 — live evidence:** complete item **24** with boxed-component dogfood → item **57**
-(machine-readable morning-acceptance results) → cases **A/B** from item **20** → item **31**, the
-staged Ateliers capstone. Case C is **PARKED by operator decision**; it is not first in this queue
-and must not be launched without reopening that decision.
+(machine-readable morning-acceptance results) → cases **A/B** from item **20**. Item **31**, the
+Ateliers capstone, was withdrawn on 19 August and is not in the current campaign. Case C is
+**PARKED by operator decision**; it must not be launched without reopening that decision.
 
 **Campaign 4 — containment experiment and bounded follow-ons:** after items **56**, **82**, and
 **83** establish the measured child boundary, run item **84** and record whether a stronger
 containment profile is portable, capability-gated, or rejected. The experiment does not silently
-change the supported default. Then take item **52** denial dampening → item **53** styled milestone
-lines, after safety and reviewer work.
+change the supported default. Items **52** and **53**, originally ordered after that safety work,
+are already complete and no longer part of the traversal.
 
 **Research-gated and conditional work:** item **54** remains **BLOCKED** on Gate 0, item **77**, and
 a recorded item **84** outcome; it does not enter the queue merely because the supporting analysis
-exists. Item **55** remains **PARKED** until
-a real run demonstrates a provenance or invalidation failure that passes its admission test. Item
-**58** remains **PARKED** until a killed-run experiment proves that a lifecycle journal would close
-a forensic gap; it is not authorization for checkpoint/resume. Item **106** remains **PARKED** until
-a concrete item **34** or **49** job requires one named authenticated external resource; configured
-connectivity or an available MCP server is not that admission evidence.
+exists. Item **55** was rejected because the required provenance already exists. Item **58**'s
+killed-run experiment admitted and narrowed its journal, which is implemented but does not authorize
+checkpoint/resume. Item **106** was rejected because no concrete authenticated-resource job met its
+admission condition; configured connectivity alone does not reopen it.
 
-**Deferred/post-DoD:** item **21** remains deferred until code-complete. Items **33–35** and
-**47–51** remain Phase 6; item **32** is parked there until calibrated evidence justifies one optional
-heterogeneous cold-role experiment without changing the Claude-native runtime, and item **36** is
-parked on its native detachment experiment plus item **58**'s separate resume admission. Within Phase
-6, item **49**'s artifact substrate precedes its first Verified Research instance, item **34**,
-despite their chronological numbering. Item **59** is also post-DoD because it depends on item 35.
-Item **30** remains a research/measurement intake, not an implicit build. Item **86** is parked
-post-DoD; it cannot enter the queue until its containment and incremental-detection admission
-conditions are met. Item **106** is likewise post-DoD and admission-gated; it is not part of the
-default code-job path.
+**Scope and admission summary:** the Standing Rules below own the current all-features DoD; each
+item's heading and admission clause own its traversal state. Items **21** and **31** are withdrawn.
+Item **33** is a named operator deferral outside the current DoD. Items **32**, **54**, and **59**
+are experiment or development-protocol work rather than product capabilities. Item **30** is a
+completed research intake, not an implicit build. Item **86** is an in-scope capability but remains
+`PARKED` until its containment and incremental-detection admission conditions close. Item **106**
+was `REJECTED` by its own admission test and reopens only when its heading's condition is met.
+All other scope and status claims come from the Standing Rules and the individual item—not from the
+historical phase heading in which an item happens to appear.
 
 `PLAN.md` owns these statuses. `HANDOFF.md` summarizes them and must not invent a second ledger.
 
@@ -316,7 +320,7 @@ checked, and one `grep` contradicted it.
 
 ---
 
-## Phase 1 — experiments. Spend money, watch, one variable at a time.
+## Phase 1 — experiments. Run live, observe, one variable at a time.
 
 ### 6. Case H — the `unknown` pin verdict and quarantine — DONE; `unknown` shown near-unreachable
 The last unobserved A4 path, and the rule *"quarantine is not a pass"* has never fired. PRD
@@ -741,7 +745,7 @@ round-trip to discover.
 - Empty input keeps the bracketed default. `--show` prints the effective config (file merged
   over defaults, through the validator) and exits without prompting or writing.
 - Every prompt is an injectable seam (`io.ask`, `io.write`) so tier 1 drives the full dialogue
-  with a scripted answer list. No tier 2 or 3 owed: no git, no child processes, no money.
+  with a scripted answer list. No tier 2 or 3 owed: no git, child processes, network, or external API.
 - Docs in the same slice: a README quickstart line and a DESIGN.md §10 note that the wizard
   exists and reuses the validator.
 
@@ -835,35 +839,20 @@ heuristic in a failure path is how a gate starts lying. Measured waste: roughly 
 minutes across an entire multi-hour run. Not worth a mechanism; recorded so the next person
 with this idea reads this instead of building it.
 
-## Phase 4 — breadth, then the mirror.
+## Historical Phase 4 ordering — breadth; mirror withdrawn 19 August
 
 ### 20. Dogfood breadth — A/B **PREPARED**; C **PARKED by operator decision**
 Cases A and B are the pending link-shortener and persistence-SPA runs in `DOGFOOD.md`.
 Case C would exercise TRX and the .NET adapter end to end, but it is not scheduled and must not
 run unless the operator explicitly reopens the 14 August decision.
 
-### 21. Improve mode pointed at this repository — **DEFERRED 14 Aug, operator's decision**
+### 21. Improve mode pointed at this repository — **WITHDRAWN (operator, 19 Aug 2026)**
 
-**Not until the code is mostly complete.** *"Probably shouldn't run improve in this repo until we
-are mostly code complete."* The engineering prerequisites are met (0.107.0 made `release-check`
-declarable as `operator:release-check` in protected config), so this is waiting on the codebase
-rather than on the loop. The `CLAUDE.md` scope note stays as written.
-Prerequisites named in `HANDOFF.md`: pin `hooks/guard.mjs` as a security element at run start
-(the positional rule does not cover it), `release-check` reachable as a gate (item 3 helps),
-and the `CLAUDE.md` scope note is the operator's call to suspend — nobody else's.
-
-**The engineering prerequisites are now met (0.107.0); the decision is still not mine.**
-`extraGates` in protected `.meeseeks/config.json` makes `release-check` declarable as a required gate
-named `operator:release-check`, so a builder editing `scripts/` without bumping now fails an
-iteration instead of breaking the install-cache invariant silently. **Both remaining blockers are
-the operator's:** suspending the `CLAUDE.md` scope note, and deciding to run at all.
-
-**Status of the three at 0.96.0 (stale stratum — the engineering half was met at 0.107.0, per the paragraph above; kept for the history of what was outstanding when):** the guard is protected (0.88.0's `protected-guard`, positional
-and self-referential — the first prerequisite is met by a stronger mechanism than the one named).
-`release-check` gained the header check at 0.89.0 but **is still not a declared gate**, so a
-builder editing `scripts/` without bumping still breaks the install-cache invariant silently —
-that is the one engineering prerequisite left. The scope note is untouched and not mine to
-retire.
+**Historical disposition.** The operator deferred this on 14 August until the code was mostly
+complete. Its engineering prerequisites were met at 0.107.0, but the operator withdrew improve mode
+from the current traversal on 19 August before it ran. It is not waiting on code completion and may
+reopen only under a newer explicit directive. The `CLAUDE.md` scope note remains authoritative: do
+not run `/meeseeks` against this repository.
 
 ### 22. HANDOFF stratigraphy sweep — DONE (0.97.0), and it found an armed hazard
 The file is newest-first with older "outstanding" and "do this next" strata below; reconcile or
@@ -907,8 +896,9 @@ statuses in the same commit as the work, not after it
 
 ## Standing rules
 
-One item per commit; version bump with any shipped file; statuses here in the same commit;
-execution records in `HANDOFF.md`. Tier 2 before commits touching race, health-probe,
+One item per commit; version bump with any shipped file; status and slice-specific validation at
+the owning item here; `HANDOFF.md` records only candidate-wide state and evidence that outlives one
+slice. Tier 2 before commits touching race, health-probe,
 toolchains, or anything shelling out; tier 3 whenever `claudeArgs`, `childSettings`, envelope
 parsing, or a template output contract moves (items 4, 10, 16 at minimum). No new standing
 authority personas—the cap was spent on `oracle-author`. Driver-owned job/lens prompt addenda
@@ -936,13 +926,14 @@ without its measured number — but the measurements come from long runs, and th
 themselves deferred, so those items could not unblock themselves. That is a deadlock rather than a
 decision, and it is the larger half of the pile.
 
-**Phase order (operator directive, 19 Aug 2026).** Build every feature that can be built here, then
-testing and code fixes, then a capstone the operator adds when the operator calls the code complete.
-A feature or finding whose acceptance evidence cannot be obtained in this environment is **deferred**
-with the missing capability named, not held open. Deferred today: F11/item 65 (needs a real Win32
-host; WSL is explicitly not evidence), item 21 (improve mode on this repository, withdrawn by the
-operator), item 16's confinement half (unverifiable here), item 32 (needs a non-Claude provider).
-Items 31 (capstone) and 21 are withdrawn from the current traversal.
+**Phase order (operator directive, 19 Aug 2026).** Build every in-scope feature that can be built
+here, then testing and code fixes. The capstone and improve mode are withdrawn unless a newer
+operator directive explicitly restores them. A feature or finding whose acceptance evidence cannot
+be obtained in this environment is **deferred** with the missing capability named, not held open.
+Current environment deferrals are F11/item 65 (needs a real Win32 host; WSL is explicitly not
+evidence) and item 16's confinement half (unverifiable here). Item 32 is an optional experiment and
+follows its own admission condition rather than the feature phase. Items 31 (capstone) and 21
+(improve mode) are withdrawn from the current traversal.
 
 **External review terminates (operator directive, 19 Aug 2026).** A pass is ACCEPTED when no HIGH
 finding is open against the reviewed baseline; MEDIUM findings are a backlog and never withhold
@@ -1401,17 +1392,20 @@ and 4000 chars (the detail previously flowed into the builder prompt verbatim, u
 
 ---
 
-## DoD — the operator's done bar (set 14 August 2026)
+## Historical DoD — superseded by the 19 August Standing Rules
 
-Two parts, both required, and they bound an otherwise-asymptotic backlog:
+This two-part bar is retained as rationale for the work it produced. It no longer controls scope,
+phase order, or traversal; the current Definition of Done lives in the Standing Rules above.
+
+The 14 August bar had two required parts:
 
 1. **All outstanding features done, tested, fixed** — items 24 (→ DONE via the boxed dogfood),
    28, 29, the `BORROWED.md` R23–R33 menu, item 30's four candidates, and the owed measurement
    runs (oracle2, a race that actually applies a winner, cases A/B). Deferred/dropped stay out.
 2. **The Next.js enterprise capstone below runs.**
 
-Item 21 (the mirror — improve mode on this repo) remains the final act, un-deferrable once part 1
-is code-complete.
+Item 21 (the mirror — improve mode on this repo) was described as the final act. It and the capstone
+were withdrawn on 19 August.
 
 ### 31a. Web-ui smoke — the penultimate test — **SHIPPED, 15 Aug, attempt 6: panel unanimous on 6 requirement(s)**
 
@@ -1443,11 +1437,12 @@ flows passing — and the run is read for what it teaches about the web gates (d
 Playwright boot, health-probe) before the capstone launches. A failure here is the cheap place to
 find a broken web gate.
 
-### 31. Capstone — build a chunky enterprise Next.js app, unattended, that RUNS — OPEN, **STAGED**
+### 31. Capstone — build a chunky enterprise Next.js app, unattended, that RUNS — **WITHDRAWN (operator, 19 Aug 2026; specification retained as history)**
 
-**DoD part 2.** The largest dogfood attempted and the first serious **web-ui** target, so it is
-the first live exercise of `templates/frontend-direction.md`, the impeccable design-slop gate,
-Playwright e2e as ratchet evidence at scale, and the health-probe confirming the dev server boots.
+**Historical specification.** This was DoD part 2 under the superseded 14 August bar. It would have
+been the largest dogfood attempted and the first serious **web-ui** target, exercising
+`templates/frontend-direction.md`, the impeccable design-slop gate, Playwright e2e as ratchet
+evidence at scale, and the health-probe confirming the dev server boots.
 
 **Target:** `~/dare-dogfood/nextjs-capstone` — "Ateliers", an internal project & resource tracker:
 Next.js App Router + TypeScript, email/password auth with hashed passwords and signed cookies,
@@ -1461,21 +1456,20 @@ ceilings, `maxIterations: 20`, the standard quality-plugin set.
 `/login` 200; PRD-5.2 requires the e2e suite to pass against the running app. "That runs" is in
 the bar.
 
-**Launch discipline:** only after part-1 features are code-complete, with the finished machine.
-The PRD gets one hostile shippability review first (an impossible requirement would doom the run
-the way the rejection PRD does). Expect many iterations and 100M+ tokens; uncapped is intended
-(operator on max plan, budgets rank -0).
+**Historical launch discipline:** only after part-1 features were code-complete, with the finished
+machine. The PRD gets one hostile shippability review first (an impossible requirement would doom
+the run the way the rejection PRD does). Expect many iterations and 100M+ tokens; uncapped is
+intended (operator on max plan, budgets rank -0).
 
 **Done when:** the run produces a Next.js app that builds and serves, with the seeded core flow
 working end to end under Playwright — a full `SHIPPED` is the target, and a run that ends with a
 running-but-incomplete app is documented honestly as a partial, not dressed as a ship.
 
-## Phase 6 — the expansion. Post-DoD; ambition, not scope. Added 14 Aug by operator decision.
+## Historical Phase 6 classification — superseded by the current all-features DoD
 
-**Nothing in this phase begins before the DoD is met — the features, then Tallyho, then Ateliers
-actually running.** A general-agent ambition on an unproven core is how projects die of scope;
-this phase is earned from proof, not hope, and is recorded here so the ambition is captured
-without moving the "done" line.
+This heading preserves the 14 August expansion rationale; it no longer assigns scope or gates work
+on Tallyho or the withdrawn Ateliers capstone. The Standing Rules and each item's current heading
+and admission clause control the live queue.
 
 **North star:** do NOT build a crazier general agent (that is the trap — generality costs the
 spine: no ratchet, no cold-panel verdict, no oracle, and meeseeks becomes a worse Prime Agent).
@@ -1516,7 +1510,7 @@ Otherwise reject the backend. A passing experiment may justify a separately revi
 adapter slice; it never makes the Driver, command, install format, or default execution path
 model-agnostic.
 
-### 33. More language toolchains + reporters (Python, Go, Rust) — **DEFERRED (operator decision, 19 Aug 2026): add after completion**
+### 33. More language toolchains + reporters (Python, Go, Rust) — **DEFERRED (operator decision, 19 Aug 2026; outside the current DoD)**
 
 New `scripts/toolchains/*.mjs` + `scripts/reporters/*.mjs` behind the existing fixed toolchain
 contract (the same shape dotnet proved). Each: detect, map the gates, parse the framework's
@@ -1525,8 +1519,9 @@ reporter output; each new reporter owns a contract another binary defines → on
 check** per toolchain. The core loop is already language-agnostic (the ratchet parses reporter
 JSON, not syntax) — this is surface, not spine.
 
-**Deferred by the operator to after code completion.** The shipped `dotnet` toolchain is unaffected
-and stays; the deferral is on *adding* toolchains, not on the ones already proved.
+**The operator made this a named exception to the all-features bar.** Revisit it only after the
+current objective is complete or a newer directive restores it. The shipped `dotnet` toolchain is
+unaffected and stays; the deferral is on *adding* toolchains, not on the ones already proved.
 
 **What the abandoned Python probe measured, kept because it is the expensive half.** Nothing reached
 the repository — this was captured against real binaries in a scratch tree, and every finding is the
@@ -1917,13 +1912,15 @@ subscription the binding constraint is the rate-limit window, not money*.
 rule is that Claude implements findings without rewriting them. It carries 16 instances of the same
 framing, and they will keep suggesting a blocker that does not exist until Codex revises them.
 
-**What this changes:** items 20 A/B, 24's live half, 47's discharge, 57's campaign, 80, 83, 84, 85 and
-86 are **eligible**, not blocked. What genuinely blocks work is a capability absent here — a Win32
-host (65), a real browser (42 B2) — or a product decision only the operator can make (106).
+**What this changes:** live-model work in items 20 A/B, 24's live half, 47's discharge, 57's
+campaign, 80, 83, 84, 85, and 86 is authorized and is not blocked on cost. This does not satisfy an
+item's other prerequisites or admission conditions; item 86, in particular, remains parked until
+its admission list closes. What genuinely blocks a path is a capability absent here—a Win32 host
+(65), a real browser (42 B2)—or a product decision only the operator can make.
 
 **Validation:** lint and typecheck clean, `npm test` **3428 of 3428** and
-`npm run test:integration` **306 of 306**, both exit 0; the `AGENTS.md` mirror test holds the two
-contract files byte-identical.
+`npm run test:integration` **306 of 306**, both exit 0; the `AGENTS.md` mirror test holds its body
+byte-identical to `CLAUDE.md` after the permitted preamble.
 
 ### 139. The seal was built, documented, and never armed — **DONE (0.261.0)** (PLAN item 83)
 
@@ -3017,6 +3014,24 @@ refusal, and this one open. Each run has reached further than the last; this is 
 the panel at all.
 
 
+### 164. Reconcile documentation authority and the current all-features DoD — **DONE (docs only, 21 Aug 2026)**
+
+The current contract had three competing stories: the documentation index omitted
+`CONSTITUTION.md`, the superseded capstone still appeared in live phase instructions, and item 86
+was simultaneously post-DoD, in scope, and eligible despite unmet admission prerequisites.
+
+**Resolution.** The index now routes invariant law to `CONSTITUTION.md`; scope comes from the
+capability-versus-experiment rule while status controls traversal; the capstone is explicitly
+historical and withdrawn; item 86 is in scope, parked until admission closes, and POSIX-only at
+first. Slice evidence stays here, while `HANDOFF.md` keeps only candidate-wide or durable evidence.
+No implementation or loader-shipped file changed, so no version bump is required.
+
+**Validation.** Lint and typecheck clean; `npm test` **3514 of 3514**; `release-check` passed at
+0.280.0; `AGENTS.md` remains byte-identical to `CLAUDE.md` after its permitted preamble; stale live
+capstone and item-86 phrases are absent, and candidate-coupled 0.208.0 metadata is gone from live
+control-plane headings.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
@@ -3509,10 +3524,9 @@ is evidence about a real stack, and it is the only part still owed.
 - **The builder gets the ERD in its brief**, so it builds to the declared schema rather than
   guessing; the design auditor can use the ERD as structural ground truth.
 
-**Why post-DoD:** it changes what meeseeks *accepts* and adds a gate — a Phase-6-class expansion of
-inputs/job-types, not a fix. It would materially strengthen the data-backed-app class (the capstone
-is exactly that), but the capstone must run on the *current* machine to prove the DoD, so this does
-not gate it. Prioritise it for the *next* data-backed target after the DoD.
+**Why it was originally classified post-DoD (historical):** it changes what meeseeks *accepts* and
+adds a gate—a Phase-6-class expansion of inputs/job-types, not a fix. That capstone-based boundary
+was superseded on 19 August; the heading above now owns this item's live status.
 
 **Done when:** an ERD parses to entities/keys/relationships; a preflight refuses an ERD that
 contradicts or over-reaches the PRD; the `schema-conformance` gate passes on a superset-matching
@@ -3607,9 +3621,10 @@ what it cannot decide, it does not pretend to.
 - **Fail-closed:** an unparseable `DOD.md` refuses the run. A done-bar that cannot be read is not a
   done-bar (the `--deadline`/gate-skip shape); it never defaults to "no extra criteria."
 
-**Why post-DoD:** like item 47 it changes what meeseeks *accepts* — a Phase-6-class expansion of inputs,
-not a fix — and it must not move the "done" line for building meeseeks itself. Pairs naturally with 47:
-PRD + ERD + DOD.md are the three legs an enterprise target stands on.
+**Why it was originally classified post-DoD (historical):** like item 47 it changes what meeseeks
+*accepts*—a Phase-6-class expansion of inputs, not a fix. That classification was superseded on
+19 August; the heading above now owns this item's live status. It pairs naturally with item 47:
+`PRD.md`, `ERD.md`, and `DOD.md` are the three legs an enterprise target stands on.
 
 **Done when:** a `DOD.md` parses to owned, id'd criteria; a preflight refuses one that contradicts the
 PRD or that no reviewer owns; the criteria enter the panel as gating requirements and pin monotonically
@@ -4005,8 +4020,8 @@ loader-shipped paths; `release-check` agrees).** All three conditions met, which
 building it at all.
 
 1. **Single source.** Thirteen articles, moved **verbatim** — rewording law during a move is how a
-   "refactor" silently changes it. `CLAUDE.md`'s section is now a pointer, and `AGENTS.md` mirrors it
-   byte-for-byte through the existing mirror test, so Codex reads the same pointer.
+   "refactor" silently changes it. `CLAUDE.md`'s section is now a pointer, and the `AGENTS.md` body
+   mirrors it byte-for-byte after the permitted preamble, so Codex reads the same pointer.
 2. **Numbered `CONST-1`…`CONST-13`.** Citable in a commit, a review, or a plan item, which is what
    the numbering is for.
 3. **Enforced.** Every article carries an `**Enforced by:**` line naming real paths, and
@@ -4166,13 +4181,10 @@ kept outside the role boundary without importing a new runtime/control plane.
 
 ## Current follow-ons and research-gated experiments
 
-This heading ends Phase 6. Items 52, 53, 56, 57, 77–85, and 87 are pre-DoD only in the order stated
-at the top of this file; items 54, 55, and 58 are conditional or research-gated; item 59 remains
-post-DoD because it depends on Phase-6 item 35. Item 86 is PARKED post-DoD behind its own admission
-conditions. Item 106 is PARKED post-DoD behind a demonstrated authenticated-resource job and its own
-capability canaries. Item numbering records chronology, not priority. Item **77** therefore lands before item
-**76** despite its later number. The top-level build order is authoritative when physical placement
-and execution order differ.
+This heading follows the historical Phase 6 section, but it does not assign current scope or status.
+The Standing Rules and each item's heading and admission clause own those facts. Item numbering
+records chronology, not priority. Item **77** therefore lands before item **76** despite its later
+number. The top-level build order is authoritative when physical placement and execution order differ.
 
 ### 52. Denial dampening (R25c), without giving the guard a redirectable write primitive — IMPLEMENTED (0.225.0; hardened 0.226.0)
 
@@ -4297,9 +4309,9 @@ because depth only ever restricts.
 
 **Three fixture defects, all found by mutation and all worth recording.**
 
-1. **It spent money.** `startDriver` runs the real entrypoint as a real process, so nothing injects a
+1. **It made a live model call.** `startDriver` runs the real entrypoint as a real process, so nothing injects a
    spawn double — the child reached its design phase and called the **real CLI**. Tier 2's definition
-   is no network, no API, no money (§11.1), and a fixture that quietly makes a live call has broken
+   is no network or external API (§11.1), and a fixture that quietly makes a live call has broken
    the tier's only promise. A fake `claude` now sits first on the child's PATH, the technique
    `claude-compat.integration.test.mjs` already uses — and which
    `nesting-authority.integration.test.mjs` was already using for exactly this reason, so the
@@ -6039,7 +6051,7 @@ nothing and the mutation survived. Cases with an unquoted `.js` delegation and a
 past the read window were added, and both mutations then failed.
 
 **The five fixtures landed with it** (`test/integration/claude-seal.integration.test.mjs`, tier 2).
-Real files, real symlinks, real `PATH` resolution, no money: a hostile shadow inserted after sealing,
+Real files, real symlinks, real `PATH` resolution, no external calls: a hostile shadow inserted after sealing,
 an atomic `rename` replacement whose version is unchanged, a retargeted symlink, a launcher whose own
 bytes and version are stable while its delegated entrypoint moved, plus an unreadable delegation and
 a deleted target. The neighbour — an untouched target verifying — is the case that proves the
@@ -6265,7 +6277,7 @@ classes; the scan result is not bound to item **68**'s reviewed-tree identity as
 and the pinned hostile/benign reviewer-calibration canary has not been run. A scan is a
 known-pattern defense, and nothing here claims immunity to arbitrary prompt injection.
 
-### 86. Verified red-team assessment job type — PARKED (post-DoD follow-on) — **IN SCOPE (DoD = all features, 19 Aug 2026)**
+### 86. Verified red-team assessment job type — **IN SCOPE; PARKED until admission prerequisites close; initial support POSIX-only**
 
 **Problem solved:** the existing hostile Panel, security review, mutation/integrity gates, and
 held-out Oracle judge known requirements and evidence, but they do not authorize a bounded actor to
@@ -6322,10 +6334,9 @@ document:
 POSIX neighbour proves the same code path launches — the deny-path rule this repository holds for
 `guard.mjs`, where blocking everything is not passing.
 
-**Still post-DoD.** This amendment removes one blocker; it does not promote the item. The remaining
-admission conditions — items 56, 76, 83, 84, 85 and a recorded containment outcome — are unchanged,
-and item 84 in particular is the right order: an agent is not handed an attack budget before its
-blast radius has been measured.
+**In scope but not yet eligible.** This amendment removes the Windows blocker; it does not satisfy
+the admission list below. Item 84 in particular is the right order: an agent is not handed an attack
+budget before its blast radius has been measured.
 
 **Admission (amended):** F2, item **40**, item **56**, items **66**, **68**, **76**, **77**, **82**,
 **83**, **85**, and a recorded item **84** containment outcome must exist first. Item **65**/F11 is no
@@ -7302,9 +7313,10 @@ acceptance clause**: whether the loader withholds `/meeseeks` from the model's o
 It cannot prove that `meeseeks@meeseeks` **resolves** to the candidate version and commit, which is
 the clause F21 turns on, so item 75 stays `PARTIAL` rather than being claimed closed.
 
-**The live canary is built and deliberately not run.** It spends money, and the operator withheld
-live runs for this session. It skips cleanly unarmed. One `MEESEEKS_LIVE=1` run closes F25's
-remaining clause and gives F27, F28 and F29 somewhere to attach.
+**At this historical checkpoint, the live canary was built and deliberately not run.** The operator
+explicitly withheld live runs for that session. It skipped cleanly unarmed. One
+`MEESEEKS_LIVE=1` run was still needed to close F25's remaining clause and give F27, F28 and F29
+somewhere to attach; later item headings own the resulting status.
 
 **The argv trap is still live and bit again while writing it.** A prompt passed as an argument after
 `--tools` is swallowed as a tool name; the child died with *"Input must be provided either through

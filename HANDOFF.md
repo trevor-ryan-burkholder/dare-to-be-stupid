@@ -1,4 +1,4 @@
-# START HERE — current handoff, last swept 19 August 2026
+# START HERE — current handoff, last swept 21 August 2026
 
 **State:** working-tree candidate `0.280.0` on `main`; the manifests and the package-lock root
 metadata agree, and `npm run release-check` is the check that says so.
@@ -80,7 +80,9 @@ current, and these do not stay current for one commit. The candidate's own numbe
 
 - `docs/INDEX.md` — authority, audience, ownership, and read order.
 - `DESIGN.md` — normative product and architecture specification.
-- `CLAUDE.md` / `AGENTS.md` — contributor execution contract and exact mirror.
+- `CONSTITUTION.md` — numbered repository invariants and their enforcement.
+- `CLAUDE.md` / `AGENTS.md` — contributor execution contract and byte-identical body after the
+  permitted `AGENTS.md` preamble.
 - `PLAN.md` — live implementation status and ordering.
 - `REVIEW.md` — Codex-owned external findings and closure evidence.
 - `DOGFOOD.md` — pending experiments and current scenario status.

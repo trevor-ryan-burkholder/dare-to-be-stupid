@@ -283,8 +283,8 @@ at a documented dependency or release boundary.
 npm run lint          # style and obvious errors
 npm run typecheck     # jsdoc via tsc-checkJs; we are not adding TypeScript
 npm test              # tier 1: unit + fixture, nothing but node
-npm run test:integration   # tier 2: real git, node, npm. No network, no API, no money
-MEESEEKS_LIVE=1 npm run test:live   # tier 3: real claude -p. SPENDS MONEY
+npm run test:integration   # tier 2: real git, node, npm; no network or external API
+MEESEEKS_LIVE=1 npm run test:live   # tier 3: real claude -p model calls
 npm run release-check # refuses loader changes without a version bump
 npm run slice-check -- verify # gates one stable loader + package-metadata fingerprint
 ```
@@ -304,9 +304,10 @@ a green tick for a suite that made no API call is a lie the reader takes for cov
 
 ## Status
 
-Pre-1.0 and honest about it. `DESIGN.md` is the specification and source of truth.
-`HANDOFF.md` carries current measured state and routes the full execution chronology, including
-what was not verified, to the frozen archive.
+Pre-1.0 and honest about it. `DESIGN.md` is the product specification;
+`CONSTITUTION.md` owns repository invariants; `docs/INDEX.md` routes every other authority.
+`HANDOFF.md` carries current measured state and routes the full execution chronology, including what
+was not verified, to the frozen archive.
 
 Measured, not asserted: **twenty-plus dogfood runs** against real throwaway projects, two of
 which reached `SHIPPED`. Cold review was **73% of a run's wall clock** while the panel ran

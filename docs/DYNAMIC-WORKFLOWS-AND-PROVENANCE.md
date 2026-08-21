@@ -1,10 +1,12 @@
 # Dynamic workflows and durable provenance
 
-Status: supporting architecture analysis and experiment design; non-normative, with no runtime
-implementation yet.
+Status: supporting architecture analysis and experiment design; non-normative, with no adopted
+dynamic-workflow runtime or general provenance graph.
 
 Last researched: 2026-08-17 against Claude Code documentation current on that date.
-Implementation claims last swept: 2026-08-18 at candidate 0.208.0.
+Implementation descriptions may reflect the 18 August research snapshot; they are evidence, not a
+live ledger. Verify current product behavior in `DESIGN.md`; `PLAN.md` owns live scope, status, and
+admission.
 
 This note evaluates two related ideas:
 
@@ -38,26 +40,25 @@ change. Raw research remains under `docs/research/`.
   existing records before considering a separate claim DAG. A graph earns implementation
   only if real runs show stale evidence or unnecessarily broad rework that current
   structures cannot address.
-- **Reliability prerequisites come first.** PLAN Gate 0 must close and item 84 must record the
-  actual containment outcome before one `claude -p` child may fan out into many agents. Item 77's
-  cold-role supply boundary is implemented; it remains a prerequisite, not evidence for the still
-  open tool, environment, CLI-identity, and containment contracts.
+- **Reliability prerequisites come first.** `PLAN.md` owns item 54's admission order and item 84's
+  containment outcome. Prompt supply, effective tools, child environment, CLI identity, and
+  containment are distinct boundaries; evidence for one does not establish another.
 - **Verified Research: adopt first as a job type, independently of workflow adoption.** Item 34 may
   use item 49's artifact substrate without dynamic fan-out; a workflow inside Researcher is a later
   optimization and never its factuality verdict.
-- **Verified Red Team: park behind containment and incremental-value evidence.** Item 86 is a scoped
-  assessment producer, not a new authority. It enters implementation only if a benign pilot shows
-  reproducible findings beyond the existing Panel/security path.
+- **Verified Red Team: scoped assessment design.** Item 86 is a scoped assessment producer, not a
+  new authority. `PLAN.md` owns its live scope, status, and admission order; the stable design below
+  requires a benign pilot to show reproducible findings beyond the existing Panel/security path.
 
 The success measure is morning user acceptance: the user returns to work that satisfies
 the original intent without substantive repair. Agent count, token count, and raw speed are
 diagnostics, not product outcomes.
 
-## Current Meeseeks mechanisms that must remain
+## Mechanism snapshot used by this analysis
 
 Meeseeks already has an implicit durable graph:
 
-| Durable relation | Current mechanism |
+| Durable relation | Mechanism at analysis time |
 |---|---|
 | test passed in history | monotonic passing-ID ratchet |
 | requirement passed on cited evidence | requirement pin plus evidence-file fingerprint |
@@ -138,7 +139,7 @@ The diagram exposes five current limits rather than hiding them:
 
 ### ERD constraint audit
 
-| Relationship or entity | Current implementation | Constraint status |
+| Relationship or entity | Implementation snapshot | Constraint status |
 |---|---|---|
 | `RUN -> RUN_MANIFEST` | the run manifest is created after design; launch and terminal receipts cover earlier post-lock phases | split durable records with exact identities; item 76 still owns one complete acceptance receipt |
 | `RUN -> RUN_OUTCOME` | one atomic terminal writer covers every path after the lock, including unexpected throws | enforced by the F10 repairs; REVIEW acceptance remains external |
@@ -153,7 +154,8 @@ The diagram exposes five current limits rather than hiding them:
 
 This audit does not justify a graph database or general claim DAG. The concrete repairs are stable
 run/spec/tree/attempt identities and receipts added to the stores that already own the decisions.
-A future shadow DAG remains conditional on PLAN item 55's measured admission test.
+PLAN item 55 later recorded that the existing artifacts already provide the required trace and
+rejected a shadow DAG under its own admission test. Any future reopening follows that item.
 
 ## Claude Code dynamic workflows: documented behavior
 
@@ -325,12 +327,13 @@ enforces perfect secrecy. Reviewers are fresh processes and are not handed Build
 iteration logs, but repository-readable files are not sealed from them. PLAN item 82 now gives every
 non-Builder role an exact built-in `--tools` set, gives Oracle-author none, and refuses inherited MCP
 expansion; REVIEW F27 still owns external acceptance. That measured top-level role policy is not yet
-proof that a dynamic workflow inherits the same boundary. All Claude roles currently inherit the
-operator environment; that separate open trust-boundary defect is F5/item 56. The boundary must
-exclude ambient Claude control variables as well
-as credentials: retries, resume, workflow availability, model routing, permission posture, and
-budget timing are sealed role semantics, not operator-shell defaults. Dynamic workflows must remain
-inside one role box and may return only through that role's existing arrow to the Driver.
+proof that a dynamic workflow inherits the same boundary. PLAN item 56 now gives top-level Claude
+roles a measured environment keep-list and excludes seeded ambient controls; REVIEW F5 still owns
+external acceptance and names residual subprocess surfaces. A workflow must prove that descendants
+preserve the same exclusion of credentials and ambient Claude control variables: retries, resume,
+workflow availability, model routing, permission posture, and budget timing are sealed role
+semantics, not operator-shell defaults. Dynamic workflows must remain inside one role box and may
+return only through that role's existing arrow to the Driver.
 
 ### Oracle
 
@@ -567,7 +570,7 @@ Research mode solves a concrete artifact-verification problem: a polished report
 unsupported, stale, or contradictory claims even when its author says the work is complete. It
 should therefore be the first specialized job type built on item 49's artifact substrate. It does
 not depend on dynamic workflows; those are an optional later execution mechanism inside Researcher.
-The bundled `/deep-research` command is one candidate harness for a paid, capability-probed item 54
+The bundled `/deep-research` command is one candidate harness for a live, capability-probed item 54
 experiment. Its internal cross-checking and voting may reduce producer errors, but Meeseeks must still
 run its own structural gates and independently cold acceptance path.
 
@@ -613,7 +616,7 @@ The pilot should measure unsupported-claim escape rate, citation-support precisi
 independently labeled sample, required-question coverage, cold-review disagreement, cost, and
 morning user acceptance.
 
-### Verified Red Team — park behind containment evidence
+### Verified Red Team — scoped assessment architecture
 
 Meeseeks already has adversarial review through the cold Panel, security review, held-out Oracle,
 and hostile Definition-of-Done gates. A standing Red authority would duplicate those roles and blur
@@ -644,12 +647,14 @@ not a pass. A prompt cannot authorize production targeting, persistence, destruc
 credential collection, or data exfiltration. Dynamic workflows may organize discovery internally
 but gain no durable authority.
 
-Admission requires measured child-environment minimization, bounded cross-platform process-tree
-termination, exact-tree evidence receipts, explicit network/effect controls, disposable isolation,
-restart-safe scope recovery, and tests showing that Red cannot mutate the candidate, edit
-Driver-owned state, or certify itself. Item 49's prose/artifact toolchain is not a prerequisite. A
-benign synthetic pilot must demonstrate incremental, independently reproduced detection beyond the
-existing Panel/security path; otherwise the mode is redundant and should remain closed.
+Admission requires measured child-environment minimization, bounded process-tree termination on the
+supported POSIX platforms, exact-tree evidence receipts, explicit network/effect controls,
+disposable isolation, restart-safe scope recovery, and tests showing that Red cannot mutate the
+candidate, edit Driver-owned state, or certify itself. Driver refuses `win32` fail-closed until PLAN
+item 65 supplies real Win32 descendant-settlement evidence. Item 49's prose/artifact toolchain is
+not a prerequisite. A benign synthetic pilot must demonstrate incremental, independently reproduced
+detection beyond the existing Panel/security path; otherwise the mode is redundant and should
+remain closed.
 
 The pilot should measure incremental reproduced findings, false-positive rate,
 regression-prevention value, containment violations, cost, and morning user acceptance.

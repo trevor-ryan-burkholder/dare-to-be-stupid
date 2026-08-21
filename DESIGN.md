@@ -4099,10 +4099,13 @@ producer output and kept out of its context. A semantic dispute that cannot be r
 observation remains a cold Panel judgment or `unverifiable`; calling a model judge an Oracle does not
 make its conclusion deterministic.
 
-A verified Red assessment (PLAN item 86) is a parked, explicitly scoped job type—not a standing fifth
-authority. Red produces proposed counterevidence. Independently contextualized verification must
-reproduce each accepted finding against the immutable candidate with a benign control before Panel,
-Builder repair, or Driver state transitions use it. Red receives a read-only candidate snapshot;
+A verified Red assessment (PLAN item 86) is an explicitly scoped job type—not a standing fifth
+authority; `PLAN.md` owns its live status and admission order. Initial support is POSIX-only, and
+Driver must refuse the job fail-closed on `win32` until item 65 supplies real Win32 descendant-
+settlement evidence. Red produces proposed counterevidence. Independently contextualized
+verification must reproduce each accepted finding against the immutable candidate with a benign
+control before Panel, Builder repair, or Driver state transitions use it. Red receives a read-only
+candidate snapshot;
 attack harnesses, commands, and generated inputs live in a separately identified disposable
 assessment workspace, and evidence binds both identities. “No findings” is an inconclusive coverage
 observation, not a pass, and a task prompt cannot expand sealed authorization. Production targeting,

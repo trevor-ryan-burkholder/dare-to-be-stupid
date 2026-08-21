@@ -1,15 +1,15 @@
 # Dogfood — current scenarios and pending runs
 
 **Document status:** current operational runbook
-**Last swept:** 18 August 2026 at candidate version 0.208.0
+**Last swept:** 21 August 2026
 
 Completed run logs, recipes, autopsies, and measurements are preserved at
 [`docs/history/DOGFOOD-through-2026-08-15.md`](docs/history/DOGFOOD-through-2026-08-15.md).
 The table below is the current status; historical headings do not override it.
 
 Scenario states are not general development stop signals. Skip `BLOCKED`, `PARKED`, or
-watched/paid runs whose admission conditions are unmet, continue every independent eligible PLAN
-item, and return here only when the scenario becomes the next real dependency.
+operator-reserved runs whose admission conditions are unmet, continue every independent eligible
+PLAN item, and return here only when the scenario becomes the next real dependency.
 
 | Scenario | Status | Current decision |
 |---|---|---|
@@ -21,8 +21,8 @@ item, and return here only when the scenario becomes the next real dependency.
 | I — live worktree race | `PERFORMED` | Race executed; no winner has yet been applied in a live run |
 | J — boxed nesting controls | `CONCLUDED` | Controls verified; builders never initiated the nested run |
 | Tallyho web-ui smoke | `SHIPPED` | Shipped on attempt 6; findings landed through 0.161.0 |
-| Ateliers capstone | `STAGED` | PLAN item 31; no terminal result recorded in this repository |
-| Child-environment boundary probe | `OPEN` | `REVIEW.md` F5 / PLAN item 56 Slice A; run this synthetic-canary measurement when PLAN selects the item, before F28/item 83 can close |
+| Ateliers capstone | `WITHDRAWN` | Operator withdrew PLAN item 31 on 19 August; its specification is historical |
+| Child-environment boundary probe | `PERFORMED` | Measured on 19 August; PLAN item 56 records the result and 0.232.0 implementation evidence; REVIEW F5 remains Codex-owned |
 | Dynamic-workflow boundary probe | `BLOCKED` | PLAN item 54; run only when PLAN's authoritative traversal records its prerequisites closed and admits the experiment |
 
 ## Pending recipes
@@ -55,24 +55,6 @@ For either run:
 
 Case C must not be launched unless the operator explicitly reopens it. The original recipe is
 retained only in the archive.
-
-### Child-environment boundary probe
-
-This is `REVIEW.md` F5 / PLAN item 56 Slice A: a paid measurement of the real `claude -p` child
-contract before any environment filter is designed. Run it through the production child-spawn path
-in a disposable fixture or snapshot worktree. Use a synthetic canary value only — never a real credential — and
-have the child report presence or absence, never the value.
-
-`PLAN.md` item 56 is OPEN and owns this probe's admission and order. This runbook deliberately does
-not restate a prerequisite list: the former HANDOFF prerequisite pointer became invalid when
-HANDOFF stopped owning the implementation queue. The probe must still run before item 83 can close,
-because its auto-update control belongs to the child-environment boundary.
-
-Record the pinned Claude Code and plugin versions; whether the child shell can observe the canary;
-the names of benign environment variables required for executable discovery, home/temp, locale,
-authentication, and Meeseeks run/depth markers; and any preflight or child failure caused by their
-absence. Archive the result under `docs/history/`. This probe measures the baseline; it is not
-evidence that the eventual allowlist boundary is correct.
 
 ### Dynamic-workflow boundary probe
 

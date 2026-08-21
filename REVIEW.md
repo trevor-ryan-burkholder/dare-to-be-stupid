@@ -7,18 +7,18 @@
 **Reviewed executable baselines:** `be19c9c` / 0.164.0 for F1–F30; `12f2004` /
 0.179.0 for F31–F37; `d88946d` / 0.184.0 for F38–F40; `e0ede97` / 0.194.0 for
 the prior repair verification and F41; `3debe73` / 0.211.0 for F42–F44; and the committed
-0.212.0-through-0.225.0 repair range plus the working-tree 0.226.0 review corrections for the current
+0.212.0-through-0.225.0 repair range plus the working-tree 0.226.0 review corrections for that
 verification.
-**Current comparison:** `origin/main..HEAD` plus the 0.226.0 working tree. The pre-existing untracked
-`.agents/` reviewer skill is outside the candidate and was not modified.
+**Comparison used for the last pass:** `origin/main..HEAD` plus the 0.226.0 working tree as it stood
+on 19 August. No later candidate has been reviewed by Codex in this ledger.
 **Verdict:** **CHANGES REQUESTED** — nine high-priority defects and seven medium-priority defects
-remain open. Twenty-eight findings are closed below after exact-diff review and current validation.
+remain open. Twenty-eight findings are closed below after exact-diff review and that pass's validation.
 
 This pass reviewed and corrected implementation, tests, documentation, manifests and this ledger as
-authorized by the user. It did not commit, push, publish, deploy, run paid live tests, or modify the
+authorized by the user. It did not commit, push, publish, deploy, run live model tests, or modify the
 unrelated `.agents/` tree.
 
-## Current repair verification — 0.226.0
+## Last repair verification — 0.226.0
 
 The complete deterministic gate passed against the final 70-file shipped-byte fingerprint. The
 serial integration tier passed 242/242 in 508.5 seconds. The closures below are finding-specific.
@@ -79,7 +79,7 @@ reported in the verification section below, `release-check` ok, and `git diff --
 | F25 | `disable-model-invocation: true` is present and direct-user syntax remains documented, but the required staged-installed pinned-CLI canary proving model omission, direct invocation, and safe refusal has not been run. Source frontmatter is not the loader contract. |
 | F27 | Exact per-role `--tools` and `--strict-mcp-config` wiring is structurally present, but required document-role, inherited allow/MCP, complete-identity, and installed live evidence remains absent. Current live fixtures cover only Oracle and review. |
 | F28 | Version parsing/range enforcement landed, but roles still execute bare `claude` through mutable `PATH` (`scripts/driver.mjs:6040`). No run-sealed canonical path/fingerprint, delegated-entrypoint closure, or update control prevents a same-version/path replacement after preflight. |
-| F29 | Reviewer authority text and the final known-pattern scan are sound partial repairs. Trust-class supply reporting, a recorded scan-to-reviewed-tree binding, and paid hostile/benign calibration remain absent; the pattern scan explicitly does not prove arbitrary instruction isolation. |
+| F29 | Reviewer authority text and the final known-pattern scan are sound partial repairs. Trust-class supply reporting, a recorded scan-to-reviewed-tree binding, and live hostile/benign calibration remain absent; the pattern scan explicitly does not prove arbitrary instruction isolation. |
 | F41 | Finite detect/install ceilings and production propagation exist, but the finding's required tier-2 resistant detector/installer evidence is absent: no fixture proves deadline plus grace, descendants gone, lock release and durable required failure, or optional warning/proceed. Unit tests use immediate doubles/source inspection. |
 | F42 | Tickets now prevent replay and, at 0.226.0, carry redeemed depth through the next issuance. They still run only when `MEESEEKS_RUNNING` survives; renamed/indirect Driver launch and arbitrary same-user state writes can bypass lexical hook inspection, so the operator-only authority boundary is not established. |
 | F43 | Complete staging bytes are now linked atomically into the canonical lock name with no replacement, and real-filesystem unit cases cover completeness/one winner/cleanup. The required killed/paused real-process publication-seam cohort has not been run, so closure evidence remains incomplete. |
@@ -261,7 +261,7 @@ exposure but does not establish a trust boundary.
 
 **Required resolution:**
 
-- Execute PLAN item 56's paid synthetic-canary probe before choosing the allowlist; the Claude CLI,
+- Execute PLAN item 56's live synthetic-canary probe before choosing the allowlist; the Claude CLI,
   authentication, executable discovery, and platform environment are external contracts.
 - Construct a minimal child environment plus an explicit operator-configured allowlist of additional
   variable names. Preserve every measured Meeseeks run/depth marker.
@@ -274,7 +274,7 @@ exposure but does not establish a trust boundary.
 
 - Unit tests prove synthetic secrets are absent, required benign neighbours and Meeseeks markers
   survive, and no value appears in diagnostics or driver-owned artifacts.
-- A paid tier-3 test proves a real Claude child and its shell cannot observe the synthetic canary
+- A live tier-3 test proves a real Claude child and its shell cannot observe the synthetic canary
   while authentication and normal target-tool discovery still work.
 - The same probe covers Builder and at least one cold role; a role-specific exception requires an
   explicit operator allowlist entry rather than ambient inheritance.
@@ -353,8 +353,8 @@ the cap can survive inside the truncated stdout.
 - Tier 2 runs a child that emits a valid envelope and then exits nonzero, plus an overflow variant;
   both preserve their original failure kind.
 - Ordinary successful and `is_error:true` envelopes retain their current meanings.
-- Because this changes `spawnClaude`, the paid tier-3 child contract is mandatory. PLAN item 61
-  may share that spend with F2.
+- Because this changes `spawnClaude`, the live tier-3 child contract is mandatory. PLAN item 61
+  may share that live run with F2.
 
 ### F8 — HIGH: held-out Oracle cases are reused across runs and can enter target history
 
@@ -448,7 +448,7 @@ The paths after previous-run archiving therefore leave no current `outcome.json`
 does run, it overwrites the file directly rather than atomically.
 
 **Impact:** the durable answer created because stdout had already proved unreliable is absent on
-several paid failure paths. A parent component correctly fails closed on a missing receipt, but its
+several live-model failure paths. A parent component correctly fails closed on a missing receipt, but its
 operator cannot recover the child's state or spend from the promised artifact. A kill during the
 write can also destroy the only terminal record.
 
@@ -654,7 +654,7 @@ across objectives.
 
 **Acceptance evidence:**
 
-- A paid Builder can neither use `Read` nor shell/application code to obtain the current cases, or
+- A live Builder can neither use `Read` nor shell/application code to obtain the current cases, or
   the product documentation explicitly narrows the guarantee and terminal policy discounts the
   Oracle accordingly.
 - Oracle execution remains possible without revealing cases through prompts or detailed failure
@@ -1019,7 +1019,7 @@ makes model/provenance comparisons unreliable. It does not currently change a ga
 - An injected-child Driver test proves `prdModel` selects the bare-improvisation child; changing the
   legacy key does not produce a false active-model record.
 - A run manifest contains no inert style selector; F22 remains responsible for exact observed-model
-  provenance per child invocation. The ordinary version bump applies. Paid live evidence is needed
+  provenance per child invocation. The ordinary version bump applies. Live model evidence is needed
   only if the implementation also changes child argv, routing, or another external CLI contract.
   PLAN item 78 owns the compatibility slice.
 
@@ -1059,7 +1059,7 @@ does not exist, which weakens original-intent reliability without a runtime fail
 - An injected-child Driver integration fixture proves idea plus `--confirm-prd` commits a PRD,
   spawns no later phase, instructs `/meeseeks ./PRD.md`, and the explicit PRD rerun does not
   re-author intent.
-- `claude plugin validate` passes and the shipped command change receives a version bump. A paid
+- `claude plugin validate` passes and the shipped command change receives a version bump. A live
   slash-command invocation is needed only if implementation changes Claude Code's external loading
   or argument-passing contract. PLAN item 79 owns the slice.
 
@@ -1177,7 +1177,7 @@ is a proposal to an external binary until the measured binary demonstrates the e
 
 `PHASE_PERMISSIONS` describes each non-Builder role with `allowedTools`; comments and tests treat
 Oracle-author's empty array as “no tools at all.” `claudeArgs()` passes only `--allowedTools` for a
-non-empty array and passes no tool flag for an empty one. The paid Oracle contract test also invokes
+non-empty array and passes no tool flag for an empty one. The live Oracle contract test also invokes
 `phase: "review"`, not the production `oracle-author` policy.
 
 Current official Claude Code semantics are explicit: `--allowedTools` changes permission approval,
@@ -1208,7 +1208,7 @@ Panel/document-role boundaries without appearing in `PHASE_PERMISSIONS`.
   `childSettings()` and the guard for writing roles.
 - Keep every new flag before variadic `--allowedTools`, and do not treat `--safe-mode` as the
   availability control.
-- Fix the paid Oracle contract test to invoke `oracle-author`; add live policy-class canaries rather
+- Fix the live Oracle contract test to invoke `oracle-author`; add live policy-class canaries rather
   than more argv-only assertions. Keep F15's separate question—whether Builder can read the finished
   Oracle store—out of this repair.
 
@@ -1286,7 +1286,7 @@ is incompatible.
   closure cannot be bounded and live-proven.
 - Keep the compatibility policy in one runtime source and align preflight, README, DESIGN, fixtures,
   and release evidence. Expand it only after the candidate passes the full pinned contract suite.
-- Treat the check as an early compatibility gate, not capability proof. Paid live contracts,
+- Treat the check as an early compatibility gate, not capability proof. Live model contracts,
   including items 75, 80, and 82, remain mandatory at every admitted compatibility boundary.
 
 **Acceptance evidence:**
@@ -1357,7 +1357,7 @@ property that Builder cannot certify Builder even if tools, context, and process
 - A fixture passes initial preflight, then adds or changes `CLAUDE.md`, `.claude/rules/`, a Skill,
   hook, or MCP configuration. The exact final-tree scan refuses known-hostile forms before Panel and
   preserves benign candidate documentation as reviewable evidence rather than authority.
-- A pinned paid canary proves a cold reviewer does not auto-load the seeded project/user/local
+- A pinned live canary proves a cold reviewer does not auto-load the seeded project/user/local
   customizations and still receives the Driver-owned reviewer prompt. In a paired hostile/benign
   reviewer-calibration case, the seeded candidate text does not change the verdict merely by declaring
   itself binding. This bounded canary is not proof of immunity to arbitrary prompt injection.
@@ -1602,7 +1602,7 @@ evidence. This is an unclosed part of F7's stated every-path visibility contract
 - A tier-2 child exits zero after writing a guard-denial line to stderr; `spawnClaude` returns
   success and preserves the denial for the next brief.
 - Clean successful stderr and failed-envelope neighbours retain their documented behavior.
-- Because this crosses `spawnClaude` and the external CLI contract, run the mandatory paid tier-3
+- Because this crosses `spawnClaude` and the external CLI contract, run the mandatory live tier-3
   guard canary. PLAN item 93 owns closure.
 
 ### F37 — MEDIUM: health-probe cleanup skips descendants after the shell leader exits
@@ -1772,7 +1772,7 @@ required renamed/indirect neighbours and an unbypassable authority boundary do n
 `hooks/guard.mjs:1897-1985`, `scripts/nesting.mjs:1-122`.
 
 **Impact:** target-controlled same-user code may still start a Driver path the guard does not
-recognize without the operator's flag or boxed deadline, multiply paid children and locks across
+recognize without the operator's flag or boxed deadline, multiply live children and locks across
 repositories, and bypass the ticket/depth checks entirely.
 
 **Governing requirements:** `DESIGN.md` §6.5 and the CLAUDE/AGENTS no-nesting invariant say only
@@ -1796,7 +1796,7 @@ operator-started component runs and the ordinary top-level invocation.
   wrapped/env-prefixed variants, and copied/renamed entrypoint neighbours without blocking benign
   Node commands.
 - Tier 2 starts the attack from one repository against another and proves no nested Driver reaches
-  preflight, no paid child is spawned, and the parent run remains healthy.
+  preflight, no live child is spawned, and the parent run remains healthy.
 - Real operator `--give-them-the-box` components still reach depths one and two with their deadline;
   depth three and every no-flag path fail closed at both enforcement points.
 
@@ -2093,8 +2093,8 @@ above.
 
 Claude Code implements repairs in PLAN dependency order while preserving `DESIGN.md` and repository
 invariants. A repaired finding remains OPEN, but **review-pending is not a development stop**. Keep
-each slice in a focused commit, record acceptance evidence in PLAN/HANDOFF, and continue all
-independent eligible work.
+each slice in a focused commit, record slice evidence at the owning PLAN item, update HANDOFF only
+for candidate-wide or durable cross-slice evidence, and continue all independent eligible work.
 
 Request Codex review when the next step depends on an unverified high-risk repair, before a release
 or acceptance claim, when no independent eligible work remains, or when the operator explicitly
