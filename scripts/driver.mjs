@@ -10310,7 +10310,24 @@ async function runInvocation(argv, io, crash) {
         });
         if (!made.ok) return { ok: false, dir: cwd, tree: null, detail: made.detail };
         candidateMaterialized = true;
-        const shared = shareToolCaches({ cwd, dir: made.dir, caches: TOOL_CACHE_PATHS });
+        // **Into the project, not the repository root** (feature audit, item 161). `cwd` is already
+        // the component's own directory, so the source was right and the destination was not: a
+        // component's `node_modules` was linked to `<candidate>/node_modules` while its project sits
+        // at `<candidate>/packages/<name>`.
+        //
+        // Node resolves `node_modules` by walking **up**, so build, lint, types and unit all found
+        // it anyway — which is exactly why this hid. `knip` does not: it analyses the project where
+        // its `package.json` is, finds no local install, and reports every dependency unused. Every
+        // component run stalled on `quality:knip` reporting `eslint` unused while the `lint` gate
+        // required it — four iterations, no improvement, `STALLED`.
+        //
+        // Measured rather than reasoned: the same project reports "Unused devDependencies (1)
+        // eslint" with no `node_modules` beside it and reports none once installed.
+        const shared = shareToolCaches({
+          cwd,
+          dir: candidateProjectDir(made.dir, resolvedPrefix),
+          caches: TOOL_CACHE_PATHS,
+        });
         for (const problem of shared.problems) write(verbatim(`candidate: ${problem}`));
         candidate = { dir: made.dir, tree: made.tree };
         return { ok: true, dir: made.dir, tree: made.tree, detail: '' };

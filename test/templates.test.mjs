@@ -1094,3 +1094,39 @@ describe('the Oracle guarantee is stated as what it is (REVIEW F15)', () => {
     assert.match(DESIGN, /discipline, not a barrier/);
   });
 });
+
+describe('no phase may declare .gitignore as an output (PLAN item 162)', () => {
+  // **Found by a real boxed run, and the refusal was correct.** A design child added
+  // `test-results/` to `.gitignore`; the phase does not declare that file, so the run refused and
+  // stopped. The obvious repair — add `.gitignore` to `architect.md`'s declared outputs — must never
+  // be made, and the reason is not obvious enough to leave unwritten.
+  //
+  // `changedPaths` asks `git status --porcelain`, and **git omits ignored files**. That is the right
+  // boundary for `node_modules/` and build output. It also means a phase permitted to edit
+  // `.gitignore` can make its own *later* writes invisible to the very check that admits them: add a
+  // directory to the ignore list, write into it, and `changedPaths` reports nothing to admit.
+  //
+  // The declared-output allowlist and the ignore file cannot both be under a producing phase's
+  // control. The driver writes `.meeseeks/` into `.gitignore` itself, before any phase runs, which
+  // is the only write to that file a run makes.
+  const TEMPLATES = readdirSync(new URL('../templates', import.meta.url)).filter((name) => name.endsWith('.md'));
+
+  it('is declared by no template, however convenient it would be', () => {
+    for (const name of TEMPLATES) {
+      const contents = readTemplate(name);
+      const declared = contents.match(/<!--\s*meeseeks:declared-outputs([^>]*?)-->/);
+      if (declared === null) continue;
+      assert.equal(
+        /(^|\s)\.gitignore(\s|$)/.test(declared[1]),
+        false,
+        `${name} declares .gitignore, which would let that phase hide its own later writes from git status`,
+      );
+    }
+  });
+
+  it('finds the declarations it is checking, so the rule is not vacuous', () => {
+    // Without this, a renamed marker would make the case above pass over nothing at all.
+    const withDeclarations = TEMPLATES.filter((name) => /<!--\s*meeseeks:declared-outputs/.test(readTemplate(name)));
+    assert.equal(withDeclarations.length >= 3, true, `only ${withDeclarations.length} templates declare outputs`);
+  });
+});

@@ -2910,6 +2910,65 @@ exclude such a gate.
 restoring the unfiltered roster fails the wiring case.
 
 
+### 161. A component's dependencies were installed one directory above it — **DONE (0.280.0)** (PLAN item 24)
+
+**The thing that had been stalling every component run**, found by diagnosing why the gate that
+stalled it kept saying the same thing.
+
+`shareToolCaches({ cwd, dir: made.dir, ... })` links `node_modules` from the working tree into the
+candidate. `cwd` is already the component's own directory, so the **source** was right; the
+**destination** was the candidate *root*, while the project sits at `<candidate>/packages/<name>`.
+
+**Node resolves `node_modules` by walking up**, so build, lint, types and unit all found it — which
+is precisely why this hid for so long. `knip` does not: it analyses the project where its
+`package.json` is, finds no install beside it, and reports every dependency unused. Four runs of
+measurement run 3 stalled on `quality:knip` reporting `eslint` unused **while the `lint` gate
+required eslint** — which reads exactly like two gates in conflict, and is not.
+
+Measured rather than reasoned. The same minimal library, unchanged:
+
+```
+without node_modules beside it : Unused devDependencies (1)  eslint
+with    node_modules beside it : (none)
+```
+
+**Sixth instance of one blind spot**, and the reason the rule now names all three destinations
+together — gates, subject, and tool caches are three readers of one fact. The defect has never been a
+wrong prefix; it has been one reader not using it.
+
+**Validation:** lint, typecheck, `npm test` **3510 of 3510**, `driver` 676 of 676. Red proof:
+returning the destination to the candidate root fails two cases.
+
+
+### 162. `.gitignore` may never be a phase's declared output — **RECORDED (0.280.0)** (PLAN item 24)
+
+**Found by a real boxed run refusing correctly.** A design child added `test-results/` to
+`.gitignore`; `architect.md` does not declare that file, so the phase was refused and the run
+stopped with *"the design phase changed 1 path(s) it does not declare: .gitignore"*. The change was
+left on disk, uncommitted, exactly as the refusal promises.
+
+**No code changed. What was missing is the reason the obvious repair is wrong**, and it is not
+obvious enough to leave unwritten — the next reader hitting this will reach for
+`architect.md`'s declared-outputs list.
+
+`changedPaths` asks `git status --porcelain`, and **git omits ignored files**. That is the correct
+boundary for `node_modules/` and build output. It also means a phase permitted to edit `.gitignore`
+can make its own *later* writes invisible to the very check that admits them: add a directory to the
+ignore list, write into it, and `changedPaths` has nothing to report. The declared-output allowlist
+and the ignore file cannot both be under a producing phase's control.
+
+The driver writes `.meeseeks/` into `.gitignore` itself, before any phase runs. That is the only
+write to that file a run makes, and it stays that way.
+
+**Evidence.** A rule over every template asserts none declares `.gitignore`, with a companion case
+asserting the marker is actually found in at least three of them — without which a renamed marker
+would make the rule pass over nothing.
+
+**This is model variance, not a defect.** Four earlier runs of the same target reached the components
+phase; this one did not, because a child chose to tidy a file it was not asked to touch. Recorded so
+the failure is legible next time rather than mistaken for a regression.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation

@@ -9245,6 +9245,30 @@ describe("the gated tree and the subject are the same tree (feature audit, item 
     const resolutions = [...SOURCE.matchAll(/const resolvedPrefix = await runPrefix\(\)/g)];
     assert.equal(resolutions.length, 1, `resolvedPrefix is computed ${resolutions.length} times`);
   });
+
+  it("shares the tool caches into the project too, not the repository root (item 161)", () => {
+    // **The third destination, and the sixth time this pair drifted.** `shareToolCaches` was handed
+    // the component's own directory as its source and the candidate *root* as its destination, so
+    // `node_modules` landed one level above the project. Node resolves upward, so build, lint, types
+    // and unit all found it — which is why this hid — while `knip` analyses the project where its
+    // `package.json` is, found no local install, and reported every dependency unused. Every
+    // component run stalled on it.
+    const share = SOURCE.slice(SOURCE.indexOf('const shared = shareToolCaches('));
+    const call = share.slice(0, share.indexOf('});'));
+    assert.match(call, /dir: candidateProjectDir\(made\.dir, resolvedPrefix\)/, 'the caches go to the repository root');
+  });
+
+  it("uses one prefix for every destination that has to agree", () => {
+    // Gates, subject and tool caches are three readers of one fact. Naming them together is the
+    // point: the defect has never been a wrong prefix, it has been one of them not using it.
+    for (const site of [
+      /gateTree\(candidateProjectDir\(candidate\.dir, resolvedPrefix\)/,
+      /candidateSubject: \(\) => candidateProjectDir\(candidate\.dir, resolvedPrefix\)/,
+      /dir: candidateProjectDir\(made\.dir, resolvedPrefix\)/,
+    ]) {
+      assert.match(SOURCE, site, `a destination stopped using the shared prefix: ${site}`);
+    }
+  });
 });
 
 describe('the ci gate reads what a workflow runs, not what it mentions (feature audit, item 159)', () => {
