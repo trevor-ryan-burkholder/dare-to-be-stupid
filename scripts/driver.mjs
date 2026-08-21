@@ -9369,6 +9369,16 @@ async function runInvocation(argv, io, crash) {
    */
   let candidate = { dir: cwd, tree: null };
   /**
+   * Repository-relative paths of the cache links `shareToolCaches` *created* in the current
+   * candidate (PLAN item 163). The seal subtracts exactly these from its re-staged comparison —
+   * created links only, never a cache the candidate has of its own — so the one surface the run
+   * deliberately shares does not read as candidate drift and discard the verdict. Reset with the
+   * candidate itself.
+   *
+   * @type {string[]}
+   */
+  let candidateSharedLinks = [];
+  /**
    * Which declared reports the last collection produced, by name (PLAN item 95).
    *
    * Empty until the first `readTestReports`, which is the conservative reading: with nothing
@@ -9394,6 +9404,7 @@ async function runInvocation(argv, io, crash) {
     if (!candidateMaterialized) return;
     candidateMaterialized = false;
     candidate = { dir: cwd, tree: null };
+    candidateSharedLinks = [];
     const removed = await removeCandidate({ cwd, run: shell, dir: candidateWorktree });
     if (!removed.removed && removed.detail !== '') {
       write(verbatim(`the candidate worktree at ${candidateWorktree} could not be removed: ${removed.detail}`));
@@ -10329,6 +10340,11 @@ async function runInvocation(argv, io, crash) {
           caches: TOOL_CACHE_PATHS,
         });
         for (const problem of shared.problems) write(verbatim(`candidate: ${problem}`));
+        // The links this call created, spelled from the candidate root, so the seal can subtract
+        // exactly them (PLAN item 163). `shared.created` is project-relative; a component's project
+        // sits under `resolvedPrefix`, and the seal re-stages from the root.
+        const linkPrefix = resolvedPrefix.replace(/[\\/]+$/, '');
+        candidateSharedLinks = shared.created.map((name) => (linkPrefix === '' ? name : `${linkPrefix}/${name}`));
         candidate = { dir: made.dir, tree: made.tree };
         return { ok: true, dir: made.dir, tree: made.tree, detail: '' };
       },
@@ -10380,6 +10396,7 @@ async function runInvocation(argv, io, crash) {
           tree: candidate.tree,
           run: shell,
           timeoutMs: GIT_OPERATION_TIMEOUT_MS,
+          sharedLinks: candidateSharedLinks,
         });
         return { ok: checked.ok, detail: checked.detail };
       },

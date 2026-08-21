@@ -2966,7 +2966,7 @@ phase; this one did not, because a child chose to tidy a file it was not asked t
 the failure is legible next time rather than mistaken for a regression.
 
 
-### 163. A shared tool cache is visible to git where a real one is not — **OPEN**, root-caused (PLAN item 24)
+### 163. A shared tool cache is visible to git where a real one is not — **IMPLEMENTED (0.281.0)**; the live discharge rides item 24's next boxed run
 
 **Found by the furthest a component run has ever reached.** With items 145–147, 157 and 161 in place,
 measurement run 3's component passed its gates and **convened the review panel three times**. Every
@@ -3012,6 +3012,46 @@ slice and its own live run.
 **Item 24 remains IN PROGRESS.** Six runs: five machine defects found and fixed, one model-variance
 refusal, and this one open. Each run has reached further than the last; this is the first to reach
 the panel at all.
+
+**Repaired at 0.281.0 — and the sketched shape above was measured and rejected first.** Three
+measurements on this host's git (2.25.1), each fatal to an ignore-machinery repair:
+
+1. **A per-worktree `info/exclude` is not a thing.** Git resolves `info/` to the *common* directory;
+   a file written at `.git/worktrees/<id>/info/exclude` is never read. The shape this item sketched
+   does not exist.
+2. **The common file is shared by every worktree of the repository.** Two concurrent component
+   sub-runs would read-modify-write one file, and one run's teardown strip could blind a live
+   sibling's seal mid-judgement. A race in a seal is worse than the defect.
+3. **Exclude patterns interact with a fresh index by dropping tracked paths.** Measured: a vendored,
+   tracked `node_modules` vanished from the staged tree under an exclude line, because a
+   from-nothing index leaves every file "untracked" for ignore purposes. And `-c core.excludesFile`
+   *replaces* the operator's global ignore for that command, so the two stagings the seal compares
+   would run under different rules for any operator with a global ignore file.
+
+The landed repair touches no ignore machinery: `candidateMatchesTree` subtracts **exactly the links
+`shareToolCaches` created** from its re-staged temporary index (`git ls-files --stage -z` to verify
+each entry's mode is `120000`, then `git update-index --force-remove`) before `write-tree`. A
+created link was absent from the checked-out tree by construction, so the subtraction cannot hide
+anything that was judged; a regular file swapped in at a link's path keeps its non-link mode, stays
+in the comparison, and trips the seal. `shareToolCaches` now returns `created` beside `linked` — a
+pre-existing entry at a cache path (tracked symlink, vendored directory) is never subtracted. The
+driver spells the paths from the candidate root (`resolvedPrefix` + name) and resets them with the
+candidate.
+
+**Evidence.** Red first at tier 2: the reproduction (`.gitignore`'s `node_modules/` matches the
+directory, not the symlink → drift → verdict discarded) asserted as `ok: false` bare and `ok: true`
+with the subtraction, failing before the repair. The wiring red: the workspace-seal harness had
+**never armed `candidateIntact`** — the loop treats its absence as nothing to verify — which is why
+six green suites saw none of run 3's stall; `driveOnce` now arms it exactly as the driver does, and
+withholding the subtraction with the seal armed fails the new cache-bearing ship case with run 3's
+exact message. Deny paths: a planted file beside the links still refuses; a regular file replacing
+a link still refuses; a vendored tracked cache subtracts nothing and keeps its bytes in the subject.
+Gates: lint clean, typecheck clean, tier 1 **3,514 of 3,514**, tier 2 full run below, release-check
+at 0.281.0. `DESIGN.md` §6.2 records the subtraction and the two measured rejections.
+
+**What remains here:** the live discharge — the next boxed component run (item 24, run 7), which is
+also what completes item 24. The seal's behaviour under a real component sub-run with real installed
+caches is the evidence this item's own text demanded.
 
 
 ### 164. Reconcile documentation authority and the current all-features DoD — **DONE (docs only, 21 Aug 2026)**

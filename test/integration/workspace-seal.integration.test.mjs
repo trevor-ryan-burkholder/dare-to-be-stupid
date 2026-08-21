@@ -27,6 +27,7 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import {
+  candidateMatchesTree,
   materializeCandidate,
   removeCandidate,
   resolveGitDir,
@@ -154,6 +155,10 @@ async function driveOnce(root, hooks = {}) {
   };
   const candidateDir = path.join(mkdtempSync(path.join(os.tmpdir(), 'meeseeks-seal-wt-')), 'meeseeks-candidate-1');
   temporaryDirs.push(path.dirname(candidateDir));
+  /** @type {string | null} */
+  let subjectTree = null;
+  /** @type {string[]} */
+  let createdLinks = [];
   /** @type {string[]} */
   const committed = [];
   let shipped = 0;
@@ -217,11 +222,28 @@ async function driveOnce(root, hooks = {}) {
       snapshotCandidate: async (iteration) => {
         const made = await materializeCandidate({ cwd: root, run: shell, dir: candidateDir, iteration });
         if (!made.ok) return { ok: false, dir: root, tree: null, detail: made.detail };
-        shareToolCaches({ cwd: root, dir: made.dir, caches: TOOL_CACHE_PATHS });
+        const shared = shareToolCaches({ cwd: root, dir: made.dir, caches: TOOL_CACHE_PATHS });
         subject = made.dir;
+        subjectTree = made.tree;
+        createdLinks = shared.created;
         return { ok: true, dir: made.dir, tree: made.tree, detail: '' };
       },
       candidateSubject: () => subject ?? root,
+      // Armed exactly as the driver arms it (PLAN item 163). For a long time this harness omitted
+      // the candidate-side seal entirely, which is why six green suites never saw a shared cache
+      // link read as drift: the loop treats an absent `candidateIntact` as nothing to verify.
+      candidateIntact: async () => {
+        if (subject === null || subjectTree === null) {
+          return { ok: true, detail: 'no candidate yet' };
+        }
+        const checked = await candidateMatchesTree({
+          dir: subject,
+          tree: subjectTree,
+          run: shell,
+          sharedLinks: createdLinks,
+        });
+        return { ok: checked.ok, detail: checked.detail };
+      },
       committedTree: () => git(root, ['rev-parse', 'HEAD^{tree}']),
       // Real git, asked the real question (REVIEW F31): is the tree this commit holds the tree that
       // was reviewed?
@@ -359,6 +381,22 @@ describe('a real write during a real review cannot reach the commit', () => {
     // And the receipt says which bytes it was about — git's own name for the reviewed tree, which
     // is also the name the commit is made of, so the identity in the receipt can be looked up.
     assert.match(String(driven.outcome.workspace), /^[0-9a-f]{40,64}$/);
+    assert.equal(driven.outcome.workspace, git(root, ['rev-parse', 'HEAD^{tree}']), 'the receipt names another tree');
+  });
+
+  it('ships normally when the repository has a real cache to share (PLAN item 163)', async () => {
+    // Measurement run 3's stall, in one case. `.gitignore`'s `node_modules/` ignores the directory
+    // and not the symlink `shareToolCaches` puts in its place, so with the candidate seal armed the
+    // link alone read as drift: three panels convened, three verdicts discarded, `STALLED`. The
+    // fixtures in this file never had a cache to share, which is why six green suites saw none of
+    // it. This one does.
+    const root = repo();
+    mkdirSync(path.join(root, 'node_modules', 'dep'), { recursive: true });
+    writeFileSync(path.join(root, 'node_modules', 'dep', 'index.js'), 'module.exports = 1;\n');
+
+    const driven = await driveOnce(root);
+    assert.equal(driven.outcome.state, 'SHIPPED', driven.logs.join('\n').slice(-900));
+    assert.equal(driven.shipped, 1);
     assert.equal(driven.outcome.workspace, git(root, ['rev-parse', 'HEAD^{tree}']), 'the receipt names another tree');
   });
 });

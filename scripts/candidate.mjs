@@ -133,7 +133,18 @@ export async function resolveGitDir(options) {
  * any difference at all produces a different one. That is what lets the pre-commit check be an
  * equality rather than another sample.
  *
- * @param {{ cwd: string, run: Runner, gitDir: string, timeoutMs?: number }} options
+ * When `withoutSharedLinks` names paths, entries staged at exactly those paths are subtracted from
+ * the index before the tree is written — but only entries whose staged mode says *symlink*
+ * (PLAN item 163). The paths are the cache links `shareToolCaches` created, which are absent from
+ * the tree the candidate was checked out from by construction, so subtracting them makes the two
+ * digests comparable again without touching ignore machinery. Ignore machinery is the wrong tool
+ * here twice over, both measured: git shares `info/exclude` across every worktree of a repository,
+ * so concurrent component runs would race one file, and an exclude pattern applied to a fresh index
+ * silently drops a tracked path from the snapshot. The mode check is the deny path: a regular file
+ * swapped in where a link was is a mutation, and it stays in the comparison.
+ *
+ * @param {{ cwd: string, run: Runner, gitDir: string, timeoutMs?: number,
+ *   withoutSharedLinks?: string[] }} options
  * @returns {Promise<{ ok: true, tree: string } | CandidateRefused>}
  */
 export async function writeSnapshotTree(options) {
@@ -146,6 +157,40 @@ export async function writeSnapshotTree(options) {
   const staged = await options.run('git', ['add', '-A'], { cwd: options.cwd, env, timeoutMs: options.timeoutMs });
   if (!staged.ok) {
     return { ok: false, detail: `the candidate could not be staged: ${(staged.stderr || staged.stdout).trim()}` };
+  }
+  const links = options.withoutSharedLinks ?? [];
+  if (links.length > 0) {
+    // `-z` so a path never round-trips through core.quotePath; the entry format is
+    // `<mode> <object> <stage>\t<path>`. Anything staged at a named path with a non-link mode is
+    // left exactly where it is, and the seal then reports the difference it represents.
+    const listed = await options.run('git', ['ls-files', '--stage', '-z', '--', ...links], {
+      cwd: options.cwd,
+      env,
+      timeoutMs: options.timeoutMs,
+    });
+    if (!listed.ok) {
+      return { ok: false, detail: `the shared cache links could not be inspected: ${(listed.stderr || listed.stdout).trim()}` };
+    }
+    const symlinks = listed.stdout
+      .split('\0')
+      .filter((entry) => entry.startsWith('120000 '))
+      .map((entry) => entry.slice(entry.indexOf('\t') + 1))
+      .filter((entry) => entry !== '');
+    if (symlinks.length > 0) {
+      // `--force-remove` on the temporary index only; a named path with no entry is a no-op, so a
+      // link something already deleted does not fail the snapshot.
+      const subtracted = await options.run('git', ['update-index', '--force-remove', '--', ...symlinks], {
+        cwd: options.cwd,
+        env,
+        timeoutMs: options.timeoutMs,
+      });
+      if (!subtracted.ok) {
+        return {
+          ok: false,
+          detail: `the shared cache links could not be subtracted: ${(subtracted.stderr || subtracted.stdout).trim()}`,
+        };
+      }
+    }
   }
   const written = await options.run('git', ['write-tree'], { cwd: options.cwd, env, timeoutMs: options.timeoutMs });
   const tree = written.stdout.trim();
@@ -166,12 +211,21 @@ export async function writeSnapshotTree(options) {
  * A link is only made for a cache that exists in the main tree and is absent from the snapshot, so a
  * repository that vendors its dependencies as tracked files keeps its own copy untouched.
  *
+ * `linked` is every cache the candidate can now see; `created` is the subset this call materialized
+ * (PLAN item 163). The distinction carries the seal's authority to subtract: a created link was
+ * absent from the tree the candidate was checked out from *by construction*, so removing it from
+ * the re-staged comparison cannot hide anything that was judged. A pre-existing entry at a cache
+ * path — a tracked symlink the repository commits, a vendored directory — is part of the candidate
+ * and is never reported as created.
+ *
  * @param {{ cwd: string, dir: string, caches: string[] }} options
- * @returns {{ linked: string[], problems: string[] }}
+ * @returns {{ linked: string[], created: string[], problems: string[] }}
  */
 export function shareToolCaches(options) {
   /** @type {string[]} */
   const linked = [];
+  /** @type {string[]} */
+  const created = [];
   /** @type {string[]} */
   const problems = [];
   for (const entry of options.caches) {
@@ -198,6 +252,7 @@ export function shareToolCaches(options) {
       mkdirSync(path.dirname(target), { recursive: true });
       symlinkSync(source, target, 'junction');
       linked.push(name);
+      created.push(name);
     } catch (error) {
       // Reported rather than thrown: a cache that could not be shared makes gates slower or makes
       // them fail on their own terms, and either is a better outcome than killing a healthy run
@@ -205,7 +260,7 @@ export function shareToolCaches(options) {
       problems.push(`${name} could not be shared with the candidate: ${/** @type {Error} */ (error).message}`);
     }
   }
-  return { linked, problems };
+  return { linked, created, problems };
 }
 
 /**
@@ -333,7 +388,13 @@ export async function workingTreeMatchesCandidate(options) {
  * way the snapshot was produced — so the two digests are comparable by construction rather than by
  * two functions agreeing about what to hash.
  *
- * @param {{ dir: string, tree: string, run: Runner, timeoutMs?: number }} options
+ * `sharedLinks` names the cache links `shareToolCaches` *created* in this candidate, spelled from
+ * the candidate root (PLAN item 163). They are subtracted from the re-staged index — symlink
+ * entries only — because a `.gitignore` line like `node_modules/` matches directories and not
+ * symlinks, so the one surface the run deliberately shares would otherwise read as drift and
+ * discard every verdict, which is exactly what stalled measurement run 3 three panels in a row.
+ *
+ * @param {{ dir: string, tree: string, run: Runner, timeoutMs?: number, sharedLinks?: string[] }} options
  * @returns {Promise<{ ok: boolean, tree: string | null, detail: string }>}
  */
 export async function candidateMatchesTree(options) {
@@ -346,6 +407,7 @@ export async function candidateMatchesTree(options) {
     run: options.run,
     gitDir,
     timeoutMs: options.timeoutMs,
+    withoutSharedLinks: options.sharedLinks,
   });
   if (!snapshot.ok) return { ok: false, tree: null, detail: snapshot.detail };
   if (snapshot.tree === options.tree) {

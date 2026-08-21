@@ -273,6 +273,7 @@ describe('shareToolCaches', () => {
 
     const shared = shareToolCaches({ cwd: root, dir: made.dir, caches: ['node_modules/', '.hypothesis/'] });
     assert.deepStrictEqual(shared.linked, ['node_modules']);
+    assert.deepStrictEqual(shared.created, ['node_modules']);
     assert.deepStrictEqual(shared.problems, []);
     assert.equal(lstatSync(path.join(made.dir, 'node_modules')).isSymbolicLink(), true);
     assert.equal(readFileSync(path.join(made.dir, 'node_modules', 'dep', 'index.js'), 'utf8'), 'module.exports = 3;\n');
@@ -288,9 +289,25 @@ describe('shareToolCaches', () => {
     mkdirSync(path.join(made.dir, 'node_modules'), { recursive: true });
     writeFileSync(path.join(made.dir, 'node_modules', 'vendored.js'), 'vendored\n');
 
-    shareToolCaches({ cwd: root, dir: made.dir, caches: ['node_modules/'] });
+    const shared = shareToolCaches({ cwd: root, dir: made.dir, caches: ['node_modules/'] });
+    assert.deepStrictEqual(shared.created, [], 'a vendored cache is not a created link');
     assert.equal(lstatSync(path.join(made.dir, 'node_modules')).isSymbolicLink(), false);
     assert.equal(existsSync(path.join(made.dir, 'node_modules', 'vendored.js')), true);
+    await removeCandidate({ cwd: root, run: shell, dir: made.dir });
+  });
+
+  it('reports a link that already exists as linked but never as created', async () => {
+    // The distinction the seal depends on: `created` is what this call materialized and what the
+    // seal may subtract; a pre-existing link — including a *tracked* symlink the repository itself
+    // commits at a cache path — is part of the candidate and must stay in the comparison.
+    const root = repo();
+    const made = /** @type {any} */ (await materialize(root));
+    temporaryDirs.push(made.dir);
+    const first = shareToolCaches({ cwd: root, dir: made.dir, caches: ['node_modules/'] });
+    assert.deepStrictEqual(first.created, ['node_modules']);
+    const second = shareToolCaches({ cwd: root, dir: made.dir, caches: ['node_modules/'] });
+    assert.deepStrictEqual(second.linked, ['node_modules']);
+    assert.deepStrictEqual(second.created, []);
     await removeCandidate({ cwd: root, run: shell, dir: made.dir });
   });
 
@@ -482,5 +499,126 @@ describe('candidateMatchesTree — the candidate is sealed too (REVIEW F14)', ()
     mkdirSync(loose, { recursive: true });
     const sealed = await candidateMatchesTree({ dir: loose, tree: 'deadbeef', run: shell });
     assert.equal(sealed.ok, false);
+  });
+});
+
+describe('candidateMatchesTree — a created cache link is not drift (PLAN item 163)', () => {
+  // Measurement run 3 reached the panel three times and every verdict was discarded. The cause:
+  // `shareToolCaches` links `node_modules` into the candidate as a symlink, the target's
+  // `.gitignore` says `node_modules/`, and a trailing slash matches directories only — so the link
+  // is staged by the seal's re-measure where the directory it stands in for never was, the trees
+  // differ, and the seal correctly refuses bytes nobody judged.
+  //
+  // The repair subtracts exactly the links this run created from the re-staged index, after
+  // checking each staged entry is still a symlink. Not `info/exclude`: git resolves `info/` to the
+  // *common* directory (measured on 2.25.1), so every worktree of the repository shares one file —
+  // two concurrent component runs would race it — and an exclude pattern on a fresh index drops
+  // tracked-but-excluded paths from the snapshot entirely (also measured).
+
+  it('accepts a candidate whose only difference is the created cache link', async () => {
+    const root = repo();
+    const made = /** @type {any} */ (await materialize(root));
+    temporaryDirs.push(made.dir);
+    const shared = shareToolCaches({ cwd: root, dir: made.dir, caches: ['node_modules/'] });
+    assert.deepStrictEqual(shared.created, ['node_modules'], shared.problems.join(', '));
+
+    const bare = await candidateMatchesTree({ dir: made.dir, tree: made.tree, run: shell });
+    assert.equal(bare.ok, false, 'without the subtraction the link must read as drift — that is the defect');
+
+    const sealed = await candidateMatchesTree({ dir: made.dir, tree: made.tree, run: shell, sharedLinks: shared.created });
+    assert.equal(sealed.ok, true, sealed.detail);
+    assert.equal(sealed.tree, made.tree);
+    await removeCandidate({ cwd: root, run: shell, dir: made.dir });
+  });
+
+  it('still refuses a real write beside the links', async () => {
+    // The benign neighbour inverted: the subtraction must not widen. A write anywhere else in the
+    // candidate is exactly the mutation the seal exists to catch.
+    const root = repo();
+    const made = /** @type {any} */ (await materialize(root));
+    temporaryDirs.push(made.dir);
+    const shared = shareToolCaches({ cwd: root, dir: made.dir, caches: ['node_modules/'] });
+    writeFileSync(path.join(made.dir, 'planted.js'), 'export const planted = true;\n');
+
+    const sealed = await candidateMatchesTree({ dir: made.dir, tree: made.tree, run: shell, sharedLinks: shared.created });
+    assert.equal(sealed.ok, false, 'a planted file rode the cache subtraction through the seal');
+    await removeCandidate({ cwd: root, run: shell, dir: made.dir });
+  });
+
+  it('still refuses when the link has been replaced by a regular file', async () => {
+    // The subtraction names a path, but what it may remove is a *symlink entry*. A regular file
+    // swapped in at the same path is a mutation, and silently subtracting it would hand a writer a
+    // blessed path the seal never looks at.
+    const root = repo();
+    const made = /** @type {any} */ (await materialize(root));
+    temporaryDirs.push(made.dir);
+    const shared = shareToolCaches({ cwd: root, dir: made.dir, caches: ['node_modules/'] });
+    rmSync(path.join(made.dir, 'node_modules'));
+    writeFileSync(path.join(made.dir, 'node_modules'), 'not a link\n');
+
+    const sealed = await candidateMatchesTree({ dir: made.dir, tree: made.tree, run: shell, sharedLinks: shared.created });
+    assert.equal(sealed.ok, false, 'a regular file at the link path rode the subtraction through the seal');
+    await removeCandidate({ cwd: root, run: shell, dir: made.dir });
+  });
+
+  it('subtracts nothing from a repository that vendors its cache as tracked files', async () => {
+    // Vendored dependencies are part of the candidate. `shareToolCaches` never links over them, so
+    // nothing is created, nothing is subtracted, and the vendored bytes stay in the comparison.
+    const root = path.join(scratch(), 'vendored');
+    mkdirSync(root, { recursive: true });
+    git(root, ['init', '--quiet']);
+    git(root, ['config', 'user.email', 'test@example.com']);
+    git(root, ['config', 'user.name', 'test']);
+    mkdirSync(path.join(root, 'node_modules', 'dep'), { recursive: true });
+    writeFileSync(path.join(root, 'node_modules', 'dep', 'index.js'), 'module.exports = 1;\n');
+    writeFileSync(path.join(root, 'tracked.js'), 'export const tracked = 1;\n');
+    git(root, ['add', '-A']);
+    git(root, ['commit', '--quiet', '-m', 'vendored base']);
+    const made = /** @type {any} */ (await materializeCandidate({
+      cwd: root,
+      run: shell,
+      dir: path.join(path.dirname(root), 'meeseeks-candidate-8'),
+      iteration: 1,
+    }));
+    temporaryDirs.push(made.dir);
+    assert.equal(made.ok, true, made.detail);
+    const shared = shareToolCaches({ cwd: root, dir: made.dir, caches: ['node_modules/'] });
+    assert.deepStrictEqual(shared.created, []);
+
+    const sealed = await candidateMatchesTree({ dir: made.dir, tree: made.tree, run: shell, sharedLinks: shared.created });
+    assert.equal(sealed.ok, true, sealed.detail);
+    const listed = git(made.dir, ['ls-tree', '-r', '--name-only', made.tree]).split('\n');
+    assert.equal(listed.includes('node_modules/dep/index.js'), true, 'the vendored cache fell out of the subject');
+    await removeCandidate({ cwd: root, run: shell, dir: made.dir });
+  });
+
+  it('subtracts a component cache by its repository-relative path', async () => {
+    // A component sub-run's project is a subdirectory, its caches are linked inside that
+    // subdirectory, and the seal re-stages from the candidate root — so the subtraction has to be
+    // spelled from the root, exactly as the driver spells it.
+    const root = repo();
+    mkdirSync(path.join(root, 'packages', 'x'), { recursive: true });
+    writeFileSync(path.join(root, 'packages', 'x', 'code.js'), 'export const component = 1;\n');
+    git(root, ['add', '-A']);
+    git(root, ['commit', '--quiet', '-m', 'component']);
+    mkdirSync(path.join(root, 'packages', 'x', 'node_modules', 'dep'), { recursive: true });
+    writeFileSync(path.join(root, 'packages', 'x', 'node_modules', 'dep', 'index.js'), 'module.exports = 2;\n');
+    const made = /** @type {any} */ (await materialize(root));
+    temporaryDirs.push(made.dir);
+    const shared = shareToolCaches({
+      cwd: path.join(root, 'packages', 'x'),
+      dir: path.join(made.dir, 'packages', 'x'),
+      caches: ['node_modules/'],
+    });
+    assert.deepStrictEqual(shared.created, ['node_modules'], shared.problems.join(', '));
+
+    const sealed = await candidateMatchesTree({
+      dir: made.dir,
+      tree: made.tree,
+      run: shell,
+      sharedLinks: ['packages/x/node_modules'],
+    });
+    assert.equal(sealed.ok, true, sealed.detail);
+    await removeCandidate({ cwd: root, run: shell, dir: made.dir });
   });
 });

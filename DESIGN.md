@@ -2318,6 +2318,14 @@ same set the iteration's commit will contain. Ignored paths are outside it by de
 committed, not reviewed, not part of the candidate. The tool caches among them (`TOOL_CACHE_PATHS`)
 are **shared by symlink**, because a snapshot that cannot resolve its dependencies cannot run a single
 gate. That sharing is the one mutable surface left and it is named rather than left to be discovered.
+The links themselves are invisible to the seal by subtraction, not by ignore rule (PLAN item 163): a
+`.gitignore` line like `node_modules/` matches the directory and not the symlink standing in for it,
+so the seal's re-staging removes exactly the links the run *created* — symlink-mode entries at those
+exact paths, nothing else — before comparing trees. Ignore machinery was measured and rejected for
+this: `info/exclude` is shared by every worktree of a repository, so concurrent component runs would
+race one file, and an exclude pattern against a fresh index silently drops tracked paths from the
+snapshot. A regular file swapped in at a created link's path keeps its non-link mode, stays in the
+comparison, and trips the seal.
 
 **What reads it, and what does not.** Everything that decides — the deterministic gates and the reports
 they write, the ship-time mutation gate, the Panel, evidence citation resolution, test-definition
