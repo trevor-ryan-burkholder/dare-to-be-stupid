@@ -5,9 +5,7 @@
 > until the target deliverable passes an *enterprise-production* definition of done — or the
 > budget dies.
 >
-> Named for the Weird Al song. The joke is that it runs the Ralph Loop **on purpose**,
-> with `--dangerously-skip-permissions`, and narrates the whole thing in the voice of an
-> '80s Meeseeks. Pre-production only. Never points at anything with users.
+> Pre-production only. Never points at anything with users.
 
 This is v2. It keeps the strong core of the original spec (external reviewer, ratchet,
 guard hook, Meeseeks style) and adds the three phases the original left thin relative to

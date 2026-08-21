@@ -931,9 +931,13 @@ describe('the undetected-toolchain guidance', () => {
 });
 
 describe('the producer split (item 34, DESIGN §8.5)', () => {
-  const SHIPPED = readFileSync(new URL('./fixtures/prompts/builder-system-0.245.0.md', import.meta.url), 'utf8');
+  // Re-pinned at 0.289.0: boxed run 13 stalled four iterations on knip's fixture false positive,
+  // and the gates addendum now teaches the `knip.json` escape (PLAN item 171). A deliberate,
+  // measured prompt change moves this pin with its reason in the diff; an accidental one still
+  // fails here byte-for-byte.
+  const SHIPPED = readFileSync(new URL('./fixtures/prompts/builder-system-0.289.0.md', import.meta.url), 'utf8');
 
-  it('composes the code prompt byte-identically to the bytes 0.245.0 shipped', () => {
+  it('composes the code prompt byte-identically to the pinned shipped bytes', () => {
     // **The whole safety argument for this refactor.** A tidier split would gather all the
     // authority first and all the job practice after it, and reordering a prompt is *changing* a
     // prompt — §3.9 names silent prompt degradation as one of the two things this repository is

@@ -186,16 +186,27 @@ and you edit them however you like.
 > upgrade** — if both are present, `/dare` and `/meeseeks` are two different programs. Remove the
 > old one.
 
-**Requirements:** Node ≥ 22.12, `git`, an authenticated Claude Code **2.1.226 through 2.1.234**
-(inclusive), and network access for installation and missing quality-tool provisioning. Preflight
-refuses older, newer-unverified, prerelease, and unparseable CLI versions before a run starts. It
-does **not** yet make an independent authentication probe, so sign in first; an authentication
-failure otherwise appears when the first real role launches. This is a measured range, not a
-semantic-version promise; `scripts/claude-compat.mjs` is the
-runtime authority and records the evidence required to move either bound. REVIEW F28 / PLAN item 83
-still own the unfinished one-CLI-per-run invocation-closure seal: a path and self-reported version
-alone are not binary identity. **No runtime dependencies** — the whole thing is `node:` builtins and
-shelling out.
+**Requirements:** Node ≥ 22.12 with `npm`/`npx`, `git`, an authenticated Claude Code
+**2.1.226 through 2.1.235** (inclusive), and network access to the npm registry. Run it only in a
+throwaway, non-production Git repository with at least one commit and a clean working tree; the
+ratchet resets to commits and may discard uncommitted work. Preflight checks all of those conditions,
+scaffolds `.meeseeks/config.json` when absent, refuses tracked `.meeseeks/` state, and reports every
+blocking repair before the unattended Driver starts.
+
+The version range is measured, not a semantic-version promise; `scripts/claude-compat.mjs` is the
+runtime authority and records the evidence required to move either bound. After preflight, the Driver
+makes an independent non-interactive authentication probe at the run boundary before any role child.
+A supported version and successful login do not by themselves prove immutable CLI identity; REVIEW
+F28 and PLAN item 83 own the remaining invocation-identity repair and evidence. **No runtime
+dependencies** — the Driver is `node:` builtins plus bounded subprocesses.
+
+The run provisions project-local quality tooling when it becomes applicable: Impeccable is required;
+Knip, Semgrep, and Schemathesis are attempted and degrade to explicit warnings when unavailable;
+Gitleaks is detect-only and must be installed separately to enable that gate; and Chromium is
+installed when a Playwright gate becomes applicable. Python-based optional tools require `python3`
+and `pip`. The target's own SDK and services remain host prerequisites—for example, the .NET SDK for
+a .NET repository. If `sandbox.enabled` is armed on Linux/WSL, install both `bubblewrap` and `socat`;
+macOS uses the operating system's seatbelt sandbox.
 
 Process-tree cleanup is currently evidenced on POSIX/WSL2. Native Windows descendant cleanup remains
 OPEN under REVIEW F11 / PLAN item 65; do not rely on a timed-out child being fully reaped there.

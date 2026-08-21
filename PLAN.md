@@ -3393,6 +3393,37 @@ the item-163 seal subtraction, the commit, the fast-forward merge — becomes a 
 regression. Every future change to the boxed path passes this harness before it is allowed to
 spend.
 
+### 171. knip called a living fixture dead, four times — **DONE (0.289.0)** (PLAN item 24, boxed run 13)
+
+**Found by boxed run 13, 21 Aug 2026** — the first run whose path was harness-proven before
+launch, and it repaid that by dying one seam further out: launch, prd, design, gates green
+(item 169's ci exclusion held live, first panel at minute 24 — the fastest child yet), panels
+convening and findings falling 8 → 2 — and a STALL at 22.4M tokens, $26.77, on `quality:knip`
+failing every iteration: *"Unused files (1): e2e/fixtures/…"*.
+
+**The trap.** knip sees only the static import graph. A fixture a spec loads dynamically — by
+computed path, at runtime — reports as an unused file *no matter how it is arranged*, and the
+builder spent four iterations arranging it. The gate spec's own comment claimed an unused file "is
+almost never a false positive"; run 13 supplied the measured counterexample class. The tool's own
+escape exists — a project `knip.json` ignoring fixture paths — and the model never reached for it,
+which is run 11's shape again: a trap the product sets and a model reliably falls into.
+
+**The repair (0.289.0), at cause, exactly as item 168's.** `templates/producer-code-gates.md` now
+teaches the escape: dynamically-loaded fixtures are *declared* in `knip.json` — configuration, not
+weakening; the gate still fails genuinely dead files everywhere else. The knip plugin spec's
+comment records its measured exception. The composed producer prompt's byte-pin moved with the
+change — re-pinned at 0.289.0 with the reason in the diff, which is that pin's designed protocol
+for a deliberate, measured prompt change (CONST-13: silent drift still fails byte-for-byte).
+
+**Also in run 13's confession** (item 168's teardown logger, firing usefully on its first outing):
+the removed worktree held an out-of-prefix builder edit to the root `CLAUDE.md` — uncommitted,
+harmless here, recorded as the hygiene observation it is.
+
+**Item 24 remains IN PROGRESS** — ten runs, nine machine-or-posture defects found and repaired,
+one model-variance refusal. The frontier is now inside the panel loop itself; every gate the child
+runs has been green in a live run. Run 14 owes the ship, and the template sentence's live proof
+rides it.
+
 ### 34. Verified research mode — **DEFERRED post-DoD (operator, in-session 21 Aug 2026)** — a wanted capability, built after the current bar completes; was: IN SCOPE (19 Aug), OPEN before that
 
 **Why the deferral is cheap, recorded so resuming it starts warm:** the producer-side addenda landed

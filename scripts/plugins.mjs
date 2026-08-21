@@ -151,8 +151,11 @@ export const KNOWN_PLUGINS = {
     // Deliberately narrowed to files and dependencies. knip's unused-*exports* analysis is
     // its noisy half: on a young codebase an export with no caller yet is ordinary, and a
     // gate that fails an honest repository costs a whole iteration. An unused file or an
-    // unused declared dependency is almost never a false positive, and both are exactly the
-    // gold-plating the builder brief already forbids without anything checking.
+    // unused declared dependency is almost never a false positive — with one measured
+    // exception (boxed run 13, PLAN item 171): a fixture loaded dynamically is invisible to
+    // the static graph and reports as unused however it is arranged. The escape is the tool's
+    // own: a project `knip.json` ignoring its fixture paths, which the producer brief now
+    // teaches instead of letting a builder shuffle real files for four iterations.
     gate: ['npx', 'knip', '--include', 'files,dependencies'],
     note: 'dead file and unused dependency detector; enforces the no-gold-plating rule the builder brief states',
   },

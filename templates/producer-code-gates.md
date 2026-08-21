@@ -22,3 +22,12 @@ whole file that can never fail.
 If a gate is genuinely wrong for this repository, say so in your closing lines and leave it
 failing. A stated problem costs one iteration. A silenced gate costs every iteration after
 it, because the run stops being able to tell whether anything works.
+
+One tool deserves configuration rather than surrender: `knip` sees only the static import
+graph, so a file loaded dynamically — a test fixture your specs `import()` by computed path,
+a data file a runner discovers at runtime — reports as an *unused file* no matter how it is
+arranged. Rearranging real fixtures to appease it wastes iterations and changes nothing.
+Declare them instead: a `knip.json` at the project root with
+`{ "ignore": ["e2e/fixtures/**", "test/fixtures/**"] }` (naming your actual fixture paths)
+is the tool's own mechanism for exactly this, and it is configuration, not weakening — the
+gate still fails on genuinely dead files everywhere else.
