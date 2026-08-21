@@ -2571,6 +2571,39 @@ claim — then repair, then a test that would have caught it.
 development measurement recorded where development work is recorded.
 
 
+### 152. A specification that asked for nothing checkable ran anyway — **DONE (0.271.0)** (feature audit, item 151)
+
+**The defect.** `requiredIdsFor` appends the six `DoD-*` ids unconditionally, so the required set is
+never empty. A document whose only requirement reads *"the admin area should be secure and follow
+best practices"* — the `prd-author.md` template's **own worked counter-example of an untestable
+requirement** — produced zero `PRD-*` ids and six DoD ids, and the run went prd → design → builder
+without a word.
+
+Nothing downstream could notice. The panel judges the ids it is given; given only the generic floor
+it can return unanimity over it, and the run ends `panel unanimous on 6 requirement(s)` where not one
+of those six is a requirement of the product being built. The whole premise — numbered testable
+requirements become the review checklist — is absent, and the output looks identical to a run where
+it was present.
+
+Verified by execution before it was believed: `requiredIdsFor` on that prose returns exactly the six
+DoD ids.
+
+**The repair.** The capture refuses a specification containing no `PRD-<section>.<n>`, at the first
+moment the document exists in both modes — authored from an idea, or handed over as a file — and
+before the first paid child. One regex against an hour of work and an empty verdict.
+
+**The DoD ids stay unconditional**, and that is deliberate rather than overlooked: they are the floor
+every run is held to, bought with dogfood run 9's shipped defect. The point is not that the floor is
+wrong; it is that **a floor is not a specification**.
+
+**Evidence.** Two cases in `test/integration/confirm-prd.integration.test.mjs`: the untestable
+document refuses with exit 1, no design phase runs, and the message names the id shape; and a
+document stating one requirement proceeds to design — the neighbour, without which a check that
+refused every specification would score the same. Red proof: disabling the refusal fails the first.
+
+**Validation:** lint, typecheck, `npm test` 3481 of 3481, `confirm-prd` 6 of 6.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation

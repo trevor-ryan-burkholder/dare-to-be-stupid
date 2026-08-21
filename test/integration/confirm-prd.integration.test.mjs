@@ -128,3 +128,46 @@ describe('--confirm-prd stops after the document, and says how to continue', () 
     assert.equal(phases.includes('design'), true, `the run stopped early without the flag: ${phases.join(', ')}`);
   });
 });
+
+describe('a specification that states no numbered requirement (feature audit, item 152)', () => {
+  // `requiredIdsFor` appends the six `DoD-*` ids unconditionally, so the required set is never empty
+  // and nothing downstream could notice that a document asked for nothing checkable. A run over
+  // prose went prd -> design -> builder without a word, and could end `panel unanimous on 6
+  // requirement(s)` — six ids, none of them a requirement of the product being built.
+  const UNTESTABLE = '# Admin area\n\n## Requirements\n\nThe admin area should be secure and follow best practices.\n';
+
+  it('refuses before the design phase, naming the id shape it wanted', async () => {
+    const root = repoWithoutPrd();
+    writeFileSync(path.join(root, 'PRD.md'), UNTESTABLE, 'utf8');
+    execFileSync('git', ['add', '-A'], { cwd: root, stdio: 'pipe' });
+    execFileSync('git', ['commit', '--quiet', '-m', 'prose'], { cwd: root, stdio: 'pipe' });
+
+    const { code, logs, phases } = await run(root, ['PRD.md', '--yes']);
+
+    assert.equal(code, 1, logs.join('\n'));
+    assert.equal(phases.includes('design'), false, `a paid phase ran anyway: ${phases.join(', ')}`);
+    assert.equal(
+      logs.some((line) => line.includes('no numbered requirement') && line.includes('PRD-')),
+      true,
+      logs.join('\n'),
+    );
+  });
+
+  it('accepts a document that states one, so the refusal is not a wall', async () => {
+    // The neighbour. A check that refused every specification would satisfy the case above while
+    // making the product unable to run at all.
+    const root = repoWithoutPrd();
+    writeFileSync(path.join(root, 'PRD.md'), AUTHORED_PRD, 'utf8');
+    execFileSync('git', ['add', '-A'], { cwd: root, stdio: 'pipe' });
+    execFileSync('git', ['commit', '--quiet', '-m', 'prd'], { cwd: root, stdio: 'pipe' });
+
+    const { logs, phases } = await run(root, ['PRD.md', '--yes']);
+
+    assert.equal(
+      logs.some((line) => line.includes('no numbered requirement')),
+      false,
+      logs.join('\n'),
+    );
+    assert.equal(phases.includes('design'), true, `the run stopped before design: ${phases.join(', ')}`);
+  });
+});

@@ -8735,6 +8735,32 @@ async function runInvocation(argv, io, crash) {
 
   const prd = specification.contents;
 
+  // **A specification with no numbered requirement is not a specification** (feature audit, item
+  // 152). `requiredIdsFor` appends the six `DoD-*` ids unconditionally, so the required set is never
+  // empty and nothing downstream could notice the absence. A run over prose like *"the admin area
+  // should be secure and follow best practices"* went prd → design → builder without a word, and
+  // could end `panel unanimous on 6 requirement(s)` — six ids, none of them a requirement of this
+  // product, judged against a document that asked for nothing checkable.
+  //
+  // Refused here rather than warned about, and here because this is the first moment the document
+  // exists in both modes: authored from an idea, or handed over as a file. It costs one regex
+  // before the first paid child rather than an hour before an empty verdict.
+  //
+  // The DoD ids stay unconditional. They are the floor every run is held to; the point is that a
+  // floor is not a specification.
+  if (!/\bPRD-\d+\.\d+\b/.test(prd)) {
+    write(
+      verbatim(
+        `${specification.revision.file} contains no numbered requirement. Requirements are written as ` +
+          '`PRD-<section>.<n>` — for example `PRD-1.1` — and they are what the reviewers are given to ' +
+          'check. Without one this run would judge only the generic definition of done and report ' +
+          'unanimity over requirements nobody wrote.',
+      ),
+    );
+    write(stamp('ABORTED', { mode }));
+    return releasing(1, { reason: 'the specification states no numbered requirement', phase: 'specification' });
+  }
+
   // **The ERD is checked here because here is the first moment both inputs exist** (PLAN item 47).
   // `revalidateLaunch` runs before the specification is captured, and in improve mode before it has
   // been authored at all, so an ERD checked there would be checked against nothing. This is still a
