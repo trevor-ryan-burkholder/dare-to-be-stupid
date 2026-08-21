@@ -662,3 +662,44 @@ describe('the oracle claims exactly what it can deliver (REVIEW F15)', () => {
     assert.match(guard, /\.meeseeks/, 'the guard no longer mentions the state directory it protects');
   });
 });
+
+describe('the gate reads the directory the store was written to (feature audit, item 153)', () => {
+  // **The pairing no case here ever made.** Every existing test writes the store and reads it back
+  // through the *same* directory, so the reader and the writer could not disagree — and in the
+  // shipped driver they did. Since 0.218.0 the candidate is a separate snapshot worktree, the store
+  // lives in the Driver's `.meeseeks`, and `.meeseeks/*` is git-ignored so it cannot travel into a
+  // candidate. The gate was handed the candidate's directory and reported "the oracle was never
+  // authored" every iteration, unsatisfiably, while the run's log said cases had been held out.
+
+  /** @returns {{ driverState: string, candidate: string }} */
+  function twoDirectories() {
+    const driverDir = mkdtempSync(path.join(os.tmpdir(), 'oracle-driver-'));
+    const candidate = mkdtempSync(path.join(os.tmpdir(), 'oracle-candidate-'));
+    temporaryDirs.push(driverDir, candidate);
+    const driverState = path.join(driverDir, '.meeseeks');
+    mkdirSync(driverState, { recursive: true });
+    mkdirSync(path.join(candidate, '.meeseeks'), { recursive: true });
+    writeFileSync(path.join(candidate, 'package.json'), JSON.stringify({ name: 'probe', bin: { probe: 'cli.mjs' } }));
+    writeFileSync(path.join(candidate, 'cli.mjs'), '#!/usr/bin/env node\nprocess.stdout.write("hello\\n");\n');
+    writeOracle(driverState, [{ id: 'ORACLE-1', argv: [], files: [], relation: null, why: 'a held-out case', expectExit: 0, expectStdout: 'hello\n' }], {
+      specification: 'sha256:spec',
+    });
+    return { driverState, candidate };
+  }
+
+  it('passes when handed the state directory the store is in', async () => {
+    const { driverState, candidate } = twoDirectories();
+    const verdict = await oracleGate(candidate, driverState, { specification: 'sha256:spec' });
+    assert.equal(verdict.ok, true, verdict.detail);
+    assert.match(verdict.detail, /1 held-out case\(s\) passed/);
+  });
+
+  it("reports the store as never authored when handed the candidate's own directory", async () => {
+    // Not a hypothetical: this is exactly what the driver did. The message is indistinguishable
+    // from a run where no oracle was ever written, which is why nothing downstream noticed.
+    const { candidate } = twoDirectories();
+    const verdict = await oracleGate(candidate, path.join(candidate, '.meeseeks'), { specification: 'sha256:spec' });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.detail, /never authored/);
+  });
+});

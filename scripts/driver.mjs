@@ -9720,7 +9720,22 @@ async function runInvocation(argv, io, crash) {
           run: shell,
           capabilities,
           toolchain: config.toolchain,
-          meeseeksDir: treeStateDir,
+          // **The Driver's state directory, not the candidate's** (feature audit, item 153). This
+          // is the only thing `staticGates` uses `meeseeksDir` for: the held-out oracle store.
+          //
+          // The store is written to the Driver's `.meeseeks` and **cannot travel into a candidate**
+          // — `.meeseeks/*` is ignored with a single carve-out for `config.json`, and a tier-2 case
+          // asserts by real `git add -A` that `oracle.json` is never staged. Since 0.218.0 the
+          // candidate has been a separate snapshot worktree, so `treeStateDir` names a directory the
+          // store is never in, and `driveRun` aborts rather than falling back to the live tree:
+          // there is no configuration in which the two coincide.
+          //
+          // Measured: `oracleGate(candidate, candidate/.meeseeks)` returns *"no held-out cases: the
+          // oracle was never authored"*; the identical call against the Driver's directory returns
+          // *"1 held-out case(s) passed"*. For any run with `oracle.enabled` the gate therefore
+          // failed **every iteration, unsatisfiably**, while the log said the author had held out
+          // cases — a gate the builder could not pass by writing better code.
+          meeseeksDir: runStateDir,
           oracle: config.oracle.enabled,
           // Threaded so the held-out gate can refuse cases written from another PRD rather than
           // reporting a clean pass over them (REVIEW F8).

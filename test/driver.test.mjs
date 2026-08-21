@@ -9154,3 +9154,33 @@ describe('the sealed binary is re-verified at the spawn door (item 83)', () => {
   });
 });
 
+describe("the oracle gate is handed the store's directory (feature audit, item 153)", () => {
+  // **A positional rule over the driver's source, for the reason section 6 gives about
+  // enumeration.** `gateTree` lives inside `runInvocation`, which no tier-1 test executes, so the
+  // wiring cannot be asserted by calling it. What can be asserted is that the call site names the
+  // Driver's state directory rather than the candidate's.
+  //
+  // The defect this pins: `staticGates` uses `meeseeksDir` for exactly one thing, the held-out
+  // oracle store. The store is written to the Driver's `.meeseeks` and cannot travel into a
+  // candidate — `.meeseeks/*` is git-ignored — and since 0.218.0 the candidate is a separate
+  // snapshot worktree. Handed `treeStateDir`, the gate reported "the oracle was never authored"
+  // every iteration, unsatisfiably, while the log said cases had been held out.
+  const SOURCE = readFileSync(new URL('../scripts/driver.mjs', import.meta.url), 'utf8');
+
+  it("passes the run state directory to staticGates, not the candidate tree's", () => {
+    const call = SOURCE.slice(SOURCE.indexOf('await staticGates(dir, {'));
+    const options = call.slice(0, call.indexOf('}),'));
+    assert.match(options, /meeseeksDir:\s*runStateDir/, 'staticGates is handed a directory the oracle store is not in');
+    assert.equal(
+      /meeseeksDir:\s*treeStateDir/.test(options),
+      false,
+      'staticGates is handed the candidate tree state directory, where the oracle store never is',
+    );
+  });
+
+  it('still gates the candidate tree itself, so the correction did not move the subject', () => {
+    // The neighbour. The gates run *against* the candidate; only the state directory they read the
+    // held-out store from is the Driver's. Confusing those would gate the wrong tree.
+    assert.match(SOURCE, /await staticGates\(dir, \{/, 'staticGates no longer gates the candidate tree');
+  });
+});

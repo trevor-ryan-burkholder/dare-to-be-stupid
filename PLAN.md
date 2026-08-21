@@ -2604,6 +2604,53 @@ refused every specification would score the same. Red proof: disabling the refus
 **Validation:** lint, typecheck, `npm test` 3481 of 3481, `confirm-prd` 6 of 6.
 
 
+### 153. The held-out oracle gate read a directory the store is never in — **DONE (0.272.0)** (feature audit, item 151)
+
+**The defect, and it made a flagship guarantee unsatisfiable.** `staticGates` uses `meeseeksDir` for
+exactly one thing: the held-out oracle store. The driver handed it `treeStateDir` — the *candidate
+worktree's* `.meeseeks` — while `writeOracle` writes the store to the *Driver's* `.meeseeks`.
+
+Since 0.218.0 those have been different directories: the candidate is a separate snapshot worktree,
+and `driveRun` aborts rather than falling back to the live tree, so **there is no configuration in
+which they coincide**. The store cannot travel into a candidate either — `.meeseeks/*` is ignored
+with a single carve-out for `config.json`, and a tier-2 case already asserts by real `git add -A`
+that `oracle.json` is never staged.
+
+**Measured, not argued.** Against one candidate tree and one store, changing only the state
+directory:
+
+| gate reads | verdict |
+| --- | --- |
+| the candidate's `.meeseeks` (what shipped) | `ok:false` — *"no held-out cases: the oracle was never authored"* |
+| the Driver's `.meeseeks` | `ok:true` — *"1 held-out case(s) passed"* |
+
+So for any run with `oracle.enabled` the gate failed **every iteration, unsatisfiably** — a gate no
+amount of better code could pass — while the run's own log said the author had held out cases. The
+message is indistinguishable from a run where no oracle was ever written, which is why nothing
+downstream noticed.
+
+**The repair** is one identifier: the call site passes `runStateDir`. `meeseeksDir` feeds nothing
+else in `staticGates`, so the change reaches the oracle and nothing more.
+
+**Why no test saw it.** Every case in `test/oracle.test.mjs` wrote the store and read it back through
+the **same** directory, so the writer and the reader could not disagree. Two cases now pair a writer
+directory with a different reader: the Driver's directory passes with one held-out case, the
+candidate's reports the store as never authored.
+
+**And the wiring is held positionally**, for the reason §6 gives about enumeration: `gateTree` lives
+inside `runInvocation`, which no tier-1 test executes, so a rule over the driver's source asserts the
+call site names `runStateDir` and not `treeStateDir`, with a neighbour asserting the gates still run
+against the candidate tree — confusing those would gate the wrong subject.
+
+**This is the fourth instance of one blind spot in a day.** Items 145, 146, 147 and now 153 are all
+"two directories that are the same at a repository root and different in the configuration the
+feature actually runs in". Unit tests could not see any of them, because at a root every one of these
+pairs is a single value.
+
+**Validation:** lint, typecheck, `npm test` 3481 of 3481 before the new cases, `oracle` 61 of 61,
+`driver` 661 of 661. Red proof: restoring `treeStateDir` fails the positional rule.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
