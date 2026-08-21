@@ -350,7 +350,9 @@ export function addLesson(store, candidate, options = {}) {
   /** @type {Lesson} */
   const lesson = { id: nextLessonId(store), ...validated };
   return {
-    store: { version: STORE_VERSION, lessons: [...store.lessons, lesson] },
+    // Spread for the reason given on `markLessonsUsed`: a transformer that rebuilds the store from
+    // the fields it happens to care about deletes the ones it does not.
+    store: { ...store, version: STORE_VERSION, lessons: [...store.lessons, lesson] },
     added: lesson,
     reason: `stored as ${lesson.id}`,
   };
@@ -449,6 +451,16 @@ export function selectLessons(store, context, options = {}) {
 export function markLessonsUsed(store, ids) {
   const used = new Set(ids);
   return {
+    // **Spread first, because this function does not own the whole store.** It returned only
+    // `{ version, lessons }`, and `saveLessons` writes `candidates`, `rejected` and `retracted` from
+    // whatever it is handed — so one brief that selected a lesson silently emptied all three.
+    // Reproduced: a store with one lesson, one staged candidate, one rejection and one retraction
+    // came back with the lesson and nothing else.
+    //
+    // The retraction is the dangerous one. It is the record that a lesson was judged harmful; with
+    // the ledger gone the same text can be staged and promoted again, and `saveLessons`' own comment
+    // already describes this exact failure being fixed once before.
+    ...store,
     version: STORE_VERSION,
     lessons: store.lessons.map((lesson) => (used.has(lesson.id) ? { ...lesson, uses: lesson.uses + 1 } : lesson)),
   };
@@ -575,6 +587,8 @@ export function retractLesson(store, id, why) {
   };
   return {
     store: {
+      // Kept `retracted` and dropped `candidates` and `rejected` — the same defect, half-repaired.
+      ...store,
       version: STORE_VERSION,
       lessons: store.lessons.filter((lesson) => lesson.id !== id),
       retracted: [...(store.retracted ?? []), retraction],

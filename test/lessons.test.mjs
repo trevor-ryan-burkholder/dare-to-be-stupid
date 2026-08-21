@@ -657,3 +657,56 @@ describe('a lesson becomes durable only on independent support (item 35)', () =>
     assert.deepStrictEqual(selected, []);
   });
 });
+
+describe('a store transformer never deletes the parts it does not own (feature audit, item 154)', () => {
+  // **The defect this pins, reproduced end to end before it was repaired.** `saveLessons` writes
+  // `candidates`, `rejected` and `retracted` from whatever store it is handed. Three transformers
+  // rebuilt the store from the fields they cared about and dropped the rest, so
+  // `saveLessons(dir, markLessonsUsed(store, ids))` — one brief that selected a lesson — turned a
+  // store of one lesson, one staged candidate, one rejection and one retraction into the lesson
+  // alone.
+  //
+  // **The retraction is the one that matters.** It records that a lesson was judged harmful; with
+  // the ledger gone the same text can be staged and promoted again. `saveLessons`' own comment
+  // describes this failure being fixed once already, for `retracted` specifically — and
+  // `retractLesson` then dropped `candidates` and `rejected` in the same motion.
+  //
+  // Written as a table over the transformers rather than three cases, so the next one added is
+  // covered by construction rather than by somebody remembering.
+
+  /** A store with something in every compartment, so a dropped one is visible. */
+  /** @returns {any} a store with something in every compartment */
+  const full = () => ({
+    version: 1,
+    lessons: [{ id: 'lesson-0001', text: 'a durable lesson', uses: 0, tags: [], why: 'because' }],
+    candidates: [{ id: 'cand-1', text: 'staged' }],
+    rejected: [{ digest: 'sha256:r', why: 'refused' }],
+    retracted: [{ id: 'lesson-0009', why: 'harmful' }],
+  });
+
+  /** @type {{ name: string, apply: (store: any) => any }[]} */
+  const TRANSFORMERS = [
+    { name: 'markLessonsUsed', apply: (store) => markLessonsUsed(store, ['lesson-0001']) },
+    { name: 'retractLesson', apply: (store) => retractLesson(store, 'lesson-0001', { reason: 'no longer true', at: 0 }).store },
+  ];
+
+  for (const { name, apply } of TRANSFORMERS) {
+    it(`${name} keeps candidates, rejected and retracted`, () => {
+      const after = apply(full());
+      assert.equal((after.candidates ?? []).length, 1, `${name} emptied candidates`);
+      assert.equal((after.rejected ?? []).length, 1, `${name} emptied the refusal ledger`);
+      // `retractLesson` appends to this one, so it grows rather than staying at one — what must
+      // never happen is it shrinking.
+      assert.equal((after.retracted ?? []).length >= 1, true, `${name} emptied the retraction ledger`);
+    });
+  }
+
+  it('still does the work it was called for, so preservation is not inertia', () => {
+    // The neighbour. A transformer that returned its input unchanged would pass every case above.
+    const marked = markLessonsUsed(full(), ['lesson-0001']);
+    assert.equal(marked.lessons[0].uses, 1, 'the use count did not move');
+    const retracted = retractLesson(full(), 'lesson-0001', { reason: 'no longer true', at: 0 }).store;
+    assert.equal(retracted.lessons.length, 0, 'the lesson was not retracted');
+    assert.equal((retracted.retracted ?? []).length, 2, 'the retraction was not recorded beside the existing one');
+  });
+});

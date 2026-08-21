@@ -2651,6 +2651,38 @@ pairs is a single value.
 `driver` 661 of 661. Red proof: restoring `treeStateDir` fails the positional rule.
 
 
+### 154. Three lesson-store transformers deleted the parts they did not own — **DONE (0.273.0)** (feature audit, item 151)
+
+**The defect.** `saveLessons` writes `candidates`, `rejected` and `retracted` from whatever store it
+is handed. Three transformers rebuilt the store from the fields they cared about and dropped the
+rest, so `saveLessons(meeseeksDir, markLessonsUsed(store, ids))` — **one brief that selected a
+lesson** — emptied all three.
+
+Reproduced end to end against a real store before any repair:
+
+```
+before: lessons=1 candidates=1 rejected=1 retracted=1
+after : lessons=1 candidates=0 rejected=0 retracted=0
+```
+
+**The retraction is the one that matters.** It is the record that a lesson was judged harmful; with
+the ledger gone the same text can be staged and promoted again. `saveLessons`' own comment describes
+this exact failure being fixed once already — *"a retraction survived exactly until the next save"* —
+and `retractLesson` then dropped `candidates` and `rejected` in the same motion, which is the same
+bug half-repaired.
+
+**Three offenders, not one:** `markLessonsUsed` (all three fields), the lesson-add path
+(all three), and `retractLesson` (candidates and rejected). Each now spreads the store it was given.
+
+**Evidence.** A table over the transformers in `test/lessons.test.mjs` rather than a case per
+function, so the next one added is covered by construction rather than by somebody remembering, plus
+a neighbour asserting each still does the work it was called for — a transformer that returned its
+input unchanged would pass every preservation case. Red proof: removing the spread from
+`markLessonsUsed` fails it.
+
+**Validation:** lint, typecheck, `npm test` 3489 of 3489, `lessons` 62 of 62.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
