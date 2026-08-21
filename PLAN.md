@@ -1712,6 +1712,17 @@ its key mode (6), and an unknown stamp reading as unchanged.
 for. A rewritten test currently loses its credit until it is observed failing again, which is
 correct and is also the whole cost of improving a test.
 
+**Disposition recorded 21 Aug 2026: the explicit path exists, and it is re-observation.** Verified
+against the code before recording: `unprovenIds` removes a changed definition from the
+previous-passing exemption without scoring it as a regression, the driver's own comment names this
+*"the path for legitimate strengthening, at the cost of one observation"*, and `redEvidenceGate`'s
+operator-facing detail says how to complete it — observe the strengthened test failing once, and
+credit returns. Nothing further is built for it, deliberately: a declarative "this rewrite is an
+improvement" affordance would be the builder grading its own strengthening, which is the
+self-judgement CONST-2 exists to refuse. The one-observation cost *is* the design. Whether that
+satisfies the finding's phrasing is Codex's call at closure; the mechanism, its names in code, and
+this reasoning are the acceptance evidence offered.
+
 ### 133. The candidate is sealed, not only the main tree — **DONE (0.256.0)** (REVIEW F14)
 
 **The seal was on the wrong directory.** `workspaceIdentity` measures the operator's working tree and
@@ -8632,6 +8643,24 @@ the residual, and the cheapest place to discharge it is the next live web-ui run
 `git diff --check` clean.
 
 ## Observations recorded rather than repaired
+
+- **`slice-check commit` can commit and then refuse to bless what it committed** (21 Aug 2026,
+  twice in one session). Its post-commit re-verification checks *every* shipped file against the
+  fingerprints, so a commit staged with `--paths` while an unrelated shipped file sits dirty prints
+  `REFUSED` *after* the commit object exists — the output reads like a rollback and is not one. Both
+  occurrences left a correct, gate-verified commit standing (`a8d608e`; and the first F28 attempt's
+  refusal correctly blocked an actual mixed tree before staging). Recorded rather than repaired
+  because the refusal is doing its job — the surprise is only that "REFUSED" can follow a commit
+  that stands. If it recurs confusingly, the repair is a distinct message for the post-commit case,
+  not a weaker check.
+
+- **The boxed wall clock binds only at boundaries it can reach** (run 9, 21 Aug 2026). A
+  one-component boxed run gives the parent's between-components check nothing to fire on until the
+  only component ends, and the child's between-iterations check let one panel-bearing iteration
+  overshoot a 23-minute arm to ~35 minutes. Every word of that is in the enforcement's own comments
+  ("checked between iterations, which is where it can be checked"); the correction for real
+  component runs is an operator `--deadline` sized to iterations × panel time, as run 10 does at 75
+  minutes. Not a repair target unless a run demonstrates unbounded overshoot past its ceilings.
 
 - **Tier 2 refused once and passed on an immediate re-run** (18 Aug 2026, committing 0.196.0 through
   `slice-check`). Standalone `npm run test:integration` was 152/152 both before and after. No test
