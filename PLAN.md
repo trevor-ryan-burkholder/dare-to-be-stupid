@@ -930,6 +930,13 @@ itself**, whose deliverable is a recorded answer. Items 32 and 54 say *experimen
 titles; item 59 is a development protocol for authoring prompts rather than something a run does.
 Those three stay out. Everything else that is a capability is in.
 
+**Amended 21 Aug 2026 (operator, in-session).** Items **34** (research mode) and **49** (artifact
+job-types' remaining work) move **post-DoD**: wanted capabilities, built after the current bar
+completes, alongside the item **166** dashboard's same-day disposition. Item 49's shipped substrate
+— the prose toolchain and the citation/claim gates — remains shipped and in force; only its
+unbuilt remainder defers, with its evidence gap named at the item. The current DoD completes
+without all three.
+
 **Why the list was long, recorded because the reasons were not equal.** Items 47–51 were parked as
 "Phase-6 class" on 15 Aug to protect the capstone timeline, and that reason died with the capstone.
 Items 32, 54, 55, 58, 59 and 86 were parked under this repository's own rule that nothing lands
@@ -3232,7 +3239,15 @@ the Builder prompt or become invocable guidance; Driver-declared versioned guida
 the Builder's intended tool availability is unchanged; and pinned live evidence proves the external
 CLI behavior rather than inferring it from argv alone.
 
-### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
+### 34. Verified research mode — **DEFERRED post-DoD (operator, in-session 21 Aug 2026)** — a wanted capability, built after the current bar completes; was: IN SCOPE (19 Aug), OPEN before that
+
+**Why the deferral is cheap, recorded so resuming it starts warm:** the producer-side addenda landed
+at 0.265.0 (item 143), and the substrate it rides — prose toolchain, citation and claim gates, the
+acquisition module — is item 49's, deferred beside it in the same directive. What resuming adds is
+the job-type layer only: research job selection plus its declared-gap guard, a sealed research
+brief, factuality and synthesis cold-lens addenda reusing existing reviewer identities (Standing
+Rules: no new personas), Oracle held-out fact fixtures, a hostile run-level roster, and one tier-3
+composed-contract run. Public-HTTPS sources only until item 106's admission reopens.
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation
 step — *"factors common producer authority rules from job-specific code/research addenda, all
@@ -3835,7 +3850,22 @@ unfalsifiable criterion ("feels premium") and an unobservable-here one ("80% of 
 are each refused by name at authoring, while a deterministic criterion and a panel-judgeable one both
 pass** (the benign neighbours that prove the refusal is a filter and not a wall).
 
-### 49. Artifact job-types: checks-as-tests, so the spine drives a book or a report — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (Phase-6 class, post-DoD)
+### 49. Artifact job-types: checks-as-tests, so the spine drives a book or a report — **DEFERRED post-DoD (operator, in-session 21 Aug 2026)**; the shipped substrate stays shipped — was: IN SCOPE (19 Aug), OPEN (Phase-6 class) before that
+
+**What this deferral does and does not cover, recorded because the difference is auditable.** The
+substrate is **shipped and stays in force**: the prose toolchain, checks-as-tests, the citation
+resolver (§3.8.4), the claim-consistency gate (§3.8.5), and `scripts/acquire.mjs` with its address
+policy (§3.8.6) — all built, all tested, the gates armed for any declared artifact job. An artifact
+job is usable today for a repository whose source packages are captured in the tree; §3.8.4's
+resolver reads them there by design. What is deferred is the remainder: the Driver step that
+acquires unresolved sources (the acquisition module stays **deliberately unwired** — DESIGN §3.8.6
+records that posture and item 106 owns when a job may have an outbound effect; this is a scope
+decision, *not* item 139's accidental dead-machinery shape), mutable-source and non-retainable
+fixtures, receipt/carry staling on source-package digests, and the one live prose-artifact run.
+
+**Named evidence gap carried with the deferral:** the shipped citation and claim gates have never
+run in a live artifact run. That live discharge rides this item's resumption, and nothing before
+then may cite those gates as live-proven.
 
 **Origin:** operator, 15 Aug 2026 — *"tasks like 'write me a book about…' or 'research this and make a
 report…'"*. This is the **generalization** of which item 34 (verified research mode) is the first
