@@ -3377,12 +3377,21 @@ the box. **52 seconds, zero spend, tier 2.** What is counterfeit is the model; e
 graves were dug in is real.
 
 **Tranche 1 scope:** the traversal reaches the child's first gated iteration and asserts gate
-posture (item 169's evidence). **Deliberately not yet modelled:** the reviewer contract, so the
-counterfeit cannot yet reach a SHIPPED child, the seal subtraction under ship, or the
-fast-forward merge — the seams run 13 still owes live. The next tranche adds a contract-shaped
-counterfeit reviewer (citations resolving against the real tree, the attack account, unanimous
-pass) so a full counterfeit ship runs before any live run does. Every future change to the boxed
-path passes this harness before it is allowed to spend.
+posture (item 169's evidence). **Tranche 2 (same day):** a contract-shaped counterfeit reviewer —
+required ids parsed from the prompt, citations resolving in the reviewed tree, the attack account
+over its minimum, unanimous — plus a builder that writes a real hermetic project, and a **frontier
+probe**: the second case drives as far toward SHIPPED as determinism allows, asserts the floor
+(tests banked, panel convened), and *prints* the wall it hits, so the next live grave is named for
+free. Its first report already paid: the counterfeit child STALLED on gates failing from iteration
+one, and under that sat a real observation — **a component child's derived config carries only the
+four ceilings, so the child runs DEFAULT quality plugins (knip, semgrep) and `security-audit`,
+which need network installs**: fine live, impossible in tier 2, and also a real product question
+(an operator cannot shape a component's quality profile; the parent's `qualityPlugins: []` is not
+inherited). **Tranche 3, recorded:** counterfeit tool runners (the e2e-report suite's own `npx`
+technique) so the hermetic child goes gate-green and the counterfeit SHIPPED — ship-time mutation,
+the item-163 seal subtraction, the commit, the fast-forward merge — becomes a pinned tier-2
+regression. Every future change to the boxed path passes this harness before it is allowed to
+spend.
 
 ### 34. Verified research mode — **DEFERRED post-DoD (operator, in-session 21 Aug 2026)** — a wanted capability, built after the current bar completes; was: IN SCOPE (19 Aug), OPEN before that
 
