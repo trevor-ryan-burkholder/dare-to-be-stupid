@@ -2799,6 +2799,40 @@ drifted in the first place.
 returning the subject to `candidate.dir` fails the agreement rule.
 
 
+### 158. A required design gate passed having scanned zero files — **DONE (0.277.0)** (feature audit, item 151)
+
+**The defect.** The impeccable gate's argv ends in a hardcoded `src/` (`scripts/plugins.mjs`), while
+the `web-ui` capability that arms it is detected from **dependencies** — react, react-dom, vue,
+svelte — not from a directory. Any UI project whose interface is not under `src/` — a Next.js
+app-router tree, for one — therefore armed a *required* gate and passed it having examined nothing.
+
+Reproduced against the pinned 3.6.0 CLI in a directory with no `src/`: a warning on stderr, `[]` on
+stdout, **exit 0**. `designSlopEvidence` reads stderr only in its empty-*stdout* branch, so a
+well-formed empty array at exit 0 returned *"impeccable found nothing, primary or advisory"* — and
+`test/design-slop.test.mjs` asserted exactly that, locking it in.
+
+This module's own header says an empty stream is not evidence of a clean design pass. The rule was
+bypassed because the emptiness arrived as an empty **array** rather than an empty stream.
+
+**The repair.** Interpreters now receive the working directory and the argv alongside the output, and
+the design-slop interpreter refuses when the directory it was pointed at is not in the tree. Checked
+against the **filesystem**, not against impeccable's warning text: that wording belongs to another
+program and matching it would rot the first time it changed.
+
+**Two guards keep it honest rather than merely strict.** A caller that supplies no `cwd` gets the old
+behaviour — every existing call site does, and a refusal they cannot act on would be a regression
+dressed as a fix. And a `cwd` that does not itself exist is not judged: the command could not have
+run there at all, so its output is a fixture rather than a scan. In a real run the working directory
+always exists, so that guard never fires where it matters.
+
+**Evidence.** Four cases: the missing directory refuses and names it; **an empty finding list with the
+directory present still passes** — the neighbour, and the whole distinction, since "found nothing"
+and "looked nowhere" are the same bytes on stdout; a trailing flag is not mistaken for a path; and a
+caller with no tree is unchanged. Red proof: ignoring the missing target fails the first.
+
+**Validation:** lint, typecheck, `npm test` **3499 of 3499**, `design-slop` 28 of 28.
+
+
 ### 34. Verified research mode — **IN SCOPE (DoD = all features, 19 Aug 2026)** — was: OPEN (the first instance of item 49's substrate)
 
 **Producer authority factored, 0.246.0 (`DESIGN.md` §8.5).** This item's stated first implementation

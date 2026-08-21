@@ -8,8 +8,16 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { describe, it } from 'node:test';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { after, describe, it } from 'node:test';
+
+/** @type {string[]} */
+const temporaryDirs = [];
+after(() => {
+  for (const dir of temporaryDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 import {
   designSlopEvidence,
@@ -234,5 +242,53 @@ describe('the parser holds against the version the gate actually resolves', () =
     assert.equal(ok, false);
     assert.match(detail, /design-slop findings that fail this gate \(1\):/);
     assert.match(detail, /advisory findings, recorded but not gate-failing \(1\):/);
+  });
+});
+
+describe('a design gate that scanned nothing has not passed (feature audit, item 158)', () => {
+  // **Reproduced against the pinned 3.6.0 CLI.** The gate argv ends in a hardcoded `src/`, and
+  // `web-ui` is armed from *dependencies* — react, vue, svelte — not from a directory. In a project
+  // whose interface lives anywhere else, impeccable prints a warning on stderr, `[]` on stdout, and
+  // exits **0**; `designSlopEvidence` read that as "found nothing, primary or advisory" and passed a
+  // required gate having examined zero files.
+  //
+  // This module's own rule is that an empty stream is not evidence of a clean pass. It was bypassed
+  // because the emptiness arrived as a well-formed empty *array* rather than an empty stream.
+  const GATE = ['npx', 'impeccable@3.6.0', 'detect', '--json', 'src/'];
+
+  it('refuses when the directory it was pointed at is not in the tree', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'slop-nosrc-'));
+    temporaryDirs.push(root);
+    mkdirSync(path.join(root, 'app'), { recursive: true });
+    const { ok, detail } = designSlopEvidence({ stdout: '[]', status: 0, cwd: root, command: GATE });
+    assert.equal(ok, false);
+    assert.match(detail, /does not exist in this tree/);
+    assert.match(detail, /src\//);
+  });
+
+  it('accepts an empty finding list when the directory really was there', () => {
+    // **The neighbour, and it is the whole difference.** "Found nothing" is a legitimate pass; only
+    // "looked nowhere" is not, and the two are the same bytes on stdout.
+    const root = mkdtempSync(path.join(os.tmpdir(), 'slop-src-'));
+    temporaryDirs.push(root);
+    mkdirSync(path.join(root, 'src'), { recursive: true });
+    const { ok, detail } = designSlopEvidence({ stdout: '[]', status: 0, cwd: root, command: GATE });
+    assert.equal(ok, true, detail);
+    assert.match(detail, /found nothing/);
+  });
+
+  it('does not treat a trailing flag as a missing directory', () => {
+    // A future argv ending in `--json` must not be read as a path that is not there.
+    const root = mkdtempSync(path.join(os.tmpdir(), 'slop-flag-'));
+    temporaryDirs.push(root);
+    const { ok } = designSlopEvidence({ stdout: '[]', status: 0, cwd: root, command: ['npx', 'impeccable', 'detect', '--json'] });
+    assert.equal(ok, true);
+  });
+
+  it('keeps the old behaviour for a caller that supplies no tree', () => {
+    // Every existing caller and test passes only `{ stdout, status }`. A refusal they cannot act on
+    // would be a regression dressed as a fix.
+    const { ok } = designSlopEvidence({ stdout: '[]', status: 0 });
+    assert.equal(ok, true);
   });
 });

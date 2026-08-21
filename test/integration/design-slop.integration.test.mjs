@@ -44,6 +44,11 @@ function workspace(status) {
   temporaryDirs.push(root);
   const bin = path.join(root, 'bin');
   mkdirSync(bin, { recursive: true });
+  // The directory the gate's argv points at. It was absent, and the fixture still passed because
+  // nothing checked — which is the defect item 158 repairs: a design gate whose scan target does not
+  // exist reports "found nothing" and passes. A workspace modelling a project whose interface *was*
+  // scanned has to have one.
+  mkdirSync(path.join(root, 'src'), { recursive: true });
   const impeccable = path.join(bin, 'impeccable');
   writeFileSync(impeccable, `#!/bin/sh\ncat ${JSON.stringify(FIXTURE)}\nexit ${status}\n`, 'utf8');
   chmodSync(impeccable, 0o755);

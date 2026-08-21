@@ -22,6 +22,9 @@
  * second is "the tool ran and found nothing" and is a clean, empty result.
  */
 
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+
 /** Thrown when impeccable's finding stream cannot be trusted. Never downgraded to "no findings". */
 export class SlopError extends Error {
   /** @param {string} message */
@@ -184,6 +187,28 @@ function renderPartition(heading, findings) {
 }
 
 /**
+ * The scan target the gate was given, when it is a path that is not in the tree.
+ *
+ * `null` when the target exists, when it is not a path, or when there is nothing to check against —
+ * a caller that supplies no `cwd` gets the old behaviour rather than a refusal it cannot act on.
+ *
+ * @param {{ cwd?: string, command?: string[] }} outcome
+ * @returns {string | null}
+ */
+function missingScanTarget(outcome) {
+  if (typeof outcome.cwd !== 'string' || !Array.isArray(outcome.command)) return null;
+  // A tree that is not there says nothing about a target inside it — the command could not have run
+  // in that directory at all, so its output is somebody's fixture rather than a scan that happened.
+  // In a real run the working directory always exists, so this never fires where it matters.
+  if (!existsSync(outcome.cwd)) return null;
+  const target = outcome.command[outcome.command.length - 1];
+  // Flags and the subcommand are not paths. Only a trailing argument that looks like one is checked,
+  // which keeps this from refusing a future argv whose last element is `--json`.
+  if (typeof target !== 'string' || target === '' || target.startsWith('-')) return null;
+  return existsSync(path.resolve(outcome.cwd, target)) ? null : target;
+}
+
+/**
  * Turn one `impeccable detect --json` run into a gate result with real evidence.
  *
  * **Why this exists.** The gate read impeccable's exit code and nothing else, so a failing design
@@ -204,12 +229,35 @@ function renderPartition(heading, findings) {
  * Everything here fails closed. Unparseable output, oversized output, a status that contradicts
  * the stream, a crash: all of them return `ok: false`.
  *
- * @param {{ stdout: string, status: number, stderr?: string }} outcome what the gate command did
+ * @param {{ stdout: string, status: number, stderr?: string, cwd?: string, command?: string[] }} outcome
+ *   what the gate command did, plus the tree it ran in and the argv it ran — both needed to tell
+ *   "found nothing" from "looked nowhere"
  * @returns {{ ok: boolean, detail: string }}
  */
 export function designSlopEvidence(outcome) {
   const stdout = typeof outcome.stdout === 'string' ? outcome.stdout : '';
   const stderr = typeof outcome.stderr === 'string' ? outcome.stderr.trim() : '';
+
+  // **A target that is not there is not a clean design pass** (feature audit, item 158). The gate's
+  // argv ends in a hardcoded `src/`, and `web-ui` is armed from *dependencies* — react, vue, svelte
+  // — not from a directory. A Next.js app-router project, or anything else whose UI is not under
+  // `src/`, therefore armed a required gate and passed it having scanned **zero files**: impeccable
+  // prints a warning on stderr, `[]` on stdout, and exits **0**. Measured against the pinned 3.6.0.
+  //
+  // Checked against the filesystem rather than against the warning text, because that wording
+  // belongs to another program and matching it would rot the first time it changed. This module's
+  // own rule — "an empty stream is not evidence of a clean design pass" — was bypassed only because
+  // the emptiness arrived as a well-formed empty array instead of an empty stream.
+  const target = missingScanTarget(outcome);
+  if (target !== null) {
+    return {
+      ok: false,
+      detail:
+        `impeccable was pointed at ${JSON.stringify(target)}, which does not exist in this tree, so it ` +
+        'scanned nothing and exited 0. A design gate that examined no files has not passed; point it at ' +
+        'the directory this project keeps its interface in.',
+    };
+  }
   if (stdout.length > SLOP_OUTPUT_LIMIT) {
     return {
       ok: false,

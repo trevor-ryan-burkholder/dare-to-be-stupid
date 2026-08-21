@@ -1114,7 +1114,18 @@ export async function runGates(gates, options) {
       // The interpreter owns the verdict, both directions. It may fail a gate the command passed —
       // an empty stream, a status contradicting the findings — and that is the point: `exit 0` from
       // a detector that printed nothing is not evidence of a clean pass.
-      const judged = interpreter({ stdout: outcome.stdout, status: outcome.status, stderr: outcome.stderr });
+      // **The tree and the argv travel with the output** (feature audit, item 158). An interpreter
+      // that sees only a stream cannot tell "found nothing" from "looked nowhere", and impeccable
+      // reports both as `[]` at exit 0. Handing it the working directory lets it check the
+      // filesystem rather than parse another program's warning text, which would rot the first time
+      // that wording changed.
+      const judged = interpreter({
+        stdout: outcome.stdout,
+        status: outcome.status,
+        stderr: outcome.stderr,
+        cwd: options.cwd,
+        command: gate.command,
+      });
       results.push({ name: gate.name, ok: judged.ok, status: outcome.status, detail: judged.detail });
       continue;
     }
@@ -1139,7 +1150,7 @@ export async function runGates(gates, options) {
  * useful output is a machine stream rather than an exit code; a second one is a second entry here,
  * not an abstraction built in advance of it.
  *
- * @type {Record<string, (outcome: { stdout: string, status: number, stderr: string }) => { ok: boolean, detail: string }>}
+ * @type {Record<string, (outcome: { stdout: string, status: number, stderr: string, cwd?: string, command?: string[] }) => { ok: boolean, detail: string }>}
  */
 const INTERPRETERS = {
   'design-slop': designSlopEvidence,
